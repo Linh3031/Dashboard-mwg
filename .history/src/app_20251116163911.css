@@ -1,0 +1,29 @@
+/* Version 2.2 - Sửa lỗi thứ tự import (Tailwind phải được import sau)
+*/
+
+/* 1. Nền tảng (Variables, body, scrollbar) */
+@import url('./styles/base.css');
+
+/* 2. Bố cục chính (Sidebar, main-content, drawers) */
+@import url('./styles/layout.css');
+
+/* 3. Linh kiện UI (Buttons, cards, modals, inputs) */
+@import url('./styles/components.css');
+
+/* 4. Bảng biểu (Table styles, sort indicators, header colors) */
+@import url('./styles/tables.css');
+
+/* 5. Ghi đè thư viện (Choices.js) */
+@import url('./styles/vendor.css');
+
+/* 6. Style chuyên biệt cho từng tab */
+@import url('./styles/specific-sknv.css');
+@import url('./styles/specific-tdv.css');
+@import url('./styles/specific-composer.css');
+@import url('./styles/specific-realtime.css');
+
+/* 7. (QUAN TRỌNG) Tailwind phải được nạp SAU CÙNG 
+   để nó có thể ghi đè (utility classes) lên các style ở trên */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
