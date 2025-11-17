@@ -2,22 +2,10 @@
   /* global feather */
   import { onMount } from 'svelte';
   
+  // === BẮT ĐẦU THAY ĐỔI (Thêm logic Save Key) ===
+  
   import * as dataService from '../services/dataService.js';
   
-  // === BƯỚC 1: IMPORT STORES ĐỂ ĐỌC DỮ LIỆU ===
-  import { 
-      danhSachNhanVien,
-      rawGioCongData,
-      ycxData,
-      thuongNongData,
-      ycxDataThangTruoc,
-      thuongNongDataThangTruoc,
-      thuongERPData,
-      thuongERPDataThangTruoc,
-      pastedThiDuaReportData,
-      competitionData
-  } from '../stores.js';
-
   // --- Biến state cục bộ cho UI (Files) ---
   let dsnvFileName = "Chưa thêm file";
   let dsnvFileStatus = "";
@@ -48,23 +36,19 @@
   let thiduanvPasteStatus = "";
   let thuongErpPasteStatus = "";
   let thuongErpThangTruocPasteStatus = "";
-  
-  // MỚI: Text trong các ô paste
-  let luykePasteText = "";
-  let thiduanvPasteText = "";
-  let thuongErpPasteText = "";
-  let thuongErpThangTruocPasteText = "";
-
 
   /**
    * Hàm helper chung để gọi service FILE
+   * BƯỚC 3: Đọc `data-save-key` và truyền vào service
    */
   async function handleFileChange(event, serviceFunction, statePrefix) {
     const file = event.target.files[0];
     if (!file) return;
 
+    // Lấy saveKey từ thẻ input
     const saveKey = event.target.dataset.saveKey;
 
+    // Cập nhật state loading và tên file
     if (statePrefix === 'dsnv') {
         isLoadingDSNV = true;
         dsnvFileName = file.name;
@@ -92,8 +76,10 @@
     }
 
     try {
+      // Truyền saveKey vào service
       const result = await serviceFunction(file, saveKey);
       
+      // Cập nhật status
       if (statePrefix === 'dsnv') dsnvFileStatus = result.message;
       else if (statePrefix === 'giocong') giocongFileStatus = result.message;
       else if (statePrefix === 'ycx') ycxFileStatus = result.message;
@@ -105,6 +91,7 @@
       console.error(`Lỗi gọi dataService cho ${statePrefix}:`, err);
       const errMsg = `❌ Lỗi: ${err.message}`;
       
+      // Cập nhật status lỗi
       if (statePrefix === 'dsnv') dsnvFileStatus = errMsg;
       else if (statePrefix === 'giocong') giocongFileStatus = errMsg;
       else if (statePrefix === 'ycx') ycxFileStatus = errMsg;
@@ -113,6 +100,7 @@
       else if (statePrefix === 'thuongNongThangTruoc') thuongNongThangTruocFileStatus = errMsg;
       
     } finally {
+      // Tắt loading
       if (statePrefix === 'dsnv') isLoadingDSNV = false;
       else if (statePrefix === 'giocong') isLoadingGioCong = false;
       else if (statePrefix === 'ycx') isLoadingYCX = false;
@@ -124,25 +112,24 @@
     }
   }
 
+  // --- Hàm xử lý sự kiện PASTE (Cập nhật) ---
   
   let pasteTimer;
   function debounce(func, delay = 300) {
     return function(event) {
       clearTimeout(pasteTimer);
+      // QUAN TRỌNG: Truyền toàn bộ 'event' thay vì chỉ 'event.target.value'
       pasteTimer = setTimeout(() => {
         func(event); 
       }, delay);
     }
   }
 
+  /**
+   * BƯỚC 3: Cập nhật hàm Paste để đọc `data-save-key-paste` từ event
+   */
   function handlePasteInput(event, serviceFunction, statusKey) {
     const pastedText = event.target.value;
-
-    // Cập nhật giá trị text vào biến state để Svelte re-render
-    if (statusKey === 'luyke') luykePasteText = pastedText;
-    else if (statusKey === 'thiduanv') thiduanvPasteText = pastedText;
-    else if (statusKey === 'thuongErp') thuongErpPasteText = pastedText;
-    else if (statusKey === 'thuongErpThangTruoc') thuongErpThangTruocPasteText = pastedText;
 
     if (!pastedText || pastedText.trim().length < 10) {
         if (statusKey === 'luyke') luykePasteStatus = "";
@@ -160,14 +147,17 @@
     try {
       let result;
       if (statusKey === 'thiduanv') {
+        // Trường hợp đặc biệt: Thi đua NV cần 2 key
         const saveKeyRaw = event.target.dataset.saveKeyRaw;
         const saveKeyProcessed = event.target.dataset.saveKeyProcessed;
         result = serviceFunction(pastedText, saveKeyRaw, saveKeyProcessed);
       } else {
+        // Trường hợp thông thường: 1 key
         const saveKey = event.target.dataset.saveKeyPaste;
         result = serviceFunction(pastedText, saveKey);
       }
       
+      // Cập nhật status
       if (statusKey === 'luyke') luykePasteStatus = result.message;
       else if (statusKey === 'thiduanv') thiduanvPasteStatus = result.message;
       else if (statusKey === 'thuongErp') thuongErpPasteStatus = result.message;
@@ -183,6 +173,7 @@
     }
   }
   
+  // Tạo các hàm debounced (truyền event)
   const handleLuykeInput = debounce(
     (e) => handlePasteInput(e, dataService.handleLuykePaste, 'luyke'), 
     500
@@ -203,84 +194,11 @@
     500
   );
   
+  // === KẾT THÚC THAY ĐỔI ===
+
 
   // Logic feather icon (đã có)
   export let activeTab;
-  
-  // === BƯỚC 2: CẬP NHẬT onMount ĐỂ TẢI DỮ LIỆU CACHE ===
-  onMount(() => {
-    // 1. Chạy Feather (như cũ)
-    if (typeof feather !== 'undefined') {
-      feather.replace();
-    }
-    
-    // 2. Kiểm tra Svelte Stores (đã được main.js nạp) và cập nhật UI
-    console.log("[DataSection onMount] Kiểm tra dữ liệu cache...");
-
-    // Files
-    const dsnv_data = $danhSachNhanVien; // Dùng $ để đọc giá trị store
-    if (dsnv_data.length > 0) {
-        dsnvFileName = localStorage.getItem('_localDsnvFilename') || "Đã tải từ cache";
-        dsnvFileStatus = `✅ Đã tải ${dsnv_data.length} nhân viên.`;
-    }
-    
-    const giocong_data = $rawGioCongData;
-    if (giocong_data.length > 0) {
-        giocongFileName = "Đã tải từ cache";
-        giocongFileStatus = `✅ Đã tải ${giocong_data.length} dòng.`;
-    }
-
-    const ycx_data = $ycxData;
-    if (ycx_data.length > 0) {
-        ycxFileName = "Đã tải từ cache";
-        ycxFileStatus = `✅ Đã tải ${ycx_data.length} dòng.`;
-    }
-    
-    const thuongnong_data = $thuongNongData;
-    if (thuongnong_data.length > 0) {
-        thuongNongFileName = "Đã tải từ cache";
-        thuongNongFileStatus = `✅ Đã tải ${thuongnong_data.length} dòng.`;
-    }
-    
-    const ycx_tt_data = $ycxDataThangTruoc;
-    if (ycx_tt_data.length > 0) {
-        ycxThangTruocFileName = "Đã tải từ cache";
-        ycxThangTruocFileStatus = `✅ Đã tải ${ycx_tt_data.length} dòng.`;
-    }
-    
-    const thuongnong_tt_data = $thuongNongDataThangTruoc;
-    if (thuongnong_tt_data.length > 0) {
-        thuongNongThangTruocFileName = "Đã tải từ cache";
-        thuongNongThangTruocFileStatus = `✅ Đã tải ${thuongnong_tt_data.length} dòng.`;
-    }
-    
-    // Paste
-    luykePasteText = localStorage.getItem('daily_paste_luyke') || "";
-    if (luykePasteText) {
-        const count = $competitionData.length;
-        luykePasteStatus = `✅ Đã tải. Tìm thấy ${count} CT thi đua.`;
-    }
-    
-    thiduanvPasteText = localStorage.getItem('raw_paste_thiduanv') || "";
-    if (thiduanvPasteText) {
-        const count = $pastedThiDuaReportData.length;
-        thiduanvPasteStatus = `✅ Đã tải ${count} nhân viên.`;
-    }
-    
-    thuongErpPasteText = localStorage.getItem('daily_paste_thuongerp') || "";
-    if (thuongErpPasteText) {
-        const count = $thuongERPData.length;
-        thuongErpPasteStatus = `✅ Đã tải ${count} nhân viên.`;
-    }
-
-    thuongErpThangTruocPasteText = localStorage.getItem('saved_thuongerp_thangtruoc') || "";
-    if (thuongErpThangTruocPasteText) {
-        const count = $thuongERPDataThangTruoc.length;
-        thuongErpThangTruocPasteStatus = `✅ Đã tải ${count} nhân viên.`;
-    }
-    
-  });
-  
   $: if (activeTab === 'data-section') {
     Promise.resolve().then(() => {
       if (typeof window.feather !== 'undefined') {
@@ -370,7 +288,6 @@
                       placeholder="Dán dữ liệu đã sao chép..."
                       on:input={handleLuykeInput}
                       data-save-key-paste="daily_paste_luyke"
-                      bind:value={luykePasteText}
                     ></textarea>
                      <div class="data-input-group__status-wrapper">
                        <span id="status-luyke" class="data-input-group__status-text"
@@ -397,7 +314,6 @@
                       on:input={handleThiduaNVInput}
                       data-save-key-raw="raw_paste_thiduanv"
                       data-save-key-processed="daily_paste_thiduanv"
-                      bind:value={thiduanvPasteText}
                     ></textarea>
                      <div class="data-input-group__status-wrapper">
                        <span id="status-thiduanv" class="data-input-group__status-text"
@@ -499,7 +415,6 @@
                        placeholder="Dán toàn bộ dữ liệu thưởng ERP..."
                        on:input={handleErpInput}
                        data-save-key-paste="daily_paste_thuongerp"
-                       bind:value={thuongErpPasteText}
                      ></textarea>
                     <div class="data-input-group__status-wrapper">
                       <span id="status-thuongerp" class="data-input-group__status-text"
@@ -644,7 +559,6 @@
                            placeholder="Dán dữ liệu thưởng ERP tháng trước..."
                            on:input={handleErpThangTruocInput}
                            data-save-key-paste="saved_thuongerp_thangtruoc"
-                           bind:value={thuongErpThangTruocPasteText}
                          ></textarea> 
                          <div class="data-input-group__status-wrapper"> 
                              <span id="status-thuongerp-thangtruoc" class="data-input-group__status-text"
