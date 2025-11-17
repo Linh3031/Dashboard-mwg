@@ -1,4 +1,4 @@
-// Version 1.2 - Tắt checkJs để loại bỏ lỗi type check 2769 do kiểm tra quá nghiêm ngặt
+// Version 1.1 - Bật plugin Svelte Language Server để sửa lỗi type check 2769
 {
   "compilerOptions": {
     "moduleResolution": "bundler",
@@ -11,7 +11,7 @@
     "esModuleInterop": true,
     "types": ["vite/client"],
     "skipLibCheck": true,
-    "checkJs": false,
+    "checkJs": true,
     "plugins": [
       {
         "name": "svelte"

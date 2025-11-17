@@ -91,7 +91,7 @@ export const sortState = writable({
     // ... (toàn bộ sortState của bạn giữ nguyên)
 });
 
-// === BẮT ĐẦU THÊM MỚI (2 DÒNG BỊ THIẾU) ===
+// === BẮT ĐẦU THÊM MỚI ===
 /**
  * Trạng thái kho
  */

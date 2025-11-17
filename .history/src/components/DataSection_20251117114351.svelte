@@ -2,15 +2,12 @@
   /* global feather */
   import { onMount } from 'svelte';
   
-  // === SỬA LỖI: Xóa 'import * as dataService' (Không cần thiết nữa) ===
+  // === SỬA LỖI: Đổi { dataService } thành * as dataService ===
   import FileInput from '../modules/FileInput.svelte';
   import PasteInput from '../modules/PasteInput.svelte';
-
-  // === SỬA LỖI: Import store kho (vẫn cần cho <select>) ===
-  import { 
-      warehouseList,
-      selectedWarehouse
-  } from '../stores.js';
+  
+  // Service không cần import ở đây nữa, vì component con đã import rồi
+  // import * as dataService from '../services/dataService.js'; 
 
   // Logic feather icon (đã có)
   export let activeTab;
@@ -21,12 +18,6 @@
       feather.replace();
     }
   });
-
-  // Reactive statement: Sẽ chạy mỗi khi $selectedWarehouse thay đổi
-  $: if ($selectedWarehouse) {
-      localStorage.setItem('selectedWarehouse', $selectedWarehouse);
-      console.log(`[DataSection] Đã lưu kho đã chọn: ${$selectedWarehouse} vào localStorage.`);
-  }
 
   $: if (activeTab === 'data-section') {
     Promise.resolve().then(() => {
@@ -48,25 +39,7 @@
             </div>
             
             <div id="data-warehouse-selector-container" class="flex-shrink-0 flex items-center gap-2">
-                <label for="data-warehouse-selector" class="text-sm font-semibold text-gray-700">Kho:</label>
-                <select 
-                  id="data-warehouse-selector" 
-                  class="p-2 border rounded-lg text-sm shadow-sm min-w-[200px] 
-                       font-semibold text-indigo-800 bg-indigo-50 border-indigo-200 
-                       focus:ring-indigo-500 focus:border-indigo-500" 
-                  disabled={$warehouseList.length === 0}
-                  bind:value={$selectedWarehouse}
-                >
-                    {#if $warehouseList.length === 0}
-                        <option>Vui lòng tải file DSNV...</option>
-                    {:else}
-                        <option value="">-- Chọn Kho --</option>
-                        {#each $warehouseList as kho}
-                            <option value={kho}>{kho}</option>
-                        {/each}
-                    {/if}
-                </select>
-            </div>
+                </div>
         </div>
         <div id="version-marquee-container" class="marquee-container flex-grow min-w-[200px]">
             <p class="marquee-text"></p>

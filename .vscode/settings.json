@@ -1,3 +1,7 @@
 {
-  "css.lint.unknownAtRules": "ignore"
+  // Tắt cảnh báo CSS không sử dụng (css_unused_selector)
+  // Đây là cách đáng tin cậy nhất để tắt cảnh báo do Svelte Language Server tạo ra.
+  "svelte.plugin.svelte.compilerWarnings": {
+    "css_unused_selector": "ignore"
+  }
 }
