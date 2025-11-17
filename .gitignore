@@ -17,3 +17,8 @@ dist
 .env
 .env.local
 .env.*.local
+# Thư mục history
+history/
+
+# Cài đặt VSCode của máy
+.vscode/
