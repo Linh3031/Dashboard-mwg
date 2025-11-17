@@ -1,1 +1,0 @@
-reate_snapshot.js

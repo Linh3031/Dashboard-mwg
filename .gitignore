@@ -1,3 +1,5 @@
+# Version 1.2 - Fix lỗi tên thư mục .history/
+
 # Các file log
 npm-debug.log*
 yarn-debug.log*
@@ -5,20 +7,23 @@ pnpm-debug.log*
 *.log
 
 # Thư mục thư viện (Rất quan trọng!)
-node_modules
+/node_modules
 
 # Thư mục build
-dist
+/dist
+/.svelte-kit
+/.svelte
 
-# File rác của hệ điều hành (như file bạn đã gửi)
+# File rác của hệ điều hành
 .DS_Store
 
 # File biến môi trường (Tuyệt đối không đưa lên Git)
 .env
 .env.local
 .env.*.local
-# Thư mục history
-history/
+
+# THƯ MỤC HISTORY (Đã thêm dấu chấm)
+/.history/ 
 
 # Cài đặt VSCode của máy
-.vscode/
+/.vscode/
