@@ -1,107 +1,171 @@
 <script>
-  import { afterUpdate } from 'svelte';
+  import { onMount } from 'svelte';
+  import * as dataService from '../services/dataService.js';
+  import { realtimeYCXData, warehouseList } from '../stores.js';
   
+  // Import đúng tên file
+  import RealtimeSummary from './realtime/RealtimeSummary.svelte';
+  import RealtimeEmployeeTab from './realtime/RealtimeEmployeeTab.svelte';
+  import RealtimeEfficiencyTab from './realtime/RealtimeEfficiencyTab.svelte'; // Đã sửa tên đúng
+
   export let activeTab;
+  
+  let activeSubTabId = 'subtab-realtime-sieu-thi'; 
+  let selectedWarehouse = '';
+
+  function handleSubTabClick(event) {
+      const button = event.currentTarget;
+      activeSubTabId = button.dataset.target;
+  }
+
+  async function handleFileUpload(event) {
+    await dataService.handleRealtimeFileInput(event);
+  }
 
   $: if (activeTab === 'realtime-section') {
     Promise.resolve().then(() => {
-      // SỬA LỖI: Thêm 'window.'
-      if (typeof window.feather !== 'undefined') {
-        window.feather.replace();
-      }
+      if (typeof window.feather !== 'undefined') window.feather.replace();
     });
   }
 </script>
 
 <section id="realtime-section" class="page-section {activeTab === 'realtime-section' ? '' : 'hidden'}">
-    <div id="realtime-section-placeholder" class="placeholder-message hidden">Vui lòng cập nhật danh sách nhân viên để xem kết quả.</div> 
-    <div id="realtime-section-content"> 
-        <div class="content-card"> 
-            <div class="page-header border-b pb-4 mb-6"> 
-                <div class="flex items-center gap-x-3"> 
-                    <h2 class="page-header__title">Phân Tích Doanh Thu Realtime</h2> 
-                    <button class="page-header__help-btn" data-help-id="realtime" title="Xem hướng dẫn"> 
-                        <i data-feather="help-circle"></i> 
-                    </button> 
-                </div> 
-                <div class="flex-shrink-0 flex items-center gap-x-4 ml-auto"> 
-                    <label for="realtime-file-input" class="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap">Thêm file Realtime</label> 
-                    <input type="file" id="realtime-file-input" class="hidden" accept=".xlsx, .xls, .csv"> 
-                    <a href="https://report.mwgroup.vn/home/dashboard/077" target="_blank" class="text-blue-600 hover:underline whitespace-nowrap text-sm">Lấy file tại đây</a> 
-                </div> 
+    
+    <div class="content-card mb-6">
+        <div class="page-header border-b pb-4 mb-6 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-x-3">
+                <h2 class="page-header__title">Phân Tích Doanh Thu Realtime</h2>
+                <button class="page-header__help-btn" aria-label="Xem hướng dẫn" title="Xem hướng dẫn">
+                    <i data-feather="help-circle"></i>
+                </button>
             </div>
 
-            <button class="toggle-filters-btn" data-target="realtime-filter-container"> 
-                <span class="text">Hiện bộ lọc nâng cao</span> 
-                <i data-feather="chevron-down" class="icon"></i> 
+            <div class="flex-shrink-0 flex items-center gap-x-4 ml-auto">
+                <label for="realtime-file-input" class="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap flex items-center gap-2 shadow-sm">
+                    <i data-feather="upload" class="w-4 h-4"></i>
+                    <span>Thêm file Realtime</span>
+                </label>
+                <input 
+                    type="file" 
+                    id="realtime-file-input" 
+                    class="hidden" 
+                    accept=".xlsx, .xls, .csv"
+                    on:change={handleFileUpload}
+                >
+                <a href="https://report.mwgroup.vn/home/dashboard/077" target="_blank" class="text-blue-600 hover:underline whitespace-nowrap text-sm font-medium">Lấy file tại đây</a>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-4 mb-4">
+             <div class="flex items-center gap-2">
+                <label for="realtime-filter-warehouse" class="text-sm font-semibold text-gray-700">Kho:</label>
+                <select 
+                   id="realtime-filter-warehouse" 
+                   class="p-2 border rounded-lg text-sm shadow-sm bg-white min-w-[150px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                   bind:value={selectedWarehouse}
+                 >
+                   <option value="">Toàn bộ</option>
+                   {#each $warehouseList as kho}
+                     <option value={kho}>{kho}</option>
+                   {/each}
+                </select>
+             </div>
+             
+             <button class="toggle-filters-btn ml-auto md:ml-0">
+                <span class="text">Hiện bộ lọc nâng cao</span>
+                <i data-feather="chevron-down" class="icon"></i>
             </button>
-            <div id="realtime-filter-container" class="advanced-filters hidden"> 
-            </div>
         </div>
-
-        <div class="flex justify-between items-center mb-8"> 
-            <nav id="realtime-subtabs-nav" class="border-b border-gray-200 -mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs" data-content-container="realtime-subtabs-content"> 
-                <button class="sub-tab-btn active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm" data-target="subtab-realtime-sieu-thi" data-title="SieuThiRealtime"> 
-                    <i data-feather="zap"></i> 
-                    <span>Siêu thị Realtime</span> 
-                </button> 
-                <button class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm" data-target="subtab-realtime-nhan-vien" data-title="DTNVRealtime"> 
-                    <i data-feather="pie-chart"></i> 
-                    <span>DT NV Realtime</span> 
-                </button>
-                <button class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm" data-target="subtab-realtime-hieu-qua-nhan-vien" data-title="HieuQuaNVRealtime">
-                    <i data-feather="bar-chart-2"></i>
-                    <span>Hiệu quả NV Realtime</span>
-                </button>
-                <button class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm" data-target="subtab-realtime-nganh-hang" data-title="DTNganhHangRealtime">
-                    <i data-feather="layers"></i>
-                    <span>DT Ngành Hàng Realtime</span>
-                </button>
-                <button class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm" data-target="subtab-realtime-hang-ban" data-title="HangBanRealtime">
-                    <i data-feather="tag"></i>
-                    <span>DT Hãng Realtime</span>
-                </button>
-                <button class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm" data-target="subtab-realtime-thi-dua" data-title="ThiDuaNVRealtime">
-                    <i data-feather="award"></i>
-                    <span>Thi đua NV Realtime</span>
-                </button>
-            </nav>
-            <div class="flex items-center gap-x-2"> 
-                <button id="compose-realtime-notification-btn" class="action-btn action-btn--composer" title="Nhận xét"> 
-                    <i data-feather="pen-tool"></i> 
-                    <span>Nhận xét</span> 
-                </button> 
-                <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại"> 
-                    <i data-feather="download"></i> 
-                    <span>Xuất Excel</span> 
-                </button> 
-                <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại"> 
-                    <i data-feather="camera"></i> 
-                    <span>Chụp màn hình</span> 
-                </button>
-            </div> 
-        </div>
-
-        <div id="realtime-subtabs-content"> 
-            <div id="subtab-realtime-sieu-thi" class="sub-tab-content space-y-8"> 
-                <p>Đang tải nội dung Siêu thị Realtime...</p>
-            </div>
-            <div id="subtab-realtime-nhan-vien" class="sub-tab-content hidden space-y-4"> 
-                <p>Đang tải nội dung DT NV Realtime...</p>
-            </div>
-            
-            <div id="subtab-realtime-hieu-qua-nhan-vien" class="sub-tab-content hidden space-y-4">
-                <p>Đang tải nội dung Hiệu quả NV Realtime...</p>
-            </div>
-            <div id="subtab-realtime-nganh-hang" class="sub-tab-content hidden space-y-4">
-                <p>Đang tải nội dung DT Ngành Hàng Realtime...</p>
-            </div>
-            <div id="subtab-realtime-hang-ban" class="sub-tab-content hidden space-y-4">
-                <p>Đang tải nội dung DT Hãng Realtime...</p>
-            </div>
-            <div id="subtab-realtime-thi-dua" class="sub-tab-content hidden space-y-4">
-                <p>Đang tải nội dung Thi đua NV Realtime...</p>
-            </div>
-            </div> 
+        
+        <div id="realtime-filter-container" class="advanced-filters hidden"></div>
     </div>
+
+    <div class="flex justify-between items-center mb-8 overflow-x-auto pb-2">
+        <nav id="realtime-subtabs-nav" class="border-b border-gray-200 -mb-px flex space-x-6" aria-label="Tabs">
+            <button 
+                class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-sieu-thi' ? 'active' : ''}" 
+                data-target="subtab-realtime-sieu-thi"
+                on:click={handleSubTabClick}
+            >
+                <i data-feather="zap"></i>
+                <span>Siêu thị Realtime</span>
+            </button>
+            
+            <button 
+                class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nhan-vien' ? 'active' : ''}" 
+                data-target="subtab-realtime-nhan-vien"
+                on:click={handleSubTabClick}
+            >
+                <i data-feather="pie-chart"></i>
+                <span>DT NV Realtime</span>
+            </button>
+
+            <button 
+                class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien' ? 'active' : ''}" 
+                data-target="subtab-realtime-hieu-qua-nhan-vien"
+                on:click={handleSubTabClick}
+            >
+                <i data-feather="bar-chart-2"></i>
+                <span>Hiệu quả NV Realtime</span>
+            </button>
+
+            <button 
+                class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nganh-hang' ? 'active' : ''}" 
+                data-target="subtab-realtime-nganh-hang"
+                on:click={handleSubTabClick}
+            >
+                <i data-feather="layers"></i>
+                <span>Ngành hàng Realtime</span>
+            </button>
+             <button 
+                class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hang-ban' ? 'active' : ''}" 
+                data-target="subtab-realtime-hang-ban"
+                on:click={handleSubTabClick}
+            >
+                <i data-feather="tag"></i>
+                <span>DT Hãng Realtime</span>
+            </button>
+             <button 
+                class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-thi-dua' ? 'active' : ''}" 
+                data-target="subtab-realtime-thi-dua"
+                on:click={handleSubTabClick}
+            >
+                <i data-feather="award"></i>
+                <span>Thi đua NV Realtime</span>
+            </button>
+        </nav>
+
+        <div class="flex items-center gap-x-2 flex-shrink-0 ml-4">
+             <button class="action-btn action-btn--composer" title="Nhận xét">
+                <i data-feather="pen-tool"></i>
+                <span>Nhận xét</span>
+            </button>
+            <button class="action-btn action-btn--export" title="Xuất Excel">
+                <i data-feather="download"></i>
+                <span>Xuất Excel</span>
+            </button>
+            <button class="action-btn action-btn--capture" title="Chụp ảnh">
+                <i data-feather="camera"></i>
+                <span>Chụp màn hình</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="realtime-subtabs-content">
+        {#if activeSubTabId === 'subtab-realtime-sieu-thi'}
+            <RealtimeSummary {selectedWarehouse} />
+        
+        {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
+            <RealtimeEmployeeTab {selectedWarehouse} />
+            
+        {:else if activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien'}
+            <RealtimeEfficiencyTab {selectedWarehouse} />
+
+        {:else}
+            <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
+            </div>
+        {/if}
+    </div>
+
 </section>
