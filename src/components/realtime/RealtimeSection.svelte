@@ -1,12 +1,16 @@
 <script>
   import { onMount } from 'svelte';
-  import * as dataService from '../services/dataService.js';
-  import { realtimeYCXData, warehouseList } from '../stores.js';
   
-  // Import đúng tên file
-  import RealtimeSummary from './realtime/RealtimeSummary.svelte';
-  import RealtimeEmployeeTab from './realtime/RealtimeEmployeeTab.svelte';
-  import RealtimeEfficiencyTab from './realtime/RealtimeEfficiencyTab.svelte'; // Đã sửa tên đúng
+  // Từ src/components/realtime/ ra src/ cần ../../
+  import * as dataService from '../../services/dataService.js';
+  import { realtimeYCXData, warehouseList } from '../../stores.js';
+
+  // Import các Tab con
+  import SummaryTab from './summary/SummaryTab.svelte';
+  import EmployeeTab from './employee/EmployeeTab.svelte';
+  import EfficiencyTab from './efficiency/EfficiencyTab.svelte';
+  import CategoryTab from './category/CategoryTab.svelte';
+  import BrandTab from './brand/BrandTab.svelte';
 
   export let activeTab;
   
@@ -22,6 +26,7 @@
     await dataService.handleRealtimeFileInput(event);
   }
 
+  // Tự động chạy Feather Icons khi tab này được active
   $: if (activeTab === 'realtime-section') {
     Promise.resolve().then(() => {
       if (typeof window.feather !== 'undefined') window.feather.replace();
@@ -36,7 +41,7 @@
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Phân Tích Doanh Thu Realtime</h2>
                 <button class="page-header__help-btn" aria-label="Xem hướng dẫn" title="Xem hướng dẫn">
-                    <i data-feather="help-circle"></i>
+                   <i data-feather="help-circle"></i>
                 </button>
             </div>
 
@@ -69,14 +74,14 @@
                      <option value={kho}>{kho}</option>
                    {/each}
                 </select>
-             </div>
+              </div>
              
              <button class="toggle-filters-btn ml-auto md:ml-0">
                 <span class="text">Hiện bộ lọc nâng cao</span>
                 <i data-feather="chevron-down" class="icon"></i>
             </button>
         </div>
-        
+      
         <div id="realtime-filter-container" class="advanced-filters hidden"></div>
     </div>
 
@@ -90,7 +95,7 @@
                 <i data-feather="zap"></i>
                 <span>Siêu thị Realtime</span>
             </button>
-            
+              
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nhan-vien' ? 'active' : ''}" 
                 data-target="subtab-realtime-nhan-vien"
@@ -109,7 +114,7 @@
                 <span>Hiệu quả NV Realtime</span>
             </button>
 
-            <button 
+             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nganh-hang' ? 'active' : ''}" 
                 data-target="subtab-realtime-nganh-hang"
                 on:click={handleSubTabClick}
@@ -117,7 +122,8 @@
                 <i data-feather="layers"></i>
                 <span>Ngành hàng Realtime</span>
             </button>
-             <button 
+      
+            <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hang-ban' ? 'active' : ''}" 
                 data-target="subtab-realtime-hang-ban"
                 on:click={handleSubTabClick}
@@ -125,7 +131,8 @@
                 <i data-feather="tag"></i>
                 <span>DT Hãng Realtime</span>
             </button>
-             <button 
+      
+            <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-thi-dua' ? 'active' : ''}" 
                 data-target="subtab-realtime-thi-dua"
                 on:click={handleSubTabClick}
@@ -153,13 +160,19 @@
 
     <div id="realtime-subtabs-content">
         {#if activeSubTabId === 'subtab-realtime-sieu-thi'}
-            <RealtimeSummary {selectedWarehouse} />
+            <SummaryTab {selectedWarehouse} />
         
         {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
-            <RealtimeEmployeeTab {selectedWarehouse} />
+            <EmployeeTab {selectedWarehouse} />
             
         {:else if activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien'}
-            <RealtimeEfficiencyTab {selectedWarehouse} />
+            <EfficiencyTab {selectedWarehouse} />
+
+        {:else if activeSubTabId === 'subtab-realtime-nganh-hang'}
+            <CategoryTab {selectedWarehouse} />
+
+        {:else if activeSubTabId === 'subtab-realtime-hang-ban'}
+            <BrandTab {selectedWarehouse} />
 
         {:else}
             <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">

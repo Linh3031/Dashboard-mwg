@@ -1,21 +1,18 @@
 <script>
-  import { onMount, afterUpdate } from 'svelte';
+  import { afterUpdate } from 'svelte';
   import { sortState } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { settingsService } from '../../modules/settings.service.js';
-  
-  // Tạm thời vô hiệu hóa import modal
-  // import { modalManager } from '../../modules/ui-modal-manager.js';
-  // import { uiReports } from '../../ui-reports.js'; 
+  // FIX: Đường dẫn đúng
+  import SortableTh from '../common/SortableTh.svelte';
 
-  // --- 1. PROPS (Nhận từ LuykeSiuThi.svelte) ---
-  export let items = []; // Nhận mảng qdcItems
-  export let numDays = 1; // Nhận số ngày để tính SL TB/Ngày
+  export let items = [];
+  export let numDays = 1;
 
-  // --- 2. LOGIC SẮP XẾP (Chỉ phục vụ bảng này) ---
   const tableType = 'luyke_qdc';
 
-  function handleSort(sortKey) {
+  function handleSort(event) {
+    const sortKey = event.detail;
     const currentState = $sortState[tableType] || { key: 'dtqd', direction: 'desc' };
     let newDirection;
     if (currentState.key === sortKey) {
@@ -29,9 +26,12 @@
     });
   }
 
-  // Reactive Sorter
+  $: currentSortKey = $sortState[tableType]?.key || 'dtqd';
+  $: currentSortDirection = $sortState[tableType]?.direction || 'desc';
+
   $: sortedItems = [...items].sort((a, b) => {
-    const { key, direction } = $sortState[tableType] || { key: 'dtqd', direction: 'desc' };
+    const key = currentSortKey;
+    const direction = currentSortDirection;
     let valA, valB;
     if (key === 'name') {
       valA = a.name || ''; valB = b.name || '';
@@ -42,62 +42,45 @@
     return direction === 'asc' ? valA - valB : valB - valA;
   });
 
-  // --- 3. LOGIC MODAL CÀI ĐẶT ---
   function showQdcSettingsModal() {
-    console.warn("showQdcSettingsModal: Cần tái cấu trúc ui-reports.js (chứa renderSelectionModal)");
-    alert("Chức năng Cài đặt sẽ được kích hoạt sau khi tái cấu trúc ui-reports.js");
-    
-    // Logic đúng (sẽ dùng sau):
-    // const allItems = items.map(item => item.name).sort();
-    // const savedSettings = settingsService.loadQdcViewSettings(allItems);
-    // uiReports.renderSelectionModal(
-    //   'Tùy chỉnh hiển thị Nhóm hàng QĐC',
-    //   'qdcView',
-    //   allItems.map(item => ({ id: `lk-qdc-${item.replace(/[^a-zA-Z0-9]/g, '')}`, value: item, label: item, checked: savedSettings.includes(item) }))
-    // );
+    alert("Chức năng Cài đặt sẽ được kích hoạt sau.");
   }
-
-  // --- 4. FEATHER ICONS ---
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') {
-      feather.replace();
-    }
-  });
 </script>
 
-<div data-capture-group="1" class="bg-white rounded-xl shadow-md p-4 sm:p-6 border border-gray-200">
-  <div class="flex items-center justify-between">
-    <h3 class="text-xl font-bold text-gray-700 mb-4 uppercase">Nhóm hàng quy đổi cao</h3>
+<div data-capture-group="1" class="bg-white rounded-xl shadow-md p-4 sm:p-6 border border-gray-200 h-full flex flex-col">
+  <div class="flex items-center justify-between mb-4 border-b pb-2">
+    <h3 class="text-xl font-bold text-gray-700 uppercase">Nhóm hàng quy đổi cao</h3>
     <button on:click={showQdcSettingsModal} class="settings-trigger-btn" title="Tùy chỉnh hiển thị">
       <i data-feather="settings"></i>
     </button>
   </div>
-  <div id="luyke-qdc-content" class="overflow-x-auto">
-    <table class="min-w-full text-sm table-bordered table-striped" data-table-type={tableType}>
-      <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold">
-        <tr>
-          <th class="px-4 py-3 sortable text-left" data-sort="name" on:click={() => handleSort('name')}>Nhóm hàng</th>
-          <th class="px-4 py-3 sortable text-right" data-sort="sl" on:click={() => handleSort('sl')}>SL</th>
-          <th class="px-4 py-3 sortable text-right" data-sort="dtqd" on:click={() => handleSort('dtqd')}>DTQĐ</th>
-          <th class="px-4 py-3 sortable text-right" data-sort="avgSl" on:click={() => handleSort('avgSl')}>SL TB/Ngày</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#if sortedItems.length > 0}
-          {#each sortedItems as item (item.id)}
-            <tr class="hover:bg-gray-50">
-              <td class="px-4 py-2 font-semibold">{item.name}</td>
-              <td class="px-4 py-2 text-right font-bold">{formatters.formatNumber(item.sl)}</td> 
-              <td class="px-4 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(item.dtqd)}</td> 
-              <td class="px-4 py-2 text-right font-bold text-green-600">{formatters.formatNumber(item.sl / numDays, 1)}</td>
+
+  {#if sortedItems.length === 0}
+     <div class="flex-grow flex items-center justify-center">
+        <p class="text-gray-500 font-bold p-4 text-center">Không có dữ liệu QĐC.</p>
+     </div>
+  {:else}
+    <div id="luyke-qdc-content" class="overflow-x-auto flex-grow">
+        <table class="min-w-full text-sm table-bordered table-striped" data-table-type={tableType}>
+        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-10 shadow-sm">
+            <tr>
+            <SortableTh key="name" label="Nhóm hàng" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            <SortableTh key="sl" label="SL" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            <SortableTh key="dtqd" label="DTQĐ" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            <SortableTh key="avgSl" label="SL TB/Ngày" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
             </tr>
-          {/each}
-        {:else}
-          <tr>
-            <td colspan="4" class="p-4 text-center text-gray-500">Không có dữ liệu QĐC.</td>
-          </tr>
-        {/if}
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody>
+            {#each sortedItems as item (item.id)}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-2 font-semibold">{item.name}</td>
+                <td class="px-4 py-2 text-right font-bold">{formatters.formatNumber(item.sl)}</td> 
+                <td class="px-4 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(item.dtqd)}</td> 
+                <td class="px-4 py-2 text-right font-bold text-green-600">{formatters.formatNumber(item.sl / numDays, 1)}</td>
+            </tr>
+            {/each}
+        </tbody>
+        </table>
+    </div>
+  {/if}
 </div>

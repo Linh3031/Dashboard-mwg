@@ -1,5 +1,5 @@
 <script>
-  import { formatters } from '../../utils/formatters.js';
+  import { formatters } from '../../../utils/formatters.js';
 
   export let supermarketReport = {};
   export let goals = {};

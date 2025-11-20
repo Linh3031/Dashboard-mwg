@@ -1,12 +1,16 @@
 <script>
-  import { formatters } from '../../utils/formatters.js';
+  import { formatters } from '../../../utils/formatters.js';
+  // Import component mới
+  import SortableTh from '../../common/SortableTh.svelte';
+
   export let items = []; 
 
   // State sắp xếp
   let sortKey = 'label'; // Mặc định theo Tên chỉ số
   let sortDirection = 'asc';
 
-  function handleSort(key) {
+  function handleSort(event) {
+    const key = event.detail;
     if (sortKey === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
     } else {
@@ -41,15 +45,9 @@
       <table class="min-w-full text-sm table-bordered">
         <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold">
           <tr>
-            <th class="px-4 py-2 text-left cursor-pointer hover:bg-slate-300 transition select-none" on:click={() => handleSort('label')}>
-              Chỉ số {sortKey === 'label' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-            </th>
-            <th class="px-4 py-2 text-right cursor-pointer hover:bg-slate-300 transition select-none" on:click={() => handleSort('value')}>
-              Thực hiện {sortKey === 'value' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-            </th>
-            <th class="px-4 py-2 text-right cursor-pointer hover:bg-slate-300 transition select-none" on:click={() => handleSort('target')}>
-              Mục tiêu {sortKey === 'target' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-            </th>
+            <SortableTh key="label" label="Chỉ số" align="left" {sortKey} {sortDirection} on:sort={handleSort} />
+            <SortableTh key="value" label="Thực hiện" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
+            <SortableTh key="target" label="Mục tiêu" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
           </tr>
         </thead>
         <tbody>

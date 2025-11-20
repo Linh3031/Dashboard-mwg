@@ -1,12 +1,15 @@
 <script>
-  import { formatters } from '../../utils/formatters.js';
+  import { formatters } from '../../../utils/formatters.js';
+  import SortableTh from '../../common/SortableTh.svelte';
+
   export let items = [];
 
   // State sắp xếp
-  let sortKey = 'doanhThuQuyDoi'; // Mặc định theo DTQĐ cao nhất
+  let sortKey = 'doanhThuQuyDoi';
   let sortDirection = 'desc';
 
-  function handleSort(key) {
+  function handleSort(event) {
+    const key = event.detail;
     if (sortKey === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
     } else {
@@ -34,22 +37,17 @@
 
   {#if items.length === 0}
     <div class="flex-grow flex items-center justify-center">
-       <p class="text-gray-500 font-bold p-4 text-center">Vui lòng tải file realtime để xem chi tiết.</p>
+       <p class="text-gray-500 font-bold p-4 text-center">Không có đơn hàng nào chưa xuất trong ngày.</p>
     </div>
   {:else}
     <div class="overflow-x-auto flex-grow max-h-[400px]">
       <table class="min-w-full text-sm table-bordered table-striped">
-        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0">
+        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-10 shadow-sm">
           <tr>
-            <th class="px-4 py-2 text-left cursor-pointer hover:bg-slate-300 transition select-none" on:click={() => handleSort('nganhHang')}>
-              Ngành hàng {sortKey === 'nganhHang' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-            </th>
-            <th class="px-4 py-2 text-right cursor-pointer hover:bg-slate-300 transition select-none" on:click={() => handleSort('soLuong')}>
-              SL {sortKey === 'soLuong' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-            </th>
-            <th class="px-4 py-2 text-right cursor-pointer hover:bg-slate-300 transition select-none" on:click={() => handleSort('doanhThuQuyDoi')}>
-              DTQĐ (Tr) {sortKey === 'doanhThuQuyDoi' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-            </th>
+            <SortableTh key="nganhHang" label="Ngành hàng" {sortKey} {sortDirection} on:sort={handleSort} />
+            <SortableTh key="soLuong" label="SL" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
+            <SortableTh key="doanhThuThuc" label="DT Thực" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
+            <SortableTh key="doanhThuQuyDoi" label="DTQĐ (Tr)" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
           </tr>
         </thead>
         <tbody>
@@ -57,6 +55,7 @@
             <tr class="hover:bg-gray-50">
               <td class="px-4 py-2 font-medium">{item.nganhHang}</td>
               <td class="px-4 py-2 text-right font-bold">{formatters.formatNumber(item.soLuong)}</td>
+              <td class="px-4 py-2 text-right font-bold">{formatters.formatRevenue(item.doanhThuThuc)}</td>
               <td class="px-4 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
             </tr>
           {/each}

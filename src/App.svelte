@@ -7,7 +7,7 @@
   import DataSection from './components/DataSection.svelte';
   import HealthSection from './components/HealthSection.svelte';
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
-  import RealtimeSection from './components/RealtimeSection.svelte';
+  import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
 
   // Biến state chính
