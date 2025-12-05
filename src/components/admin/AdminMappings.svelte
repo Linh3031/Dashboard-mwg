@@ -1,4 +1,5 @@
 <script>
+    import { onMount, afterUpdate } from 'svelte';
     import { competitionNameMappings } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
     import { ui } from '../../ui.js';
@@ -6,66 +7,98 @@
     let mappingSearch = '';
     let debounceTimer;
     
-    // Lọc danh sách mapping theo tìm kiếm
-    $: filteredMappings = Object.entries($competitionNameMappings).filter(([original, short]) => {
-        return original.toLowerCase().includes(mappingSearch.toLowerCase()) || 
-               (short && short.toLowerCase().includes(mappingSearch.toLowerCase()));
+    // Subscribe store
+    $: mappings = $competitionNameMappings || {};
+
+    $: filteredMappings = Object.entries(mappings).filter(([original, short]) => {
+        const term = mappingSearch.toLowerCase();
+        return original.toLowerCase().includes(term) || (short && short.toLowerCase().includes(term));
     });
 
     function handleMappingInput(originalName, event) {
         const newShortName = event.target.value;
-        
-        // 1. Cập nhật Store ngay lập tức để UI phản hồi nhanh
         competitionNameMappings.update(current => {
             return { ...current, [originalName]: newShortName };
         });
-
-        // 2. Debounce: Đợi 1s sau khi ngừng gõ mới lưu xuống Cloud
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            console.log("Auto-saving mappings to Firestore...");
             adminService.saveCompetitionNameMappings($competitionNameMappings);
-            ui.showNotification('Đã tự động lưu tên rút gọn!', 'success');
         }, 1000);
     }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<details class="declaration-group"> 
-    <summary>Khai báo Tên Rút Gọn (Thi Đua NV)</summary> 
-    <div class="declaration-content"> 
-        <p class="text-sm text-gray-600 mt-2 mb-4">Dữ liệu dán ở tab "Cập nhật dữ liệu" sẽ tự động trích xuất tên chương trình thi đua gốc vào đây. Hãy nhập "Tên Rút Gọn" để bảng biểu hiển thị gọn gàng hơn. Thay đổi sẽ được <strong>tự động lưu</strong>.</p>
-        <input type="text" class="w-full p-2 border rounded-lg mb-4 text-sm" placeholder="Tìm kiếm tên thi đua..." bind:value={mappingSearch}>
-        <div class="max-h-96 overflow-y-auto pr-2 border rounded-lg"> 
-            {#if filteredMappings.length === 0}
-                    <p class="text-gray-500 italic p-4 text-center">Chưa có dữ liệu hoặc không tìm thấy.</p>
-            {:else}
-                <table class="min-w-full text-sm table-bordered bg-white">
-                    <thead class="text-xs text-slate-800 uppercase bg-slate-100 font-bold sticky top-0 z-10">
-                        <tr>
-                            <th class="px-2 py-2 text-center w-12">STT</th>
-                            <th class="px-4 py-2 text-left w-1/2">Tên Gốc (Từ dữ liệu dán)</th>
-                            <th class="px-4 py-2 text-left w-1/2">Tên Rút Gọn (Nhập để thay thế)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each filteredMappings as [originalName, shortName], index}
-                            <tr class="border-t hover:bg-gray-50">
-                                <td class="px-2 py-2 text-center font-medium text-gray-700 align-top">{index + 1}</td>
-                                <td class="px-4 py-2 text-gray-600 align-top text-xs">{originalName}</td>
-                                <td class="px-4 py-2 align-top">
-                                    <input 
-                                        type="text" 
-                                        class="w-full p-1 border rounded-md text-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        value={shortName || ''} 
-                                        placeholder="Nhập tên rút gọn..."
-                                        on:input={(e) => handleMappingInput(originalName, e)}
-                                    >
-                                </td>
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <details class="group"> 
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-teal-50 rounded-lg text-teal-600">
+                    <i data-feather="git-merge"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-700 text-lg">Tên Rút Gọn Thi Đua</h3>
+                    <p class="text-xs text-slate-500">Ánh xạ tên chương trình dài dòng thành tên ngắn gọn</p>
+                </div>
+            </div>
+            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                <i data-feather="chevron-down"></i>
+            </span>
+        </summary> 
+        
+        <div class="p-6 border-t border-slate-100 bg-slate-50/50"> 
+            <div class="flex items-center gap-3 mb-4">
+                <div class="relative flex-grow">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <i data-feather="search" class="w-4 h-4"></i>
+                    </span>
+                    <input 
+                        type="text" 
+                        class="w-full pl-10 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none bg-white" 
+                        placeholder="Tìm kiếm tên gốc hoặc tên rút gọn..." 
+                        bind:value={mappingSearch}
+                    >
+                </div>
+                <div class="text-xs text-slate-500 italic bg-white px-3 py-2 rounded border border-slate-200">
+                    <i data-feather="save" class="w-3 h-3 inline mr-1"></i> Tự động lưu
+                </div>
+            </div>
+
+            <div class="max-h-96 overflow-y-auto border border-slate-200 rounded-lg bg-white shadow-inner"> 
+                {#if filteredMappings.length === 0}
+                    <div class="flex flex-col items-center justify-center p-8 text-slate-400">
+                        <i data-feather="inbox" class="w-8 h-8 mb-2 opacity-50"></i>
+                        <p class="text-sm">Chưa có dữ liệu thi đua hoặc không tìm thấy kết quả.</p>
+                    </div>
+                {:else}
+                    <table class="min-w-full text-sm border-collapse">
+                        <thead class="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th class="px-4 py-3 border-b text-center w-14 font-semibold">STT</th>
+                                <th class="px-4 py-3 border-b text-left w-1/2 font-semibold">Tên Gốc (Từ dữ liệu)</th>
+                                <th class="px-4 py-3 border-b text-left w-1/2 font-semibold">Tên Rút Gọn (Hiển thị)</th>
                             </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            {/if}
-        </div> 
-    </div>
-</details>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            {#each filteredMappings as [originalName, shortName], index}
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-4 py-3 text-center text-slate-400 text-xs">{index + 1}</td>
+                                    <td class="px-4 py-3 text-slate-700 text-xs leading-relaxed font-medium break-words">{originalName}</td>
+                                    <td class="px-4 py-2">
+                                        <input 
+                                            type="text" 
+                                            class="w-full p-2 border border-slate-200 rounded-md text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 focus:bg-white transition-all" 
+                                            value={shortName || ''} 
+                                            placeholder="Nhập tên hiển thị..."
+                                            on:input={(e) => handleMappingInput(originalName, e)}
+                                        >
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                {/if}
+            </div> 
+        </div>
+    </details>
+</div>

@@ -11,15 +11,17 @@ import {
     thuongERPDataThangTruoc,
     competitionData,
     pastedThiDuaReportData,
-    realtimeYCXData 
+    realtimeYCXData,
+    categoryStructure, // Store mới
+    brandList,       // Store mới
+    specialProductList // Store mới
 } from '../stores.js';
 import { dataProcessing } from './dataProcessing.js';
 import { storage } from '../modules/storage.js';
+import { adminService } from './admin.service.js'; // Import Admin Service
 
 const LOCAL_DSNV_FILENAME_KEY = '_localDsnvFilename';
-const RAW_PASTE_THIDUANV_KEY = 'raw_paste_thiduanv';
 
-// === BƯỚC 1: TẠO BẢNG ÁNH XẠ (MAPPING) ===
 const FILE_MAPPING = {
     'saved_danhsachnv': { store: danhSachNhanVien, normalizeType: 'danhsachnv' },
     'saved_giocong': { store: rawGioCongData, normalizeType: 'giocong' },
@@ -49,9 +51,7 @@ const PASTE_MAPPING = {
     }
 };
 
-/**
- * Đọc file Excel/CSV bằng FileReader và XLSX.
- */
+// Helper đọc file
 async function _handleFileRead(file) {
     return new Promise((resolve, reject) => {
         if (!file) return reject(new Error("No file provided."));
@@ -68,175 +68,153 @@ async function _handleFileRead(file) {
     });
 }
 
-// === BƯỚC 2: TẠO HÀM XỬ LÝ FILE CHUNG ===
+// ... (Giữ nguyên handleFileChange, handlePasteChange, loadAllFromCache) ...
 export async function handleFileChange(file, saveKey) {
     const mapping = FILE_MAPPING[saveKey];
-    if (!mapping) {
-        return { success: false, message: `❌ Lỗi: Không tìm thấy mapping cho key ${saveKey}` };
-    }
+    if (!mapping) return { success: false, message: `❌ Lỗi: Không tìm thấy mapping cho key ${saveKey}` };
 
     try {
         const workbook = await _handleFileRead(file);
         const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
-        
         const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
         
         if (success) {
             mapping.store.set(normalizedData);
             try {
                 await storage.setItem(saveKey, normalizedData);
-                console.log(`[dataService] Đã lưu ${saveKey} vào IndexedDB.`);
-                if (saveKey === 'saved_danhsachnv') {
-                    localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
-                }
-            } catch (err) {
-                console.error(`Lỗi lưu ${saveKey} vào IndexedDB:`, err);
-            }
-
-            let message = `✅ Tải thành công ${normalizedData.length} dòng.`;
-            if (saveKey === 'saved_danhsachnv') {
-                message = `✅ Tải thành công ${normalizedData.length} nhân viên.`;
-            }
-            return { success: true, count: normalizedData.length, message: message };
+                if (saveKey === 'saved_danhsachnv') localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
+            } catch (err) { console.error(`Lỗi lưu ${saveKey}:`, err); }
+            return { success: true, count: normalizedData.length, message: `✅ Tải thành công ${normalizedData.length} dòng.` };
         } else {
-            const errorMessage = `Lỗi: File thiếu cột: ${missingColumns.join(', ')}`;
-            return { success: false, message: `❌ ${errorMessage}` };
+            return { success: false, message: `❌ Lỗi: File thiếu cột: ${missingColumns.join(', ')}` };
         }
-    } catch (err) {
-        console.error(`Lỗi xử lý file ${saveKey}:`, err);
-        return { success: false, message: `❌ Lỗi: ${err.message}` };
-    }
+    } catch (err) { return { success: false, message: `❌ Lỗi: ${err.message}` }; }
 }
 
-// === BƯỚC 3: TẠO HÀM XỬ LÝ PASTE CHUNG ===
 export function handlePasteChange(pastedText, saveKeyPaste, saveKeyRaw, saveKeyProcessed) {
-    const primaryKey = saveKeyProcessed || saveKeyPaste;
-    const mapping = PASTE_MAPPING[primaryKey];
-    
-    if (!mapping) {
-        return { success: false, message: `❌ Lỗi: Không tìm thấy mapping cho key ${primaryKey}` };
-    }
-
-    try {
-        let processedData;
-        let message = "";
-
-        if (mapping.isThiDuaNV) {
-            const parsedData = dataProcessing.parsePastedThiDuaTableData(pastedText);
-            if (!parsedData.success) {
-                throw new Error(parsedData.error || "Lỗi phân tích cú pháp bảng.");
-            }
-            dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
-            const $competitionData = get(competitionData);
-            processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-            mapping.store.set(processedData);
-            
-            localStorage.setItem(saveKeyRaw, pastedText);
-            localStorage.setItem(saveKeyProcessed, JSON.stringify(processedData));
-            message = `✅ Đã xử lý ${processedData.length} nhân viên.`;
-
-        } else if (mapping.processFunc) {
-            processedData = mapping.processFunc(pastedText);
-            mapping.store.set(processedData);
-            localStorage.setItem(saveKeyPaste, pastedText);
-
-            if (primaryKey === 'daily_paste_luyke') {
-                message = `✅ Đã xử lý. Tìm thấy ${processedData.length} CT thi đua.`;
-            } else {
-                message = `✅ Đã xử lý ${processedData.length} nhân viên.`;
-            }
-        }
-        
-        return { success: true, message: message };
-    } catch (err) {
-        console.error(`Lỗi xử lý dán cho ${primaryKey}:`, err);
-        return { success: false, message: `❌ Lỗi: ${err.message}` };
-    }
+     const primaryKey = saveKeyProcessed || saveKeyPaste;
+     const mapping = PASTE_MAPPING[primaryKey];
+     if (!mapping) return { success: false, message: `❌ Lỗi: Không tìm thấy mapping` };
+     
+     try {
+         let processedData;
+         let message = "";
+         if (mapping.isThiDuaNV) {
+             const parsedData = dataProcessing.parsePastedThiDuaTableData(pastedText);
+             if (!parsedData.success) throw new Error(parsedData.error || "Lỗi phân tích cú pháp.");
+             dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
+             const $competitionData = get(competitionData);
+             processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
+             mapping.store.set(processedData);
+             localStorage.setItem(saveKeyRaw, pastedText);
+             localStorage.setItem(saveKeyProcessed, JSON.stringify(processedData));
+             message = `✅ Đã xử lý ${processedData.length} nhân viên.`;
+         } else if (mapping.processFunc) {
+             processedData = mapping.processFunc(pastedText);
+             mapping.store.set(processedData);
+             localStorage.setItem(saveKeyPaste, pastedText);
+             message = `✅ Đã xử lý.`;
+         }
+         return { success: true, message: message };
+     } catch (err) { return { success: false, message: `❌ Lỗi: ${err.message}` }; }
 }
 
-// === BƯỚC 4: HÀM TẢI CACHE ===
 export async function loadAllFromCache() {
-    console.log("[dataService] Bắt đầu tải dữ liệu từ cache...");
-    try {
-        await storage.openDB();
-    } catch (err) {
-        console.error("Lỗi nghiêm trọng: Không thể mở IndexedDB.", err);
-    }
-
+    try { await storage.openDB(); } catch (err) { console.error("Lỗi DB:", err); }
     try {
         for (const [saveKey, mapping] of Object.entries(FILE_MAPPING)) {
             const data = await storage.getItem(saveKey);
-            if (data && data.length > 0) {
-                mapping.store.set(data);
-                console.log(`[Cache] Đã tải ${data.length} dòng cho ${saveKey}.`);
-            }
+            if (data && data.length > 0) mapping.store.set(data);
         }
-    } catch (err) {
-        console.error("Lỗi khi tải dữ liệu file từ IndexedDB:", err);
-    }
-
+    } catch (err) { console.error("Lỗi tải cache file:", err); }
+    // Load paste data...
     try {
         const luykeText = localStorage.getItem('daily_paste_luyke');
         if (luykeText) {
             dataProcessing.parseLuyKePastedData(luykeText);
             dataProcessing.parseCompetitionDataFromLuyKe(luykeText);
         }
-
         const thiduaProcessed = localStorage.getItem('daily_paste_thiduanv');
-        if (thiduaProcessed) {
-            pastedThiDuaReportData.set(JSON.parse(thiduaProcessed));
-        }
-
+        if (thiduaProcessed) pastedThiDuaReportData.set(JSON.parse(thiduaProcessed));
         const erpText = localStorage.getItem('daily_paste_thuongerp');
-        if (erpText) {
-            thuongERPData.set(dataProcessing.processThuongERP(erpText));
-        }
+        if (erpText) thuongERPData.set(dataProcessing.processThuongERP(erpText));
         const erpTTText = localStorage.getItem('saved_thuongerp_thangtruoc');
-        if (erpTTText) {
-            thuongERPDataThangTruoc.set(dataProcessing.processThuongERP(erpTTText));
-        }
-
-        console.log("[dataService] Đã tải xong dữ liệu từ cache.");
-    } catch (err) {
-        console.error("Lỗi khi tải dữ liệu paste từ LocalStorage:", err);
-    }
+        if (erpTTText) thuongERPDataThangTruoc.set(dataProcessing.processThuongERP(erpTTText));
+    } catch (err) { console.error("Lỗi tải cache paste:", err); }
 }
 
-export async function handleTemplateDownload() {
-    console.warn("handleTemplateDownload: Chưa kết nối Firebase Storage.");
-    alert("Chức năng tải file mẫu sẽ được kết nối sau.");
-}
+// --- HÀM MỚI: XỬ LÝ UPLOAD ADMIN ---
 
 /**
- * Xử lý tải file Realtime (Mới cho Svelte)
- * Quy trình: Đọc file -> Normalize -> Update Store
- * Đã loại bỏ alert() để không hiện popup.
+ * Xử lý tải file Cấu trúc Ngành hàng.
  */
-export async function handleRealtimeFileInput(event) {
+export async function handleCategoryFile(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    console.log("[dataService] Đang xử lý file Realtime:", file.name);
+    const workbook = await _handleFileRead(file);
+    const categorySheet = workbook.Sheets[workbook.SheetNames[0]];
+    const categoryRawData = XLSX.utils.sheet_to_json(categorySheet, { raw: false, defval: null });
+    const categoryResult = dataProcessing.normalizeCategoryStructureData(categoryRawData);
 
+    let brandResult = { success: true, normalizedData: [] };
+    const brandSheetName = workbook.SheetNames.find(name => name.toLowerCase().trim() === 'hãng');
+    if (brandSheetName) {
+        const brandSheet = workbook.Sheets[brandSheetName];
+        const brandRawData = XLSX.utils.sheet_to_json(brandSheet, { raw: false, defval: null });
+        brandResult = dataProcessing.normalizeBrandData(brandRawData);
+    }
+
+    if(categoryResult.success) {
+        categoryStructure.set(categoryResult.normalizedData);
+        brandList.set(brandResult.normalizedData);
+    } else {
+        throw new Error(`Lỗi xử lý file khai báo: ${categoryResult.error}`);
+    }
+    event.target.value = ''; // Reset input
+}
+
+/**
+ * Xử lý tải file Sản Phẩm Đặc Quyền (SPĐQ).
+ */
+export async function handleSpecialProductFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const workbook = await _handleFileRead(file);
+    const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
+    
+    const result = dataProcessing.normalizeSpecialProductData(rawData);
+
+    if (result.success) {
+        specialProductList.set(result.normalizedData);
+        // Gọi service để lưu ngay
+        await adminService.saveSpecialProductList(result.normalizedData);
+    } else {
+        throw new Error(`Lỗi xử lý file SPĐQ: ${result.error}`);
+    }
+    event.target.value = ''; // Reset input
+}
+
+export async function handleTemplateDownload() {
+    alert("Chức năng tải file mẫu đang được cập nhật link.");
+}
+
+export async function handleRealtimeFileInput(event) {
+    const file = event.target.files[0];
+    if (!file) return;
     try {
-        // 1. Đọc file Excel thành JSON thô
         const workbook = await _handleFileRead(file);
         const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
-
-        // 2. Chuẩn hóa dữ liệu
         const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
-
         if (success) {
-            // 3. Cập nhật vào Svelte Store -> UI sẽ tự động render ngay lập tức
             realtimeYCXData.set(normalizedData);
-            console.log(`[dataService] Đã cập nhật realtimeYCXData: ${normalizedData.length} dòng.`);
         } else {
-            console.error(`[dataService] File lỗi! Thiếu cột: ${missingColumns.join(', ')}`);
+            console.error(`File lỗi! Thiếu cột: ${missingColumns.join(', ')}`);
         }
     } catch (e) {
         console.error("Lỗi xử lý file Realtime:", e);
     } finally {
-        // Reset input để chọn lại cùng file được
         event.target.value = '';
     }
 }

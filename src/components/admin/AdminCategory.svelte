@@ -2,24 +2,20 @@
     import { onMount } from 'svelte';
     import { categoryStructure, brandList } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
-    // SỬA LỖI: Import toàn bộ module thay vì named export
+    // Import toàn bộ module dataService để sử dụng các hàm handle
     import * as dataService from '../../services/dataService.js';
 
     let isLoading = false;
     let showRawData = false;
 
-    // Subscribe to stores
-    let categories = [];
-    let brands = [];
-
-    // Auto-unsubscribe is handled by Svelte when using $store in template, 
-    // but here we act on data manually if needed.
+    // Reactive variables từ store
     $: categories = $categoryStructure || [];
     $: brands = $brandList || [];
 
     async function handleCategoryUpload(event) {
         isLoading = true;
         try {
+            // Gọi hàm xử lý file từ service (đã được refactor ở các bước trước)
             await dataService.handleCategoryFile(event);
         } catch (error) {
             alert(error.message);
@@ -39,7 +35,8 @@
                 categories: categories,
                 brands: brands
             });
-            alert("Đã lưu cấu trúc ngành hàng lên Cloud thành công!");
+            // Alert tạm thời, sau này sẽ dùng notification store
+            // alert("Đã lưu cấu trúc ngành hàng lên Cloud thành công!"); 
         } catch (error) {
             console.error(error);
             alert("Lỗi khi lưu dữ liệu: " + error.message);
@@ -140,9 +137,9 @@
                         <tbody class="divide-y divide-slate-200">
                             {#each categories as item}
                                 <tr class="bg-white hover:bg-slate-50">
-                                    <td class="px-4 py-2 font-mono text-xs">{item.id}</td>
-                                    <td class="px-4 py-2 font-medium text-slate-800">{item.name}</td>
-                                    <td class="px-4 py-2 text-slate-600">{item.industry || '-'}</td>
+                                    <td class="px-4 py-2 font-mono text-xs">{item.id || '-'}</td>
+                                    <td class="px-4 py-2 font-medium text-slate-800">{item.nhomHang || item.name}</td>
+                                    <td class="px-4 py-2 text-slate-600">{item.nganhHang || '-'}</td>
                                 </tr>
                             {/each}
                         </tbody>
