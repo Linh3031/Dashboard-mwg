@@ -1,8 +1,7 @@
 // src/services/analytics.service.js
-// Version 1.0 - Service thống kê người dùng
 import { get } from 'svelte/store';
 import { collection, getDocs, doc, setDoc, serverTimestamp, increment } from "firebase/firestore";
-import { firebaseStore, isAdmin } from '../stores.js';
+import { firebaseStore, isAdmin, currentUser } from '../stores.js';
 
 const getDB = () => {
     const fb = get(firebaseStore);
@@ -10,9 +9,6 @@ const getDB = () => {
 };
 
 export const analyticsService = {
-    /**
-     * Lấy danh sách tất cả người dùng từ Firestore
-     */
     async getAllUsers() {
         const db = getDB();
         if (!db || !get(isAdmin)) return [];
@@ -31,7 +27,6 @@ export const analyticsService = {
                     actionsTaken: data.actionsTaken || 0
                 });
             });
-            
             return users;
         } catch (error) {
             console.error("Lỗi khi lấy danh sách user:", error);
@@ -39,9 +34,6 @@ export const analyticsService = {
         }
     },
 
-    /**
-     * Ghi nhận người dùng truy cập (Upsert)
-     */
     async upsertUserRecord(email) {
         const db = getDB();
         if (!db || !email) return;
@@ -55,6 +47,33 @@ export const analyticsService = {
             }, { merge: true });
         } catch (error) {
             console.error("Lỗi cập nhật user record:", error);
+        }
+    },
+
+    async incrementCounter(fieldName, email = null) {
+        const db = getDB();
+        if (!db || !fieldName) return;
+
+        // Nếu email không được truyền vào, thử lấy từ store
+        if (!email) {
+            const user = get(currentUser);
+            if (user) email = user.email;
+        }
+
+        let docRef;
+        const dataToUpdate = { [fieldName]: increment(1) };
+
+        if (fieldName === 'actionsTaken' && email) {
+            docRef = doc(db, "users", email);
+        } else {
+            // Fallback: tăng global stats nếu không phải actionsTaken hoặc không có user
+            docRef = doc(db, "analytics", "site_stats");
+        }
+
+        try {
+            await setDoc(docRef, dataToUpdate, { merge: true });
+        } catch (error) {
+            console.error(`Lỗi tăng counter ${fieldName}:`, error);
         }
     }
 };

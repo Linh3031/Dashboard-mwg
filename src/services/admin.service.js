@@ -18,7 +18,6 @@ const notify = (msg, type='info') => {
 };
 
 export const adminService = {
-    // ... (Giữ nguyên saveHelpContent) ...
     async saveHelpContent(contents) {
         const db = getDB();
         if (!db || !get(isAdmin)) return;
@@ -75,11 +74,9 @@ export const adminService = {
     async loadDeclarationsFromFirestore() {
         const db = getDB();
         if (!db) return {}; 
-
         try {
             const declarationIds = ['hinhThucXuat', 'hinhThucXuatGop', 'heSoQuyDoi'];
             const declarations = {};
-            
             await Promise.all(declarationIds.map(async (id) => {
                 const docRef = doc(db, "declarations", id);
                 const docSnap = await getDoc(docRef);
@@ -108,6 +105,30 @@ export const adminService = {
         }
     },
 
+    async loadCompetitionNameMappings() {
+        const db = getDB();
+        if (!db) return {};
+        try {
+            const docRef = doc(db, "declarations", "competitionNameMappings");
+            const docSnap = await getDoc(docRef);
+            return docSnap.exists() ? (docSnap.data().mappings || {}) : {};
+        } catch (error) {
+            console.error("Error loading mappings:", error);
+            return {};
+        }
+    },
+
+    async saveCompetitionNameMappings(mappings) {
+        const db = getDB();
+        if (!db || !get(isAdmin)) return;
+        try {
+            const docRef = doc(db, "declarations", "competitionNameMappings");
+            await setDoc(docRef, { mappings: mappings });
+        } catch (error) {
+            console.error("Error saving mappings:", error);
+        }
+    },
+
     async saveSpecialProductList(products) {
         const db = getDB();
         if (!db || !get(isAdmin)) return;
@@ -120,4 +141,46 @@ export const adminService = {
             notify('Lỗi khi lưu danh sách SPĐQ.', 'error');
         }
     },
+
+    async loadSpecialProductList() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "specialProductList");
+            const docSnap = await getDoc(docRef);
+            return docSnap.exists() ? (docSnap.data().products || []) : [];
+        } catch (error) {
+            console.error("Error loading SPĐQ:", error);
+            return [];
+        }
+    },
+
+    async loadGlobalSpecialPrograms() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "globalSpecialPrograms");
+            const docSnap = await getDoc(docRef);
+            return docSnap.exists() ? (docSnap.data().programs || []) : [];
+        } catch (error) { return []; }
+    },
+
+    async loadGlobalCompetitionConfigs() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "globalCompetitionConfigs");
+            const docSnap = await getDoc(docRef);
+            return docSnap.exists() ? (docSnap.data().configs || []) : [];
+        } catch (error) { return []; }
+    },
+
+    async saveGlobalCompetitionConfigs(configs) {
+        const db = getDB();
+        if (!db || !get(isAdmin)) return;
+        try {
+            const docRef = doc(db, "declarations", "globalCompetitionConfigs");
+            await setDoc(docRef, { configs: configs });
+        } catch (error) { console.error("Error saving global comps:", error); }
+    }
 };
