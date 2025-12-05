@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   
-  // Từ src/components/realtime/ ra src/ cần ../../
   import * as dataService from '../../services/dataService.js';
   import { realtimeYCXData, warehouseList } from '../../stores.js';
 
@@ -11,9 +10,10 @@
   import EfficiencyTab from './efficiency/EfficiencyTab.svelte';
   import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
+  // [ADD NEW] Import tab mới
+  import CompetitionTab from './competition/CompetitionTab.svelte';
 
   export let activeTab;
-  
   let activeSubTabId = 'subtab-realtime-sieu-thi'; 
   let selectedWarehouse = '';
 
@@ -47,7 +47,7 @@
 
             <div class="flex-shrink-0 flex items-center gap-x-4 ml-auto">
                 <label for="realtime-file-input" class="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap flex items-center gap-2 shadow-sm">
-                    <i data-feather="upload" class="w-4 h-4"></i>
+                     <i data-feather="upload" class="w-4 h-4"></i>
                     <span>Thêm file Realtime</span>
                 </label>
                 <input 
@@ -57,24 +57,24 @@
                     accept=".xlsx, .xls, .csv"
                     on:change={handleFileUpload}
                 >
-                <a href="https://report.mwgroup.vn/home/dashboard/077" target="_blank" class="text-blue-600 hover:underline whitespace-nowrap text-sm font-medium">Lấy file tại đây</a>
+                 <a href="https://report.mwgroup.vn/home/dashboard/077" target="_blank" class="text-blue-600 hover:underline whitespace-nowrap text-sm font-medium">Lấy file tại đây</a>
             </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-4 mb-4">
              <div class="flex items-center gap-2">
                 <label for="realtime-filter-warehouse" class="text-sm font-semibold text-gray-700">Kho:</label>
-                <select 
+                 <select 
                    id="realtime-filter-warehouse" 
                    class="p-2 border rounded-lg text-sm shadow-sm bg-white min-w-[150px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
                    bind:value={selectedWarehouse}
                  >
-                   <option value="">Toàn bộ</option>
+                    <option value="">Toàn bộ</option>
                    {#each $warehouseList as kho}
                      <option value={kho}>{kho}</option>
                    {/each}
                 </select>
-              </div>
+               </div>
              
              <button class="toggle-filters-btn ml-auto md:ml-0">
                 <span class="text">Hiện bộ lọc nâng cao</span>
@@ -82,7 +82,7 @@
             </button>
         </div>
       
-        <div id="realtime-filter-container" class="advanced-filters hidden"></div>
+         <div id="realtime-filter-container" class="advanced-filters hidden"></div>
     </div>
 
     <div class="flex justify-between items-center mb-8 overflow-x-auto pb-2">
@@ -95,7 +95,7 @@
                 <i data-feather="zap"></i>
                 <span>Siêu thị Realtime</span>
             </button>
-              
+               
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nhan-vien' ? 'active' : ''}" 
                 data-target="subtab-realtime-nhan-vien"
@@ -105,7 +105,7 @@
                 <span>DT NV Realtime</span>
             </button>
 
-            <button 
+             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien' ? 'active' : ''}" 
                 data-target="subtab-realtime-hieu-qua-nhan-vien"
                 on:click={handleSubTabClick}
@@ -114,7 +114,7 @@
                 <span>Hiệu quả NV Realtime</span>
             </button>
 
-             <button 
+              <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nganh-hang' ? 'active' : ''}" 
                 data-target="subtab-realtime-nganh-hang"
                 on:click={handleSubTabClick}
@@ -122,7 +122,7 @@
                 <i data-feather="layers"></i>
                 <span>Ngành hàng Realtime</span>
             </button>
-      
+
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hang-ban' ? 'active' : ''}" 
                 data-target="subtab-realtime-hang-ban"
@@ -131,7 +131,7 @@
                 <i data-feather="tag"></i>
                 <span>DT Hãng Realtime</span>
             </button>
-      
+
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-thi-dua' ? 'active' : ''}" 
                 data-target="subtab-realtime-thi-dua"
@@ -140,7 +140,7 @@
                 <i data-feather="award"></i>
                 <span>Thi đua NV Realtime</span>
             </button>
-        </nav>
+           </nav>
 
         <div class="flex items-center gap-x-2 flex-shrink-0 ml-4">
              <button class="action-btn action-btn--composer" title="Nhận xét">
@@ -148,13 +148,13 @@
                 <span>Nhận xét</span>
             </button>
             <button class="action-btn action-btn--export" title="Xuất Excel">
-                <i data-feather="download"></i>
+                 <i data-feather="download"></i>
                 <span>Xuất Excel</span>
             </button>
             <button class="action-btn action-btn--capture" title="Chụp ảnh">
                 <i data-feather="camera"></i>
                 <span>Chụp màn hình</span>
-            </button>
+             </button>
         </div>
     </div>
 
@@ -174,9 +174,12 @@
         {:else if activeSubTabId === 'subtab-realtime-hang-ban'}
             <BrandTab {selectedWarehouse} />
 
+        {:else if activeSubTabId === 'subtab-realtime-thi-dua'}
+            <CompetitionTab {selectedWarehouse} />
+            
         {:else}
             <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
+                 <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
             </div>
         {/if}
     </div>

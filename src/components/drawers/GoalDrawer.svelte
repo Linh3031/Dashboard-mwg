@@ -1,31 +1,44 @@
 <script>
+    import { onMount, afterUpdate } from 'svelte';
     import { 
         drawerState, 
         warehouseList, 
         luykeGoalSettings, 
         realtimeGoalSettings,
-        modalState // Thêm modalState để mở modal
+        modalState,
+        localCompetitionConfigs, 
+        selectedWarehouse 
     } from '../../stores.js';
     import { settingsService } from '../../modules/settings.service.js';
+    import { datasyncService } from '../../services/datasync.service.js';
     
     let activeTab = 'monthly';
-    let selectedWarehouse = '';
+    let localSelectedWarehouse = ''; 
+    
     let currentLuykeGoals = {};
     let currentRealtimeGoals = { goals: {}, timing: {} };
 
     $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
-    $: if (isOpen && !selectedWarehouse && $warehouseList.length > 0) {
-        selectedWarehouse = $warehouseList[0];
+
+    // Tự động chọn kho đầu tiên
+    $: if (isOpen && !localSelectedWarehouse && $warehouseList.length > 0) {
+        localSelectedWarehouse = $warehouseList[0];
     }
 
-    $: if (selectedWarehouse) {
-        currentLuykeGoals = { ...($luykeGoalSettings[selectedWarehouse] || {}) };
-        const rtSettings = $realtimeGoalSettings[selectedWarehouse] || { goals: {}, timing: {} };
+    // Load settings
+    $: if (localSelectedWarehouse) {
+        currentLuykeGoals = { ...($luykeGoalSettings[localSelectedWarehouse] || {}) };
+        const rtSettings = $realtimeGoalSettings[localSelectedWarehouse] || { goals: {}, timing: {} };
         currentRealtimeGoals = {
             goals: { ...rtSettings.goals },
             timing: { ...rtSettings.timing }
         };
     }
+    
+    // Cập nhật icon feather sau khi render danh sách
+    afterUpdate(() => {
+        if (typeof feather !== 'undefined') feather.replace();
+    });
 
     function close() {
         drawerState.update(s => ({ ...s, activeDrawer: null }));
@@ -36,20 +49,48 @@
     }
 
     function saveLuyke() {
-        if (!selectedWarehouse) return;
-        settingsService.saveLuykeGoalForWarehouse(selectedWarehouse, currentLuykeGoals);
+        if (!localSelectedWarehouse) return;
+        settingsService.saveLuykeGoalForWarehouse(localSelectedWarehouse, currentLuykeGoals);
     }
 
     function saveRealtime() {
-        if (!selectedWarehouse) return;
-        settingsService.saveRealtimeGoalForWarehouse(selectedWarehouse, currentRealtimeGoals);
+        if (!localSelectedWarehouse) return;
+        settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
-    // Hàm mở Modal Quản lý Thi đua User
+    // Mở modal tạo mới
     function openCompetitionManager() {
-        // Đóng drawer trước để tránh che khuất (tuỳ chọn)
-        // close(); 
+        if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
+        // Reset editing index bằng cách truyền payload null hoặc xử lý bên modal
+        // Ở đây ta mở modal, modal sẽ tự reset về state 'menu'
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
+    }
+
+    // Mở modal để sửa (Lưu ý: Cần update logic Modal để nhận index này, tạm thời mở modal trước)
+    function editCompetition(index) {
+        if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
+        // Truyền index cần sửa qua modalState (cần update UserCompetitionModal để đọc cái này nếu muốn flow hoàn hảo)
+        // Hiện tại mở modal lên để người dùng thấy danh sách bên trong
+        modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
+    }
+
+    // Hàm xóa nhanh
+    async function deleteCompetition(index) {
+        if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
+        
+        let newConfigs = [...$localCompetitionConfigs];
+        newConfigs.splice(index, 1);
+        
+        localCompetitionConfigs.set(newConfigs);
+
+        if (localSelectedWarehouse) {
+            try {
+                await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs);
+            } catch(e) {
+                console.error(e);
+                alert("Lỗi khi xóa: " + e.message);
+            }
+        }
     }
 
     const percentageInputs = [
@@ -68,13 +109,14 @@
     <div class="fixed inset-0 bg-black/40 z-40 transition-opacity" on:click={close} role="button" tabindex="0"></div>
 {/if}
 
-<div class="fixed top-0 left-0 h-full bg-white shadow-2xl z-50 p-6 overflow-y-auto w-[450px] max-w-[90vw] transition-transform duration-300 ease-in-out transform {isOpen ? 'translate-x-0' : '-translate-x-full'}">
+<div class="fixed top-0 left-0 h-full bg-white shadow-2xl z-50 p-6 overflow-y-auto w-[500px] max-w-[95vw] transition-transform duration-300 ease-in-out transform {isOpen ? 'translate-x-0' : '-translate-x-full'}">
+    
     <div class="flex justify-between items-center mb-6">
         <h3 class="text-xl font-bold text-gray-800">Thiết lập mục tiêu</h3>
         <button class="text-gray-500 hover:text-gray-800 text-3xl leading-none" on:click={close}>&times;</button>
     </div>
 
-    <div class="border-b border-gray-200 mb-4 flex space-x-6">
+    <div class="border-b border-gray-200 mb-6 flex space-x-6">
         <button class="pb-2 border-b-2 font-medium text-sm transition-colors {activeTab === 'monthly' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}" on:click={() => switchTab('monthly')}>
             Mục tiêu Tháng (Lũy kế)
         </button>
@@ -83,10 +125,10 @@
         </button>
     </div>
 
-    <div class="space-y-6">
+    <div class="space-y-8">
         <div>
-            <label for="goal-warehouse" class="block text-sm font-medium text-gray-700 mb-1">Thiết lập cho kho</label>
-            <select id="goal-warehouse" class="w-full p-2 border rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none" bind:value={selectedWarehouse}>
+            <label for="goal-warehouse" class="block text-sm font-bold text-gray-700 mb-1">Thiết lập cho kho</label>
+            <select id="goal-warehouse" class="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-blue-700" bind:value={localSelectedWarehouse}>
                 {#if $warehouseList.length === 0}
                     <option value="">Vui lòng tải file DSNV...</option>
                 {:else}
@@ -98,11 +140,11 @@
         </div>
 
         {#if activeTab === 'monthly'}
-            <div class="space-y-4 animate-fade-in">
+            <div class="space-y-5 animate-fade-in">
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label for="luyke-dtt" class="block text-sm font-medium text-gray-700">Target DT Thực</label>
-                        <input type="number" id="luyke-dtt" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals.doanhThuThuc} on:input={saveLuyke}>
+                        <input type="number" id="luyke-dtt" class="luyke-goal-input mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals.doanhThuThuc} on:input={saveLuyke}>
                     </div>
                     <div>
                         <label for="luyke-dtqd" class="block text-sm font-medium text-gray-700">Target DT QĐ</label>
@@ -128,15 +170,15 @@
         {/if}
 
         {#if activeTab === 'daily'}
-            <div class="space-y-4 animate-fade-in">
+            <div class="space-y-5 animate-fade-in">
                 <div class="grid grid-cols-2 gap-4 items-end">
-                    <div class="flex items-center gap-2">
-                        <label for="rt-open" class="font-medium text-gray-700 text-sm whitespace-nowrap">Mở cửa:</label>
-                        <input type="time" id="rt-open" class="p-1 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-open-hour']} on:input={saveRealtime}>
+                    <div>
+                        <label for="rt-open" class="block text-sm font-medium text-gray-700 mb-1">Giờ mở cửa</label>
+                        <input type="time" id="rt-open" class="p-2 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-open-hour']} on:input={saveRealtime}>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <label for="rt-close" class="font-medium text-gray-700 text-sm whitespace-nowrap">Đóng cửa:</label>
-                        <input type="time" id="rt-close" class="p-1 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-close-hour']} on:input={saveRealtime}>
+                    <div>
+                        <label for="rt-close" class="block text-sm font-medium text-gray-700 mb-1">Giờ đóng cửa</label>
+                        <input type="time" id="rt-close" class="p-2 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-close-hour']} on:input={saveRealtime}>
                     </div>
                 </div>
 
@@ -150,37 +192,65 @@
                         <input type="number" id="rt-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuQD} on:input={saveRealtime}>
                     </div>
                 </div>
-
-                <details class="group border rounded-lg overflow-hidden" open>
-                    <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
-                        Mục tiêu khai thác (%)
-                        <span class="transform group-open:rotate-180 transition-transform">▼</span>
-                    </summary>
-                    <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
-                        {#each percentageInputs as input}
-                            <div>
-                                <label for="rt-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
-                                <input type="number" id="rt-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals[input.id]} on:input={saveRealtime}>
-                            </div>
-                        {/each}
-                    </div>
-                </details>
             </div>
         {/if}
 
-        <div class="border-t pt-6 mt-6 space-y-4">
-            <div class="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                <h4 class="text-md font-bold text-blue-800 mb-2 flex items-center gap-2">
-                    <i data-feather="award" class="w-4 h-4"></i> Chương trình Thi đua
-                </h4>
-                <p class="text-sm text-blue-600 mb-3">Tạo và quản lý các chương trình thi đua riêng cho kho của bạn.</p>
+        <div class="border-t pt-6 space-y-4">
+            <div class="flex justify-between items-center">
+                <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
                 <button 
                     on:click={openCompetitionManager}
-                    class="w-full py-2 px-4 bg-white border border-blue-300 text-blue-700 font-semibold rounded-lg hover:bg-blue-50 transition shadow-sm flex items-center justify-center gap-2"
+                    class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"
                 >
-                    <i data-feather="settings" class="w-4 h-4"></i>
-                    Quản lý Chương trình Thi đua
+                    <i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới
                 </button>
+            </div>
+
+            <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
+                {#if $localCompetitionConfigs.length === 0}
+                    <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                        <p class="text-gray-500 text-sm italic">Chưa có chương trình nào.</p>
+                    </div>
+                {:else}
+                    {#each $localCompetitionConfigs as config, index}
+                        <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
+                            <h4 class="text-lg font-bold text-gray-800 mb-2 pr-16">{config.name}</h4>
+                            
+                            <div class="text-sm mb-1">
+                                <span class="font-semibold text-gray-600">Hãng:</span>
+                                <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span>
+                            </div>
+
+                            <div class="text-sm text-gray-600 line-clamp-2" title={config.groups.join(', ')}>
+                                <span class="font-semibold">Nhóm hàng:</span>
+                                <span>{config.groups.length > 0 ? config.groups.join(', ') : 'Tất cả'}</span>
+                            </div>
+
+                            <div class="mt-2">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
+                                    {config.type === 'doanhthu' ? 'Theo Doanh thu' : 'Theo Số lượng'}
+                                </span>
+                            </div>
+
+                            <div class="absolute top-4 right-4 flex gap-2">
+                                <button 
+                                    on:click={() => openCompetitionManager()} 
+                                    class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                    title="Chỉnh sửa"
+                                >
+                                    <i data-feather="edit-2" class="w-4 h-4"></i>
+                                </button>
+                                <button 
+                                    on:click={() => deleteCompetition(index)} 
+                                    class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                    title="Xóa"
+                                >
+                                    <i data-feather="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    {/each}
+                {/if}
             </div>
         </div>
     </div>
@@ -189,4 +259,17 @@
 <style>
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+    
+    /* Custom scrollbar */
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
 </style>
