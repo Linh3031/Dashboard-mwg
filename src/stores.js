@@ -12,9 +12,22 @@ export const activeTab = writable('data-section');
 export const isAdmin = writable(false);
 export const currentUser = writable(null); // Sẽ chứa { email: '...' }
 
+// === DỮ LIỆU TƯƠNG TÁC & NỘI DUNG ĐỘNG (BỔ SUNG MỚI) ===
+export const feedbackList = writable([]);
+export const helpContent = writable({
+    data: 'Đang tải hướng dẫn...',
+    luyke: 'Đang tải hướng dẫn...',
+    sknv: 'Đang tải hướng dẫn...',
+    realtime: 'Đang tải hướng dẫn...'
+});
+export const composerTemplates = writable({
+    luyke: '',
+    sknv: '',
+    realtime: ''
+});
+
 /**
  * Dữ liệu thô (Raw Data)
- * (Các store này được nạp bởi dataService.js)
  */
 export const danhSachNhanVien = writable([]);
 export const ycxData = writable([]);
@@ -40,7 +53,7 @@ export const masterReportData = writable({
 });
 
 /**
- * Dữ liệu thi đua từ ô dán Lũy Kế
+ * Dữ liệu thi đua
  */
 export const competitionData = writable([]);
 
@@ -86,50 +99,50 @@ export const choices = writable({
     realtime_brand_category_filter: null,
     realtime_brand_filter: null,
 });
-export const viewingDetailFor = writable(null); // State theo dõi chi tiết NV
-export const sortState = writable({
-    // ... (toàn bộ sortState của bạn giữ nguyên)
-});
+export const viewingDetailFor = writable(null);
+export const sortState = writable({});
 
-// === BẮT ĐẦU THÊM MỚI (2 DÒNG BỊ THIẾU) ===
 /**
  * Trạng thái kho
  */
 export const warehouseList = writable([]);
 export const selectedWarehouse = writable(null);
-// === KẾT THÚC THÊM MỚI ===
 
-// === BỔ SUNG CHO GIAO DIỆN & DRAWER (MỚI) ===
+// === STATE GIAO DIỆN (DRAWER & MODAL) ===
 
 /**
- * Quản lý trạng thái đóng/mở Drawer (thanh trượt bên phải)
- * activeDrawer: 'interface-drawer' | 'goal-drawer' | null
+ * Quản lý trạng thái đóng/mở Drawer
  */
 export const drawerState = writable({
     activeDrawer: null
 });
 
 /**
- * Quản lý trạng thái đóng/mở Modal (popup giữa màn hình)
- * activeModal: 'admin-modal' | 'login-modal' | ... | null
+ * Quản lý trạng thái đóng/mở Modal
  */
 export const modalState = writable({
     activeModal: null
 });
 
 /**
- * Cài đặt giao diện (Font size, Contrast, Colors)
+ * Cài đặt giao diện
  */
 export const interfaceSettings = writable({
     contrastLevel: '3',
     globalFontSize: '18',
     kpiFontSize: '36',
-    // KPI Colors
     kpiCard1Bg: '#38bdf8', kpiCard2Bg: '#34d399', kpiCard3Bg: '#fbbf24',
     kpiCard4Bg: '#2dd4bf', kpiCard5Bg: '#a78bfa', kpiCard6Bg: '#f472b6',
     kpiCard7Bg: '#818cf8', kpiCard8Bg: '#f87171',
-    // Text Colors
     kpiTitleColor: '#ffffff',
     kpiMainColor: '#ffffff',
     kpiSubColor: '#ffffff'
+});
+
+// === FIREBASE STORE ===
+export const firebaseStore = writable({
+    app: null,
+    auth: null,
+    db: null,
+    storage: null
 });

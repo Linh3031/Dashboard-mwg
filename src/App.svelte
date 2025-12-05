@@ -1,13 +1,10 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
   
-  // Import Store
-  import { activeTab } from './stores.js';
+  import { activeTab, modalState } from './stores.js';
+  import { authService } from './services/auth.service.js';
 
-  // Import các component con chính
   import Sidebar from './components/Sidebar.svelte';
-  
-  // Import các Section con
   import HomeSection from './components/HomeSection.svelte';
   import DataSection from './components/DataSection.svelte';
   import HealthSection from './components/HealthSection.svelte';
@@ -15,48 +12,50 @@
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
 
-  // Import các Drawer mới (Thay thế cho div container cũ)
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
+  import AdminModal from './components/modals/AdminModal.svelte';
+  import LoginModal from './components/modals/LoginModal.svelte';
 
   onMount(() => {
-    // Chỉ chạy Feather Icons cho các icon bên ngoài <main>
-    if (typeof feather !== 'undefined') {
-      feather.replace();
+    // Kiểm tra đăng nhập
+    const isLoggedIn = authService.initAuth();
+    if (!isLoggedIn) {
+        modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
     }
+  });
+
+  // Đơn giản hóa: Chỉ cần gọi replace khi update
+  afterUpdate(() => {
+    if (window.feather) window.feather.replace();
   });
 </script>
 
 <InterfaceDrawer />
 <GoalDrawer />
+<AdminModal />
+<LoginModal />
 
 <div class="flex min-h-screen">
-  
   <div id="sidebar-container">
     <Sidebar />
   </div>
-
   <main id="main-content">
     <div class="flex-1 p-6">
       <div class="max-w-full mx-auto">
-        
         <HomeSection activeTab={$activeTab} />
         <DataSection activeTab={$activeTab} />
         <HealthSection activeTab={$activeTab} />
         <HealthEmployeeSection activeTab={$activeTab} />
         <RealtimeSection activeTab={$activeTab} />
         <DeclarationSection activeTab={$activeTab} />
-
       </div>
     </div>
   </main>
-
 </div> 
 
 <div id="modal-force-update-container"></div>
 <div id="notification"></div>
-<div id="modal-admin-container"></div>
-<div id="modal-login-container"></div>
 <div id="modal-help-container"></div>
 <div id="modal-chart-container"></div>
 <div id="modal-composer-container"></div>
@@ -64,7 +63,6 @@
 <div id="modal-selection-container"></div>
 <div id="modal-customer-detail-container"></div>
 <div id="modal-unexported-detail-container"></div>
-
 
 <style>
   :global(#main-content) { 
@@ -75,7 +73,6 @@
     flex-direction: column;
     flex: 1 1 0%;
   }
-
   :global(.page-header) { 
     display: flex; 
     flex-wrap: wrap; 

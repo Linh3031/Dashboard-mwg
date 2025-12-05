@@ -2,26 +2,34 @@
 import './app.css'
 import App from './App.svelte'
 import { mount } from 'svelte'
-
-// === SỬA LỖI: Đổi { dataService } thành * as dataService ===
 import * as dataService from './services/dataService.js'
-import './services/employeeService.js'; // Tự động chạy khi import
+import { firebaseService } from './services/firebase.service.js';
+import './services/employeeService.js'; 
 
-/**
- * Hàm khởi tạo chính
- */
+// --- CODE CHUẨN: Import trực tiếp ---
+import feather from 'feather-icons'; 
+// -----------------------------------
+
 async function initializeApp() {
-  // BƯỚC 2: Tải tất cả dữ liệu từ cache (IndexedDB & LocalStorage)
+  try {
+    // Đưa ra window để các component con dùng chung
+    window.feather = feather;
+    
+    firebaseService.initCore();
+  } catch (e) {
+    console.error("Lỗi khởi tạo:", e);
+  }
+
   await dataService.loadAllFromCache();
 
-  // BƯỚC 3: Gắn ứng dụng Svelte SAU KHI đã tải cache
   const app = mount(App, {
     target: document.getElementById('app'),
   })
 
-  // Export app (giữ nguyên)
+  // Chạy 1 lần duy nhất khi app tải xong
+  feather.replace();
+
   return app;
 }
 
-// BƯỚC 4: Chạy hàm khởi tạo
 initializeApp();
