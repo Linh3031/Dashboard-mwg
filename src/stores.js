@@ -34,9 +34,9 @@ export const thuongERPDataThangTruoc = writable([]);
  * Dữ liệu đã xử lý (Processed Data)
  */
 export const masterReportData = writable({
-	luyke: [],
-	sknv: [],
-	realtime: []
+    luyke: [],
+    sknv: [],
+    realtime: []
 });
 
 /**
@@ -98,3 +98,38 @@ export const sortState = writable({
 export const warehouseList = writable([]);
 export const selectedWarehouse = writable(null);
 // === KẾT THÚC THÊM MỚI ===
+
+// === BỔ SUNG CHO GIAO DIỆN & DRAWER (MỚI) ===
+
+/**
+ * Quản lý trạng thái đóng/mở Drawer (thanh trượt bên phải)
+ * activeDrawer: 'interface-drawer' | 'goal-drawer' | null
+ */
+export const drawerState = writable({
+    activeDrawer: null
+});
+
+/**
+ * Quản lý trạng thái đóng/mở Modal (popup giữa màn hình)
+ * activeModal: 'admin-modal' | 'login-modal' | ... | null
+ */
+export const modalState = writable({
+    activeModal: null
+});
+
+/**
+ * Cài đặt giao diện (Font size, Contrast, Colors)
+ */
+export const interfaceSettings = writable({
+    contrastLevel: '3',
+    globalFontSize: '18',
+    kpiFontSize: '36',
+    // KPI Colors
+    kpiCard1Bg: '#38bdf8', kpiCard2Bg: '#34d399', kpiCard3Bg: '#fbbf24',
+    kpiCard4Bg: '#2dd4bf', kpiCard5Bg: '#a78bfa', kpiCard6Bg: '#f472b6',
+    kpiCard7Bg: '#818cf8', kpiCard8Bg: '#f87171',
+    // Text Colors
+    kpiTitleColor: '#ffffff',
+    kpiMainColor: '#ffffff',
+    kpiSubColor: '#ffffff'
+});
