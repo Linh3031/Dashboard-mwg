@@ -1,19 +1,19 @@
-// File: src/services/firebase.service.js
+// src/services/firebase.service.js
+// Version 2.2 - Update Firebase Config with user provided credentials
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { firebaseStore } from '../stores.js';
 
-// Config từ dự án cũ (Firebase.js)
+// Cấu hình Firebase mới của bạn
 const firebaseConfig = {
-  apiKey: "AIzaSyAQ3TWcpa4AnTN-32igGseYDlXrCf1BVew",
-  authDomain: "qlst-9e6bd.firebaseapp.com",
-  projectId: "qlst-9e6bd",
-  storageBucket: "qlst-9e6bd.firebasestorage.app",
-  messagingSenderId: "2316705291",
-  appId: "1:2316705291:web:ebec2963816aea7585b10e",
-  measurementId: "G-M0SM0XHCEK"
+  apiKey: "AIzaSyD-006CUo_l9AjUgK-2JI1VEdGWaKVGoRQ",
+  authDomain: "dashboard-svelte-new.firebaseapp.com",
+  projectId: "dashboard-svelte-new",
+  storageBucket: "dashboard-svelte-new.firebasestorage.app",
+  messagingSenderId: "1073291821920",
+  appId: "1:1073291821920:web:5b1a44ca639e6229a3d405"
 };
 
 export const firebaseService = {
@@ -37,7 +37,8 @@ export const firebaseService = {
             return { app, auth, db, storage };
         } catch (error) {
             console.error("[FirebaseService] Initialization failed:", error);
-            throw error;
+            // Không throw error để app vẫn chạy được các tính năng offline
+            return null;
         }
     }
 };

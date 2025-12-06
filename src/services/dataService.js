@@ -1,4 +1,5 @@
-// Version 1.3 - Fix: Remove import to deleted 'ui-notifications.js'
+// src/services/dataService.js
+// Version 1.5 - Full code with Analytics tracking implemented
 /* global XLSX */
 import { get } from 'svelte/store';
 import { 
@@ -20,13 +21,12 @@ import {
 import { dataProcessing } from './dataProcessing.js';
 import { storage } from './storage.service.js';
 import { adminService } from './admin.service.js';
+import { analyticsService } from './analytics.service.js'; // Import Analytics
 
 const LOCAL_DSNV_FILENAME_KEY = '_localDsnvFilename';
 
-// [FIX] Tạo hàm thông báo nội bộ thay vì import file đã xóa
 const notify = (msg, type = 'info') => {
     console.log(`[${type.toUpperCase()}] ${msg}`);
-    // Chỉ alert khi lỗi để tránh phiền, hoặc có thể bỏ alert nếu muốn
     if (type === 'error') alert(msg); 
 };
 
@@ -91,6 +91,10 @@ export async function handleFileChange(file, saveKey) {
                 await storage.setItem(saveKey, normalizedData);
                 if (saveKey === 'saved_danhsachnv') localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
             } catch (err) { console.error(`Lỗi lưu ${saveKey}:`, err); }
+            
+            // [MỚI] Ghi nhận lượt sử dụng khi upload thành công
+            analyticsService.trackAction();
+
             return { success: true, count: normalizedData.length, message: `✅ Tải thành công ${normalizedData.length} dòng.` };
         } else {
             return { success: false, message: `❌ Lỗi: File thiếu cột: ${missingColumns.join(', ')}` };
@@ -122,6 +126,10 @@ export function handlePasteChange(pastedText, saveKeyPaste, saveKeyRaw, saveKeyP
              localStorage.setItem(saveKeyPaste, pastedText);
              message = `✅ Đã xử lý.`;
          }
+
+         // [MỚI] Ghi nhận lượt sử dụng khi paste thành công
+         analyticsService.trackAction();
+
          return { success: true, message: message };
      } catch (err) { return { success: false, message: `❌ Lỗi: ${err.message}` }; }
 }
@@ -218,8 +226,11 @@ export async function handleRealtimeFileInput(event) {
         if (success) {
             realtimeYCXData.set(normalizedData);
             notify(`Đã tải ${normalizedData.length} dòng realtime`, 'success');
+            
+            // [MỚI] Ghi nhận lượt sử dụng
+            analyticsService.trackAction();
         } else {
-            console.error(`File lỗi! Thiếu cột: ${missingColumns.join(', ')}`);
+             console.error(`File lỗi! Thiếu cột: ${missingColumns.join(', ')}`);
             notify(`Lỗi thiếu cột: ${missingColumns.join(', ')}`, 'error');
         }
     } catch (e) {

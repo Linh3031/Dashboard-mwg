@@ -1,16 +1,17 @@
 <script>
   import { afterUpdate } from 'svelte';
   
-  // Import các component con
+  // Import các component con hiện có
   import AdminCategory from './admin/AdminCategory.svelte';
   import AdminSpecialProducts from './admin/AdminSpecialProducts.svelte';
   import AdminCalculation from './admin/AdminCalculation.svelte';
   import AdminMappings from './admin/AdminMappings.svelte';
   import AdminHelp from './admin/AdminHelp.svelte';
   import AdminUserStats from './admin/AdminUserStats.svelte';
-  
-  // Import Component MỚI
   import AdminCompetition from './admin/AdminCompetition.svelte';
+  
+  // [MỚI] Import Component cấu hình trang chủ
+  import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
 
   export let activeTab;
 
@@ -37,7 +38,11 @@
                     <strong class="block mb-1 font-bold">Khu vực dành cho Quản trị viên:</strong> 
                     Mọi thay đổi tại đây sẽ được đồng bộ lên Cloud (Firestore) và ảnh hưởng trực tiếp đến logic tính toán toàn hệ thống.
                 </span>
-            </p> 
+           </p> 
+        </div>
+
+        <div class="space-y-6 mb-8">
+            <AdminHomeConfig />
         </div>
 
         <div class="space-y-6 mb-8">

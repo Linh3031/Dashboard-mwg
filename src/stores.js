@@ -1,4 +1,5 @@
-// File: src/stores.js
+// src/stores.js
+// Version 2.1 - Dev Mode: Set isAdmin = true by default for testing
 import { writable } from 'svelte/store';
 
 /**
@@ -8,9 +9,11 @@ export const activeTab = writable('data-section');
 
 /**
  * Trạng thái xác thực
+ * [DEV MODE]: Đặt mặc định là TRUE để test tính năng Admin mà không cần nhập mật khẩu.
+ * Khi nào deploy thực tế, hãy sửa lại thành FALSE.
  */
-export const isAdmin = writable(false);
-export const currentUser = writable(null); 
+export const isAdmin = writable(true); 
+export const currentUser = writable(null); // Sẽ chứa { email: '...' }
 
 // === DỮ LIỆU TƯƠNG TÁC & NỘI DUNG ĐỘNG ===
 export const feedbackList = writable([]);
@@ -28,24 +31,13 @@ export const composerTemplates = writable({
 });
 export const competitionNameMappings = writable({}); 
 
-// [MỚI] Notification Store - Thay thế file ui-notifications.js
-// Cấu trúc: { message: string, type: 'success'|'error', visible: boolean }
-function createNotificationStore() {
-    const { subscribe, set, update } = writable({ message: '', type: 'success', visible: false });
-
-    return {
-        subscribe,
-        show: (message, type = 'success') => {
-            set({ message, type, visible: true });
-            // Tự động ẩn sau 3s
-            setTimeout(() => {
-                update(n => ({ ...n, visible: false }));
-            }, 3000);
-        },
-        hide: () => update(n => ({ ...n, visible: false }))
-    };
-}
-export const notificationStore = createNotificationStore();
+// Store cho cấu hình trang chủ
+export const homeConfig = writable({
+    videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4',
+    timeline: [],
+    sliderImages: [],
+    changelogs: []
+});
 
 /**
  * Dữ liệu thô (Raw Data)
@@ -59,7 +51,6 @@ export const pastedThiDuaReportData = writable([]);
 export const realtimeYCXData = writable([]);
 export const thiDuaVungChiTiet = writable([]);
 export const thiDuaVungTong = writable([]);
-
 // Dữ liệu tháng trước
 export const ycxDataThangTruoc = writable([]);
 export const thuongNongDataThangTruoc = writable([]);
@@ -130,9 +121,16 @@ export const sortState = writable({});
 export const warehouseList = writable([]);
 export const selectedWarehouse = writable(null);
 
-// === STATE GIAO DIỆN (DRAWER & MODAL) ===
+// === STATE GIAO DIỆN (DRAWER & MODAL & NOTIFICATION) ===
 export const drawerState = writable({ activeDrawer: null });
 export const modalState = writable({ activeModal: null });
+
+// [FIX] Thêm store notificationStore để sửa lỗi import
+export const notificationStore = writable({
+    message: '',
+    type: 'info', // 'success', 'error', 'info', 'warning'
+    visible: false
+});
 
 /**
  * Cài đặt giao diện
