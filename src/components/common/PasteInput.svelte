@@ -1,28 +1,24 @@
 <script>
   /* global feather */
   import { onMount } from 'svelte';
-  // === SỬA LỖI: Đổi { dataService } thành * as dataService ===
-  import * as dataService from '../services/dataService.js';
+  import * as dataService from '../../services/dataService.js';
   import { 
     competitionData,
     pastedThiDuaReportData,
     thuongERPData,
     thuongERPDataThangTruoc
-  } from '../stores.js';
+  } from '../../stores.js';
 
-  // Props
   export let label = "Chưa có nhãn";
   export let icon = "clipboard";
-  export let link = "#"; // Link cho "Lấy file tại đây"
-  export let saveKeyPaste = ""; // Key cho localStorage (text thô)
-  export let saveKeyRaw = ""; // Key đặc biệt cho Thi đua NV
-  export let saveKeyProcessed = ""; // Key đặc biệt cho Thi đua NV
+  export let link = "#"; 
+  export let saveKeyPaste = ""; 
+  export let saveKeyRaw = ""; 
+  export let saveKeyProcessed = ""; 
 
-  // Internal State
   let pasteStatus = "";
   let pastedText = "";
 
-  // Lấy store Svelte tương ứng
   const storeMap = {
     'daily_paste_luyke': competitionData,
     'daily_paste_thiduanv': pastedThiDuaReportData,
@@ -30,68 +26,52 @@
     'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc
   };
   
-  // Xác định key nào dùng để tải text
   const textLoadKey = saveKeyRaw || saveKeyPaste;
-  // Xác định store nào dùng để đếm
   const countStore = storeMap[saveKeyProcessed || saveKeyPaste];
 
   onMount(() => {
-    // Tải text đã lưu từ localStorage
     pastedText = localStorage.getItem(textLoadKey) || "";
     
-    // Cập nhật status nếu có dữ liệu
     if (pastedText && countStore) {
-      const data = $countStore; // Đọc giá trị store
-      let count = data.length || 0;
-      
-      if (saveKeyPaste === 'daily_paste_luyke') {
-        pasteStatus = `✅ Đã tải. Tìm thấy ${count} CT thi đua.`;
-      } else if (count > 0) {
-        pasteStatus = `✅ Đã tải ${count} nhân viên.`;
-      }
-    }
-    
-    if (typeof feather !== 'undefined') {
-      feather.replace();
+        const unsubscribe = countStore.subscribe(data => {
+             let count = data?.length || 0;
+             if (saveKeyPaste === 'daily_paste_luyke' && count > 0) {
+                pasteStatus = `✅ Đã tải. Tìm thấy ${count} CT thi đua.`;
+             } else if (count > 0) {
+                pasteStatus = `✅ Đã tải ${count} nhân viên.`;
+             }
+        });
+        return () => unsubscribe();
     }
   });
 
-  // Debounce logic
   let pasteTimer;
-  function debounce(func, delay = 500) {
-    return function(event) {
-      clearTimeout(pasteTimer);
+  function handleInput(event) {
       const text = event.target.value;
+      clearTimeout(pasteTimer);
+      
+      if (!text || text.trim().length < 10) {
+        pasteStatus = "";
+        return;
+      }
+      
+      pasteStatus = "Đang xử lý...";
       pasteTimer = setTimeout(() => {
-        func(text);
-      }, delay);
-    }
+          try {
+            const result = dataService.handlePasteChange(
+                text, 
+                saveKeyPaste, 
+                saveKeyRaw, 
+                saveKeyProcessed
+            );
+            pasteStatus = result.message;
+            pastedText = text; 
+          } catch (err) {
+            console.error(`Lỗi gọi dataService cho ${label}:`, err);
+            pasteStatus = `❌ Lỗi: ${err.message}`;
+          }
+      }, 500);
   }
-
-  // Hàm xử lý
-  function handleInput(pastedText) {
-    if (!pastedText || pastedText.trim().length < 10) {
-      pasteStatus = "";
-      return;
-    }
-    pasteStatus = "Đang xử lý...";
-    try {
-      const result = dataService.handlePasteChange(
-        pastedText, 
-        saveKeyPaste, 
-        saveKeyRaw, 
-        saveKeyProcessed
-      );
-      pasteStatus = result.message;
-    } catch (err) {
-      console.error(`Lỗi gọi dataService cho ${label}:`, err);
-      pasteStatus = `❌ Lỗi: ${err.message}`;
-    }
-  }
-  
-  // Tạo hàm debounced
-  const debouncedHandleInput = debounce(handleInput);
-
 </script>
 
 <div class="data-input-group input-group--blue h-full">
@@ -104,8 +84,8 @@
             rows="5" 
             class="data-textarea" 
             placeholder="Dán dữ liệu đã sao chép..."
-            on:input={debouncedHandleInput}
-            bind:value={pastedText}
+            on:input={handleInput}
+            value={pastedText}
         ></textarea>
         <div class="data-input-group__status-wrapper">
             <span class="data-input-group__status-text"

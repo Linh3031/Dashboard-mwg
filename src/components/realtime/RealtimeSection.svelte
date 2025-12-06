@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   
   import * as dataService from '../../services/dataService.js';
-  import { realtimeYCXData, warehouseList } from '../../stores.js';
+  import { warehouseList, modalState } from '../../stores.js'; // Import modalState
+  import { actionService } from '../../services/action.service.js'; // Import actionService
 
   // Import các Tab con
   import SummaryTab from './summary/SummaryTab.svelte';
@@ -10,7 +11,6 @@
   import EfficiencyTab from './efficiency/EfficiencyTab.svelte';
   import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
-  // [ADD NEW] Import tab mới
   import CompetitionTab from './competition/CompetitionTab.svelte';
 
   export let activeTab;
@@ -24,6 +24,23 @@
 
   async function handleFileUpload(event) {
     await dataService.handleRealtimeFileInput(event);
+  }
+
+  // === CÁC HÀM XỬ LÝ HÀNH ĐỘNG (ACTIONS) ===
+  
+  function handleCompose() {
+    // Mở modal Composer và set context là 'realtime'
+    modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'realtime' }));
+  }
+
+  function handleExport() {
+    // Gọi service để xuất Excel cho section 'realtime'
+    actionService.handleExport('realtime');
+  }
+
+  function handleCapture() {
+    // Gọi service để chụp ảnh cho section 'realtime'
+    actionService.handleCapture('realtime');
   }
 
   // Tự động chạy Feather Icons khi tab này được active
@@ -40,7 +57,7 @@
         <div class="page-header border-b pb-4 mb-6 flex flex-wrap justify-between items-center gap-4">
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Phân Tích Doanh Thu Realtime</h2>
-                <button class="page-header__help-btn" aria-label="Xem hướng dẫn" title="Xem hướng dẫn">
+                <button class="page-header__help-btn" data-help-id="realtime" title="Xem hướng dẫn">
                    <i data-feather="help-circle"></i>
                 </button>
             </div>
@@ -71,7 +88,7 @@
                  >
                     <option value="">Toàn bộ</option>
                    {#each $warehouseList as kho}
-                     <option value={kho}>{kho}</option>
+                      <option value={kho}>{kho}</option>
                    {/each}
                 </select>
                </div>
@@ -90,15 +107,17 @@
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-sieu-thi' ? 'active' : ''}" 
                 data-target="subtab-realtime-sieu-thi"
+                data-title="SieuThiRealtime"
                 on:click={handleSubTabClick}
             >
                 <i data-feather="zap"></i>
                 <span>Siêu thị Realtime</span>
             </button>
                
-            <button 
+             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nhan-vien' ? 'active' : ''}" 
                 data-target="subtab-realtime-nhan-vien"
+                data-title="DTNVRealtime"
                 on:click={handleSubTabClick}
             >
                 <i data-feather="pie-chart"></i>
@@ -108,6 +127,7 @@
              <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien' ? 'active' : ''}" 
                 data-target="subtab-realtime-hieu-qua-nhan-vien"
+                data-title="HieuQuaKhaiThacRealtime"
                 on:click={handleSubTabClick}
             >
                 <i data-feather="bar-chart-2"></i>
@@ -117,6 +137,7 @@
               <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-nganh-hang' ? 'active' : ''}" 
                 data-target="subtab-realtime-nganh-hang"
+                data-title="NganhHangRealtime"
                 on:click={handleSubTabClick}
             >
                 <i data-feather="layers"></i>
@@ -126,6 +147,7 @@
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-hang-ban' ? 'active' : ''}" 
                 data-target="subtab-realtime-hang-ban"
+                data-title="HangRealtime"
                 on:click={handleSubTabClick}
             >
                 <i data-feather="tag"></i>
@@ -135,6 +157,7 @@
             <button 
                 class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-realtime-thi-dua' ? 'active' : ''}" 
                 data-target="subtab-realtime-thi-dua"
+                data-title="ThiDuaNhanVienRealtime"
                 on:click={handleSubTabClick}
             >
                 <i data-feather="award"></i>
@@ -143,15 +166,15 @@
            </nav>
 
         <div class="flex items-center gap-x-2 flex-shrink-0 ml-4">
-             <button class="action-btn action-btn--composer" title="Nhận xét">
+             <button id="compose-realtime-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}>
                 <i data-feather="pen-tool"></i>
                 <span>Nhận xét</span>
             </button>
-            <button class="action-btn action-btn--export" title="Xuất Excel">
+            <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                  <i data-feather="download"></i>
                 <span>Xuất Excel</span>
             </button>
-            <button class="action-btn action-btn--capture" title="Chụp ảnh">
+            <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh" on:click={handleCapture}>
                 <i data-feather="camera"></i>
                 <span>Chụp màn hình</span>
              </button>
@@ -160,22 +183,34 @@
 
     <div id="realtime-subtabs-content">
         {#if activeSubTabId === 'subtab-realtime-sieu-thi'}
-            <SummaryTab {selectedWarehouse} />
+            <div id="subtab-realtime-sieu-thi" class="sub-tab-content">
+                <SummaryTab {selectedWarehouse} />
+            </div>
         
         {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
-            <EmployeeTab {selectedWarehouse} />
+            <div id="subtab-realtime-nhan-vien" class="sub-tab-content" data-capture-preset="large-font-report">
+                <EmployeeTab {selectedWarehouse} />
+            </div>
             
         {:else if activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien'}
-            <EfficiencyTab {selectedWarehouse} />
+            <div id="subtab-realtime-hieu-qua-nhan-vien" class="sub-tab-content" data-capture-preset="landscape-table">
+                <EfficiencyTab {selectedWarehouse} />
+            </div>
 
         {:else if activeSubTabId === 'subtab-realtime-nganh-hang'}
-            <CategoryTab {selectedWarehouse} />
+            <div id="subtab-realtime-nganh-hang" class="sub-tab-content" data-capture-preset="mobile-portrait">
+                <CategoryTab {selectedWarehouse} />
+            </div>
 
         {:else if activeSubTabId === 'subtab-realtime-hang-ban'}
-            <BrandTab {selectedWarehouse} />
+            <div id="subtab-realtime-hang-ban" class="sub-tab-content">
+                <BrandTab {selectedWarehouse} />
+            </div>
 
         {:else if activeSubTabId === 'subtab-realtime-thi-dua'}
-            <CompetitionTab {selectedWarehouse} />
+            <div id="subtab-realtime-thi-dua" class="sub-tab-content">
+                <CompetitionTab {selectedWarehouse} />
+            </div>
             
         {:else}
             <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">

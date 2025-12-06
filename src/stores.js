@@ -10,11 +10,11 @@ export const activeTab = writable('data-section');
  * Trạng thái xác thực
  */
 export const isAdmin = writable(false);
-export const currentUser = writable(null); // Sẽ chứa { email: '...' }
+export const currentUser = writable(null); 
 
 // === DỮ LIỆU TƯƠNG TÁC & NỘI DUNG ĐỘNG ===
 export const feedbackList = writable([]);
-export const userStats = writable([]); // <<< ĐÃ THÊM MỚI: Biến gây lỗi
+export const userStats = writable([]); 
 export const helpContent = writable({
     data: 'Đang tải hướng dẫn...',
     luyke: 'Đang tải hướng dẫn...',
@@ -26,7 +26,26 @@ export const composerTemplates = writable({
     sknv: '',
     realtime: ''
 });
-export const competitionNameMappings = writable({}); // Lưu trữ { "Tên Gốc": "Tên Rút Gọn" }
+export const competitionNameMappings = writable({}); 
+
+// [MỚI] Notification Store - Thay thế file ui-notifications.js
+// Cấu trúc: { message: string, type: 'success'|'error', visible: boolean }
+function createNotificationStore() {
+    const { subscribe, set, update } = writable({ message: '', type: 'success', visible: false });
+
+    return {
+        subscribe,
+        show: (message, type = 'success') => {
+            set({ message, type, visible: true });
+            // Tự động ẩn sau 3s
+            setTimeout(() => {
+                update(n => ({ ...n, visible: false }));
+            }, 3000);
+        },
+        hide: () => update(n => ({ ...n, visible: false }))
+    };
+}
+export const notificationStore = createNotificationStore();
 
 /**
  * Dữ liệu thô (Raw Data)
@@ -72,9 +91,9 @@ export const categoryStructure = writable([]);
 export const brandList = writable([]);
 export const specialProductList = writable([]);
 
-export const localCompetitionConfigs = writable([]); // Config cá nhân (LocalStorage)
-export const globalCompetitionConfigs = writable([]); // Config chung (Firestore)
-export const globalSpecialPrograms = writable([]); // Config SPĐQ (Firestore)
+export const localCompetitionConfigs = writable([]); 
+export const globalCompetitionConfigs = writable([]); 
+export const globalSpecialPrograms = writable([]); 
 
 /**
  * Cài đặt & Trạng thái UI
@@ -97,7 +116,7 @@ export const choices = writable({
     thiDuaVung_sieuThi: null,
     competition_group: null,
     competition_brand: null,
-    special_program_group: null, // Cho SPĐQ
+    special_program_group: null, 
     thidua_employee_detail: null,
     realtime_brand_category_filter: null,
     realtime_brand_filter: null,

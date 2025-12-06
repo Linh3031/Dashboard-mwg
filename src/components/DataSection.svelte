@@ -2,30 +2,25 @@
   /* global feather */
   import { onMount } from 'svelte';
   
-  // === SỬA LỖI: Xóa 'import * as dataService' (Không cần thiết nữa) ===
-  import FileInput from '../modules/FileInput.svelte';
-  import PasteInput from '../modules/PasteInput.svelte';
+  // [SỬA LỖI] Cập nhật đường dẫn import mới
+  import FileInput from './common/FileInput.svelte';
+  import PasteInput from './common/PasteInput.svelte';
 
-  // === SỬA LỖI: Import store kho (vẫn cần cho <select>) ===
   import { 
       warehouseList,
       selectedWarehouse
   } from '../stores.js';
 
-  // Logic feather icon (đã có)
   export let activeTab;
   
-  // onMount BÂY GIỜ CHỈ CÒN LÀM 1 VIỆC: Chạy Feather
   onMount(() => {
     if (typeof feather !== 'undefined') {
       feather.replace();
     }
   });
 
-  // Reactive statement: Sẽ chạy mỗi khi $selectedWarehouse thay đổi
   $: if ($selectedWarehouse) {
       localStorage.setItem('selectedWarehouse', $selectedWarehouse);
-      console.log(`[DataSection] Đã lưu kho đã chọn: ${$selectedWarehouse} vào localStorage.`);
   }
 
   $: if (activeTab === 'data-section') {
@@ -43,7 +38,7 @@
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Cập nhật dữ liệu</h2>
                 <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
-                  <i data-feather="help-circle" class="feather"></i>
+                   <i data-feather="help-circle" class="feather"></i>
                 </button>
             </div>
             
@@ -56,7 +51,7 @@
                        focus:ring-indigo-500 focus:border-indigo-500" 
                   disabled={$warehouseList.length === 0}
                   bind:value={$selectedWarehouse}
-                >
+            >
                     {#if $warehouseList.length === 0}
                         <option>Vui lòng tải file DSNV...</option>
                     {:else}
@@ -66,7 +61,7 @@
                         {/each}
                     {/if}
                 </select>
-            </div>
+             </div>
         </div>
         <div id="version-marquee-container" class="marquee-container flex-grow min-w-[200px]">
             <p class="marquee-text"></p>
@@ -74,7 +69,6 @@
     </div>
     
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
-        
         <div class="content-card data-card--blue flex flex-col gap-4"> 
             <h3 class="content-card__header data-header--blue">
                 <i data-feather="zap" class="h-5 w-5 feather"></i>SỬ DỤNG NHANH MỖI NGÀY
@@ -118,7 +112,7 @@
                 icon="gift"
                 saveKey="saved_thuongnong"
             />
-            
+             
             <PasteInput
                 label="Thưởng ERP"
                 icon="clipboard"
@@ -136,7 +130,7 @@
         
         <div class="grid md:grid-cols-3 gap-4"> 
             <div class="space-y-4"> 
-                <FileInput
+                 <FileInput
                     label="Danh sách nhân viên"
                     icon="users"
                     saveKey="saved_danhsachnv"
@@ -149,16 +143,16 @@
             </div> 
             <div class="space-y-4"> 
                  <FileInput
-                    label="Thưởng nóng tháng trước"
+                     label="Thưởng nóng tháng trước"
                     icon="gift"
                     saveKey="saved_thuongnong_thangtruoc"
                 />
              </div> 
             <div class="space-y-4"> 
                 <PasteInput
-                    label="Thưởng ERP tháng trước"
+                     label="Thưởng ERP tháng trước"
                     icon="clipboard"
-                    link="httpsa://bi.thegioididong.com/reward?id=-1&tab=1"
+                    link="https://bi.thegioididong.com/reward?id=-1&tab=1"
                     saveKeyPaste="saved_thuongerp_thangtruoc"
                 />
             </div> 
@@ -167,7 +161,7 @@
 </section>
 
 <style>
-    /* ... (toàn bộ style giữ nguyên như file gốc) ... */
+    /* Giữ nguyên phần CSS cũ */
     .content-card {
         transition: all 0.2s ease-in-out;
     }

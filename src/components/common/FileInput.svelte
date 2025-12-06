@@ -1,8 +1,7 @@
 <script>
   /* global feather */
   import { onMount } from 'svelte';
-  // === SỬA LỖI: Đổi { dataService } thành * as dataService ===
-  import * as dataService from '../services/dataService.js';
+  import * as dataService from '../../services/dataService.js';
   import { 
     danhSachNhanVien,
     rawGioCongData,
@@ -10,20 +9,19 @@
     thuongNongData,
     ycxDataThangTruoc,
     thuongNongDataThangTruoc
-  } from '../stores.js';
+  } from '../../stores.js';
 
-  // Props (Inputs) - Sẽ được truyền từ DataSection
+  // Props
   export let label = "Chưa có nhãn";
   export let icon = "file";
-  export let saveKey = ""; // Rất quan trọng, ví dụ: "saved_danhsachnv"
+  export let saveKey = ""; 
 
-  // Internal State (Trạng thái nội bộ)
+  // State
   let fileName = "Chưa thêm file";
   let fileStatus = "";
   let isLoading = false;
   let store = null;
 
-  // Lấy store Svelte tương ứng dựa trên saveKey
   const storeMap = {
     'saved_danhsachnv': danhSachNhanVien,
     'saved_giocong': rawGioCongData,
@@ -34,28 +32,23 @@
   };
   store = storeMap[saveKey];
 
-  // Khi component được tải, kiểm tra cache
   onMount(() => {
     if (store) {
-      // Đọc giá trị store một lần (dùng $store)
-      const data = $store;
-      if (data && data.length > 0) {
-        if (saveKey === 'saved_danhsachnv') {
-          fileName = localStorage.getItem('_localDsnvFilename') || "Đã tải từ cache";
-          fileStatus = `✅ Đã tải ${data.length} nhân viên.`;
-        } else {
-          fileName = "Đã tải từ cache";
-          fileStatus = `✅ Đã tải ${data.length} dòng.`;
-        }
-      }
-    }
-    // Chạy feather cho icon của riêng card này
-    if (typeof feather !== 'undefined') {
-      feather.replace();
+      const unsubscribe = store.subscribe(data => {
+          if (data && data.length > 0) {
+            if (saveKey === 'saved_danhsachnv') {
+              fileName = localStorage.getItem('_localDsnvFilename') || "Đã tải từ cache";
+              fileStatus = `✅ Đã tải ${data.length} nhân viên.`;
+            } else {
+              fileName = "Đã tải từ cache";
+              fileStatus = `✅ Đã tải ${data.length} dòng.`;
+            }
+          }
+      });
+      return () => unsubscribe();
     }
   });
 
-  // Hàm xử lý sự kiện
   async function handleChange(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -65,7 +58,6 @@
     fileStatus = "Đang đọc và xử lý file...";
 
     try {
-      // Gọi service chung, truyền file và saveKey
       const result = await dataService.handleFileChange(file, saveKey);
       fileStatus = result.message;
     } catch (err) {

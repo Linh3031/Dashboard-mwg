@@ -1,6 +1,5 @@
 <script>
   /* global feather */
-  // === START: TÁI CẤU TRÚC (V1.5) - Kích hoạt LuykeThiDuaVung ===
   import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
   import {
@@ -9,28 +8,24 @@
       masterReportData,
       selectedWarehouse,
       luykeGoalSettings,
-      competitionData,
-      thiDuaVungChiTiet, 
-      thiDuaVungTong, 
-      choices 
+      modalState // Import store để mở modal
   } from '../stores.js';
+  
   import { reportService } from '../services/reportService.js';
-  import { dataProcessing } from '../services/dataProcessing.js';
+  import { actionService } from '../services/action.service.js'; // <-- IMPORT MỚI
+  
   // Import các component con "View"
   import LuykeSieuThi from './luyke/LuykeSieuThi.svelte';
   import LuykeThiDua from './luyke/LuykeThiDua.svelte';
-  import LuykeThiDuaVung from './luyke/LuykeThiDuaVung.svelte'; // <-- ĐÃ KÍCH HOẠT
+  import LuykeThiDuaVung from './luyke/LuykeThiDuaVung.svelte';
   
-  // Nhận 'activeTab' từ App.svelte
   export let activeTab;
-  // Trạng thái cho sub-tab nội bộ
   let activeSubTabId = 'subtab-luyke-sieu-thi';
-  // --- BẮT ĐẦU: Logic tái cấu trúc từ tab-luyke.js ---
+
   let showPlaceholder = true;
   $: showPlaceholder = ($danhSachNhanVien.length === 0);
 
   let selectedDept = '';
-  let selectedNames = [];
   let selectedDates = [];
   let goals = {};
   $: goals = ($luykeGoalSettings && $selectedWarehouse) 
@@ -53,7 +48,7 @@
           const newMasterReport = reportService.generateMasterReportData(
               filteredYCXData, 
               goals, 
-              false // isRealtime = false
+              false 
           );
           masterReportData.update(current => ({ ...current, luyke: newMasterReport }));
       }
@@ -72,19 +67,27 @@
   $: numDays = selectedDates.length > 0 
       ? selectedDates.length 
       : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
-  
-  // Logic Đọc dữ liệu Dán (cho tab Thi Đua) - ĐÃ XÓA Ở V1.4 ĐỂ TRÁNH LỖI GHI ĐÈ
-  // --- KẾT THÚC: Logic tái cấu trúc ---
 
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
-      
-      const nav = button.closest('nav');
-      if (!nav) return;
+  }
 
-      nav.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
-      button.classList.add('active');
+  // === CÁC HÀM XỬ LÝ HÀNH ĐỘNG (ACTIONS) ===
+  
+  function handleCompose() {
+      // Mở modal Composer và set context là 'luyke'
+      modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' }));
+  }
+
+  function handleExport() {
+      // Gọi service để xuất Excel cho section 'luyke'
+      actionService.handleExport('luyke');
+  }
+
+  function handleCapture() {
+      // Gọi service để chụp ảnh cho section 'luyke'
+      actionService.handleCapture('luyke');
   }
 
   $: if (activeTab === 'health-section') {
@@ -94,7 +97,6 @@
       }
     });
   }
-  // === KẾT THÚC: TÁI CẤU TRÚC (V1.5) ===
 </script>
 
 <section id="health-section" class="page-section {activeTab === 'health-section' ? '' : 'hidden'}">
@@ -123,9 +125,9 @@
          </div>
 
         <div class="flex justify-between items-center mb-8"> 
-            <nav id="luyke-subtabs-nav" class="border-b border-gray-200 -mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs" data-content-container="luyke-subtabs-content"> 
+            <nav id="luyke-subtabs-nav" class="border-b border-gray-200 -mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
                 <button 
-                    class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-luyke-sieu-thi' ? 'active' : ''}" 
+                      class="sub-tab-btn whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm {activeSubTabId === 'subtab-luyke-sieu-thi' ? 'active' : ''}" 
                     data-target="subtab-luyke-sieu-thi" 
                     data-title="SieuThiLuyKe"
                     on:click={handleSubTabClick}
@@ -152,16 +154,17 @@
                     <span>Thi Đua Vùng TNB</span> 
                 </button>
             </nav> 
+
             <div class="flex items-center gap-x-2"> 
-                <button id="compose-luyke-notification-btn" class="action-btn action-btn--composer" title="Nhận xét"> 
+                <button id="compose-luyke-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}> 
                     <i data-feather="pen-tool"></i> 
                     <span>Nhận xét</span> 
                 </button> 
-                <button id="export-luyke-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại"> 
+                <button id="export-luyke-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại" on:click={handleExport}> 
                     <i data-feather="download"></i> 
                     <span>Xuất Excel</span> 
                 </button>
-                <button id="capture-luyke-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại"> 
+                <button id="capture-luyke-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại" on:click={handleCapture}> 
                     <i data-feather="camera"></i> 
                     <span>Chụp màn hình</span> 
                 </button> 
@@ -170,16 +173,26 @@
 
         <div id="luyke-subtabs-content"> 
             {#if activeSubTabId === 'subtab-luyke-sieu-thi'}
-                <LuykeSieuThi 
-                    supermarketReport={supermarketReport} 
-                    filteredYCXData={filteredYCXData} 
-                    goals={goals} 
-                    numDays={numDays}
-                />
+                <div id="subtab-luyke-sieu-thi" class="sub-tab-content">
+                    <LuykeSieuThi 
+                        supermarketReport={supermarketReport} 
+                        filteredYCXData={filteredYCXData} 
+                        goals={goals} 
+                        numDays={numDays}
+                    />
+                </div>
+            
             {:else if activeSubTabId === 'subtab-luyke-thi-dua'}
-                <LuykeThiDua />
+                <div id="subtab-luyke-thi-dua" class="sub-tab-content">
+                    <div id="luyke-competition-content">
+                        <LuykeThiDua />
+                    </div>
+                </div>
+            
             {:else if activeSubTabId === 'subtab-luyke-thidua-vung'}
-                <LuykeThiDuaVung />
+                <div id="subtab-luyke-thidua-vung" class="sub-tab-content">
+                     <LuykeThiDuaVung />
+                </div>
             {/if}
         </div>
     </div>
