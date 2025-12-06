@@ -1,12 +1,15 @@
 <script>
+  import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
   
   export let reportData = [];
 
+  const dispatch = createEventDispatcher();
+
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // Định nghĩa cấu hình cột kèm màu sắc Header (giống style cũ)
+  // Định nghĩa cấu hình cột kèm màu sắc Header
   const columns = [
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
@@ -48,17 +51,14 @@
 
   // Logic màu sắc (Xanh/Đỏ) cho dữ liệu
   function getCellClass(item, colKey) {
-      // Style mặc định cho số tiền
       if (['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat'].includes(colKey)) {
-          return 'font-bold text-gray-800'; // Màu số đậm hơn
+          return 'font-bold text-gray-800';
       }
 
       if (!item.mucTieu) return 'text-gray-600';
 
-      // Logic so sánh mục tiêu
       if (colKey === 'hieuQuaQuyDoi') {
           const target = (item.mucTieu.phanTramQD || 0) / 100;
-          // Thêm background nhẹ để nổi bật
           return item.hieuQuaQuyDoi >= target 
               ? 'text-green-700 font-extrabold bg-green-50' 
               : 'text-red-600 font-bold bg-red-50';
@@ -72,13 +72,17 @@
       }
       return 'text-gray-600';
   }
+
+  function handleRowClick(employeeId) {
+      dispatch('viewDetail', { employeeId });
+  }
 </script>
 
 <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in">
     <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
         <div class="flex items-center gap-2">
             <div class="p-2 bg-blue-100 rounded-lg text-blue-600">
-                <i data-feather="dollar-sign" class="w-5 h-5"></i>
+                 <i data-feather="dollar-sign" class="w-5 h-5"></i>
             </div>
             <div>
                 <h3 class="font-bold text-gray-800 text-lg uppercase">Chi tiết Doanh Thu Lũy Kế</h3>
@@ -112,8 +116,11 @@
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr class="hover:bg-blue-50 transition-colors duration-150 group {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}">
-                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-100 group-hover:text-blue-800">
+                        <tr 
+                            class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}"
+                            on:click={() => handleRowClick(item.maNV)}
+                        >
+                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-100 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
                             <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">
@@ -154,7 +161,6 @@
 </div>
 
 <style>
-    /* Animation nhẹ nhàng khi load bảng */
     .animate-fade-in { animation: fadeIn 0.4s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>

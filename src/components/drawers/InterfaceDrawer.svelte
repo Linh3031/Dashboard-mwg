@@ -1,36 +1,25 @@
 <script>
     import { drawerState, interfaceSettings } from '../../stores.js';
-    import { settingsService } from '../../modules/settings.service.js';
+    // [FIX] Cập nhật đường dẫn settings service
+    import { settingsService } from '../../services/settings.service.js';
     import { onMount } from 'svelte';
 
-    // Reactive: Kiểm tra xem drawer này có đang active không để hiển thị
+    // ... (Giữ nguyên phần code còn lại)
     $: isOpen = $drawerState.activeDrawer === 'interface-drawer';
 
-    /**
-     * Đóng drawer
-     */
     function close() {
         drawerState.update(s => ({ ...s, activeDrawer: null }));
     }
 
-    /**
-     * Xử lý khi thay đổi độ tương phản
-     * @param {Event} event
-     */
     function onContrastChange(event) {
         const level = event.target.value;
         settingsService.updateContrast(level);
     }
 
-    /**
-     * Xử lý khi thay đổi các cài đặt khác (Font, Color).
-     * Giá trị đã được bind vào store $interfaceSettings, hàm này gọi service để áp dụng thay đổi đó.
-     */
     function onSettingChange() {
         settingsService.updateInterface($interfaceSettings);
     }
     
-    // Load settings từ localStorage khi component được mount lần đầu
     onMount(() => {
         settingsService.loadInterfaceSettings();
     });
@@ -55,7 +44,6 @@
             on:click={close}
         >&times;</button>
     </div>
-
     <div class="space-y-6">
         <div>
             <label for="contrast-selector" class="block text-sm font-medium text-gray-700 mb-2">Độ tương phản</label>
@@ -125,7 +113,7 @@
         <div>
             <h4 class="text-sm font-medium text-gray-700 mb-2">Màu chữ thẻ KPI</h4>
              <div class="space-y-2">
-                <div class="flex items-center gap-2">
+                 <div class="flex items-center gap-2">
                     <input 
                         type="color" 
                         id="kpi-title-color" 

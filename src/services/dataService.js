@@ -1,3 +1,4 @@
+// Version 1.3 - Fix: Remove import to deleted 'ui-notifications.js'
 /* global XLSX */
 import { get } from 'svelte/store';
 import { 
@@ -12,15 +13,22 @@ import {
     competitionData,
     pastedThiDuaReportData,
     realtimeYCXData,
-    categoryStructure, // Store mới
-    brandList,       // Store mới
-    specialProductList // Store mới
+    categoryStructure,
+    brandList,
+    specialProductList
 } from '../stores.js';
 import { dataProcessing } from './dataProcessing.js';
-import { storage } from '../modules/storage.js';
-import { adminService } from './admin.service.js'; // Import Admin Service
+import { storage } from './storage.service.js';
+import { adminService } from './admin.service.js';
 
 const LOCAL_DSNV_FILENAME_KEY = '_localDsnvFilename';
+
+// [FIX] Tạo hàm thông báo nội bộ thay vì import file đã xóa
+const notify = (msg, type = 'info') => {
+    console.log(`[${type.toUpperCase()}] ${msg}`);
+    // Chỉ alert khi lỗi để tránh phiền, hoặc có thể bỏ alert nếu muốn
+    if (type === 'error') alert(msg); 
+};
 
 const FILE_MAPPING = {
     'saved_danhsachnv': { store: danhSachNhanVien, normalizeType: 'danhsachnv' },
@@ -51,7 +59,6 @@ const PASTE_MAPPING = {
     }
 };
 
-// Helper đọc file
 async function _handleFileRead(file) {
     return new Promise((resolve, reject) => {
         if (!file) return reject(new Error("No file provided."));
@@ -68,12 +75,12 @@ async function _handleFileRead(file) {
     });
 }
 
-// ... (Giữ nguyên handleFileChange, handlePasteChange, loadAllFromCache) ...
 export async function handleFileChange(file, saveKey) {
     const mapping = FILE_MAPPING[saveKey];
     if (!mapping) return { success: false, message: `❌ Lỗi: Không tìm thấy mapping cho key ${saveKey}` };
 
     try {
+        console.log(`Đang xử lý file: ${file.name}`);
         const workbook = await _handleFileRead(file);
         const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
         const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
@@ -127,7 +134,7 @@ export async function loadAllFromCache() {
             if (data && data.length > 0) mapping.store.set(data);
         }
     } catch (err) { console.error("Lỗi tải cache file:", err); }
-    // Load paste data...
+    
     try {
         const luykeText = localStorage.getItem('daily_paste_luyke');
         if (luykeText) {
@@ -143,57 +150,58 @@ export async function loadAllFromCache() {
     } catch (err) { console.error("Lỗi tải cache paste:", err); }
 }
 
-// --- HÀM MỚI: XỬ LÝ UPLOAD ADMIN ---
-
-/**
- * Xử lý tải file Cấu trúc Ngành hàng.
- */
 export async function handleCategoryFile(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    const workbook = await _handleFileRead(file);
-    const categorySheet = workbook.Sheets[workbook.SheetNames[0]];
-    const categoryRawData = XLSX.utils.sheet_to_json(categorySheet, { raw: false, defval: null });
-    const categoryResult = dataProcessing.normalizeCategoryStructureData(categoryRawData);
+    try {
+        const workbook = await _handleFileRead(file);
+        const categorySheet = workbook.Sheets[workbook.SheetNames[0]];
+        const categoryRawData = XLSX.utils.sheet_to_json(categorySheet, { raw: false, defval: null });
+        const categoryResult = dataProcessing.normalizeCategoryStructureData(categoryRawData);
 
-    let brandResult = { success: true, normalizedData: [] };
-    const brandSheetName = workbook.SheetNames.find(name => name.toLowerCase().trim() === 'hãng');
-    if (brandSheetName) {
-        const brandSheet = workbook.Sheets[brandSheetName];
-        const brandRawData = XLSX.utils.sheet_to_json(brandSheet, { raw: false, defval: null });
-        brandResult = dataProcessing.normalizeBrandData(brandRawData);
-    }
+        let brandResult = { success: true, normalizedData: [] };
+        const brandSheetName = workbook.SheetNames.find(name => name.toLowerCase().trim() === 'hãng');
+        if (brandSheetName) {
+            const brandSheet = workbook.Sheets[brandSheetName];
+            const brandRawData = XLSX.utils.sheet_to_json(brandSheet, { raw: false, defval: null });
+            brandResult = dataProcessing.normalizeBrandData(brandRawData);
+        }
 
-    if(categoryResult.success) {
-        categoryStructure.set(categoryResult.normalizedData);
-        brandList.set(brandResult.normalizedData);
-    } else {
-        throw new Error(`Lỗi xử lý file khai báo: ${categoryResult.error}`);
+        if(categoryResult.success) {
+            categoryStructure.set(categoryResult.normalizedData);
+            brandList.set(brandResult.normalizedData);
+            notify("Đã cập nhật danh mục ngành hàng & hãng", "success");
+        } else {
+            throw new Error(`Lỗi xử lý file khai báo: ${categoryResult.error}`);
+        }
+        event.target.value = ''; 
+    } catch(e) {
+        notify(e.message, 'error');
     }
-    event.target.value = ''; // Reset input
 }
 
-/**
- * Xử lý tải file Sản Phẩm Đặc Quyền (SPĐQ).
- */
 export async function handleSpecialProductFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    const workbook = await _handleFileRead(file);
-    const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
-    
-    const result = dataProcessing.normalizeSpecialProductData(rawData);
+    try {
+        const workbook = await _handleFileRead(file);
+        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
+        
+        const result = dataProcessing.normalizeSpecialProductData(rawData);
 
-    if (result.success) {
-        specialProductList.set(result.normalizedData);
-        // Gọi service để lưu ngay
-        await adminService.saveSpecialProductList(result.normalizedData);
-    } else {
-        throw new Error(`Lỗi xử lý file SPĐQ: ${result.error}`);
+        if (result.success) {
+            specialProductList.set(result.normalizedData);
+            await adminService.saveSpecialProductList(result.normalizedData);
+            notify("Đã cập nhật SP Đặc quyền", "success");
+        } else {
+            throw new Error(`Lỗi xử lý file SPĐQ: ${result.error}`);
+        }
+        event.target.value = '';
+    } catch(e) {
+        notify(e.message, 'error');
     }
-    event.target.value = ''; // Reset input
 }
 
 export async function handleTemplateDownload() {
@@ -209,11 +217,14 @@ export async function handleRealtimeFileInput(event) {
         const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
         if (success) {
             realtimeYCXData.set(normalizedData);
+            notify(`Đã tải ${normalizedData.length} dòng realtime`, 'success');
         } else {
             console.error(`File lỗi! Thiếu cột: ${missingColumns.join(', ')}`);
+            notify(`Lỗi thiếu cột: ${missingColumns.join(', ')}`, 'error');
         }
     } catch (e) {
         console.error("Lỗi xử lý file Realtime:", e);
+        notify(e.message, 'error');
     } finally {
         event.target.value = '';
     }

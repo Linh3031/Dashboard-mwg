@@ -9,7 +9,7 @@
         localCompetitionConfigs, 
         selectedWarehouse 
     } from '../../stores.js';
-    import { settingsService } from '../../modules/settings.service.js';
+    import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
     
     let activeTab = 'monthly';

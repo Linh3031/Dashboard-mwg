@@ -1,7 +1,8 @@
 <script>
   import { realtimeYCXData } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../../services/settings.service.js';
   import CategoryRevenueTable from './CategoryRevenueTable.svelte';
 
   export let selectedWarehouse = '';
@@ -9,7 +10,6 @@
   let filteredReport = [];
   let hasAnyData = false;
 
-  // Reactive Statement để tính toán dữ liệu khi store hoặc kho thay đổi
   $: {
       const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
       const goals = settings.goals || {};
@@ -21,7 +21,6 @@
           filteredReport = masterReport;
       }
 
-      // Kiểm tra xem có dữ liệu hay không để hiển thị thông báo
       hasAnyData = filteredReport.some(item => 
           (item.dtICT || 0) > 0 || 
           (item.dtPhuKien || 0) > 0 || 
@@ -41,7 +40,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div data-capture-group="1">
                 <CategoryRevenueTable 
-                    title="ICT" 
+                    title="ICT (Điện thoại - Laptop)" 
                     headerClass="category-header-ict"
                     reportData={filteredReport}
                     mainRevenueKey="dtICT"
@@ -77,7 +76,7 @@
 
             <div data-capture-group="2">
                 <CategoryRevenueTable 
-                    title="CE" 
+                    title="CE (Điện tử - Điện lạnh)" 
                     headerClass="category-header-ce"
                     reportData={filteredReport}
                     mainRevenueKey="dtCE"
@@ -89,13 +88,13 @@
 
             <div class="lg:col-span-2" data-capture-group="3">
                 <CategoryRevenueTable 
-                    title="BẢO HIỂM" 
+                    title="DỊCH VỤ & BẢO HIỂM" 
                     headerClass="category-header-baohiem"
                     reportData={filteredReport}
                     mainRevenueKey="dtBaoHiem"
                     mainQuantityKey="slBaoHiem"
                     subQuantityKeys={['slBH1d1', 'slBHXM', 'slBHRV', 'slBHMR']}
-                    subQuantityLabels={['BH 1-1', 'BHXM', 'BHRV', 'BHMR']}
+                    subQuantityLabels={['BH 1 đổi 1', 'BH Xe máy', 'BH Rơi vỡ', 'BH Mở rộng']}
                 />
             </div>
         </div>

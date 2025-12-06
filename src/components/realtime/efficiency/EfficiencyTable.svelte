@@ -1,29 +1,30 @@
 <script>
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../../services/settings.service.js';
+  import SortableTh from '../../common/SortableTh.svelte';
 
   export let reportData = [];
   
-  const HEADER_COLORS = {
-    'dtICT': 'bg-blue-100 text-blue-900', 'dtPhuKien': 'bg-blue-100 text-blue-900', 'pctPhuKien': 'bg-blue-100 text-blue-900',
-    'dtCE': 'bg-green-100 text-green-900', 'dtGiaDung': 'bg-green-100 text-green-900', 'pctGiaDung': 'bg-green-100 text-green-900',
-    'pctMLN': 'bg-yellow-100 text-yellow-900', 'pctSim': 'bg-yellow-100 text-yellow-900', 'pctVAS': 'bg-yellow-100 text-yellow-900', 'pctBaoHiem': 'bg-yellow-100 text-yellow-900'
-  };
-
   const ALL_COLUMNS = [
-    { id: 'dtICT', label: 'DT ICT', isRate: false },
-    { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false },
-    { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien' },
-    { id: 'dtCE', label: 'DT CE', isRate: false },
-    { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false },
-    { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung' },
-    { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN' },
-    { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim' },
-    { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS' },
-    { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem' }
+    { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
+    { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
+    { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
+    { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900' },
+    { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900' },
+    { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
+    { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
+    { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
+    { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
+    { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
   ];
 
-  let visibleColumnIds = ALL_COLUMNS.map(c => c.id);
+  // Load settings từ service
+  let allItemsConfig = settingsService.loadEfficiencyViewSettings();
+  // Lọc ra các cột được hiển thị dựa trên cấu hình đã lưu
+  let visibleColumnIds = allItemsConfig.filter(c => c.visible).map(c => c.id);
+
   let sortKey = 'dtICT';
   let sortDirection = 'desc';
   let groupedData = {};
@@ -43,7 +44,8 @@
     }
   }
 
-  function handleSort(key) {
+  function handleSort(event) {
+    const key = event.detail;
     if (sortKey === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
     } else {
@@ -52,7 +54,6 @@
     }
   }
   
-  // SỬA LỖI: Thêm tham số key và dir vào hàm để Svelte nhận biết sự thay đổi
   function sortEmployees(employees, key, dir) {
       return [...employees].sort((a, b) => {
           if (key === 'hoTen') {
@@ -73,6 +74,7 @@
       } else {
           visibleColumnIds = [...visibleColumnIds, columnId];
       }
+      // Lưu lại setting (nếu cần logic lưu realtime thì gọi service ở đây)
   }
   
   function getCellClass(item, colDef) {
@@ -81,8 +83,8 @@
     if (!colDef.isRate) return 'text-gray-900';
 
     const target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
-    if (target > 0 && value < target) return 'text-red-600 bg-red-50';
-    return 'text-green-600';
+    if (target > 0 && value < target) return 'text-red-600 bg-red-50 font-bold';
+    return 'text-green-600 font-bold';
   }
   
   function getHeaderClass(deptName) {
@@ -116,26 +118,19 @@
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
             <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20">
-               <tr>
-                <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-0 bg-slate-200 z-30 min-w-[200px] select-none" on:click={() => handleSort('hoTen')}>
-                  <div class="flex items-center gap-1">
-                    <span>Nhân viên</span>
-                    <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{sortKey === 'hoTen' && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
-                    </svg>
-                  </div>
-                </th>
+              <tr>
+                <SortableTh key="hoTen" label="Nhân viên" className="min-w-[200px] sticky left-0 z-30" {sortKey} {sortDirection} on:sort={handleSort} />
 
                 {#each ALL_COLUMNS as col}
                   {#if visibleColumnIds.includes(col.id)}
-                    <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition whitespace-nowrap select-none {HEADER_COLORS[col.id] || ''}" on:click={() => handleSort(col.id)}>
-                       <div class="flex items-center justify-end gap-1">
-                         <span>{col.label}</span>
-                         <svg class="w-3 h-3 {sortKey === col.id ? 'opacity-100' : 'opacity-40'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="{sortKey === col.id ? 3 : 2}" d="{sortKey === col.id && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
-                         </svg>
-                       </div>
-                    </th>
+                    <SortableTh 
+                        key={col.id} 
+                        label={col.label} 
+                        align="right" 
+                        className="whitespace-nowrap {col.headerClass || ''}"
+                        {sortKey} {sortDirection} 
+                        on:sort={handleSort} 
+                    />
                   {/if}
                 {/each}
               </tr>
@@ -147,8 +142,8 @@
                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                   </td>
                   {#each ALL_COLUMNS as col}
-                    {#if visibleColumnIds.includes(col.id)}
-                      <td class="px-4 py-2 text-right border-l border-gray-100 font-bold {getCellClass(item, col)}">
+                     {#if visibleColumnIds.includes(col.id)}
+                      <td class="px-4 py-2 text-right border-l border-gray-100 {getCellClass(item, col)}">
                          {#if col.isRate}
                             {formatters.formatPercentage(item[col.id])}
                          {:else}

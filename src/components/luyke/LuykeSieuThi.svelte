@@ -7,7 +7,8 @@
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
-  import { settingsService } from '../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../services/settings.service.js';
   import { dataProcessing } from '../../services/dataProcessing.js';
   
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
@@ -47,7 +48,7 @@
 
     const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
     const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
-    const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData; // Thêm dtTraCham, tyLeTraCham từ parseData
+    const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
     
     const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
 
@@ -68,20 +69,9 @@
     if (hasPasteData) {
         finalDtThuc = cleanValue(mainKpis['Thực hiện DT thực']) * 1000000;
         finalDtQd = cleanValue(mainKpis['Thực hiện DTQĐ']) * 1000000;
-        
-        // === LOGIC MỚI THEO YÊU CẦU ===
-        // Doanh thu trả chậm: Lấy trực tiếp từ dòng dưới "DT Siêu thị"
-        // Lưu ý: Logic trong dataProcessing đã parse thành số (ví dụ 1234).
-        // Cần nhân 1,000,000 nếu đơn vị là triệu. (Giả định BI dùng đơn vị triệu như DT thực)
         finalDtGop = dtTraCham * 1000000;
-
-        // % Trả chậm: Lấy trực tiếp từ dòng dưới "Tỷ Trọng Trả Góp"
-        // Logic dataProcessing đã parse (ví dụ 20.5). Cần chia 100 để ra decimal.
         finalTyLeGop = tyLeTraCham / 100;
-        // ==============================
-
         finalTyLeQd = finalDtThuc > 0 ? ((finalDtQd / finalDtThuc) - 1) : 0;
-
     } else {
         finalDtThuc = excelData.dtThuc;
         finalDtQd = excelData.dtQd;

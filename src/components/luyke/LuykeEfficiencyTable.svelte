@@ -2,8 +2,8 @@
   import { afterUpdate } from 'svelte';
   import { sortState } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
-  import { settingsService } from '../../modules/settings.service.js';
-  // FIX: Đường dẫn đúng
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../services/settings.service.js';
   import SortableTh from '../common/SortableTh.svelte';
 
   export let items = [];

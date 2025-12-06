@@ -1,10 +1,10 @@
 <script>
-  // SỬA PATH: ../../ -> ../../../
+  // Version 1.2 - Fix import paths (modules -> services)
   import { realtimeYCXData } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng
+  import { settingsService } from '../../../services/settings.service.js';
   
-  // SỬA TÊN IMPORT: Đã đổi tên file bảng thành EfficiencyTable.svelte
   import EfficiencyTable from './EfficiencyTable.svelte';
 
   export let selectedWarehouse = '';

@@ -2,7 +2,8 @@
     import { onMount, afterUpdate } from 'svelte';
     import { competitionNameMappings } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
-    import { ui } from '../../ui.js';
+    // [FIX] Xóa dòng import ui.js vì file này đã bị xóa
+    // import { ui } from '../../ui.js'; 
 
     let mappingSearch = '';
     let debounceTimer;
@@ -22,6 +23,7 @@
         });
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
+            // Service đã có log/alert bên trong, không cần ui.showNotification ở đây nữa
             adminService.saveCompetitionNameMappings($competitionNameMappings);
         }, 1000);
     }

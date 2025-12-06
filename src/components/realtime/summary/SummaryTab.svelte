@@ -1,11 +1,11 @@
 <script>
-  // SỬA PATH: ../../ -> ../../../
+  // Version 1.1 - Fix import paths (modules -> services)
   import { realtimeYCXData, realtimeGoalSettings } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng
+  import { settingsService } from '../../../services/settings.service.js';
   import { dataProcessing } from '../../../services/dataProcessing.js';
   
-  // SỬA TÊN FILE IMPORT (Cùng thư mục nên dùng ./)
   import KpiCards from './KpiCards.svelte';
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';

@@ -3,6 +3,8 @@
   export let employee;
   export let totalAbove = 0;
   export let totalCriteria = 0;
+  // [MỚI] Prop để điều khiển hiển thị dòng đánh giá
+  export let showStats = true;
 </script>
 
 <div class="flex items-center gap-6 p-4 bg-purple-50 border border-purple-200 border-t-4 border-t-purple-500 rounded-lg shadow-sm mb-6">
@@ -14,13 +16,16 @@
     
     <div class="flex-grow">
         <p class="text-2xl font-extrabold text-purple-800 leading-tight">
-            {employee.hoTen} <span class="text-lg font-semibold text-purple-600">- {employee.maNV}</span>
+             {employee.hoTen} <span class="text-lg font-semibold text-purple-600">- {employee.maNV}</span>
         </p>
         <p class="text-gray-700 font-medium text-base">{employee.boPhan}</p>
-        <p class="mt-1 text-sm font-semibold text-gray-800">
-            Chỉ số trên TB: <span class="text-green-600 font-bold text-lg">{totalAbove}</span> 
-            <span class="text-gray-400 mx-1">/</span> 
-            Tổng: <span class="font-bold text-gray-600">{totalCriteria}</span>
-        </p>
+        
+        {#if showStats}
+            <p class="mt-1 text-sm font-semibold text-gray-800">
+                Chỉ số trên TB: <span class="text-green-600 font-bold text-lg">{totalAbove}</span> 
+                <span class="text-gray-400 mx-1">/</span> 
+                Tổng: <span class="font-bold text-gray-600">{totalCriteria}</span>
+            </p>
+        {/if}
     </div>
 </div>

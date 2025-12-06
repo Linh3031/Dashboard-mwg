@@ -1,10 +1,10 @@
 <script>
-  // SỬA PATH: ../../ -> ../../../
+  // Version 1.1 - Fix import paths (modules -> services)
   import { realtimeYCXData } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../../services/settings.service.js';
   
-  // SỬA TÊN FILE IMPORT
   import EmployeeList from './EmployeeList.svelte';
   import EmployeeDetail from './EmployeeDetail.svelte';
 
@@ -49,7 +49,7 @@
       />
     {:else}
       <div class="p-8 text-center bg-gray-50 rounded-lg border border-gray-200">
-        <p class="text-gray-500">Không có dữ liệu nhân viên nào phù hợp với bộ lọc.</p>
+       <p class="text-gray-500">Không có dữ liệu nhân viên nào phù hợp với bộ lọc.</p>
       </div>
     {/if}
   {/if}

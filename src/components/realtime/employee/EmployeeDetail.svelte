@@ -2,7 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { realtimeYCXData, employeeMaNVMap } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   
   export let employeeId;
@@ -65,14 +66,14 @@
              </div>
              <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                 <div class="text-sm text-gray-500 font-medium uppercase">DT Chưa Xuất</div>
-                <div class="text-2xl font-bold text-yellow-600 mt-1">{formatters.formatRevenue(summary.unexportedRevenue, 1)}</div>
+                 <div class="text-2xl font-bold text-yellow-600 mt-1">{formatters.formatRevenue(summary.unexportedRevenue, 1)}</div>
             </div>
              <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                 <div class="text-sm text-gray-500 font-medium uppercase">Tổng Đơn</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.totalOrders}</div>
             </div>
             <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
-                <div class="text-sm text-gray-500 font-medium uppercase">Đơn Bán Kèm</div>
+                 <div class="text-sm text-gray-500 font-medium uppercase">Đơn Bán Kèm</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.bundledOrderCount}</div>
             </div>
         </div>
@@ -85,10 +86,10 @@
                     {#each detailData.byProductGroup as group}
                         {@const percent = summary.totalRealRevenue > 0 ? (group.realRevenue / summary.totalRealRevenue) * 100 : 0}
                         <div>
-                            <div class="flex justify-between text-sm mb-1">
+                             <div class="flex justify-between text-sm mb-1">
                                 <span class="font-semibold">{group.name}</span>
                                 <span class="font-bold text-gray-700">{formatters.formatRevenue(group.realRevenue, 0)}</span>
-                            </div>
+                             </div>
                             <div class="w-full bg-gray-200 rounded-full h-2.5">
                                 <div class="bg-blue-600 h-2.5 rounded-full" style="width: {percent}%"></div>
                             </div>
@@ -100,7 +101,7 @@
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-5">
                 <h4 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Chi tiết Khách hàng ({detailData.byCustomer.length})</h4>
                 <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                    {#each detailData.byCustomer as customer, index}
+                     {#each detailData.byCustomer as customer, index}
                         <details class="group border border-gray-200 rounded-lg bg-gray-50 open:bg-white open:shadow-sm transition-all">
                             <summary class="flex justify-between items-center p-3 cursor-pointer list-none select-none">
                                 <div class="flex items-center gap-2">
@@ -110,7 +111,7 @@
                                 </div>
                                 <span class="transform group-open:rotate-180 transition-transform text-gray-400">▼</span>
                             </summary>
-                            <div class="p-3 border-t border-gray-100 text-sm">
+                             <div class="p-3 border-t border-gray-100 text-sm">
                                 <table class="w-full">
                                     {#each customer.products as p}
                                         <tr class="border-b last:border-0 border-gray-100">
@@ -119,7 +120,7 @@
                                         </tr>
                                     {/each}
                                 </table>
-                            </div>
+                             </div>
                         </details>
                     {/each}
                 </div>
@@ -128,7 +129,7 @@
 
     {:else}
         <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-            <p class="text-gray-500">Đang tải hoặc không có dữ liệu chi tiết...</p>
+             <p class="text-gray-500">Đang tải hoặc không có dữ liệu chi tiết...</p>
         </div>
     {/if}
 </div>

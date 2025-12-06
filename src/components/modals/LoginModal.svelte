@@ -1,7 +1,8 @@
 <script>
     import { modalState } from '../../stores.js';
     import { authService } from '../../services/auth.service.js';
-    import { ui } from '../../ui.js'; // Dùng để hiển thị notification
+    // [FIX] Xóa import ui từ ui.js (file đã bị xóa)
+    // import { ui } from '../../ui.js'; 
     
     // State nội bộ
     let email = '';
@@ -12,9 +13,6 @@
     $: isOpen = $modalState.activeModal === 'login-modal';
 
     function close() {
-        // Login Modal thường không cho phép đóng nếu chưa login (bắt buộc),
-        // nhưng ta vẫn cần hàm này để logic được đầy đủ.
-        // Trong thực tế, overlay sẽ có 'cursor-not-allowed' và không gọi close().
         modalState.update(s => ({ ...s, activeModal: null }));
     }
 
@@ -26,7 +24,9 @@
             const success = await authService.loginUser(email);
             
             if (success) {
-                ui.showNotification(`Chào mừng ${email}!`, 'success');
+                // [FIX] Dùng alert tạm thời thay vì ui.showNotification
+                // Vì modal login chỉ hiện 1 lần đầu, alert là chấp nhận được
+                // alert(`Chào mừng ${email}!`); 
                 close();
             } else {
                 errorMsg = 'Vui lòng nhập một địa chỉ email hợp lệ.';

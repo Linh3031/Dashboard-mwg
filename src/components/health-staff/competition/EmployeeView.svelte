@@ -1,9 +1,10 @@
 <script>
   import { onMount, afterUpdate } from 'svelte';
   import { pastedThiDuaReportData } from '../../../stores.js'; 
-  import { settingsService } from '../../../modules/settings.service.js';
+  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
-  import { getSortedDepartmentList } from '../../../utils.js'; // Bỏ getShortEmployeeName ở đây
+  import { getSortedDepartmentList } from '../../../utils.js'; 
   import SortableTh from '../../common/SortableTh.svelte'; 
 
   export let reportData = []; 
@@ -145,7 +146,7 @@
             {#each columnSettings as col}
                 <button 
                     class="px-3 py-1 rounded-full text-xs font-medium border transition-colors select-none
-                           {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}"
+                            {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}"
                     on:click={() => toggleColumn(col)}
                     title={col.loaiSoLieu}
                 >
