@@ -1,4 +1,5 @@
 // src/services/datasync.service.js
+// Version 2.0 - Full Code: Lightweight Metadata Sync Strategy
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
 import { firebaseStore, currentUser } from '../stores.js'; 
 import { get } from 'svelte/store';
@@ -14,8 +15,9 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
+    // --- CÁC HÀM CONFIG CŨ (GIỮ NGUYÊN) ---
+    
     async saveMetadataToFirestore(kho, dataType, metadata) {
-        // ... (Giữ nguyên) ...
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
         const khoRef = doc(db, "warehouseData", kho);
@@ -26,7 +28,6 @@ export const datasyncService = {
     },
 
     async savePastedDataToFirestore(kho, dataType, content, versionInfo) {
-        // ... (Giữ nguyên) ...
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
         const khoRef = doc(db, "warehouseData", kho);
@@ -47,7 +48,6 @@ export const datasyncService = {
     },
 
     async loadCompetitionConfigs(kho) {
-        // ... (Giữ nguyên) ...
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
@@ -57,7 +57,6 @@ export const datasyncService = {
         } catch(e) { return []; }
     },
 
-    // === HÀM MỚI ===
     async saveSpecialPrograms(kho, programs) {
         const db = getDB();
         if (!db || !kho) { alert("Vui lòng chọn Kho trước."); return; }
@@ -68,5 +67,57 @@ export const datasyncService = {
             specialProgramsUpdatedBy: getCurrentUserEmail()
         };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { console.error(error); throw error; }
+    },
+
+    // --- CÁC HÀM MỚI CHO CHIẾN LƯỢC ĐỒNG BỘ FILE GỐC ---
+
+    /**
+     * Chỉ lưu Metadata (Link tải, tên file,...) vào Firestore. 
+     * Dữ liệu thực tế nằm trên Storage.
+     */
+    async saveWarehouseMetadata(kho, key, metadata) {
+        const db = getDB();
+        if (!db) { console.warn("Firestore chưa sẵn sàng"); return; }
+        if (!kho) return;
+
+        const khoRef = doc(db, "warehouseData", kho);
+        
+        // Metadata bao gồm: downloadURL, fileName, fileType, rowCount, timestamp...
+        const dataToSave = {
+            [key]: {
+                ...metadata,
+                updatedAt: serverTimestamp(),
+                updatedBy: getCurrentUserEmail()
+            }
+        };
+
+        try {
+            await setDoc(khoRef, dataToSave, { merge: true });
+            console.log(`[Firestore] Đã cập nhật metadata cho ${key} @ ${kho}`);
+        } catch (error) {
+            console.error(`[Firestore] Lỗi lưu metadata ${key}:`, error);
+            throw error;
+        }
+    },
+
+    /**
+     * Tải toàn bộ dữ liệu (Metadata) của kho để lấy URL download.
+     */
+    async loadWarehouseData(kho) {
+        const db = getDB();
+        if (!db || !kho) return null;
+
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists()) {
+                return docSnap.data();
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error(`[Firestore] Lỗi tải kho ${kho}:`, error);
+            throw error;
+        }
     }
 };

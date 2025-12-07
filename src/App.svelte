@@ -29,8 +29,16 @@
   // [MỚI] Trình tạo nhận xét
   import ComposerModal from './components/modals/ComposerModal.svelte';
 
-  onMount(() => {
-    // Kiểm tra đăng nhập khi ứng dụng khởi chạy
+  onMount(async () => {
+    // 1. Kích hoạt đăng nhập ẩn danh Firebase (Hạ tầng)
+    try {
+        await authService.ensureAnonymousAuth();
+    } catch (e) {
+        console.error("Lỗi kết nối Firebase Auth:", e);
+        // Có thể hiển thị thông báo lỗi global ở đây nếu cần
+    }
+
+    // 2. Kiểm tra định danh Email (Ứng dụng)
     const isLoggedIn = authService.initAuth();
     if (!isLoggedIn) {
         modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
