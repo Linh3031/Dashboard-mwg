@@ -4,21 +4,61 @@
 
   export let items = [];
   
+  // --- STATE FILTER ---
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let hiddenIds = new Set(); // Lưu ID các chỉ số bị ẩn
+
   const iconMap = {
       'pctPhuKien': 'headphones', 'pctGiaDung': 'home', 'pctMLN': 'droplet',
       'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
   };
 
+  // --- LOGIC FILTER ---
+  // Danh sách để hiển thị trong Dropdown (có tìm kiếm)
+  $: filterList = items.filter(item => 
+      item.label.toLowerCase().includes(filterSearch.toLowerCase())
+  );
+
+  function toggleVisibility(id) {
+      if (hiddenIds.has(id)) {
+          hiddenIds.delete(id);
+      } else {
+          hiddenIds.add(id);
+      }
+      hiddenIds = new Set(hiddenIds);
+  }
+
+  function toggleAllVisibility(show) {
+      if (show) {
+          hiddenIds = new Set();
+      } else {
+          hiddenIds = new Set(items.map(i => i.id));
+      }
+  }
+
+  // Danh sách hiển thị thực tế ra màn hình
+  $: visibleItems = items.filter(item => !hiddenIds.has(item.id));
+
+  // --- HELPERS ---
   function getProgressColor(val, target) {
       const t = (target || 0) / 100;
       if (t === 0) return '#3b82f6';
       return val >= t ? '#22c55e' : '#ef4444';
   }
 
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          isSettingsOpen = false;
+      }
+  }
+
   afterUpdate(() => {
     if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
+
+<svelte:window on:click={handleWindowClick} />
 
 <div class="luyke-widget h-full">
   <div class="luyke-widget-header">
@@ -28,16 +68,55 @@
       </div>
       <span>Hiệu Quả Khai Thác</span>
     </div>
+
+    <div class="relative filter-wrapper">
+        <button 
+            class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
+            on:click={() => isSettingsOpen = !isSettingsOpen}
+            title="Lọc chỉ số hiển thị"
+        >
+            <i data-feather="filter" class="w-4 h-4"></i>
+        </button>
+
+        {#if isSettingsOpen}
+            <div class="filter-dropdown">
+                <div class="filter-header">
+                    <input 
+                        type="text" 
+                        class="filter-search" 
+                        placeholder="Tìm chỉ số..." 
+                        bind:value={filterSearch} 
+                    />
+                </div>
+                <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+                    {#if filterList.length === 0}
+                        <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                    {:else}
+                        {#each filterList as item (item.id)}
+                            <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
+                                <input type="checkbox" checked={!hiddenIds.has(item.id)} />
+                                <label>{item.label}</label>
+                            </div>
+                        {/each}
+                    {/if}
+                </div>
+                <div class="filter-actions">
+                    <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                    <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                </div>
+            </div>
+        {/if}
+    </div>
   </div>
 
   <div class="luyke-widget-body custom-scrollbar">
-    {#if items.length === 0}
+    {#if visibleItems.length === 0}
        <div class="flex flex-col items-center justify-center h-full text-gray-400">
-          <p class="text-sm">Chưa có dữ liệu.</p>
+          <p class="text-sm">Đã ẩn hết dữ liệu.</p>
        </div>
     {:else}
       <div class="flex flex-col gap-0">
-        {#each items as item}
+        {#each visibleItems as item (item.id)}
           {@const targetVal = (item.target || 0) / 100}
           {@const color = getProgressColor(item.value, item.target)}
           {@const percent = Math.min((item.value * 100), 100)}
