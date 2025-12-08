@@ -1,87 +1,75 @@
 <script>
   import { afterUpdate } from 'svelte';
-  import { sortState } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
-  import { settingsService } from '../../services/settings.service.js';
-  import SortableTh from '../common/SortableTh.svelte';
 
   export let items = [];
   
-  const tableType = 'luyke_efficiency';
+  const iconMap = {
+      'pctPhuKien': 'headphones', 'pctGiaDung': 'home', 'pctMLN': 'droplet',
+      'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
+  };
 
-  function handleSort(event) {
-    const sortKey = event.detail;
-    const currentState = $sortState[tableType] || { key: 'label', direction: 'asc' };
-    let newDirection;
-    if (currentState.key === sortKey) {
-      newDirection = currentState.direction === 'desc' ? 'asc' : 'desc';
-    } else {
-      newDirection = 'desc';
-    }
-    sortState.update(current => {
-      current[tableType] = { key: sortKey, direction: newDirection };
-      return current;
-    });
+  function getProgressColor(val, target) {
+      const t = (target || 0) / 100;
+      if (t === 0) return '#3b82f6';
+      return val >= t ? '#22c55e' : '#ef4444';
   }
 
-  $: currentSortKey = $sortState[tableType]?.key || 'label';
-  $: currentSortDirection = $sortState[tableType]?.direction || 'asc';
-
-  $: sortedItems = [...items].sort((a, b) => {
-    const key = currentSortKey;
-    const direction = currentSortDirection;
-    let valA, valB;
-    if (key === 'label') {
-      valA = a.label || ''; valB = b.label || '';
-      return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-    } else if (key === 'value') {
-      valA = a.value || 0; valB = b.value || 0;
-    } else { 
-      valA = (a.target || 0) / 100; valB = (b.target || 0) / 100;
-    }
-    return direction === 'asc' ? valA - valB : valB - valA;
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') feather.replace();
   });
-
-  function showEfficiencySettingsModal() {
-    alert("Chức năng Cài đặt sẽ được kích hoạt sau.");
-  }
 </script>
 
-<div data-capture-group="1" class="bg-white rounded-xl shadow-md p-4 sm:p-6 border border-gray-200 h-full flex flex-col">
-  <div class="flex items-center justify-between mb-4 border-b pb-2">
-    <h3 class="text-xl font-bold text-gray-700 uppercase">Hiệu quả khai thác</h3>
-    <button on:click={showEfficiencySettingsModal} class="settings-trigger-btn" title="Tùy chỉnh hiển thị">
-      <i data-feather="settings"></i>
-    </button>
+<div class="luyke-widget h-full">
+  <div class="luyke-widget-header">
+    <div class="luyke-widget-title">
+      <div class="p-1.5 bg-blue-100 rounded text-blue-600 mr-2">
+          <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+      </div>
+      <span>Hiệu Quả Khai Thác</span>
+    </div>
   </div>
 
-  {#if sortedItems.length === 0}
-     <div class="flex-grow flex items-center justify-center">
-        <p class="text-gray-500 font-bold p-4 text-center">Không có dữ liệu hiệu quả.</p>
-     </div>
-  {:else}
-    <div id="luyke-efficiency-content" class="overflow-x-auto flex-grow">
-        <table class="min-w-full text-sm table-bordered" data-table-type={tableType}>
-        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-10 shadow-sm"> 
-            <tr>
-            <SortableTh key="label" label="Chỉ số" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
-            <SortableTh key="value" label="Thực hiện" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
-            <SortableTh key="target" label="Mục tiêu" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
-            </tr>
-        </thead>
-        <tbody>
-            {#each sortedItems as item (item.id)}
-            <tr class="border-t hover:bg-gray-50">
-                <td class="px-4 py-2 font-semibold text-gray-800">{item.label}</td>
-                <td class="px-4 py-2 text-right font-bold text-lg {item.value < ((item.target || 0) / 100) ? 'bg-red-100 text-red-700' : 'text-green-600'}">
-                {formatters.formatPercentage(item.value || 0)}
-                </td> 
-                <td class="px-4 py-2 text-right text-gray-600">{item.target || 0}%</td> 
-            </tr>
-            {/each}
-        </tbody>
-        </table>
-    </div>
-  {/if}
+  <div class="luyke-widget-body custom-scrollbar">
+    {#if items.length === 0}
+       <div class="flex flex-col items-center justify-center h-full text-gray-400">
+          <p class="text-sm">Chưa có dữ liệu.</p>
+       </div>
+    {:else}
+      <div class="flex flex-col gap-0">
+        {#each items as item}
+          {@const targetVal = (item.target || 0) / 100}
+          {@const color = getProgressColor(item.value, item.target)}
+          {@const percent = Math.min((item.value * 100), 100)}
+          
+          <div class="eff-item-compact">
+            <div class="eff-icon-compact">
+                <i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i>
+            </div>
+            
+            <div class="eff-content-compact">
+                <div class="eff-row-top">
+                    <span class="eff-label-text">{item.label}</span>
+                    <span class="eff-value-text" style="color: {color}">
+                        {formatters.formatPercentage(item.value)}
+                    </span>
+                </div>
+                
+                <div class="eff-row-bottom">
+                    <div class="eff-bar-container">
+                        <div 
+                            class="eff-bar-fill" 
+                            style="width: {percent}%; background-color: {color};"
+                        ></div>
+                    </div>
+                    {#if targetVal > 0}
+                        <span class="eff-target-text">MT: {item.target}%</span>
+                    {/if}
+                </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </div>

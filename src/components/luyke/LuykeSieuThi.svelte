@@ -1,29 +1,26 @@
 <script>
-  import { onMount, afterUpdate, tick } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
   import { 
-    sortState, 
     competitionData, 
-    selectedWarehouse 
+    selectedWarehouse,
+    interfaceSettings 
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../services/settings.service.js';
   import { dataProcessing } from '../../services/dataProcessing.js';
   
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
   import LuykeQdcTable from './LuykeQdcTable.svelte';
   import LuykeCategoryTable from './LuykeCategoryTable.svelte';
-  import LuykeUnexportedTable from './LuykeUnexportedTable.svelte';
 
   export let supermarketReport = {};
-  export let filteredYCXData = [];
+  export let filteredYCXData = []; // [QUAN TRỌNG] Dữ liệu thô dùng cho biểu đồ
   export let goals = {};
   export let numDays = 1;
 
   let localSupermarketReport = {};
   let localGoals = {};
-  
   let luykeCardData = {};
   let competitionSummary = { dat: 0, total: 0 };
   let comparisonData = { value: 0, percentage: 'N/A' };
@@ -118,19 +115,15 @@
     const categorySettings = settingsService.loadCategoryViewSettings(Object.keys(localSupermarketReport.nganhHangChiTiet || {}));
 
     const goalKeyMap = {
-      pctPhuKien: 'phanTramPhuKien', 
-      pctGiaDung: 'phanTramGiaDung', 
-      pctMLN: 'phanTramMLN', 
-      pctSim: 'phanTramSim', 
-      pctVAS: 'phanTramVAS', 
-      pctBaoHiem: 'phanTramBaoHiem' 
+      pctPhuKien: 'phanTramPhuKien', pctGiaDung: 'phanTramGiaDung', pctMLN: 'phanTramMLN', 
+      pctSim: 'phanTramSim', pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem' 
     };
 
     efficiencyItems = efficiencySettings
       .filter(item => item.id.startsWith('pct') && item.visible)
       .map(config => ({
         ...config, 
-        value: localSupermarketReport[config.id], 
+        value: localSupermarketReport[config.id] || 0, 
         target: localGoals[goalKeyMap[config.id]] 
       }));
 
@@ -144,81 +137,109 @@
   }
 
   afterUpdate(() => {
-    if (typeof feather !== 'undefined') {
-      feather.replace();
-    }
+    if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
 
-<div class="space-y-8">
+<div class="luyke-dashboard-container">
   
-  <h2 id="luyke-supermarket-title" class="text-2xl font-bold text-center text-gray-700">
-    Báo cáo lũy kế {$selectedWarehouse ? 'kho ' + $selectedWarehouse : 'toàn bộ'} - Tính đến {new Date().toLocaleDateString('vi-VN')}
-  </h2>
+  <div>
+      <h2 id="luyke-supermarket-title" class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+        <i data-feather="bar-chart" class="text-blue-600"></i>
+        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
+      </h2>
 
-  <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-    
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Doanh thu thực</h4>
-      <p id="luyke-kpi-dt-thuc-main" class="font-bold mt-2 mb-3">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</p>
-      <p id="luyke-kpi-dt-thuc-sub1" class="text-sm">
-        DK: <span class="font-bold">{formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span> / Target: <span class="font-bold">{formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
-      </p>
-    </div>
-    
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Doanh thu Quy đổi</h4>
-      <p id="luyke-kpi-dt-qd-main" class="font-bold mt-2 mb-3">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</p>
-      <p id="luyke-kpi-dt-qd-sub1" class="text-sm">
-        DK: <span class="font-bold">{formatters.formatNumber((luykeCardData.dtQdDuKien || 0) / 1000000, 0)}</span> / Target: <span class="font-bold">{formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
-      </p>
-    </div>
+      <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
+        
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard1Bg}">
+            <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
+            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
+                <span>MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
+        </div>
 
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Tỷ lệ hoàn thành Target</h4>
-      <p id="luyke-kpi-ht-target-qd-main" class="font-bold mt-2 mb-3">{formatters.formatPercentage(luykeCardData.phanTramTargetQd || 0)}</p>
-      <p id="luyke-kpi-ht-target-thuc-sub" class="text-sm">DT Thực: <span class="font-bold">{formatters.formatPercentage(luykeCardData.phanTramTargetThuc || 0)}</span></p>
-    </div>
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard2Bg}">
+            <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
+            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>DK: {formatters.formatNumber((luykeCardData.dtQdDuKien || 0) / 1000000, 0)}</span>
+                <span>MT: {formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
+        </div>
 
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Tỷ lệ quy đổi</h4>
-      <p id="luyke-kpi-tl-qd-main" class="font-bold mt-2 mb-3">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</p>
-      <p id="luyke-kpi-tl-qd-sub" class="text-sm">Mục tiêu: <span class="font-bold">{formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span></p>
-    </div>
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard3Bg}">
+            <div class="kpi-solid-header">% HT Target (QĐ) <i data-feather="target"></i></div>
+            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramTargetQd || 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>% HT DT Thực: {formatters.formatPercentage(luykeCardData.phanTramTargetThuc || 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="target"></i></div>
+        </div>
 
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Doanh thu trả chậm</h4>
-      <p id="luyke-kpi-dt-tc-main" class="font-bold mt-2 mb-3">{formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</p>
-      <p id="luyke-kpi-dt-tc-sub" class="text-sm">% trả chậm: <span class="font-bold">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</span></p>
-    </div>
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard4Bg}">
+            <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
+            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
+        </div>
 
-    <div id="lk-summary-unexported-trigger" class="kpi-card p-6 rounded-2xl shadow-lg cursor-pointer hover:shadow-xl">
-      <h4 class="kpi-card-title">DTQĐ Chưa xuất</h4>
-      <p id="luyke-kpi-dtqd-chua-xuat-main" class="font-bold mt-2 mb-3">{formatters.formatNumber((luykeCardData.chuaXuatQuyDoi || 0) / 1000000, 0)}</p>
-    </div>
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard5Bg}">
+            <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
+            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>Doanh số: {formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
+        </div>
 
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Thi đua ngành hàng</h4>
-      <p id="luyke-kpi-thidua-main" class="font-bold mt-2 mb-3">{formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</p>
-      <p id="luyke-kpi-thidua-sub" class="text-sm"><span class="font-bold">{competitionSummary.dat}/{competitionSummary.total}</span> Ngành</p>
-    </div>
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard6Bg}">
+            <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
+            <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
+            <div class="kpi-solid-sub">
+                <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="award"></i></div>
+        </div>
 
-    <div class="kpi-card p-6 rounded-2xl shadow-lg">
-      <h4 class="kpi-card-title">Tăng/giảm cùng kỳ</h4>
-      <p id="luyke-kpi-dtck-main" class="font-bold mt-2 mb-3">{comparisonData.percentage || 'N/A'}</p>
-      <p id="luyke-kpi-dtck-sub" class="text-sm">Doanh thu: <span class="font-bold">{formatters.formatNumber(comparisonData.value || 0)} | {comparisonData.percentage || 'N/A'}</span></p>
-      <p id="luyke-kpi-lkck-sub" class="text-sm">Lượt khách: <span class="font-bold">{formatters.formatNumber(luotKhachData.value || 0)} | {luotKhachData.percentage || 'N/A'}</span></p>
-    </div>
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard7Bg}">
+            <div class="kpi-solid-header">Tăng trưởng CK <i data-feather="activity"></i></div>
+            <div class="kpi-solid-value">{comparisonData.percentage || 'N/A'}</div>
+            <div class="kpi-solid-sub">
+                <span>Lượt khách: {luotKhachData.percentage || 'N/A'}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="activity"></i></div>
+        </div>
 
+        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard8Bg}">
+            <div class="kpi-solid-header">Chưa Xuất (QĐ) <i data-feather="alert-circle"></i></div>
+            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.chuaXuatQuyDoi || 0) / 1000000, 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>Bật Toggle bên dưới để xem</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="alert-circle"></i></div>
+        </div>
+
+      </div>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-    <LuykeEfficiencyTable items={efficiencyItems} />
-    <LuykeQdcTable items={qdcItems} {numDays} />
-  </div> 
-
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-    <LuykeCategoryTable items={categoryItems} {numDays} />
-    <LuykeUnexportedTable items={chuaXuatReport} />
+  <div class="luyke-tier-1-grid" data-capture-group="tier1">
+      <LuykeEfficiencyTable items={efficiencyItems} />
+      <LuykeQdcTable items={qdcItems} {numDays} />
   </div>
+
+  <div data-capture-group="tier2">
+      <LuykeCategoryTable 
+          items={categoryItems} 
+          unexportedItems={chuaXuatReport}
+          rawSource={filteredYCXData} 
+          {numDays} 
+      />
+  </div>
+
 </div>

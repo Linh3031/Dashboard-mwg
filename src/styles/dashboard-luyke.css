@@ -1,0 +1,574 @@
+/* src/styles/dashboard-luyke.css */
+/* Version 3.2 - Fix Efficiency Layout & Add Filter Dropdown */
+
+/* =========================================
+   1. LAYOUT & SCROLLING
+   ========================================= */
+.luyke-dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.luyke-tier-1-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    height: auto;
+}
+
+@media (min-width: 1024px) {
+    .luyke-tier-1-grid {
+        grid-template-columns: repeat(2, 1fr);
+        height: 480px;
+    }
+}
+
+.luyke-widget {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.luyke-widget-body {
+    padding: 0.75rem;
+    flex-grow: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.luyke-widget-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #ffffff;
+    flex-shrink: 0;
+}
+
+.luyke-widget-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #374151;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* =========================================
+   2. KPI CARDS (SOLID STYLE)
+   ========================================= */
+.kpi-grid-fixed {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+}
+@media (min-width: 768px) { .kpi-grid-fixed { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1280px) { .kpi-grid-fixed { grid-template-columns: repeat(4, 1fr); } }
+
+.kpi-card-solid {
+    border-radius: 1rem;
+    padding: 1.25rem;
+    color: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.2s, box-shadow 0.2s;
+    min-height: 140px;
+    position: relative;
+    overflow: hidden;
+}
+
+.kpi-card-solid:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+}
+
+.kpi-bg-icon {
+    position: absolute;
+    right: -10px;
+    bottom: -10px;
+    opacity: 0.15;
+    transform: rotate(-15deg);
+    pointer-events: none;
+}
+.kpi-bg-icon svg { width: 5rem; height: 5rem; }
+
+.kpi-solid-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.9;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.kpi-solid-value {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 0.75rem;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.kpi-solid-sub {
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    padding-top: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* =========================================
+   3. EFFICIENCY LIST (FIXED LAYOUT)
+   ========================================= */
+.eff-item-compact {
+    display: flex;
+    align-items: center; /* Canh giữa dọc */
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px dashed #f3f4f6;
+    width: 100%; /* Đảm bảo chiếm hết chiều ngang */
+}
+.eff-item-compact:last-child { border-bottom: none; }
+
+.eff-icon-compact {
+    width: 2.5rem; /* Tăng kích thước chút */
+    height: 2.5rem;
+    border-radius: 0.5rem;
+    background-color: #f3f4f6;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; /* Không bị co lại */
+}
+
+.eff-content-compact {
+    flex-grow: 1;
+    min-width: 0; /* Cho phép text truncate nếu cần */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.eff-row-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+    width: 100%;
+}
+
+.eff-label-text {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #374151;
+}
+
+.eff-value-text {
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.eff-row-bottom {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.eff-bar-container {
+    flex-grow: 1;
+    height: 8px; /* Tăng độ dày */
+    background-color: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.eff-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease-out;
+}
+
+.eff-target-text {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-weight: 500;
+    white-space: nowrap;
+    min-width: 65px;
+    text-align: right;
+}
+
+/* =========================================
+   4. CATEGORY CARDS (COMPACT GRID 6)
+   ========================================= */
+.luyke-cat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.cat-card-colorful {
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 110px;
+}
+
+.cat-card-colorful:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Theme Colors */
+.theme-blue { background-color: #eff6ff; border-color: #bfdbfe; }
+.theme-blue .cat-icon-box { background-color: #dbeafe; color: #2563eb; }
+.theme-blue .cat-value-text { color: #1e40af; }
+
+.theme-green { background-color: #ecfdf5; border-color: #a7f3d0; }
+.theme-green .cat-icon-box { background-color: #d1fae5; color: #059669; }
+.theme-green .cat-value-text { color: #065f46; }
+
+.theme-orange { background-color: #fff7ed; border-color: #fed7aa; }
+.theme-orange .cat-icon-box { background-color: #ffedd5; color: #ea580c; }
+.theme-orange .cat-value-text { color: #9a3412; }
+
+.theme-purple { background-color: #f5f3ff; border-color: #ddd6fe; }
+.theme-purple .cat-icon-box { background-color: #ede9fe; color: #7c3aed; }
+.theme-purple .cat-value-text { color: #5b21b6; }
+
+.theme-teal { background-color: #f0fdfa; border-color: #99f6e4; }
+.theme-teal .cat-icon-box { background-color: #ccfbf1; color: #0f766e; }
+.theme-teal .cat-value-text { color: #115e59; }
+
+.theme-gray { background-color: #f9fafb; border-color: #e5e7eb; }
+.theme-gray .cat-icon-box { background-color: #f3f4f6; color: #4b5563; }
+.theme-gray .cat-value-text { color: #1f2937; }
+
+.theme-warning { 
+    background-color: #fffbeb; 
+    border-color: #fde047; 
+    background-image: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 10px, #fef3c7 10px, #fef3c7 20px);
+}
+.theme-warning .cat-icon-box { background-color: #fff7ed; color: #d97706; }
+.theme-warning .cat-value-text { color: #b45309; }
+
+.cat-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.cat-icon-box {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-name-text {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 0.25rem;
+    line-height: 1.2;
+    min-height: 2.4em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.cat-value-text {
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+}
+
+.cat-footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.7rem;
+    color: #6b7280;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.cat-percent-text {
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+/* =========================================
+   5. TOOLBAR (FIX)
+   ========================================= */
+.luyke-toolbar {
+    background-color: #ffffff;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    border-radius: 0.75rem 0.75rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.luyke-toolbar + .luyke-cat-grid, 
+.luyke-toolbar + .luyke-charts-container {
+    background-color: white;
+    padding: 1rem;
+    border: 1px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 0.75rem 0.75rem;
+}
+
+.toggle-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background-color: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    transition: all 0.2s;
+}
+
+.toggle-wrapper:hover { background-color: #e5e7eb; }
+
+.toggle-wrapper.active {
+    background-color: #fff7ed;
+    border-color: #fdba74;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background-color: #d1d5db;
+    border-radius: 9999px;
+    transition: background-color 0.3s;
+    flex-shrink: 0;
+}
+
+.toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.toggle-wrapper.active .toggle-switch {
+    background-color: #f97316;
+}
+
+.toggle-wrapper.active .toggle-switch::after {
+    transform: translateX(16px);
+}
+
+.toggle-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.toggle-wrapper.active .toggle-label {
+    color: #c2410c;
+}
+
+.view-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    background-color: transparent;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+}
+.view-mode-btn:hover { background-color: #f3f4f6; }
+.view-mode-btn.active {
+    background-color: #eff6ff;
+    color: #2563eb;
+    border-color: #bfdbfe;
+}
+
+.luyke-charts-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+@media (min-width: 1024px) {
+    .luyke-charts-container {
+        grid-template-columns: 4fr 6fr;
+    }
+}
+.chart-box {
+    display: flex;
+    flex-direction: column;
+    height: 350px;
+    position: relative;
+}
+
+/* =========================================
+   6. FILTER DROPDOWN (MỚI)
+   ========================================= */
+.filter-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    width: 280px;
+    background-color: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    max-height: 400px;
+}
+
+.filter-header {
+    padding: 0.75rem;
+    border-bottom: 1px solid #f3f4f6;
+    background-color: #f9fafb;
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.filter-search {
+    width: 100%;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    outline: none;
+}
+.filter-search:focus { border-color: #3b82f6; }
+
+.filter-body {
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.filter-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 0.25rem;
+    transition: background-color 0.1s;
+}
+.filter-item:hover { background-color: #f3f4f6; }
+
+.filter-item input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    accent-color: #3b82f6;
+}
+
+.filter-item label {
+    flex-grow: 1;
+    font-size: 0.85rem;
+    color: #374151;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.filter-actions {
+    padding: 0.5rem;
+    border-top: 1px solid #f3f4f6;
+    display: flex;
+    justify-content: space-between;
+    background-color: #f9fafb;
+    border-radius: 0 0 0.5rem 0.5rem;
+}
+
+.filter-btn-link {
+    font-size: 0.75rem;
+    color: #2563eb;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+.filter-btn-link:hover { text-decoration: underline; }
+
+.luyke-icon-btn {
+    padding: 0.4rem;
+    border-radius: 0.375rem;
+    color: #6b7280;
+    background-color: white;
+    border: 1px solid #d1d5db;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.luyke-icon-btn:hover {
+    color: #3b82f6;
+    border-color: #3b82f6;
+    background-color: #eff6ff;
+}
+
+.luyke-icon-btn.active {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border-color: #93c5fd;
+}
+
+.luyke-search-input {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s;
+    width: 200px;
+}
+
+.luyke-search-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}

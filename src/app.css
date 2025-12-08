@@ -1,5 +1,5 @@
-/* Version 2.2 - Sửa lỗi thứ tự import (Tailwind phải được import sau)
-*/
+/* src/app.css */
+/* Version 2.3 - Add Luyke Dashboard Styles */
 
 /* 1. Nền tảng (Variables, body, scrollbar) */
 @import url('./styles/base.css');
@@ -21,6 +21,9 @@
 @import url('./styles/specific-tdv.css');
 @import url('./styles/specific-composer.css');
 @import url('./styles/specific-realtime.css');
+
+/* [MỚI] Style cho Dashboard Lũy Kế (Infographic) */
+@import url('./styles/dashboard-luyke.css');
 
 /* 7. (QUAN TRỌNG) Tailwind phải được nạp SAU CÙNG 
    để nó có thể ghi đè (utility classes) lên các style ở trên */
