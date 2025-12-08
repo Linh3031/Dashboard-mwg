@@ -1,5 +1,5 @@
 // src/stores.js
-// Version 3.0 - Add fileSyncState for Cloud Sync Status
+// Version 3.2 - Add brandNameMapping store
 import { writable } from 'svelte/store';
 
 /**
@@ -11,7 +11,7 @@ export const activeTab = writable('data-section');
  * Trạng thái xác thực
  */
 export const isAdmin = writable(true); 
-export const currentUser = writable(null); // Sẽ chứa { email: '...' }
+export const currentUser = writable(null);
 
 // === DỮ LIỆU TƯƠNG TÁC & NỘI DUNG ĐỘNG ===
 export const feedbackList = writable([]);
@@ -76,9 +76,15 @@ export const declarations = writable({
     hinhThucXuatGop: '',
     heSoQuyDoi: ''
 });
-export const categoryStructure = writable([]);
-export const brandList = writable([]);
+export const categoryStructure = writable([]); // Chứa: { nganhHang, nhomHang, nhaSanXuat }
+export const brandList = writable([]); // Danh sách các hãng duy nhất (derived từ categoryStructure)
 export const specialProductList = writable([]);
+
+// [Mapping Stores]
+export const macroCategoryConfig = writable([]); 
+export const categoryNameMapping = writable({}); 
+export const groupNameMapping = writable({});
+export const brandNameMapping = writable({}); // [MỚI] Mapping tên Hãng
 
 export const localCompetitionConfigs = writable([]); 
 export const globalCompetitionConfigs = writable([]); 
@@ -125,7 +131,7 @@ export const modalState = writable({ activeModal: null });
 
 export const notificationStore = writable({
     message: '',
-    type: 'info', // 'success', 'error', 'info', 'warning'
+    type: 'info', 
     visible: false
 });
 
@@ -152,6 +158,4 @@ export const firebaseStore = writable({
     storage: null
 });
 
-// [MỚI] Store quản lý trạng thái đồng bộ file (metadata)
-// Cấu trúc: { 'saved_danhsachnv': { status: 'synced' | 'update_available' | 'uploading' | 'error', message: '...', metadata:Object } }
 export const fileSyncState = writable({});

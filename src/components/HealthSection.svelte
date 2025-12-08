@@ -8,7 +8,10 @@
       selectedWarehouse,
       warehouseList,
       luykeGoalSettings,
-      modalState 
+      modalState,
+      // [FIX] Import thêm các store cấu hình để lắng nghe thay đổi
+      categoryNameMapping,
+      macroCategoryConfig
   } from '../stores.js';
   
   import { reportService } from '../services/reportService.js';
@@ -42,7 +45,12 @@
       }
   }
 
+  // [FIX] Thêm $categoryNameMapping và $macroCategoryConfig vào đây để kích hoạt tính lại khi cấu hình thay đổi
   $: {
+      // Chỉ cần tham chiếu biến để Svelte biết dependency
+      const _mappingTrigger = $categoryNameMapping;
+      const _macroTrigger = $macroCategoryConfig;
+
       if (!showPlaceholder) {
           const newMasterReport = reportService.generateMasterReportData(
               filteredYCXData, 

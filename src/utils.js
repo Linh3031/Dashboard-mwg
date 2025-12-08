@@ -1,66 +1,81 @@
-// Version 1.1 - Refactored for Svelte (pure functions)
-// MODULE: UTILITIES
-// Chứa các hàm tiện ích chung, thuần túy, không có phụ thuộc vào UI hoặc State.
+// src/utils.js
+// Version 2.4 - Export cleanNameRaw for UI usage
+import { get } from 'svelte/store';
+import { categoryNameMapping, groupNameMapping, brandNameMapping } from './stores.js';
 
-/**
- * Lấy một màu sáng ngẫu nhiên từ danh sách định sẵn.
- * [cite: 7205]
- */
 export function getRandomBrightColor() {
     const colors = [
-        '#ef4444', // red-500
-        '#f97316', // orange-500
-        '#eab308', // yellow-500
-        '#84cc16', // lime-500
-        '#22c55e', // green-500
-        '#10b981', // emerald-500
-        '#14b8a6', // teal-500
-        '#06b6d4', // cyan-500
-        '#3b82f6', // blue-500
-        '#8b5cf6', // violet-500
-        '#d946ef', // fuchsia-500
-        '#ec4899', // pink-500
+        '#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e', '#10b981',
+        '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899',
     ];
     return colors[Math.floor(Math.random() * colors.length)];
 }
 
 /**
- * Chuẩn hóa tên ngành hàng/nhóm hàng.
- * [cite: 7206]
+ * [ĐÃ EXPORT] Hàm làm sạch cơ bản (Aggressive Mode).
+ * Dùng để gợi ý tên hiển thị sạch sẽ.
  */
-export function cleanCategoryName(name) {
+export function cleanNameRaw(name) {
     if (!name || typeof name !== 'string') return '';
-    // Bỏ mã số, khoảng trắng thừa, và viết hoa chữ cái đầu mỗi từ.
-    return name
-        .replace(/^\d+\s*-\s*/, '')
+    
+    let cleaned = name;
+
+    // 1. Loại bỏ cụm "Mã - " ở đầu (VD: "13 - ")
+    cleaned = cleaned.replace(/^\d+\s*[-–]\s*/, ''); 
+
+    // 2. Loại bỏ toàn bộ các ký tự số còn lại (nếu muốn tên chỉ có chữ)
+    cleaned = cleaned.replace(/[0-9]/g, '');
+    
+    // 3. Loại bỏ ký tự đặc biệt, chỉ giữ lại chữ cái (Unicode) và khoảng trắng
+    cleaned = cleaned.replace(/[^\p{L}\s]/gu, ' ');
+
+    return cleaned
         .trim()
-        .replace(/\s+/g, ' ')
+        .replace(/\s+/g, ' ') // Gộp khoảng trắng thừa
         .toLowerCase()
         .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Viết hoa chữ cái đầu
         .join(' ');
 }
 
-/**
- * Sắp xếp danh sách bộ phận, ưu tiên "Tư Vấn - ĐM".
- * [cite: 7207]
- */
+export function cleanCategoryName(name) {
+    if (!name) return '';
+    const rawName = String(name).trim();
+    const mappings = get(categoryNameMapping);
+    if (mappings && mappings[rawName]) {
+        return mappings[rawName];
+    }
+    return cleanNameRaw(rawName);
+}
+
+export function cleanGroupName(name) {
+    if (!name) return '';
+    const rawName = String(name).trim();
+    const mappings = get(groupNameMapping);
+    if (mappings && mappings[rawName]) {
+        return mappings[rawName];
+    }
+    return cleanNameRaw(rawName);
+}
+
+export function cleanBrandName(name) {
+    if (!name) return '';
+    const rawName = String(name).trim();
+    const mappings = get(brandNameMapping);
+    if (mappings && mappings[rawName]) {
+        return mappings[rawName];
+    }
+    return cleanNameRaw(rawName);
+}
+
 export function getSortedDepartmentList(reportData) {
     const allDepts = [...new Set(reportData.map(item => item.boPhan).filter(Boolean))];
-
     allDepts.sort((a, b) => {
         const aIsPriority = a.includes('Tư Vấn - ĐM');
         const bIsPriority = b.includes('Tư Vấn - ĐM');
-
-        if (aIsPriority && !bIsPriority) {
-            return -1; // a comes first
-        }
-        if (!aIsPriority && bIsPriority) {
-            return 1; // b comes first
-        }
-        // If both are priority or both are not, sort alphabetically
+        if (aIsPriority && !bIsPriority) return -1;
+        if (!aIsPriority && bIsPriority) return 1;
         return a.localeCompare(b);
     });
-
     return allDepts;
 }

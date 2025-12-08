@@ -1,7 +1,6 @@
 <script>
-  import { realtimeYCXData } from '../../../stores.js';
+  import { realtimeYCXData, categoryNameMapping, macroCategoryConfig } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../../services/settings.service.js';
   import CategoryRevenueTable from './CategoryRevenueTable.svelte';
 
@@ -11,6 +10,10 @@
   let hasAnyData = false;
 
   $: {
+      // [FIX] Lắng nghe thay đổi của mapping
+      const _triggerMap = $categoryNameMapping;
+      const _triggerMacro = $macroCategoryConfig;
+
       const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
       const goals = settings.goals || {};
       const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
@@ -37,6 +40,7 @@
              <p class="text-yellow-700 font-semibold text-lg">Không tìm thấy doanh thu cho các ngành hàng chính.</p>
         </div>
     {:else}
+     
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div data-capture-group="1">
                 <CategoryRevenueTable 

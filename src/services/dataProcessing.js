@@ -1,3 +1,5 @@
+// src/services/dataProcessing.js
+// Version 2.4 - Update Category Structure Normalization (Add Brand Column)
 /* global XLSX */
 import { get } from 'svelte/store';
 import { config } from '../config.js';
@@ -52,23 +54,35 @@ export const dataProcessing = {
         return debugResults;
     },
 
+    // [CẬP NHẬT] Hàm chuẩn hóa dữ liệu cấu trúc Ngành hàng (3 cột bắt buộc)
     normalizeCategoryStructureData(rawData) {
         if (!rawData || rawData.length === 0) {
             return { success: false, error: 'File rỗng.', normalizedData: [] };
         }
         const header = Object.keys(rawData[0] || {});
+        
+        // Tìm 3 cột bắt buộc
         const nganhHangCol = this.findColumnName(header, ['ngành hàng', 'nganh hang']);
         const nhomHangCol = this.findColumnName(header, ['nhóm hàng', 'nhom hang']);
-        if (!nganhHangCol || !nhomHangCol) {
-            return { success: false, error: 'File phải có cột "Ngành hàng" và "Nhóm hàng".', normalizedData: [] };
+        const nhaSanXuatCol = this.findColumnName(header, ['nhà sản xuất', 'nha san xuat', 'hãng', 'brand']);
+
+        const missingCols = [];
+        if (!nganhHangCol) missingCols.push('"Ngành hàng"');
+        if (!nhomHangCol) missingCols.push('"Nhóm hàng"');
+        if (!nhaSanXuatCol) missingCols.push('"Nhà sản xuất"');
+
+        if (missingCols.length > 0) {
+            return { success: false, error: `File thiếu các cột: ${missingCols.join(', ')}`, normalizedData: [] };
         }
 
         const normalizedData = rawData
             .map(row => ({
                 nganhHang: String(row[nganhHangCol] || '').trim(),
                 nhomHang: String(row[nhomHangCol] || '').trim(),
+                nhaSanXuat: String(row[nhaSanXuatCol] || '').trim(),
             }))
-            .filter(item => item.nganhHang && item.nhomHang);
+            .filter(item => item.nganhHang && item.nhomHang); // Chỉ cần có Ngành/Nhóm là hợp lệ, Hãng có thể trống (ít gặp)
+            
         return { success: true, normalizedData };
     },
     
@@ -101,6 +115,8 @@ export const dataProcessing = {
         return { success: true, normalizedData };
     },
 
+    // Hàm này có thể không cần dùng nữa nếu lấy brand từ categoryStructure, 
+    // nhưng giữ lại để support legacy hoặc nếu user upload riêng (tuy nhiên logic mới sẽ override)
     normalizeBrandData(rawData) {
         if (!rawData || rawData.length === 0) {
              return { success: false, error: 'Sheet "Hãng" rỗng.', normalizedData: [] };
@@ -134,7 +150,7 @@ export const dataProcessing = {
         const heSoMap = {};
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
-                 const parts = line.split(',');
+                const parts = line.split(',');
                 if (parts.length >= 2) {
                     const key = parts[0].trim();
                      const value = parseFloat(parts[1].trim());
@@ -215,7 +231,7 @@ export const dataProcessing = {
                     } else if ((key === 'ngayTao' || key === 'ngayHenGiao') && row[foundMapping[key]]) {
                         const dateValue = row[foundMapping[key]];
                         if (dateValue instanceof Date) {
-                            newRow[key] = dateValue;
+                             newRow[key] = dateValue;
                         } else if (typeof dateValue === 'number') {
                             newRow[key] = new Date(Math.round((dateValue - 25569) * 86400 * 1000));
                         } else if (typeof dateValue === 'string') {
@@ -260,9 +276,6 @@ export const dataProcessing = {
         return results;
     },
 
-    /**
-     * Phân tích text thô của Data Lũy Kế (BI).
-     */
     parseLuyKePastedData: (text) => {
         const defaults = {
             mainKpis: {},
@@ -270,8 +283,8 @@ export const dataProcessing = {
             luotKhachData: { value: 0, percentage: 'N/A' },
             dtDuKien: 0,
             dtqdDuKien: 0,
-            dtTraCham: 0, // Thêm mới
-            tyLeTraCham: 0 // Thêm mới
+            dtTraCham: 0, 
+            tyLeTraCham: 0 
         };
         if (!text) return defaults;
 
@@ -282,7 +295,6 @@ export const dataProcessing = {
             'Thực hiện DT thực': /DTLK\s+([\d,.]+)/,
             'Thực hiện DTQĐ': /DTQĐ\s+([\d,.]+)/,
             '% HT Target Dự Kiến (QĐ)': /% HT Target Dự Kiến \(QĐ\)\s+([\d.]+%?)/,
-            // Đã xóa pattern 'Tỷ Trọng Trả Góp' ở đây để dùng logic tìm dòng kế tiếp
         };
 
         for (const [key, regex] of Object.entries(patterns)) {
@@ -292,11 +304,10 @@ export const dataProcessing = {
             }
         }
 
-        // Hàm helper để tìm giá trị số ở dòng kế tiếp
         const findValueAfterKeyword = (lines, keyword, isQd = false) => {
             let keywordRegex;
             if (isQd) {
-                 keywordRegex = new RegExp(keyword.replace('(', '\\(').replace(')', '\\)'));
+                keywordRegex = new RegExp(keyword.replace('(', '\\(').replace(')', '\\)'));
             } else {
                 keywordRegex = new RegExp(`^${keyword}$`);
             }
@@ -310,12 +321,7 @@ export const dataProcessing = {
 
         defaults.dtDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến");
         defaults.dtqdDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến (QĐ)", true);
-        
-        // === CẬP NHẬT LOGIC MỚI THEO YÊU CẦU ===
-        // Lấy giá trị dòng ngay dưới "DT Siêu thị" gán cho dtTraCham
         defaults.dtTraCham = findValueAfterKeyword(allLines, "DT Siêu thị");
-        
-        // Lấy giá trị dòng ngay dưới "Tỷ Trọng Trả Góp" gán cho tyLeTraCham
         defaults.tyLeTraCham = findValueAfterKeyword(allLines, "Tỷ Trọng Trả Góp");
 
         const dtckIndex = allLines.findIndex(line => line.includes('DTCK Tháng'));
@@ -363,7 +369,7 @@ export const dataProcessing = {
             } else if (currentCompetition) {
                 if (line.startsWith('DTLK') || line.startsWith('SLLK') || line.startsWith('DTQĐ')) {
                      if (i + 1 < lines.length) {
-                        currentCompetition.luyKe = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
+                         currentCompetition.luyKe = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
                     }
                 } else if (line.startsWith('Target')) {
                     if (i + 1 < lines.length) {
@@ -371,7 +377,7 @@ export const dataProcessing = {
                     }
                 } else if (line.startsWith('% HT Dự Kiến')) {
                     if (i + 1 < lines.length) {
-                        currentCompetition.hoanThanh = lines[i + 1] || '0%';
+                         currentCompetition.hoanThanh = lines[i + 1] || '0%';
                     }
                 }
             }
@@ -432,7 +438,6 @@ export const dataProcessing = {
 
         const dataRowsStartIndex = lines.findIndex((line, index) => {
             if (index <= subHeaderStartIndex) return false;
-            
             const parts = line.split(splitRegex).map(p => p.trim());
             const firstPart = parts[0] || "";
 
