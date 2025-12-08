@@ -3,19 +3,21 @@
   import { 
     competitionData, 
     selectedWarehouse,
-    interfaceSettings 
+    interfaceSettings,
+    macroCategoryConfig
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
   import { settingsService } from '../../services/settings.service.js';
   import { dataProcessing } from '../../services/dataProcessing.js';
+  import * as utils from '../../utils.js';
   
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
   import LuykeQdcTable from './LuykeQdcTable.svelte';
   import LuykeCategoryTable from './LuykeCategoryTable.svelte';
 
   export let supermarketReport = {};
-  export let filteredYCXData = []; // [QUAN TRỌNG] Dữ liệu thô dùng cho biểu đồ
+  export let filteredYCXData = []; 
   export let goals = {};
   export let numDays = 1;
 
@@ -30,6 +32,11 @@
   let efficiencyItems = [];
   let qdcItems = []; 
   let categoryItems = []; 
+
+  let channelStats = {
+      dxm: { val: 0, pct: 0 },
+      tgdd: { val: 0, pct: 0 }
+  };
 
   const cleanValue = (str) => {
       if (typeof str === 'number') return str;
@@ -107,6 +114,58 @@
       chuaXuatQuyDoi: excelData.chuaXuatQd,
       tyLeThiDuaDat: tyLeThiDuaDat
     };
+
+    // === [FIX LOGIC] TÍNH TOÁN TỶ TRỌNG KÊNH LINH HOẠT HƠN ===
+    const calcChannelStat = (keywords) => { // keywords là mảng các từ khóa (VD: ['đmx', 'dmx'])
+        // Chuẩn hóa tên nhóm từ Config để so sánh
+        const groupConfig = ($macroCategoryConfig || []).find(g => {
+            if (!g.name) return false;
+            const normName = g.name.trim().toLowerCase().normalize("NFC"); // Chuẩn hóa Unicode
+            // Kiểm tra xem tên nhóm có chứa từ khóa không
+            return keywords.some(k => normName.includes(k));
+        });
+
+        if (!groupConfig) {
+            console.warn(`[LuykeSieuThi] Không tìm thấy nhóm nào khớp với: ${keywords.join(', ')}`);
+            return 0;
+        }
+
+        if (!groupConfig.items || groupConfig.items.length === 0) {
+            console.warn(`[LuykeSieuThi] Nhóm ${groupConfig.name} không có items nào.`);
+            return 0;
+        }
+
+        const details = localSupermarketReport.nganhHangChiTiet || {};
+        let totalVal = 0;
+
+        groupConfig.items.forEach(rawName => {
+            // [QUAN TRỌNG] Phải dùng đúng hàm clean như reportService để khớp key
+            const cleanKey = utils.cleanCategoryName(rawName);
+            if (details[cleanKey]) {
+                totalVal += (details[cleanKey].revenueQuyDoi || 0);
+            } else {
+                 // Log nhẹ để debug nếu cần
+                 // console.log(`Missing key: ${cleanKey}`);
+            }
+        });
+        return totalVal;
+    };
+
+    // Tìm nhóm có chứa "đmx" hoặc "dmx"
+    const valDXM = calcChannelStat(['đmx', 'dmx', 'dien may xanh']);
+    // Tìm nhóm có chứa "tgdd" hoặc "thế giới di động"
+    const valTGDD = calcChannelStat(['tgdd', 'the gioi di dong']);
+
+    // Tổng dùng để chia % (Tránh chia cho 0)
+    // Dùng tổng của 2 kênh này làm mẫu số, hay dùng tổng DTQĐ toàn siêu thị?
+    // Yêu cầu của bạn: "Tổng 2 tỷ lệ này sẽ bằng 100%" -> Nghĩa là mẫu số = valDXM + valTGDD
+    const totalChannelRevenue = (valDXM + valTGDD) || 1; 
+
+    channelStats = {
+        dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
+        tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
+    };
+    // === KẾT THÚC ===
 
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
@@ -217,12 +276,24 @@
         </div>
 
         <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard8Bg}">
-            <div class="kpi-solid-header">Chưa Xuất (QĐ) <i data-feather="alert-circle"></i></div>
-            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.chuaXuatQuyDoi || 0) / 1000000, 0)}</div>
-            <div class="kpi-solid-sub">
-                <span>Bật Toggle bên dưới để xem</span>
+            <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
+            <div class="flex flex-col gap-1 mt-1">
+                <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
+                    <span class="text-sm font-semibold opacity-90">ĐMX</span>
+                    <div class="text-right">
+                        <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.dxm.val, 0)}</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
+                    </div>
+                </div>
+                <div class="flex justify-between items-baseline pt-1">
+                    <span class="text-sm font-semibold opacity-90">TGDD</span>
+                    <div class="text-right">
+                        <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.tgdd.val, 0)}</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
+                    </div>
+                </div>
             </div>
-            <div class="kpi-bg-icon"><i data-feather="alert-circle"></i></div>
+            <div class="kpi-bg-icon"><i data-feather="pie-chart"></i></div>
         </div>
 
       </div>
