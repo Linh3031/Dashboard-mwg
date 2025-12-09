@@ -9,7 +9,6 @@
       warehouseList,
       luykeGoalSettings,
       modalState,
-      // [FIX] Import thêm các store cấu hình để lắng nghe thay đổi
       categoryNameMapping,
       macroCategoryConfig
   } from '../stores.js';
@@ -45,9 +44,7 @@
       }
   }
 
-  // [FIX] Thêm $categoryNameMapping và $macroCategoryConfig vào đây để kích hoạt tính lại khi cấu hình thay đổi
   $: {
-      // Chỉ cần tham chiếu biến để Svelte biết dependency
       const _mappingTrigger = $categoryNameMapping;
       const _macroTrigger = $macroCategoryConfig;
 
@@ -113,14 +110,13 @@
     <div id="health-section-content" class:hidden={showPlaceholder}> 
         <div class="content-card mb-6 !p-0"> 
             <div class="modern-page-header flex flex-wrap justify-between items-center"> 
-                
                 <div class="title-wrapper flex items-center gap-4 flex-wrap">
                     <i data-feather="activity" class="main-icon hidden sm:block"></i>
                     
                     <div class="flex items-center gap-2">
                         <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2> 
                         <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"> 
-                            <i data-feather="help-circle"></i> 
+                             <i data-feather="help-circle"></i> 
                         </button>
                     </div>
 
@@ -133,7 +129,7 @@
                             on:change={handleWarehouseChange}
                         >
                             <option value="">-- Toàn bộ --</option>
-                            {#each $warehouseList as kho}
+                             {#each $warehouseList as kho}
                                 <option value={kho}>{kho}</option>
                             {/each}
                         </select>
@@ -166,7 +162,7 @@
                             on:click={handleSubTabClick}
                         > 
                             <i data-feather="home"></i> 
-                            <span>Siêu thị Lũy kế</span> 
+                             <span>Siêu thị Lũy kế</span> 
                         </button>
                         <button 
                             class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thi-dua' ? 'active' : ''}" 
@@ -175,7 +171,7 @@
                             on:click={handleSubTabClick}
                         > 
                             <i data-feather="award"></i> 
-                            <span>Thi đua Lũy kế</span> 
+                            <span>Thi đua ST Lũy kế</span> 
                         </button>
                         <button 
                             class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thidua-vung' ? 'active' : ''}" 
@@ -209,7 +205,7 @@
                     
                     {:else if activeSubTabId === 'subtab-luyke-thidua-vung'}
                         <div id="subtab-luyke-thidua-vung" class="sub-tab-content">
-                            <LuykeThiDuaVung />
+                             <LuykeThiDuaVung />
                         </div>
                     {/if}
                 </div>
