@@ -1,10 +1,7 @@
-// Version 1.2 - Add missing getDetailStats function
 import { formatters } from '../utils/formatters.js';
+import { cleanCategoryName } from '../utils.js';
 
 export const sknvService = {
-    /**
-     * Tính toán trung bình các chỉ số của một bộ phận.
-     */
     calculateDepartmentAverages(departmentName, reportData) {
         const departmentEmployees = reportData.filter(e => e.boPhan === departmentName);
         if (departmentEmployees.length === 0) return {};
@@ -13,19 +10,33 @@ export const sknvService = {
             Object.keys(curr).forEach(key => {
                 if (typeof curr[key] === 'number') acc[key] = (acc[key] || 0) + curr[key];
             });
+            if (curr.qdc) {
+                if (!acc.qdc) acc.qdc = {};
+                for (const k in curr.qdc) {
+                    if (!acc.qdc[k]) acc.qdc[k] = { sl: 0, dt: 0, dtqd: 0 };
+                    acc.qdc[k].sl += curr.qdc[k].sl;
+                    acc.qdc[k].dt += curr.qdc[k].dt;
+                    acc.qdc[k].dtqd += curr.qdc[k].dtqd;
+                }
+            }
             return acc;
         }, {});
 
         const averages = {};
         for (const key in totals) {
-            averages[key] = totals[key] / departmentEmployees.length;
+            if (key !== 'qdc') averages[key] = totals[key] / departmentEmployees.length;
+            else {
+                averages.qdc = {};
+                for (const qdcKey in totals.qdc) averages.qdc[qdcKey] = {
+                    sl: totals.qdc[qdcKey].sl / departmentEmployees.length,
+                    dt: totals.qdc[qdcKey].dt / departmentEmployees.length,
+                    dtqd: totals.qdc[qdcKey].dtqd / departmentEmployees.length
+                };
+            }
         }
         return averages;
     },
 
-    /**
-     * Đánh giá nhân viên (so sánh với TB bộ phận).
-     */
     evaluateEmployee(employee, departmentAverages) {
         const counts = {
             doanhthu: { above: 0, total: 7 },
@@ -40,7 +51,6 @@ export const sknvService = {
                 counts[group].above++;
         };
 
-        // 1. Doanh thu
         check('doanhthu', employee.doanhThu, departmentAverages.doanhThu);
         check('doanhthu', employee.doanhThuQuyDoi, departmentAverages.doanhThuQuyDoi);
         check('doanhthu', employee.hieuQuaQuyDoi, departmentAverages.hieuQuaQuyDoi);
@@ -49,23 +59,18 @@ export const sknvService = {
         check('doanhthu', employee.doanhThuTraGop, departmentAverages.doanhThuTraGop);
         check('doanhthu', employee.tyLeTraCham, departmentAverages.tyLeTraCham);
         
-        // 2. Năng suất
         check('nangsuat', employee.tongThuNhap, departmentAverages.tongThuNhap);
         check('nangsuat', employee.thuNhapDuKien, departmentAverages.thuNhapDuKien);
         check('nangsuat', employee.gioCong, departmentAverages.gioCong);
-        
         const tnTrenGc = employee.gioCong > 0 ? employee.tongThuNhap / employee.gioCong : 0;
         const avgTnTrenGc = departmentAverages.gioCong > 0 ? departmentAverages.tongThuNhap / departmentAverages.gioCong : 0;
         check('nangsuat', tnTrenGc, avgTnTrenGc);
-
         const dtqdTrenGc = employee.gioCong > 0 ? employee.doanhThuQuyDoi / employee.gioCong : 0;
         const avgDtqdTrenGc = departmentAverages.gioCong > 0 ? departmentAverages.doanhThuQuyDoi / departmentAverages.gioCong : 0;
         check('nangsuat', dtqdTrenGc, avgDtqdTrenGc);
-        
         check('nangsuat', employee.thuongNong, departmentAverages.thuongNong);
         check('nangsuat', employee.thuongERP, departmentAverages.thuongERP);
 
-        // 3. Hiệu quả
         check('hieuqua', employee.pctPhuKien, departmentAverages.pctPhuKien);
         check('hieuqua', employee.pctGiaDung, departmentAverages.pctGiaDung);
         check('hieuqua', employee.pctMLN, departmentAverages.pctMLN);
@@ -73,7 +78,6 @@ export const sknvService = {
         check('hieuqua', employee.pctVAS, departmentAverages.pctVAS);
         check('hieuqua', employee.pctBaoHiem, departmentAverages.pctBaoHiem);
 
-        // 4. Đơn giá
         check('dongia', employee.donGiaTrungBinh, departmentAverages.donGiaTrungBinh);
         check('dongia', employee.donGiaTivi, departmentAverages.donGiaTivi);
         check('dongia', employee.donGiaTuLanh, departmentAverages.donGiaTuLanh);
@@ -88,9 +92,6 @@ export const sknvService = {
         return { ...employee, summary: counts, totalAbove, totalCriteria };
     },
 
-    /**
-     * Xử lý toàn bộ danh sách nhân viên để thêm thông tin đánh giá.
-     */
     processReportData(rawReportData) {
         if (!rawReportData || rawReportData.length === 0) return [];
         return rawReportData.map(emp => {
@@ -99,58 +100,106 @@ export const sknvService = {
         });
     },
 
-    /**
-     * [QUAN TRỌNG] Chuẩn bị dữ liệu chi tiết để hiển thị lên Grid.
-     * Đây là hàm bị thiếu gây ra lỗi TypeError.
-     */
-    getDetailStats(employeeData, departmentAverages) {
+    getDetailStats(employeeData, departmentAverages, customMetrics = []) {
         if (!employeeData || !departmentAverages) return {};
 
         const { mucTieu } = employeeData;
+        const fmtRev = (val) => formatters.formatRevenue(val);
+        const fmtNum = (val) => formatters.formatNumberOrDash(val);
+        const fmtPct = (val) => formatters.formatPercentage(val);
 
-        // 1. Nhóm Doanh Thu
         const doanhThu = [
-            { label: 'Doanh thu thực', value: formatters.formatRevenue(employeeData.doanhThu), average: formatters.formatRevenue(departmentAverages.doanhThu || 0), rawValue: employeeData.doanhThu, rawAverage: departmentAverages.doanhThu },
-            { label: 'Doanh thu QĐ', value: formatters.formatRevenue(employeeData.doanhThuQuyDoi), average: formatters.formatRevenue(departmentAverages.doanhThuQuyDoi || 0), rawValue: employeeData.doanhThuQuyDoi, rawAverage: departmentAverages.doanhThuQuyDoi },
-            { label: '% Quy đổi', value: formatters.formatPercentage(employeeData.hieuQuaQuyDoi), valueClass: (mucTieu && employeeData.hieuQuaQuyDoi < (mucTieu.phanTramQD / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.hieuQuaQuyDoi), rawValue: employeeData.hieuQuaQuyDoi, rawAverage: departmentAverages.hieuQuaQuyDoi },
-            { label: 'DT CE', value: formatters.formatRevenue(employeeData.dtCE), average: formatters.formatRevenue(departmentAverages.dtCE || 0), rawValue: employeeData.dtCE, rawAverage: departmentAverages.dtCE },
-            { label: 'DT ICT', value: formatters.formatRevenue(employeeData.dtICT), average: formatters.formatRevenue(departmentAverages.dtICT || 0), rawValue: employeeData.dtICT, rawAverage: departmentAverages.dtICT },
-            { label: 'DT Trả chậm', value: formatters.formatRevenue(employeeData.doanhThuTraGop), average: formatters.formatRevenue(departmentAverages.doanhThuTraGop || 0), rawValue: employeeData.doanhThuTraGop, rawAverage: departmentAverages.doanhThuTraGop },
-            { label: '% Trả chậm', value: formatters.formatPercentage(employeeData.tyLeTraCham), valueClass: (mucTieu && employeeData.tyLeTraCham < (mucTieu.phanTramTC / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.tyLeTraCham), rawValue: employeeData.tyLeTraCham, rawAverage: departmentAverages.tyLeTraCham }
+            { id: 'dtThuc', label: 'Doanh thu thực', value: fmtRev(employeeData.doanhThu), average: fmtRev(departmentAverages.doanhThu), rawValue: employeeData.doanhThu, rawAverage: departmentAverages.doanhThu },
+            { id: 'dtQD', label: 'Doanh thu QĐ', value: fmtRev(employeeData.doanhThuQuyDoi), average: fmtRev(departmentAverages.doanhThuQuyDoi), rawValue: employeeData.doanhThuQuyDoi, rawAverage: departmentAverages.doanhThuQuyDoi },
+            { id: 'pctQD', label: '% Quy đổi', value: fmtPct(employeeData.hieuQuaQuyDoi), valueClass: (mucTieu && employeeData.hieuQuaQuyDoi < (mucTieu.phanTramQD / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.hieuQuaQuyDoi), rawValue: employeeData.hieuQuaQuyDoi, rawAverage: departmentAverages.hieuQuaQuyDoi },
+            { id: 'dtCE', label: 'DT CE', value: fmtRev(employeeData.dtCE), average: fmtRev(departmentAverages.dtCE), rawValue: employeeData.dtCE, rawAverage: departmentAverages.dtCE },
+            { id: 'dtICT', label: 'DT ICT', value: fmtRev(employeeData.dtICT), average: fmtRev(departmentAverages.dtICT), rawValue: employeeData.dtICT, rawAverage: departmentAverages.dtICT },
+            { id: 'dtTraCham', label: 'DT Trả chậm', value: fmtRev(employeeData.doanhThuTraGop), average: fmtRev(departmentAverages.doanhThuTraGop), rawValue: employeeData.doanhThuTraGop, rawAverage: departmentAverages.doanhThuTraGop },
+            { id: 'pctTraCham', label: '% Trả chậm', value: fmtPct(employeeData.tyLeTraCham), valueClass: (mucTieu && employeeData.tyLeTraCham < (mucTieu.phanTramTC / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.tyLeTraCham), rawValue: employeeData.tyLeTraCham, rawAverage: departmentAverages.tyLeTraCham }
         ];
 
-        // 2. Nhóm Năng Suất
         const nangSuat = [
-            { label: 'Thưởng nóng', value: formatters.formatRevenue(employeeData.thuongNong), average: formatters.formatRevenue(departmentAverages.thuongNong || 0), rawValue: employeeData.thuongNong, rawAverage: departmentAverages.thuongNong },
-            { label: 'Thưởng ERP', value: formatters.formatRevenue(employeeData.thuongERP), average: formatters.formatRevenue(departmentAverages.thuongERP || 0), rawValue: employeeData.thuongERP, rawAverage: departmentAverages.thuongERP },
-            { label: 'Thu nhập LK', value: formatters.formatRevenue(employeeData.tongThuNhap), average: formatters.formatRevenue(departmentAverages.tongThuNhap || 0), rawValue: employeeData.tongThuNhap, rawAverage: departmentAverages.tongThuNhap },
-            { label: 'Thu nhập DK', value: formatters.formatRevenue(employeeData.thuNhapDuKien), average: formatters.formatRevenue(departmentAverages.thuNhapDuKien || 0), rawValue: employeeData.thuNhapDuKien, rawAverage: departmentAverages.thuNhapDuKien },
-            { label: 'Giờ công', value: formatters.formatNumberOrDash(employeeData.gioCong), average: formatters.formatNumberOrDash(departmentAverages.gioCong), rawValue: employeeData.gioCong, rawAverage: departmentAverages.gioCong },
-            { label: 'TN/Giờ công', value: formatters.formatNumberOrDash(employeeData.gioCong > 0 ? employeeData.tongThuNhap / employeeData.gioCong : 0), average: formatters.formatNumberOrDash((departmentAverages.gioCong || 0) > 0 ? (departmentAverages.tongThuNhap || 0) / departmentAverages.gioCong : 0), rawValue: employeeData.gioCong > 0 ? employeeData.tongThuNhap / employeeData.gioCong : 0, rawAverage: (departmentAverages.gioCong || 0) > 0 ? (departmentAverages.tongThuNhap || 0) / departmentAverages.gioCong : 0 },
-            { label: 'Doanh thu QĐ/GC', value: formatters.formatRevenue(employeeData.gioCong > 0 ? employeeData.doanhThuQuyDoi / employeeData.gioCong : 0), average: formatters.formatRevenue((departmentAverages.gioCong || 0) > 0 ? (departmentAverages.doanhThuQuyDoi || 0) / departmentAverages.gioCong : 0), rawValue: employeeData.gioCong > 0 ? employeeData.doanhThuQuyDoi / employeeData.gioCong : 0, rawAverage: (departmentAverages.gioCong || 0) > 0 ? (departmentAverages.doanhThuQuyDoi || 0) / departmentAverages.gioCong : 0 }
+            { id: 'thuongNong', label: 'Thưởng nóng', value: fmtRev(employeeData.thuongNong), average: fmtRev(departmentAverages.thuongNong), rawValue: employeeData.thuongNong, rawAverage: departmentAverages.thuongNong },
+            { id: 'thuongERP', label: 'Thưởng ERP', value: fmtRev(employeeData.thuongERP), average: fmtRev(departmentAverages.thuongERP), rawValue: employeeData.thuongERP, rawAverage: departmentAverages.thuongERP },
+            { id: 'thuNhapLK', label: 'Thu nhập LK', value: fmtRev(employeeData.tongThuNhap), average: fmtRev(departmentAverages.tongThuNhap), rawValue: employeeData.tongThuNhap, rawAverage: departmentAverages.tongThuNhap },
+            { id: 'thuNhapDK', label: 'Thu nhập DK', value: fmtRev(employeeData.thuNhapDuKien), average: fmtRev(departmentAverages.thuNhapDuKien), rawValue: employeeData.thuNhapDuKien, rawAverage: departmentAverages.thuNhapDuKien },
+            { id: 'gioCong', label: 'Giờ công', value: fmtNum(employeeData.gioCong), average: fmtNum(departmentAverages.gioCong), rawValue: employeeData.gioCong, rawAverage: departmentAverages.gioCong },
+            { id: 'tnTrenGc', label: 'TN/Giờ công', value: fmtNum(employeeData.gioCong > 0 ? employeeData.tongThuNhap / employeeData.gioCong : 0), average: fmtNum((departmentAverages.gioCong || 0) > 0 ? (departmentAverages.tongThuNhap || 0) / departmentAverages.gioCong : 0), rawValue: employeeData.gioCong > 0 ? employeeData.tongThuNhap / employeeData.gioCong : 0, rawAverage: (departmentAverages.gioCong || 0) > 0 ? (departmentAverages.tongThuNhap || 0) / departmentAverages.gioCong : 0 },
+            { id: 'dtqdTrenGc', label: 'DTQĐ/Giờ công', value: fmtRev(employeeData.gioCong > 0 ? employeeData.doanhThuQuyDoi / employeeData.gioCong : 0), average: fmtRev((departmentAverages.gioCong || 0) > 0 ? (departmentAverages.doanhThuQuyDoi || 0) / departmentAverages.gioCong : 0), rawValue: employeeData.gioCong > 0 ? employeeData.doanhThuQuyDoi / employeeData.gioCong : 0, rawAverage: (departmentAverages.gioCong || 0) > 0 ? (departmentAverages.doanhThuQuyDoi || 0) / departmentAverages.gioCong : 0 }
         ];
 
-        // 3. Nhóm Hiệu Quả
         const hieuQua = [
-            { label: '% PK', value: formatters.formatPercentage(employeeData.pctPhuKien), valueClass: (mucTieu && employeeData.pctPhuKien < (mucTieu.phanTramPhuKien / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.pctPhuKien), rawValue: employeeData.pctPhuKien, rawAverage: departmentAverages.pctPhuKien },
-            { label: '% Gia dụng', value: formatters.formatPercentage(employeeData.pctGiaDung), valueClass: (mucTieu && employeeData.pctGiaDung < (mucTieu.phanTramGiaDung / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.pctGiaDung), rawValue: employeeData.pctGiaDung, rawAverage: departmentAverages.pctGiaDung },
-            { label: '% MLN', value: formatters.formatPercentage(employeeData.pctMLN), valueClass: (mucTieu && employeeData.pctMLN < (mucTieu.phanTramMLN / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.pctMLN), rawValue: employeeData.pctMLN, rawAverage: departmentAverages.pctMLN },
-            { label: '% Sim', value: formatters.formatPercentage(employeeData.pctSim), valueClass: (mucTieu && employeeData.pctSim < (mucTieu.phanTramSim / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.pctSim), rawValue: employeeData.pctSim, rawAverage: departmentAverages.pctSim },
-            { label: '% VAS', value: formatters.formatPercentage(employeeData.pctVAS), valueClass: (mucTieu && employeeData.pctVAS < (mucTieu.phanTramVAS / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.pctVAS), rawValue: employeeData.pctVAS, rawAverage: departmentAverages.pctVAS },
-            { label: '% Bảo hiểm', value: formatters.formatPercentage(employeeData.pctBaoHiem), valueClass: (mucTieu && employeeData.pctBaoHiem < (mucTieu.phanTramBaoHiem / 100)) ? 'text-red-600 bg-red-50' : '', average: formatters.formatPercentage(departmentAverages.pctBaoHiem), rawValue: employeeData.pctBaoHiem, rawAverage: departmentAverages.pctBaoHiem },
+            { id: 'pctPhuKien', label: '% PK', value: fmtPct(employeeData.pctPhuKien), valueClass: (mucTieu && employeeData.pctPhuKien < (mucTieu.phanTramPhuKien / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.pctPhuKien), rawValue: employeeData.pctPhuKien, rawAverage: departmentAverages.pctPhuKien },
+            { id: 'pctGiaDung', label: '% Gia dụng', value: fmtPct(employeeData.pctGiaDung), valueClass: (mucTieu && employeeData.pctGiaDung < (mucTieu.phanTramGiaDung / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.pctGiaDung), rawValue: employeeData.pctGiaDung, rawAverage: departmentAverages.pctGiaDung },
+            { id: 'pctMLN', label: '% MLN', value: fmtPct(employeeData.pctMLN), valueClass: (mucTieu && employeeData.pctMLN < (mucTieu.phanTramMLN / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.pctMLN), rawValue: employeeData.pctMLN, rawAverage: departmentAverages.pctMLN },
+            { id: 'pctSim', label: '% Sim', value: fmtPct(employeeData.pctSim), valueClass: (mucTieu && employeeData.pctSim < (mucTieu.phanTramSim / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.pctSim), rawValue: employeeData.pctSim, rawAverage: departmentAverages.pctSim },
+            { id: 'pctVAS', label: '% VAS', value: fmtPct(employeeData.pctVAS), valueClass: (mucTieu && employeeData.pctVAS < (mucTieu.phanTramVAS / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.pctVAS), rawValue: employeeData.pctVAS, rawAverage: departmentAverages.pctVAS },
+            { id: 'pctBaoHiem', label: '% Bảo hiểm', value: fmtPct(employeeData.pctBaoHiem), valueClass: (mucTieu && employeeData.pctBaoHiem < (mucTieu.phanTramBaoHiem / 100)) ? 'text-red-600 bg-red-50' : '', average: fmtPct(departmentAverages.pctBaoHiem), rawValue: employeeData.pctBaoHiem, rawAverage: departmentAverages.pctBaoHiem },
         ];
 
-        // 4. Nhóm Đơn Giá
         const donGia = [
-            { label: 'Đơn giá TB', value: formatters.formatRevenue(employeeData.donGiaTrungBinh), average: formatters.formatRevenue(departmentAverages.donGiaTrungBinh), rawValue: employeeData.donGiaTrungBinh, rawAverage: departmentAverages.donGiaTrungBinh },
-            { label: 'Đơn giá Tivi', value: formatters.formatRevenue(employeeData.donGiaTivi), average: formatters.formatRevenue(departmentAverages.donGiaTivi), rawValue: employeeData.donGiaTivi, rawAverage: departmentAverages.donGiaTivi },
-            { label: 'Đơn giá Tủ lạnh', value: formatters.formatRevenue(employeeData.donGiaTuLanh), average: formatters.formatRevenue(departmentAverages.donGiaTuLanh), rawValue: employeeData.donGiaTuLanh, rawAverage: departmentAverages.donGiaTuLanh },
-             { label: 'Đơn giá Máy giặt', value: formatters.formatRevenue(employeeData.donGiaMayGiat), average: formatters.formatRevenue(departmentAverages.donGiaMayGiat), rawValue: employeeData.donGiaMayGiat, rawAverage: departmentAverages.donGiaMayGiat },
-            { label: 'Đơn giá Máy lạnh', value: formatters.formatRevenue(employeeData.donGiaMayLanh), average: formatters.formatRevenue(departmentAverages.donGiaMayLanh), rawValue: employeeData.donGiaMayLanh, rawAverage: departmentAverages.donGiaMayLanh },
-            { label: 'Đơn giá Điện thoại', value: formatters.formatRevenue(employeeData.donGiaDienThoai), average: formatters.formatRevenue(departmentAverages.donGiaDienThoai), rawValue: employeeData.donGiaDienThoai, rawAverage: departmentAverages.donGiaDienThoai },
-            { label: 'Đơn giá Laptop', value: formatters.formatRevenue(employeeData.donGiaLaptop), average: formatters.formatRevenue(departmentAverages.donGiaLaptop), rawValue: employeeData.donGiaLaptop, rawAverage: departmentAverages.donGiaLaptop },
+            { id: 'dgTB', label: 'Đơn giá TB', value: fmtRev(employeeData.donGiaTrungBinh), average: fmtRev(departmentAverages.donGiaTrungBinh), rawValue: employeeData.donGiaTrungBinh, rawAverage: departmentAverages.donGiaTrungBinh },
+            { id: 'dgTivi', label: 'Đơn giá Tivi', value: fmtRev(employeeData.donGiaTivi), average: fmtRev(departmentAverages.donGiaTivi), rawValue: employeeData.donGiaTivi, rawAverage: departmentAverages.donGiaTivi },
+            { id: 'dgTuLanh', label: 'Đơn giá Tủ lạnh', value: fmtRev(employeeData.donGiaTuLanh), average: fmtRev(departmentAverages.donGiaTuLanh), rawValue: employeeData.donGiaTuLanh, rawAverage: departmentAverages.donGiaTuLanh },
+            { id: 'dgMayGiat', label: 'Đơn giá Máy giặt', value: fmtRev(employeeData.donGiaMayGiat), average: fmtRev(departmentAverages.donGiaMayGiat), rawValue: employeeData.donGiaMayGiat, rawAverage: departmentAverages.donGiaMayGiat },
+            { id: 'dgMayLanh', label: 'Đơn giá Máy lạnh', value: fmtRev(employeeData.donGiaMayLanh), average: fmtRev(departmentAverages.donGiaMayLanh), rawValue: employeeData.donGiaMayLanh, rawAverage: departmentAverages.donGiaMayLanh },
+            { id: 'dgDienThoai', label: 'Đơn giá Điện thoại', value: fmtRev(employeeData.donGiaDienThoai), average: fmtRev(departmentAverages.donGiaDienThoai), rawValue: employeeData.donGiaDienThoai, rawAverage: departmentAverages.donGiaDienThoai },
+            { id: 'dgLaptop', label: 'Đơn giá Laptop', value: fmtRev(employeeData.donGiaLaptop), average: fmtRev(departmentAverages.donGiaLaptop), rawValue: employeeData.donGiaLaptop, rawAverage: departmentAverages.donGiaLaptop },
         ];
+
+        if (customMetrics && customMetrics.length > 0) {
+            customMetrics.forEach(metric => {
+                const empVal = this.calculateDynamicMetricValue(employeeData, metric);
+                const avgVal = departmentAverages[`custom_${metric.id}`] || 0; 
+
+                const newItem = {
+                    id: metric.id,
+                    label: metric.label,
+                    rawValue: empVal,
+                    rawAverage: avgVal,
+                    isCustom: true
+                };
+
+                if (metric.type === 'UNIT_PRICE') {
+                    newItem.value = fmtRev(empVal);
+                    newItem.average = fmtRev(avgVal);
+                    donGia.push(newItem);
+                } else {
+                    newItem.value = fmtPct(empVal);
+                    newItem.average = fmtPct(avgVal);
+                    newItem.valueClass = (metric.target && empVal < (metric.target / 100)) ? 'text-red-600 bg-red-50' : '';
+                    hieuQua.push(newItem);
+                }
+            });
+        }
 
         return { doanhThu, nangSuat, hieuQua, donGia };
+    },
+
+    calculateDynamicMetricValue(data, metricConfig) {
+        const sumValues = (listNames, metricType) => {
+            let total = 0;
+            if(!listNames || listNames.length === 0) return 0;
+
+            listNames.forEach(name => {
+                const cleanName = cleanCategoryName(name);
+                let item = data.doanhThuTheoNganhHang?.[cleanName];
+                if (!item && data.doanhThuTheoNhomHang) {
+                    item = data.doanhThuTheoNhomHang[cleanName];
+                }
+
+                if (item) {
+                    if (metricType === 'SL') total += item.quantity;
+                    else if (metricType === 'DTQD') total += item.revenueQuyDoi;
+                    else total += item.revenue; 
+                }
+            });
+            return total;
+        };
+
+        const numVal = sumValues(metricConfig.groupA, metricConfig.typeA);
+        const denVal = sumValues(metricConfig.groupB, metricConfig.typeB);
+
+        return denVal > 0 ? numVal / denVal : 0;
     }
 };
