@@ -3,6 +3,9 @@
   
   import { activeTab, modalState } from './stores.js';
   import { authService } from './services/auth.service.js';
+  // [MỚI] Import service Admin để dùng hàm save
+  import { adminService } from './services/admin.service.js';
+  import { efficiencyConfig } from './stores.js';
 
   // --- COMPONENTS CHÍNH ---
   import Sidebar from './components/Sidebar.svelte';
@@ -26,8 +29,11 @@
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
   import UserSpecialProgramModal from './components/modals/UserSpecialProgramModal.svelte';
   
-  // [MỚI] Trình tạo nhận xét
+  // Trình tạo nhận xét
   import ComposerModal from './components/modals/ComposerModal.svelte';
+  
+  // [MỚI] Modal Thêm Cột Hiệu Quả (Di chuyển ra đây để fix lỗi hiển thị)
+  import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
 
   onMount(async () => {
     // 1. Kích hoạt đăng nhập ẩn danh Firebase (Hạ tầng)
@@ -35,7 +41,6 @@
         await authService.ensureAnonymousAuth();
     } catch (e) {
         console.error("Lỗi kết nối Firebase Auth:", e);
-        // Có thể hiển thị thông báo lỗi global ở đây nếu cần
     }
 
     // 2. Kiểm tra định danh Email (Ứng dụng)
@@ -45,10 +50,25 @@
     }
   });
 
-  // Cập nhật icon Feather sau mỗi lần giao diện thay đổi
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
+
+  // [MỚI] Hàm xử lý lưu config từ Modal Efficiency (Global)
+  function handleSaveEffConfig(event) {
+      const newItem = event.detail;
+      efficiencyConfig.update(items => {
+          const idx = items.findIndex(i => i.id === newItem.id);
+          if (idx >= 0) {
+              items[idx] = newItem;
+              return [...items];
+          } else {
+              return [...items, newItem];
+          }
+      });
+      // Lưu lên Cloud
+      adminService.saveEfficiencyConfig($efficiencyConfig);
+  }
 </script>
 
 <GlobalNotification />
@@ -60,6 +80,13 @@
 <UserCompetitionModal />
 <UserSpecialProgramModal />
 <ComposerModal /> 
+
+<AddEfficiencyColumnModal 
+    isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
+    editItem={$modalState.payload}
+    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:save={handleSaveEffConfig}
+/>
 
 <div class="flex min-h-screen">
   <div id="sidebar-container">
@@ -89,17 +116,15 @@
 <div id="modal-unexported-detail-container"></div>
 
 <style>
-  /* Style toàn cục cho layout chính */
   :global(#main-content) { 
     transition: margin-left 0.3s ease-in-out;
-    margin-left: 68px; /* Chừa chỗ cho Sidebar thu gọn */
+    margin-left: 68px; 
     min-width: 0;
     display: flex;
     flex-direction: column;
     flex: 1 1 0%;
   }
 
-  /* Style chung cho tiêu đề trang */
   :global(.page-header) { 
     display: flex; 
     flex-wrap: wrap; 

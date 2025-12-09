@@ -1,5 +1,5 @@
 // src/stores.js
-// Version 3.2 - Add brandNameMapping store
+// Version 3.3 - Add efficiencyConfig & qdcConfigStore
 import { writable } from 'svelte/store';
 
 /**
@@ -82,6 +82,7 @@ export const specialProductList = writable([]);
 
 // [Mapping Stores]
 export const macroCategoryConfig = writable([]); 
+export const macroProductGroupConfig = writable([]); // [MỚI] Cấu hình Nhóm Hàng Lớn
 export const categoryNameMapping = writable({}); 
 export const groupNameMapping = writable({});
 export const brandNameMapping = writable({}); // [MỚI] Mapping tên Hãng
@@ -89,6 +90,10 @@ export const brandNameMapping = writable({}); // [MỚI] Mapping tên Hãng
 export const localCompetitionConfigs = writable([]); 
 export const globalCompetitionConfigs = writable([]); 
 export const globalSpecialPrograms = writable([]); 
+
+// [MỚI] Cấu hình động cho bảng Hiệu quả & QĐC
+export const efficiencyConfig = writable([]); 
+export const qdcConfigStore = writable([]);
 
 /**
  * Cài đặt & Trạng thái UI

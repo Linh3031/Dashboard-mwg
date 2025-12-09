@@ -1,6 +1,5 @@
 // src/services/reports/master.report.js
-// Version 1.0 - Core logic extracted from reportService
-// Chứa: generateMasterReportData, aggregateReport, calculateDepartmentAverages
+// Version 2.3 - Fix Macro Product Group Aggregation & Efficiency Expansion
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
 import * as utils from '../../utils.js';
@@ -12,14 +11,12 @@ import {
     thuongERPData,
     thuongNongDataThangTruoc,
     thuongERPDataThangTruoc,
-    macroCategoryConfig
+    macroCategoryConfig,
+    macroProductGroupConfig,
+    efficiencyConfig
 } from '../../stores.js';
 
 export const masterReportLogic = {
-    /**
-     * Tạo dữ liệu báo cáo tổng hợp (Lũy kế & Realtime).
-     * Đã tích hợp logic Nhóm Ngành Hàng Lớn (Macro Groups).
-     */
     generateMasterReportData: (sourceData, goalSettings, isRealtime = false) => {
         const $danhSachNhanVien = get(danhSachNhanVien);
         if ($danhSachNhanVien.length === 0) return [];
@@ -30,20 +27,33 @@ export const masterReportLogic = {
         const PG = config.PRODUCT_GROUPS; 
         const gioCongByMSNV = dataProcessing.processGioCongData();
         
-        // Lấy cấu hình Nhóm Lớn từ Store
         const $macroCategoryConfig = get(macroCategoryConfig) || [];
-        const macroLookup = {};
-        $macroCategoryConfig.forEach(macro => {
-            if (macro.items && Array.isArray(macro.items)) {
-                macro.items.forEach(item => {
-                    macroLookup[item] = macro.name; 
-                });
-            }
-        });
+        const $macroProductGroupConfig = get(macroProductGroupConfig) || []; // [MỚI]
+        const $efficiencyConfig = get(efficiencyConfig) || [];
 
-        // Helper check Macro Group
+        // [FIX] Map để tra ngược: Tên Macro -> Danh sách items con (Gộp cả Category và Product Group)
+        const macroToItemsMap = {};
+        const itemToMacroMap = {};
+
+        // Helper build map
+        const buildMacroMap = (configs, cleanerFunc) => {
+            configs.forEach(macro => {
+                if (macro.items && Array.isArray(macro.items)) {
+                    // Chuẩn hóa tên con ngay lúc tạo map để khớp với dữ liệu đã clean
+                    macroToItemsMap[macro.name] = macro.items.map(i => cleanerFunc(i));
+                    macro.items.forEach(item => {
+                        itemToMacroMap[item] = macro.name; 
+                    });
+                }
+            });
+        };
+
+        // Build map cho cả 2 loại
+        buildMacroMap($macroCategoryConfig, utils.cleanCategoryName);
+        buildMacroMap($macroProductGroupConfig, utils.cleanCategoryName); // Dùng chung cleanCategoryName vì bản chất là cleanNameRaw
+
         const checkMacroGroup = (macroName, nhomHangCode, rawNhomHangName) => {
-            if (macroLookup[rawNhomHangName] === macroName) return true;
+            if (itemToMacroMap[rawNhomHangName] === macroName) return true;
             
             const fallbackMap = {
                 'ICT': PG.ICT,
@@ -53,14 +63,14 @@ export const masterReportLogic = {
                 'Máy lọc nước': PG.MAY_LOC_NUOC
             };
             
-            const isAdminDefined = $macroCategoryConfig.some(g => g.name === macroName);
+            // Ưu tiên config Admin, sau đó mới fallback code cứng
+            const isAdminDefined = $macroCategoryConfig.some(g => g.name === macroName) || $macroProductGroupConfig.some(g => g.name === macroName);
             if (!isAdminDefined && fallbackMap[macroName]) {
                 return fallbackMap[macroName].includes(nhomHangCode);
             }
             return false;
         };
 
-        // Chuẩn bị dữ liệu thưởng
         const $thuongNongData = get(thuongNongData);
         const $employeeNameToMaNVMap = get(employeeNameToMaNVMap);
         const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc);
@@ -102,7 +112,10 @@ export const masterReportLogic = {
                 dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0,
                 dtMayGiat: 0, slMayGiat: 0, dtMayLanh: 0, slMayLanh: 0,
                 dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
-                doanhThuTheoNganhHang: {}, slSimOnline: 0, slUDDD: 0, slBaoHiemVAS: 0, slSmartphone: 0, slBaoHiemDenominator: 0,
+                doanhThuTheoNganhHang: {}, 
+                doanhThuTheoNhomHang: {}, 
+                dynamicMetrics: {},
+                slSimOnline: 0, slUDDD: 0, slBaoHiemVAS: 0, slSmartphone: 0, slBaoHiemDenominator: 0,
                 qdc: {}
             };
 
@@ -125,7 +138,6 @@ export const masterReportLogic = {
                         const nhomHangNameRaw = String(row.nhomHang || '').trim();
                         const nganhHangCode = String(row.nganhHang || '').match(/^\d+/)?.[0] || null;
 
-                        // Check Macro Groups
                         const isICT = checkMacroGroup('ICT', nhomHangCode, nhomHangNameRaw);
                         const isCE = checkMacroGroup('CE', nhomHangCode, nhomHangNameRaw);
                         const isPhuKien = checkMacroGroup('Phụ kiện', nganhHangCode, nhomHangNameRaw) || (PG.PHU_KIEN.includes(nganhHangCode) && !$macroCategoryConfig.some(g => g.name === 'Phụ kiện'));
@@ -140,6 +152,7 @@ export const masterReportLogic = {
                             if(isNaN(soLuong)) return;
 
                             const nganhHangName = utils.cleanCategoryName(row.nganhHang);
+                            const nhomHangName = utils.cleanCategoryName(row.nhomHang);
 
                             data.doanhThu += thanhTien;
                             data.doanhThuQuyDoi += thanhTien * heSo;
@@ -155,12 +168,16 @@ export const masterReportLogic = {
 
                             if (hinhThucXuatTraGop.has(row.hinhThucXuat)) { data.doanhThuTraGop += thanhTien; data.doanhThuTraGopQuyDoi += thanhTien * heSo; }
 
-                            if (nganhHangName) {
-                                if (!data.doanhThuTheoNganhHang[nganhHangName]) data.doanhThuTheoNganhHang[nganhHangName] = { revenue: 0, quantity: 0, revenueQuyDoi: 0 };
-                                data.doanhThuTheoNganhHang[nganhHangName].revenue += thanhTien;
-                                data.doanhThuTheoNganhHang[nganhHangName].quantity += soLuong;
-                                data.doanhThuTheoNganhHang[nganhHangName].revenueQuyDoi += thanhTien * heSo;
+                            const trackMetric = (container, name) => {
+                                if (!name) return;
+                                if (!container[name]) container[name] = { name: name, revenue: 0, quantity: 0, revenueQuyDoi: 0 };
+                                container[name].revenue += thanhTien;
+                                container[name].quantity += soLuong;
+                                container[name].revenueQuyDoi += thanhTien * heSo;
                             }
+                            
+                            trackMetric(data.doanhThuTheoNganhHang, nganhHangName);
+                            trackMetric(data.doanhThuTheoNhomHang, nhomHangName);
 
                             if (isICT) { data.dtICT += thanhTien; }
                             if (isCE) { data.dtCE += thanhTien; data.slCE += soLuong; }
@@ -202,6 +219,46 @@ export const masterReportLogic = {
                 }
             });
 
+            // [FIX] TÍNH TOÁN DYNAMIC METRICS VỚI EXPANSION LOGIC
+            // Bây giờ sẽ tìm cả trong danh sách Ngành hàng VÀ Nhóm hàng
+            if ($efficiencyConfig && $efficiencyConfig.length > 0) {
+                $efficiencyConfig.forEach(cfg => {
+                    const sumValues = (listNames) => {
+                        let total = 0;
+                        listNames.forEach(name => {
+                            // 1. Bung items nếu là Macro
+                            const itemsToSum = macroToItemsMap[name] || [name];
+                            
+                            itemsToSum.forEach(subName => {
+                                const cleanName = utils.cleanCategoryName(subName);
+                                // 2. Thử tìm trong Ngành Hàng
+                                let item = data.doanhThuTheoNganhHang[cleanName];
+                                // 3. Nếu không có, tìm trong Nhóm Hàng
+                                if (!item) {
+                                    item = data.doanhThuTheoNhomHang[cleanName];
+                                }
+
+                                if (item) {
+                                    if (cfg.type === 'SL') total += item.quantity;
+                                    else if (cfg.type === 'DTQD') total += item.revenueQuyDoi;
+                                    else total += item.revenue; 
+                                }
+                            });
+                        });
+                        return total;
+                    };
+
+                    const numVal = sumValues(cfg.groupA || []);
+                    const denVal = sumValues(cfg.groupB || []);
+
+                    data.dynamicMetrics[cfg.id] = {
+                        value: denVal > 0 ? numVal / denVal : 0,
+                        target: cfg.target,
+                        label: cfg.label
+                    };
+                });
+            }
+
             data.slICT = data.slDienThoai + data.slLaptop;
             const gioCong = gioCongByMSNV[employee.maNV] || 0;
             const thuongNong = thuongNongByMSNV[employee.maNV] || 0;
@@ -242,12 +299,9 @@ export const masterReportLogic = {
         });
     },
 
-    /**
-     * Tổng hợp dữ liệu từ cấp nhân viên lên cấp siêu thị.
-     */
     aggregateReport(reportData, selectedWarehouse = null) {
         if (!reportData || reportData.length === 0) {
-            const emptyShell = { doanhThu: 0, doanhThuQuyDoi: 0, dtCE: 0, dtICT: 0, qdc: {}, nganhHangChiTiet: {}, comparisonData: { value: 0, percentage: 'N/A' } };
+            const emptyShell = { doanhThu: 0, doanhThuQuyDoi: 0, dtCE: 0, dtICT: 0, qdc: {}, nganhHangChiTiet: {}, nhomHangChiTiet: {}, dynamicMetrics: {}, comparisonData: { value: 0, percentage: 'N/A' } };
             const numericKeys = ['doanhThuTraGop', 'doanhThuChuaXuat','doanhThuQuyDoiChuaXuat', 'dtGiaDung', 'dtMLN', 'dtPhuKien', 'slSmartphone', 'slSimOnline', 'slUDDD', 'slBaoHiemDenominator', 'slBaoHiemVAS'];
             numericKeys.forEach(key => emptyShell[key] = 0);
             return emptyShell;
@@ -271,22 +325,118 @@ export const masterReportLogic = {
             return acc;
         }, {});
 
-        const aggregatedNganhHang = {};
-        reportData.forEach(employee => {
-            if (employee.doanhThuTheoNganhHang) {
-                Object.entries(employee.doanhThuTheoNganhHang).forEach(([name, values]) => {
-                    if (!aggregatedNganhHang[name]) aggregatedNganhHang[name] = { name: name, quantity: 0, revenue: 0, revenueQuyDoi: 0, donGia: 0 };
-                    aggregatedNganhHang[name].quantity += values.quantity;
-                    aggregatedNganhHang[name].revenue += values.revenue;
-                    aggregatedNganhHang[name].revenueQuyDoi += values.revenueQuyDoi;
-                });
+        // Helper Aggregation: Dùng cleanerFunc để xử lý tên con
+        const aggregateDetail = (sourceKey, destKey, macroConfigStore, cleanerFunc) => {
+            const aggregated = {};
+            reportData.forEach(employee => {
+                if (employee[sourceKey]) {
+                    Object.entries(employee[sourceKey]).forEach(([name, values]) => {
+                        if (!aggregated[name]) aggregated[name] = { name: name, quantity: 0, revenue: 0, revenueQuyDoi: 0, donGia: 0 };
+                        aggregated[name].quantity += values.quantity;
+                        aggregated[name].revenue += values.revenue;
+                        aggregated[name].revenueQuyDoi += values.revenueQuyDoi;
+                    });
+                }
+            });
+
+            // Apply Macro Logic
+            const macros = get(macroConfigStore) || [];
+            macros.forEach(macro => {
+                const macroName = macro.name;
+                // Nếu chưa có trong danh sách kết quả HOẶC đã có (để ghi đè/cộng dồn nếu logic phức tạp, ở đây là tạo mới nếu chưa có)
+                // Lưu ý: Nếu Macro trùng tên với item gốc, có thể bị ghi đè. Nên đặt tên Macro khác đi.
+                
+                if (!aggregated[macroName] && macro.items) {
+                    let mQuantity = 0, mRevenue = 0, mRevenueQuyDoi = 0;
+                    macro.items.forEach(childName => {
+                        const cleanChild = cleanerFunc(childName);
+                        const childData = aggregated[cleanChild];
+                        if (childData) {
+                            mQuantity += childData.quantity;
+                            mRevenue += childData.revenue;
+                            mRevenueQuyDoi += childData.revenueQuyDoi;
+                        }
+                    });
+                    // Chỉ hiển thị nếu có số liệu
+                    if (mRevenue > 0 || mQuantity > 0) {
+                        aggregated[macroName] = {
+                            name: macroName,
+                            quantity: mQuantity,
+                            revenue: mRevenue,
+                            revenueQuyDoi: mRevenueQuyDoi,
+                            donGia: mQuantity > 0 ? mRevenue / mQuantity : 0,
+                            isMacro: true 
+                        };
+                    }
+                }
+            });
+
+            // Calc Unit Price
+            for (const name in aggregated) {
+                const item = aggregated[name];
+                item.donGia = item.quantity > 0 ? item.revenue / item.quantity : 0;
             }
-        });
-        for (const name in aggregatedNganhHang) {
-            const item = aggregatedNganhHang[name];
-            item.donGia = item.quantity > 0 ? item.revenue / item.quantity : 0;
+            supermarketReport[destKey] = aggregated;
         }
-        supermarketReport.nganhHangChiTiet = aggregatedNganhHang;
+
+        // Aggregate Ngành Hàng (Category) -> dùng cleanCategoryName
+        aggregateDetail('doanhThuTheoNganhHang', 'nganhHangChiTiet', macroCategoryConfig, utils.cleanCategoryName);
+        
+        // [FIX] Aggregate Nhóm Hàng (Product Group) -> dùng cleanCategoryName (vì nó là cleanNameRaw) 
+        // để khớp với logic lúc tạo employee data
+        aggregateDetail('doanhThuTheoNhomHang', 'nhomHangChiTiet', macroProductGroupConfig, utils.cleanCategoryName);
+
+        // Dynamic Metrics Aggregation (Expansion Logic) - Cấp Siêu Thị
+        const $efficiencyConfig = get(efficiencyConfig);
+        // Map lại macro (bao gồm cả Category và Product Group)
+        const macroToItemsMap = {};
+        const buildMacroMap = (configs, cleanerFunc) => {
+            configs.forEach(macro => {
+                if (macro.items && Array.isArray(macro.items)) {
+                    macroToItemsMap[macro.name] = macro.items.map(i => cleanerFunc(i));
+                }
+            });
+        };
+        buildMacroMap(get(macroCategoryConfig) || [], utils.cleanCategoryName);
+        buildMacroMap(get(macroProductGroupConfig) || [], utils.cleanCategoryName);
+
+        supermarketReport.dynamicMetrics = {};
+        if ($efficiencyConfig && $efficiencyConfig.length > 0) {
+             $efficiencyConfig.forEach(cfg => {
+                const sumValues = (listNames) => {
+                    let total = 0;
+                    listNames.forEach(name => {
+                        // Bung items nếu là Macro
+                        const itemsToSum = macroToItemsMap[name] || [name];
+                        
+                        itemsToSum.forEach(subName => {
+                            const cleanName = utils.cleanCategoryName(subName);
+                            // Ưu tiên tìm trong Ngành hàng, rồi đến Nhóm hàng
+                            let item = supermarketReport.nganhHangChiTiet[cleanName];
+                            if (!item) {
+                                item = supermarketReport.nhomHangChiTiet[cleanName];
+                            }
+
+                            if (item) {
+                                if (cfg.type === 'SL') total += item.quantity;
+                                else if (cfg.type === 'DTQD') total += item.revenueQuyDoi;
+                                else total += item.revenue; 
+                            }
+                        });
+                    });
+                    return total;
+                };
+
+                const totalNum = sumValues(cfg.groupA || []);
+                const totalDen = sumValues(cfg.groupB || []);
+
+                supermarketReport.dynamicMetrics[cfg.id] = {
+                    value: totalDen > 0 ? totalNum / totalDen : 0,
+                    target: cfg.target,
+                    label: cfg.label
+                };
+             });
+        }
 
         supermarketReport.hieuQuaQuyDoi = supermarketReport.doanhThu > 0 ? (supermarketReport.doanhThuQuyDoi / supermarketReport.doanhThu) - 1 : 0;
         supermarketReport.tyLeTraCham = supermarketReport.doanhThu > 0 ? supermarketReport.doanhThuTraGop / supermarketReport.doanhThu : 0;
@@ -299,6 +449,7 @@ export const masterReportLogic = {
 
         supermarketReport.comparisonData = { value: 0, percentage: 'N/A' }; 
 
+        // Fix QDC Don Gia
         if (supermarketReport.qdc) {
             for (const key in supermarketReport.qdc) {
                 const group = supermarketReport.qdc[key];
@@ -316,7 +467,7 @@ export const masterReportLogic = {
         const totals = departmentEmployees.reduce((acc, curr) => {
             Object.keys(curr).forEach(key => {
                 if (typeof curr[key] === 'number') acc[key] = (acc[key] || 0) + curr[key];
-                if (key === 'qdc' && typeof curr[key] === 'object') {
+                if (key === 'qdc' && typeof curr.qdc === 'object') {
                     if (!acc.qdc) acc.qdc = {};
                     for (const qdcKey in curr.qdc) {
                         if (!acc.qdc[qdcKey]) acc.qdc[qdcKey] = { sl: 0, dt: 0, dtqd: 0 };

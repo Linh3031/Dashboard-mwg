@@ -1,51 +1,52 @@
 // src/main.js
-// Version 5.0 - Simplified Init Flow & Local Master Integration
+// Version 5.1 - Fix Crash & Feather Fallback
 import './app.css'
 import App from './App.svelte'
 import { mount } from 'svelte'
 import { firebaseService } from './services/firebase.service.js';
 import feather from 'feather-icons';
-import './services/employeeService.js'; // Giữ side-effect lắng nghe store
-import { authService as auth } from './services/auth.service.js'; // Auth service
-import { dataService } from './services/dataService.js'; // Data service
+import './services/employeeService.js'; 
+import { authService as auth } from './services/auth.service.js'; 
+import { dataService } from './services/dataService.js'; 
 import { analyticsService } from './services/analytics.service.js';
 
 async function initializeApp() {
   try {
-    // 1. Khởi tạo Firebase (Core)
+    // 1. Khởi tạo Firebase
     firebaseService.initCore();
     
-    // 2. Setup Feather Icons
+    // 2. Setup Feather Icons (Global)
     window.feather = feather;
 
-    // 3. Mount ứng dụng UI ngay lập tức
+    // 3. Mount App
     mount(App, {
         target: document.getElementById('app'),
     });
 
-    // 4. Bắt đầu luồng dữ liệu (Async)
+    // [FIX] Gọi replace ngay sau khi mount để đảm bảo icon lần đầu
+    setTimeout(() => {
+        if (window.feather) window.feather.replace();
+    }, 100);
+
+    // 4. Bắt đầu luồng dữ liệu
     startDataFlow();
 
   } catch (e) {
     console.error("Lỗi khởi tạo:", e);
+    // [FIX] Fallback nếu crash: Ít nhất cũng hiển thị thông báo lỗi đẹp
+    document.getElementById('app').innerHTML = `<div style="padding: 20px; color: red;"><h3>Hệ thống gặp sự cố khởi động.</h3><p>${e.message}</p><button onclick="location.reload()">Tải lại trang</button></div>`;
   }
 }
 
 async function startDataFlow() {
     try {
-        // 4.1. Xác thực (Ẩn danh -> Email Local)
         await auth.ensureAnonymousAuth();
         const isLoggedIn = auth.initAuth();
         
         if (isLoggedIn) {
             console.log("[Main] User logged in. Starting data load sequence...");
-            
-            // [QUAN TRỌNG] GỌI HÀM LOAD TUẦN TỰ MỚI
-            // Hàm này đảm bảo DSNV lên trước, sau đó mới đến các file khác và Paste Data
             await dataService.loadAllFromCache();
             
-            // Ghi nhận truy cập
-            // Cần lấy email từ store hoặc localStorage nếu store chưa kịp update
             const email = localStorage.getItem('userEmail');
             if(email) analyticsService.upsertUserRecord(email);
         } else {

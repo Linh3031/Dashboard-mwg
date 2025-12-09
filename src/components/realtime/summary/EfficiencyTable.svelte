@@ -1,12 +1,10 @@
 <script>
   import { formatters } from '../../../utils/formatters.js';
-  // Import component mới
   import SortableTh from '../../common/SortableTh.svelte';
 
   export let items = []; 
 
-  // State sắp xếp
-  let sortKey = 'label'; // Mặc định theo Tên chỉ số
+  let sortKey = 'label';
   let sortDirection = 'asc';
 
   function handleSort(event) {
@@ -28,7 +26,6 @@
         return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
     } 
     
-    // Sort theo giá trị thực hiện hoặc mục tiêu
     valA = a[sortKey] || 0;
     valB = b[sortKey] || 0;
     return sortDirection === 'asc' ? valA - valB : valB - valA;
@@ -55,7 +52,7 @@
             {@const isBelow = item.value < ((item.target || 0) / 100)}
             <tr class="border-t hover:bg-gray-50">
               <td class="px-4 py-2 font-semibold text-gray-800">{item.label}</td>
-              <td class="px-4 py-2 text-right font-bold text-lg {isBelow ? 'bg-red-100 text-red-700' : 'text-green-600'}">
+              <td class="px-4 py-2 text-right font-bold text-lg {isBelow ? 'bg-red-100 text-red-700' : 'text-blue-600'}">
                 {formatters.formatPercentage(item.value)}
               </td>
               <td class="px-4 py-2 text-right text-gray-600">{item.target || 0}%</td>

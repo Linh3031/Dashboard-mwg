@@ -3,92 +3,73 @@
   import { formatters } from '../../utils/formatters.js';
   import { cleanCategoryName, getRandomBrightColor } from '../../utils.js';
 
-  export let items = []; // Danh sách ngành hàng tổng hợp
+  export let items = []; // Dữ liệu Ngành hàng
   export let unexportedItems = []; 
-  export let rawSource = []; // Dữ liệu thô
+  export let rawSource = []; 
   export let numDays = 1;
 
   // --- STATE ---
   let showUnexported = false;
-  let viewMode = 'grid'; // 'grid' | 'chart'
+  let viewMode = 'grid'; 
   let searchText = '';
   let sortMode = 'revenue_desc';
   
-  // State cho Filter Hiển thị (Settings)
   let isSettingsOpen = false;
   let filterSearch = '';
   let hiddenCategories = new Set(); 
 
-  // State cho Chart
-  let selectedGroupFilter = 'All'; 
   let chartInstancePie = null;
   let chartInstanceBar = null;
 
+  // --- PERSISTENT FILTER ---
+  const STORAGE_KEY = 'luyke_category_hidden_items';
+
+  onMount(() => {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+          try {
+              hiddenCategories = new Set(JSON.parse(saved));
+          } catch (e) { console.error(e); }
+      }
+  });
+
+  function saveHiddenState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenCategories]));
+  }
+
   // --- REACTIVE TITLE ---
-  $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT (QĐ)" : "TỶ TRỌNG NGÀNH HÀNG";
-  $: titleIcon = showUnexported ? "alert-circle" : "grid";
+  $: titleText = showUnexported 
+      ? "CHI TIẾT CHƯA XUẤT (QĐ)" 
+      : (viewMode === 'grid' ? "CHI TIẾT NGÀNH HÀNG" : "TỶ TRỌNG NGÀNH HÀNG");
+  
+  $: titleIcon = showUnexported ? "alert-circle" : (viewMode === 'grid' ? "grid" : "pie-chart");
   $: titleClass = showUnexported ? "text-orange-700" : "text-gray-700";
   $: iconClass = showUnexported ? "text-orange-600" : "text-blue-600";
 
-  // --- 1. LOGIC ICON MỚI (THEO YÊU CẦU) ---
   function getCategoryTheme(name) {
       const n = name.toLowerCase();
-      
-      // Điện tử -> Hình tivi
+      // Logic màu sắc giữ nguyên
       if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
-      
-      // Máy giặt, Sấy -> Hình tròn xoay
       if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
-      
-      // Máy lạnh, nước nóng -> Hình gió
       if (n.includes('máy lạnh') || n.includes('nước nóng') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
-      
-      // Tủ lạnh, Đông, mát -> Hình server (hộp xếp chồng)
       if (n.includes('tủ lạnh') || n.includes('tủ đông') || n.includes('tủ mát')) return { icon: 'server', theme: 'theme-blue' };
-      
-      // Máy lọc nước -> Hình giọt nước
       if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
-      
-      // Tablet -> Hình tablet
       if (n.includes('tablet') || n.includes('máy tính bảng')) return { icon: 'tablet', theme: 'theme-green' };
-      
-      // Laptop -> Hình màn hình
       if (n.includes('laptop') || n.includes('máy tính')) return { icon: 'monitor', theme: 'theme-teal' };
-      
-      // Điện thoại
       if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
-      
-      // VAS, Software -> Hình lệnh/code
       if (n.includes('vas') || n.includes('software') || n.includes('phần mềm')) return { icon: 'command', theme: 'theme-gray' };
-      
-      // IT -> Hình máy in
       if (n.includes('it') || n.includes('máy in')) return { icon: 'printer', theme: 'theme-gray' };
-      
-      // Dụng cụ nhà bếp -> Hình kéo
       if (n.includes('dụng cụ') || n.includes('bếp') || n.includes('dao') || n.includes('kéo')) return { icon: 'scissors', theme: 'theme-orange' };
-      
-      // Gia dụng (chung) -> Hình nhà
       if (n.includes('gia dụng') || n.includes('nồi')) return { icon: 'home', theme: 'theme-orange' };
-      
-      // Thẻ cào -> Hình thẻ
       if (n.includes('thẻ cào')) return { icon: 'credit-card', theme: 'theme-green' };
-      
-      // SIM -> Hình chip
       if (n.includes('sim')) return { icon: 'cpu', theme: 'theme-green' };
-      
-      // Phụ kiện -> Tai nghe
       if (n.includes('phụ kiện') || n.includes('cáp') || n.includes('sạc')) return { icon: 'headphones', theme: 'theme-purple' };
-      
-      // Đồng hồ
       if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
-      
-      // Bảo hiểm
       if (n.includes('bảo hiểm') || n.includes('bh')) return { icon: 'shield', theme: 'theme-green' };
-
       return { icon: 'tag', theme: 'theme-gray' };
   }
 
-  // --- LOGIC FILTER HIỂN THỊ ---
+  // --- FILTER ---
   $: allCategoryNames = items.map(i => i.name || i.nganhHang).sort();
   
   $: filterList = allCategoryNames.filter(name => 
@@ -102,6 +83,7 @@
           hiddenCategories.add(name);
       }
       hiddenCategories = new Set(hiddenCategories);
+      saveHiddenState();
   }
 
   function toggleAllVisibility(show) {
@@ -110,20 +92,28 @@
       } else {
           hiddenCategories = new Set(allCategoryNames);
       }
+      saveHiddenState();
   }
 
-  // --- LOGIC GRID DATA ---
+  // --- DATA LOGIC (Grid + Chart dùng chung logic Filter này) ---
   $: sourceData = showUnexported ? unexportedItems : items;
 
+  // [QUAN TRỌNG] itemsPassedToChart chính là filteredItems
   $: filteredItems = sourceData.filter(item => {
       const name = item.name || item.nganhHang || '';
-      const nameMatch = !searchText || name.toLowerCase().includes(searchText.toLowerCase());
-      const valueMatch = showUnexported ? (item.soLuong > 0) : true;
+      // hiddenCategories áp dụng cho cả Grid và Chart
       const visibilityMatch = !hiddenCategories.has(name);
-      return nameMatch && valueMatch && visibilityMatch;
+      const valueMatch = showUnexported ? (item.soLuong > 0) : true;
+      return visibilityMatch && valueMatch;
   });
 
-  $: sortedItems = [...filteredItems].sort((a, b) => {
+  // Grid có thêm filter search text (nhưng không ảnh hưởng chart)
+  $: gridDisplayItems = filteredItems.filter(item => {
+      const name = item.name || item.nganhHang || '';
+      return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
+  });
+
+  $: sortedItems = [...gridDisplayItems].sort((a, b) => {
       const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
       const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
       const getName = (i) => (i.name || i.nganhHang || '');
@@ -134,26 +124,35 @@
       return 0;
   });
 
-  // --- 2. TÍNH TOÁN % (MARKET SHARE) ---
-  // Tổng doanh thu của TẤT CẢ các mục đang hiển thị (để tính tỷ trọng đóng góp)
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
-  
-  // Giá trị lớn nhất (để vẽ thanh sparkline cho đẹp)
   $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
-  // --- LOGIC CHART ---
-  $: uniqueGroups = [...new Set(rawSource.map(r => cleanCategoryName(r.nhomHang)).filter(Boolean))].sort();
+  // --- CHART LOGIC ---
+  // Pie Chart: Chỉ lấy items đã lọc và có doanh thu > 0
+  $: pieData = filteredItems
+      .filter(i => (i.revenue || 0) > 0)
+      .sort((a, b) => b.revenue - a.revenue);
 
-  $: pieData = items.filter(i => i.revenue > 0).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  // Bar Chart: Tính toán lại Hãng dựa trên filteredItems (những ngành hàng đang hiển thị)
+  $: barData = calculateBrandData(rawSource, filteredItems);
 
-  $: barData = calculateBrandData(rawSource, selectedGroupFilter);
-
-  function calculateBrandData(source, groupFilter) {
+  function calculateBrandData(source, activeCategories) {
       if (!source || source.length === 0) return [];
+      
       const brands = {};
+      const activeCategoryNames = new Set(activeCategories.map(c => cleanCategoryName(c.name)));
+
       source.forEach(row => {
-          const groupName = cleanCategoryName(row.nhomHang);
-          if (groupFilter !== 'All' && groupName !== groupFilter) return;
+          // Chỉ tính doanh thu của các ngành hàng ĐANG ĐƯỢC HIỂN THỊ
+          const categoryName = cleanCategoryName(row.nganhHang);
+          
+          // [FIX] Kiểm tra nếu row thuộc category bị ẩn (nằm trong hiddenCategories) -> Bỏ qua
+          if (hiddenCategories.has(categoryName)) return;
+          // Hoặc kiểm tra active:
+          // Cách an toàn hơn: Kiểm tra xem categoryName có nằm trong danh sách activeCategories hay không
+          // (Tuy nhiên danh sách activeCategories là danh sách sau khi aggregate, có thể chứa macro)
+          // Để đơn giản và chính xác với bộ lọc: Nếu hiddenCategories chứa category này -> Skip.
+          
           const brandName = row.nhaSanXuat || 'Khác';
           const revenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
           if (!brands[brandName]) brands[brandName] = { name: brandName, revenue: 0 };
@@ -169,6 +168,9 @@
       const ctxPie = document.getElementById('luyke-cat-pie-chart');
       if (ctxPie) {
           if (chartInstancePie) chartInstancePie.destroy();
+          
+          const totalPieRevenue = pieData.reduce((sum, item) => sum + item.revenue, 0);
+
           chartInstancePie = new Chart(ctxPie, {
               type: 'doughnut',
               data: {
@@ -179,7 +181,47 @@
                       borderWidth: 1
                   }]
               },
-              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 10 } } } }
+              options: { 
+                  responsive: true, 
+                  maintainAspectRatio: false, 
+                  plugins: { 
+                      legend: { 
+                          position: 'right', 
+                          labels: { 
+                              boxWidth: 10,
+                              font: { size: 11 },
+                              generateLabels: (chart) => {
+                                  const data = chart.data;
+                                  if (data.labels.length && data.datasets.length) {
+                                      return data.labels.map((label, i) => {
+                                          const value = data.datasets[0].data[i];
+                                          const formattedValue = formatters.formatRevenue(value);
+                                          const pct = (value / totalPieRevenue * 100).toFixed(1) + "%";
+                                          return {
+                                              text: `${label} (${pct}) - ${formattedValue}`,
+                                              fillStyle: data.datasets[0].backgroundColor[i],
+                                              hidden: isNaN(data.datasets[0].data[i]),
+                                              index: i
+                                          };
+                                      });
+                                  }
+                                  return [];
+                              }
+                          } 
+                      },
+                      datalabels: {
+                          formatter: (value, ctx) => {
+                              const percentage = (value / totalPieRevenue * 100).toFixed(1) + "%";
+                              // Chỉ hiện nếu > 3% để đỡ rối
+                              if ((value / totalPieRevenue) < 0.03) return "";
+                              return percentage;
+                          },
+                          color: '#fff',
+                          font: { weight: 'bold', size: 10 }
+                      }
+                  } 
+              },
+              plugins: [ChartDataLabels]
           });
       }
 
@@ -192,7 +234,7 @@
                   labels: barData.map(d => d.name),
                   datasets: [{
                       label: 'Doanh thu',
-                      data: barData.map(d => d.revenue),
+                      data: barData.map(d => d.revenue / 1000000), // [FIX] Chia cho 1 triệu để hiện số nhỏ trên trục
                       backgroundColor: barData.map(() => getRandomBrightColor()),
                       borderRadius: 4
                   }]
@@ -201,14 +243,32 @@
                   indexAxis: 'y',
                   responsive: true,
                   maintainAspectRatio: false,
-                  plugins: { legend: { display: false } },
+                  plugins: { 
+                      legend: { display: false },
+                      datalabels: {
+                          anchor: 'end',
+                          align: 'end',
+                          formatter: (value) => formatters.formatNumber(value, 1), // Format lại số đã chia
+                          color: '#4b5563',
+                          font: { weight: 'bold', size: 10 }
+                      },
+                      tooltip: {
+                          callbacks: {
+                              label: (ctx) => formatters.formatRevenue(ctx.raw * 1000000)
+                          }
+                      }
+                  },
                   scales: { x: { beginAtZero: true } }
-              }
+              },
+              plugins: [ChartDataLabels]
           });
       }
   }
 
-  $: if (viewMode === 'chart') { renderCharts(); }
+  // Reactive: Gọi renderCharts khi switch sang chart view hoặc data thay đổi
+  $: if (viewMode === 'chart') { 
+      setTimeout(renderCharts, 0); 
+  }
 
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
@@ -242,6 +302,7 @@
                     title="Xem dạng thẻ"
                 >
                     <i data-feather="grid" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline text-xs ml-1">Thẻ</span>
                 </button>
                 <button 
                     class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" 
@@ -249,6 +310,7 @@
                     title="Xem biểu đồ"
                 >
                     <i data-feather="pie-chart" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline text-xs ml-1">Biểu đồ</span>
                 </button>
             </div>
 
@@ -264,61 +326,47 @@
                 </div>
             {/if}
 
-            {#if viewMode === 'grid'}
-                <div class="relative filter-wrapper">
-                    <button 
-                        class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
-                        on:click={() => isSettingsOpen = !isSettingsOpen}
-                        title="Lọc hiển thị ngành hàng"
-                    >
-                        <i data-feather="filter" class="w-4 h-4"></i>
-                    </button>
+            <div class="relative filter-wrapper">
+                <button 
+                    class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
+                    on:click={() => isSettingsOpen = !isSettingsOpen}
+                    title="Lọc hiển thị ngành hàng"
+                >
+                    <i data-feather="filter" class="w-4 h-4"></i>
+                </button>
 
-                    {#if isSettingsOpen}
-                        <div class="filter-dropdown">
-                            <div class="filter-header">
-                                <input type="text" class="filter-search" placeholder="Tìm để ẩn/hiện..." bind:value={filterSearch} />
-                            </div>
-                            <div class="filter-body custom-scrollbar">
-                                {#if filterList.length === 0}
-                                    <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
-                                {:else}
-                                    {#each filterList as name}
-                                        <div class="filter-item" on:click={() => toggleCategoryVisibility(name)}>
-                                            <input type="checkbox" checked={!hiddenCategories.has(name)} />
-                                            <label>{name}</label>
-                                        </div>
-                                    {/each}
-                                {/if}
-                            </div>
-                            <div class="filter-actions">
-                                <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
-                                <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
-                            </div>
+                {#if isSettingsOpen}
+                    <div class="filter-dropdown">
+                        <div class="filter-header">
+                            <input type="text" class="filter-search" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
                         </div>
-                    {/if}
-                </div>
-            {/if}
+                        <div class="filter-body custom-scrollbar">
+                            {#if filterList.length === 0}
+                                <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                            {:else}
+                                {#each filterList as name}
+                                    <div class="filter-item" on:click={() => toggleCategoryVisibility(name)}>
+                                        <input type="checkbox" checked={!hiddenCategories.has(name)} />
+                                        <label>{name}</label>
+                                    </div>
+                                {/each}
+                            {/if}
+                        </div>
+                        <div class="filter-actions">
+                            <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                            <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                        </div>
+                    </div>
+                {/if}
+            </div>
 
             {#if viewMode === 'grid'}
                 <div class="relative hidden lg:block">
                     <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 140px;" bind:value={searchText} />
                 </div>
-            {/if}
-            
-            {#if viewMode === 'grid'}
                 <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
                     <option value="revenue_desc">DT ↓</option>
                     <option value="quantity_desc">SL ↓</option>
-                </select>
-            {/if}
-
-            {#if viewMode === 'chart'}
-                <select class="p-1.5 border rounded text-xs bg-white outline-none max-w-[150px]" bind:value={selectedGroupFilter}>
-                    <option value="All">Tất cả nhóm hàng</option>
-                    {#each uniqueGroups as group}
-                        <option value={group}>{group}</option>
-                    {/each}
                 </select>
             {/if}
         </div>
@@ -338,9 +386,7 @@
                     {@const style = getCategoryTheme(name)}
                     
                     {@const marketSharePercent = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0}
-                    
                     {@const barPercent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
-                    
                     {@const finalTheme = showUnexported ? 'theme-warning' : style.theme}
 
                     <div class="cat-card-colorful {finalTheme}">
@@ -364,7 +410,7 @@
                         <div class="cat-footer-row">
                             <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
                             {#if !showUnexported}
-                                 <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 1)}</strong>/ngày</span>
+                                <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 1)}</strong>/ngày</span>
                             {/if}
                         </div>
 
@@ -378,11 +424,11 @@
     {:else}
         <div class="luyke-charts-container p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl">
             <div class="chart-box">
-                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 10 Tỷ trọng Doanh Thu</h4>
+                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Tỷ trọng Doanh Thu (ĐVT: Triệu)</h4>
                 <div class="relative h-full w-full"><canvas id="luyke-cat-pie-chart"></canvas></div>
             </div>
             <div class="chart-box">
-                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Nhà Sản Xuất ({selectedGroupFilter})</h4>
+                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Nhà Sản Xuất (ĐVT: Triệu)</h4>
                 <div class="relative h-full w-full"><canvas id="luyke-brand-bar-chart"></canvas></div>
             </div>
         </div>

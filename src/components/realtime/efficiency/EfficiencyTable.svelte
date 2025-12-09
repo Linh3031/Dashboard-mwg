@@ -1,12 +1,12 @@
 <script>
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../../services/settings.service.js';
   import SortableTh from '../../common/SortableTh.svelte';
 
   export let reportData = [];
   
+  // [CẬP NHẬT] Đổi label % MLN -> % Máy lọc nước
   const ALL_COLUMNS = [
     { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
     { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
@@ -14,15 +14,13 @@
     { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900' },
     { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900' },
     { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
-    { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
+    { id: 'pctMLN', label: '% Máy lọc nước', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' }, // Đã sửa
     { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
     { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
     { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
   ];
 
-  // Load settings từ service
   let allItemsConfig = settingsService.loadEfficiencyViewSettings();
-  // Lọc ra các cột được hiển thị dựa trên cấu hình đã lưu
   let visibleColumnIds = allItemsConfig.filter(c => c.visible).map(c => c.id);
 
   let sortKey = 'dtICT';
@@ -74,17 +72,21 @@
       } else {
           visibleColumnIds = [...visibleColumnIds, columnId];
       }
-      // Lưu lại setting (nếu cần logic lưu realtime thì gọi service ở đây)
   }
   
+  // [FIX] Cập nhật logic màu sắc: Xanh dương cho đạt, Đỏ cho không đạt
   function getCellClass(item, colDef) {
     const value = item[colDef.id] || 0;
     
     if (!colDef.isRate) return 'text-gray-900';
 
     const target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
+    
+    // Nếu có mục tiêu > 0 và giá trị < mục tiêu -> Đỏ
     if (target > 0 && value < target) return 'text-red-600 bg-red-50 font-bold';
-    return 'text-green-600 font-bold';
+    
+    // Ngược lại (Đạt hoặc không có mục tiêu) -> Xanh dương
+    return 'text-blue-600 font-bold'; 
   }
   
   function getHeaderClass(deptName) {

@@ -6,6 +6,7 @@
     import CategoryUploader from './category/CategoryUploader.svelte';
     import NameMappingEditor from './category/NameMappingEditor.svelte';
     import MacroGroupEditor from './category/MacroGroupEditor.svelte';
+    import MacroProductGroupEditor from './category/MacroProductGroupEditor.svelte'; // [MỚI]
 
     onMount(() => {
         // Tải dữ liệu cần thiết khi vào component
@@ -51,6 +52,26 @@
         </summary>
         <div class="declaration-content bg-white border-t border-slate-100">
             <MacroGroupEditor />
+        </div>
+    </details>
+
+    <details class="group declaration-group">
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-teal-50 rounded-lg text-teal-600">
+                    <i data-feather="package"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-700 text-lg">Khai báo Nhóm Hàng Lớn</h3>
+                    <p class="text-xs text-slate-500">Tạo nhóm gộp (VD: Gia dụng lớn) từ các nhóm hàng nhỏ</p>
+                </div>
+            </div>
+            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                <i data-feather="chevron-down"></i>
+            </span>
+        </summary>
+        <div class="declaration-content bg-white border-t border-slate-100">
+            <MacroProductGroupEditor />
         </div>
     </details>
 

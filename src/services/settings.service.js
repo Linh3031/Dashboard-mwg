@@ -1,4 +1,5 @@
-// File: src/modules/settings.service.js
+// src/services/settings.service.js
+// Version 5.9 - Fix missing functions (Restore Realtime Logic)
 import { get } from 'svelte/store';
 import { 
     luykeGoalSettings, 
@@ -15,7 +16,7 @@ const ALL_EFFICIENCY_ITEMS = [
     { id: 'dtCE', label: 'DT CE' },
     { id: 'dtGiaDung', label: 'DT Gia dụng' },
     { id: 'pctGiaDung', label: '% Gia dụng' },
-    { id: 'pctMLN',    label: '% MLN' },
+    { id: 'pctMLN',    label: '% Máy lọc nước' }, 
     { id: 'pctSim',    label: '% Sim' },
     { id: 'pctVAS',    label: '% VAS' },
     { id: 'pctBaoHiem', label: '% Bảo hiểm' }
@@ -24,11 +25,7 @@ const ALL_EFFICIENCY_ITEMS = [
 const PASTED_COMPETITION_SETTINGS_KEY = 'pastedCompetitionViewSettings';
 
 export const settingsService = {
-    // --- INTERFACE SETTINGS (MỚI) ---
-
-    /**
-     * Tải cài đặt giao diện từ LocalStorage và áp dụng.
-     */
+    // --- INTERFACE SETTINGS ---
     loadInterfaceSettings() {
         try {
             const saved = localStorage.getItem('interfaceSettings');
@@ -36,10 +33,7 @@ export const settingsService = {
                 const parsed = JSON.parse(saved);
                 interfaceSettings.set({ ...get(interfaceSettings), ...parsed });
             }
-            // Áp dụng style ngay khi load
             this.applyInterfaceStyles(get(interfaceSettings));
-            
-            // Load contrast
             const contrast = localStorage.getItem('contrastLevel') || '3';
             this.updateContrast(contrast);
         } catch (e) {
@@ -47,52 +41,33 @@ export const settingsService = {
         }
     },
 
-    /**
-     * Cập nhật settings vào Store và LocalStorage, sau đó áp dụng CSS.
-     * @param {Object} newSettings 
-     */
     updateInterface(newSettings) {
         interfaceSettings.set(newSettings);
         localStorage.setItem('interfaceSettings', JSON.stringify(newSettings));
         this.applyInterfaceStyles(newSettings);
     },
 
-    /**
-     * Cập nhật độ tương phản
-     * @param {string} level - '1' đến '6'
-     */
     updateContrast(level) {
         document.documentElement.dataset.contrast = level;
         localStorage.setItem('contrastLevel', level);
         interfaceSettings.update(s => ({ ...s, contrastLevel: level }));
     },
 
-    /**
-     * Áp dụng các biến CSS (Custom Properties) vào :root
-     * @param {Object} settings 
-     */
     applyInterfaceStyles(settings) {
         const root = document.documentElement;
         if (!settings) return;
-
-        // Fonts
         if (settings.globalFontSize) root.style.setProperty('--global-font-size', `${settings.globalFontSize}px`);
         if (settings.kpiFontSize) root.style.setProperty('--kpi-main-font-size', `${settings.kpiFontSize}px`);
-
-        // KPI Colors
         for (let i = 1; i <= 8; i++) {
             const key = `kpiCard${i}Bg`;
             if (settings[key]) root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
         }
-
-        // Text Colors
         if (settings.kpiTitleColor) root.style.setProperty('--kpi-title-color', settings.kpiTitleColor);
         if (settings.kpiMainColor) root.style.setProperty('--kpi-main-color', settings.kpiMainColor);
         if (settings.kpiSubColor) root.style.setProperty('--kpi-sub-color', settings.kpiSubColor);
     },
 
     // --- GOAL SETTINGS (LUY KE) ---
-
     loadLuykeGoalSettings() {
         try {
             const saved = localStorage.getItem('luykeGoalSettings');
@@ -141,8 +116,7 @@ export const settingsService = {
         return settings;
     },
 
-    // --- GOAL SETTINGS (REALTIME) ---
-
+    // --- [KHÔI PHỤC] GOAL SETTINGS (REALTIME) ---
     loadRealtimeGoalSettings() {
         try {
             const saved = localStorage.getItem('realtimeGoalSettings');
@@ -167,8 +141,10 @@ export const settingsService = {
             const allSettings = $realtimeGoalSettings || {};
             const validWarehouseSettings = Object.values(allSettings).filter(s => s.goals && Object.keys(s.goals).length > 0);
             if(validWarehouseSettings.length === 0) return { goals: {}, timing: {} };
+            
             const aggregatedGoals = { doanhThuThuc: 0, doanhThuQD: 0 };
             const percentGoals = {}; const percentCounts = {};
+            
             validWarehouseSettings.forEach(ws => {
                 aggregatedGoals.doanhThuThuc += parseFloat(ws.goals.doanhThuThuc || 0);
                 aggregatedGoals.doanhThuQD += parseFloat(ws.goals.doanhThuQD || 0);
@@ -188,12 +164,9 @@ export const settingsService = {
     },
 
     // --- TABLE VIEW SETTINGS ---
-
     saveEfficiencyViewSettings(settings) {
         if (!Array.isArray(settings)) return;
-        try {
-            localStorage.setItem('efficiencyViewSettings', JSON.stringify(settings));
-        } catch (e) { console.error("Lỗi lưu efficiency settings:", e); }
+        try { localStorage.setItem('efficiencyViewSettings', JSON.stringify(settings)); } catch (e) { console.error("Lỗi lưu efficiency settings:", e); }
     },
     
     loadEfficiencyViewSettings() {
@@ -203,8 +176,17 @@ export const settingsService = {
                 const savedItems = JSON.parse(savedSettingsJSON);
                 if (Array.isArray(savedItems) && savedItems.length > 0) {
                     const savedIds = new Set(savedItems.map(s => s.id));
-                    const newItems = ALL_EFFICIENCY_ITEMS.filter(item => !savedIds.has(item.id)).map(item => ({ ...item, visible: true }));
-                    const currentItems = savedItems.filter(item => ALL_EFFICIENCY_ITEMS.some(config => config.id === item.id));
+                    const newItems = ALL_EFFICIENCY_ITEMS
+                        .filter(item => !savedIds.has(item.id))
+                        .map(item => ({ ...item, visible: true }));
+                    
+                    const currentItems = savedItems
+                        .filter(item => ALL_EFFICIENCY_ITEMS.some(config => config.id === item.id))
+                        .map(item => {
+                            const defaultItem = ALL_EFFICIENCY_ITEMS.find(d => d.id === item.id);
+                            return defaultItem ? { ...item, label: defaultItem.label } : item;
+                        });
+
                     return [...currentItems, ...newItems];
                 }
             }

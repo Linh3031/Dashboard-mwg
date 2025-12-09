@@ -4,12 +4,18 @@
     competitionData, 
     selectedWarehouse,
     interfaceSettings,
-    macroCategoryConfig
+    macroCategoryConfig,
+    macroProductGroupConfig, // [QUAN TRỌNG] Import thêm store này
+    efficiencyConfig,
+    qdcConfigStore,
+    modalState,
+    categoryNameMapping // Import thêm để lắng nghe mapping
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
   import { settingsService } from '../../services/settings.service.js';
   import { dataProcessing } from '../../services/dataProcessing.js';
+  import { adminService } from '../../services/admin.service.js';
   import * as utils from '../../utils.js';
   
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
@@ -30,13 +36,21 @@
   
   let chuaXuatReport = [];
   let efficiencyItems = [];
-  let qdcItems = []; 
   let categoryItems = []; 
+  let qdcItems = []; 
 
   let channelStats = {
       dxm: { val: 0, pct: 0 },
       tgdd: { val: 0, pct: 0 }
   };
+
+  onMount(async () => {
+      const savedEffConfig = await adminService.loadEfficiencyConfig();
+      if(savedEffConfig.length > 0) efficiencyConfig.set(savedEffConfig);
+      
+      const savedQdcConfig = await adminService.loadQdcConfig();
+      if(savedQdcConfig.length > 0) qdcConfigStore.set(savedQdcConfig);
+  });
 
   const cleanValue = (str) => {
       if (typeof str === 'number') return str;
@@ -47,6 +61,12 @@
   };
 
   $: {
+    // [FIX QUAN TRỌNG] Khai báo dependency để kích hoạt tính toán lại khi Config thay đổi
+    const _triggerMacroCat = $macroCategoryConfig;
+    const _triggerMacroProd = $macroProductGroupConfig;
+    const _triggerEff = $efficiencyConfig;
+    const _triggerMap = $categoryNameMapping;
+
     localSupermarketReport = supermarketReport || {};
     localGoals = goals || {};
 
@@ -115,84 +135,84 @@
       tyLeThiDuaDat: tyLeThiDuaDat
     };
 
-    // === [FIX LOGIC] TÍNH TOÁN TỶ TRỌNG KÊNH LINH HOẠT HƠN ===
-    const calcChannelStat = (keywords) => { // keywords là mảng các từ khóa (VD: ['đmx', 'dmx'])
-        // Chuẩn hóa tên nhóm từ Config để so sánh
+    const calcChannelStat = (keywords) => {
         const groupConfig = ($macroCategoryConfig || []).find(g => {
             if (!g.name) return false;
-            const normName = g.name.trim().toLowerCase().normalize("NFC"); // Chuẩn hóa Unicode
-            // Kiểm tra xem tên nhóm có chứa từ khóa không
+            const normName = g.name.trim().toLowerCase().normalize("NFC");
             return keywords.some(k => normName.includes(k));
         });
 
-        if (!groupConfig) {
-            console.warn(`[LuykeSieuThi] Không tìm thấy nhóm nào khớp với: ${keywords.join(', ')}`);
-            return 0;
-        }
-
-        if (!groupConfig.items || groupConfig.items.length === 0) {
-            console.warn(`[LuykeSieuThi] Nhóm ${groupConfig.name} không có items nào.`);
-            return 0;
-        }
+        if (!groupConfig || !groupConfig.items) return 0;
 
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
 
         groupConfig.items.forEach(rawName => {
-            // [QUAN TRỌNG] Phải dùng đúng hàm clean như reportService để khớp key
             const cleanKey = utils.cleanCategoryName(rawName);
             if (details[cleanKey]) {
                 totalVal += (details[cleanKey].revenueQuyDoi || 0);
-            } else {
-                 // Log nhẹ để debug nếu cần
-                 // console.log(`Missing key: ${cleanKey}`);
             }
         });
         return totalVal;
     };
 
-    // Tìm nhóm có chứa "đmx" hoặc "dmx"
     const valDXM = calcChannelStat(['đmx', 'dmx', 'dien may xanh']);
-    // Tìm nhóm có chứa "tgdd" hoặc "thế giới di động"
     const valTGDD = calcChannelStat(['tgdd', 'the gioi di dong']);
-
-    // Tổng dùng để chia % (Tránh chia cho 0)
-    // Dùng tổng của 2 kênh này làm mẫu số, hay dùng tổng DTQĐ toàn siêu thị?
-    // Yêu cầu của bạn: "Tổng 2 tỷ lệ này sẽ bằng 100%" -> Nghĩa là mẫu số = valDXM + valTGDD
     const totalChannelRevenue = (valDXM + valTGDD) || 1; 
 
     channelStats = {
         dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
         tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
     };
-    // === KẾT THÚC ===
 
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
+    // --- LỌC ITEMS HIỆN THỊ ---
     const efficiencySettings = settingsService.loadEfficiencyViewSettings();
-    const qdcSettings = settingsService.loadQdcViewSettings(Object.values(localSupermarketReport.qdc || {}).map(item => item.name));
-    const categorySettings = settingsService.loadCategoryViewSettings(Object.keys(localSupermarketReport.nganhHangChiTiet || {}));
-
+    const HARDCODED_IDS = ['pctSim', 'pctVAS', 'pctBaoHiem', 'tyLeTraCham']; 
+    
     const goalKeyMap = {
-      pctPhuKien: 'phanTramPhuKien', pctGiaDung: 'phanTramGiaDung', pctMLN: 'phanTramMLN', 
-      pctSim: 'phanTramSim', pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem' 
+      pctSim: 'phanTramSim', pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem', tyLeTraCham: 'phanTramTC'
     };
 
     efficiencyItems = efficiencySettings
-      .filter(item => item.id.startsWith('pct') && item.visible)
+      .filter(item => HARDCODED_IDS.includes(item.id) && item.visible)
       .map(config => ({
         ...config, 
         value: localSupermarketReport[config.id] || 0, 
         target: localGoals[goalKeyMap[config.id]] 
       }));
 
-    qdcItems = Object.entries(localSupermarketReport.qdc || {})
-      .map(([key, value]) => ({ id: key, ...value }))
-      .filter(item => qdcSettings.includes(item.name));
+    // [CẬP NHẬT] Lấy dữ liệu cho bảng QĐC từ Nhóm Hàng Chi Tiết (Product Groups)
+    // Bao gồm cả Nhóm Hàng Lớn (Macro) và Nhóm Hàng Thường
+    qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
+      .map(([name, values]) => ({ 
+          id: name,
+          name, 
+          dtqd: values.revenueQuyDoi, 
+          sl: values.quantity, 
+          dt: values.revenue, 
+          ...values 
+      }));
 
+    // [CẬP NHẬT] Lấy dữ liệu cho bảng Ngành Hàng (Category)
+    // Bao gồm cả Ngành Hàng Lớn (Macro) và Ngành Hàng Thường
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
-      .map(([name, values]) => ({ name, ...values }))
-      .filter(item => categorySettings.includes(item.name));
+      .map(([name, values]) => ({ name, dtqd: values.revenueQuyDoi, ...values }));
+  }
+
+  function openAddEffModal() {
+      modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
+  }
+
+  function handleEditEffConfig(event) {
+      modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
+  }
+
+  function handleDeleteEffConfig(event) {
+      const id = event.detail;
+      efficiencyConfig.update(items => items.filter(i => i.id !== id));
+      adminService.saveEfficiencyConfig($efficiencyConfig);
   }
 
   afterUpdate(() => {
@@ -300,8 +320,18 @@
   </div>
 
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
-      <LuykeEfficiencyTable items={efficiencyItems} />
-      <LuykeQdcTable items={qdcItems} {numDays} />
+      <LuykeEfficiencyTable 
+          items={efficiencyItems} 
+          dynamicItems={$efficiencyConfig}
+          supermarketData={localSupermarketReport}
+          on:add={openAddEffModal}
+          on:edit={handleEditEffConfig}
+          on:delete={handleDeleteEffConfig}
+      />
+      <LuykeQdcTable 
+          items={qdcItems} 
+          numDays={numDays} 
+      />
   </div>
 
   <div data-capture-group="tier2">
