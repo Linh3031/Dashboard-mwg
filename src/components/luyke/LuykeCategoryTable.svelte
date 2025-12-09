@@ -3,7 +3,7 @@
   import { formatters } from '../../utils/formatters.js';
   import { cleanCategoryName, getRandomBrightColor } from '../../utils.js';
 
-  export let items = []; // Dữ liệu Ngành hàng
+  export let items = []; // Dữ liệu Ngành hàng (bao gồm Macro Categories)
   export let unexportedItems = []; 
   export let rawSource = []; 
   export let numDays = 1;
@@ -48,7 +48,6 @@
 
   function getCategoryTheme(name) {
       const n = name.toLowerCase();
-      // Logic màu sắc giữ nguyên
       if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
       if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
       if (n.includes('máy lạnh') || n.includes('nước nóng') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
@@ -95,13 +94,12 @@
       saveHiddenState();
   }
 
-  // --- DATA LOGIC (Grid + Chart dùng chung logic Filter này) ---
+  // --- DATA LOGIC ---
   $: sourceData = showUnexported ? unexportedItems : items;
 
-  // [QUAN TRỌNG] itemsPassedToChart chính là filteredItems
+  // [QUAN TRỌNG] Logic Lọc dùng chung cho cả Grid và Chart
   $: filteredItems = sourceData.filter(item => {
       const name = item.name || item.nganhHang || '';
-      // hiddenCategories áp dụng cho cả Grid và Chart
       const visibilityMatch = !hiddenCategories.has(name);
       const valueMatch = showUnexported ? (item.soLuong > 0) : true;
       return visibilityMatch && valueMatch;
@@ -128,33 +126,50 @@
   $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
   // --- CHART LOGIC ---
-  // Pie Chart: Chỉ lấy items đã lọc và có doanh thu > 0
-  $: pieData = filteredItems
-      .filter(i => (i.revenue || 0) > 0)
-      .sort((a, b) => b.revenue - a.revenue);
+  
+  // 1. Pie Chart Data (Top 13 + Others)
+  $: pieData = (() => {
+      // Lấy danh sách đã lọc, sắp xếp giảm dần
+      const sorted = filteredItems
+          .filter(i => (i.revenue || 0) > 0)
+          .sort((a, b) => b.revenue - a.revenue);
+      
+      // Nếu ít hơn hoặc bằng 14 mục, hiển thị hết
+      if (sorted.length <= 14) return sorted;
 
-  // Bar Chart: Tính toán lại Hãng dựa trên filteredItems (những ngành hàng đang hiển thị)
+      // Nếu nhiều hơn, lấy Top 13
+      const top13 = sorted.slice(0, 13);
+      // Gom phần còn lại vào "Khác"
+      const others = sorted.slice(13);
+      const otherRevenue = others.reduce((sum, item) => sum + item.revenue, 0);
+
+      return [
+          ...top13,
+          { name: 'Khác', revenue: otherRevenue }
+      ];
+  })();
+
+  // 2. Bar Chart Data (Top 15 Hãng)
   $: barData = calculateBrandData(rawSource, filteredItems);
 
-  function calculateBrandData(source, activeCategories) {
+  function calculateBrandData(source, visibleItems) {
       if (!source || source.length === 0) return [];
       
+      // Tạo whitelist các ngành hàng ĐANG HIỂN THỊ (đã chuẩn hóa tên)
+      const visibleCategoryNames = new Set(visibleItems.map(i => cleanCategoryName(i.name || i.nganhHang)));
+      
       const brands = {};
-      const activeCategoryNames = new Set(activeCategories.map(c => cleanCategoryName(c.name)));
 
       source.forEach(row => {
-          // Chỉ tính doanh thu của các ngành hàng ĐANG ĐƯỢC HIỂN THỊ
-          const categoryName = cleanCategoryName(row.nganhHang);
+          // Chuẩn hóa tên ngành hàng của dòng dữ liệu
+          const rowCategoryName = cleanCategoryName(row.nganhHang);
           
-          // [FIX] Kiểm tra nếu row thuộc category bị ẩn (nằm trong hiddenCategories) -> Bỏ qua
-          if (hiddenCategories.has(categoryName)) return;
-          // Hoặc kiểm tra active:
-          // Cách an toàn hơn: Kiểm tra xem categoryName có nằm trong danh sách activeCategories hay không
-          // (Tuy nhiên danh sách activeCategories là danh sách sau khi aggregate, có thể chứa macro)
-          // Để đơn giản và chính xác với bộ lọc: Nếu hiddenCategories chứa category này -> Skip.
-          
+          // [FIX] Chỉ tính nếu ngành hàng này nằm trong danh sách hiển thị
+          if (!visibleCategoryNames.has(rowCategoryName)) return;
+
           const brandName = row.nhaSanXuat || 'Khác';
           const revenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+          
           if (!brands[brandName]) brands[brandName] = { name: brandName, revenue: 0 };
           brands[brandName].revenue += revenue;
       });
@@ -169,6 +184,7 @@
       if (ctxPie) {
           if (chartInstancePie) chartInstancePie.destroy();
           
+          // Tính tổng doanh thu của Pie để tính % chính xác
           const totalPieRevenue = pieData.reduce((sum, item) => sum + item.revenue, 0);
 
           chartInstancePie = new Chart(ctxPie, {
@@ -195,8 +211,8 @@
                                   if (data.labels.length && data.datasets.length) {
                                       return data.labels.map((label, i) => {
                                           const value = data.datasets[0].data[i];
-                                          const formattedValue = formatters.formatRevenue(value);
-                                          const pct = (value / totalPieRevenue * 100).toFixed(1) + "%";
+                                          const formattedValue = formatters.formatRevenue(value,0);
+                                          const pct = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
                                           return {
                                               text: `${label} (${pct}) - ${formattedValue}`,
                                               fillStyle: data.datasets[0].backgroundColor[i],
@@ -211,7 +227,7 @@
                       },
                       datalabels: {
                           formatter: (value, ctx) => {
-                              const percentage = (value / totalPieRevenue * 100).toFixed(1) + "%";
+                              const percentage = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
                               // Chỉ hiện nếu > 3% để đỡ rối
                               if ((value / totalPieRevenue) < 0.03) return "";
                               return percentage;
@@ -234,7 +250,7 @@
                   labels: barData.map(d => d.name),
                   datasets: [{
                       label: 'Doanh thu',
-                      data: barData.map(d => d.revenue / 1000000), // [FIX] Chia cho 1 triệu để hiện số nhỏ trên trục
+                      data: barData.map(d => d.revenue / 1000000), // Chia cho 1 triệu để hiện số nhỏ
                       backgroundColor: barData.map(() => getRandomBrightColor()),
                       borderRadius: 4
                   }]
@@ -248,7 +264,7 @@
                       datalabels: {
                           anchor: 'end',
                           align: 'end',
-                          formatter: (value) => formatters.formatNumber(value, 1), // Format lại số đã chia
+                          formatter: (value) => formatters.formatNumber(value, 0),
                           color: '#4b5563',
                           font: { weight: 'bold', size: 10 }
                       },
@@ -404,13 +420,13 @@
                         <h4 class="cat-name-text" title={name}>{name}</h4>
                         
                         <div class="cat-value-text">
-                            {formatters.formatRevenue(revenue)}
+                            {formatters.formatRevenue(revenue,0)}
                         </div>
                         
                         <div class="cat-footer-row">
                             <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
                             {#if !showUnexported}
-                                <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 1)}</strong>/ngày</span>
+                                <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 0)}</strong>/ngày</span>
                             {/if}
                         </div>
 
@@ -428,7 +444,7 @@
                 <div class="relative h-full w-full"><canvas id="luyke-cat-pie-chart"></canvas></div>
             </div>
             <div class="chart-box">
-                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Nhà Sản Xuất (ĐVT: Triệu)</h4>
+                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Hãng (ĐVT: Triệu)</h4>
                 <div class="relative h-full w-full"><canvas id="luyke-brand-bar-chart"></canvas></div>
             </div>
         </div>

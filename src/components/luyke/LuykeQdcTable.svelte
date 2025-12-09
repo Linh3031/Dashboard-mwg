@@ -5,20 +5,19 @@
   import { qdcConfigStore, categoryStructure, macroProductGroupConfig } from '../../stores.js';
   import { adminService } from '../../services/admin.service.js';
 
-  export let items = []; // Dữ liệu Nhóm hàng chi tiết
+  export let items = []; // Dữ liệu Nhóm hàng chi tiết (bao gồm Macro Product Groups)
   export let numDays = 1;
 
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
 
-  // Lấy danh sách để tạo bộ lọc: Gộp từ Cấu trúc + Nhóm lớn + Dữ liệu thực tế
-  // Chuẩn hóa tất cả về tên sạch để tránh trùng lặp
-  $: allGroupsFromStructure = ($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean);
-  $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name); // Tên macro thường do admin đặt chuẩn rồi
-  $: allPresentGroups = items.map(i => i.name);
+  // Lấy danh sách nhóm hàng để lọc (Structure + Macro + Actual Items)
+  $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
+  $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
+  $: allPresentGroups = items.map(i => i.name).sort();
   
-  // Gộp và Unique
+  // Gộp tất cả nguồn lại
   $: allGroups = [...new Set([...allGroupsFromStructure, ...allMacroGroups, ...allPresentGroups])].sort();
 
   $: filterList = allGroups.filter(name => 
@@ -45,30 +44,24 @@
       adminService.saveQdcConfig($qdcConfigStore);
   }
 
+  // [LOGIC] Top 10 Default
   $: activeConfig = $qdcConfigStore;
   
   let sortedItems = [];
   $: {
-      // 1. Tính toán danh sách hiển thị
       let candidates = [];
-
+      // Nếu không có config (người dùng mới), lấy Top 10 theo DTQD
       if (!activeConfig || activeConfig.length === 0) {
-          // [FIX] Nếu chưa chọn gì -> Lấy Top 10 theo Doanh Thu
-          candidates = [...items].sort((a, b) => (b.dt || 0) - (a.dt || 0)).slice(0, 10);
+          candidates = [...items].sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0)).slice(0, 10);
       } else {
-          // [FIX] Nếu đã chọn -> Lọc theo tên (So sánh chính xác vì items đã được clean name từ Master Report)
+          // Nếu đã chọn, lọc theo tên chính xác
           candidates = items.filter(item => activeConfig.includes(item.name));
-          
-          // [FIX] Nếu chọn Macro Group mà items chưa có (do chưa phát sinh doanh thu), ta vẫn nên hiển thị nó nếu muốn? 
-          // Hiện tại items chỉ chứa những gì có trong report.
-          // Nếu muốn hiện cả row = 0, cần logic merge với activeConfig. 
-          // Tuy nhiên theo thiết kế dashboard, thường chỉ hiện cái có số.
       }
-
-      // 2. Sắp xếp giảm dần theo DTQD
+      // Luôn sắp xếp giảm dần theo DTQD
       sortedItems = candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   }
 
+  // Tìm giá trị max để vẽ thanh progress bar
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
@@ -136,17 +129,26 @@
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50 transition-colors px-1">
             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
+               
                <div class="flex-grow min-w-0">
                    <div class="flex justify-between items-center mb-1">
                        <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
                        <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
                    </div>
-                   <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                   
+                   <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
                        <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
                    </div>
-                   <div class="flex justify-between mt-1 text-[10px] text-gray-400">
-                       <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
-                       <span>TB: {formatters.formatNumber((item.quantity || item.sl) / numDays, 1)}/ngày</span>
+                   
+                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
+                       <div class="flex gap-2">
+                           <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
+                           <span class="text-blue-600">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                       </div>
+                       <div class="flex gap-2">
+                           <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
+                           <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
+                       </div>
                    </div>
                </div>
             </div>
