@@ -1,35 +1,57 @@
 <script>
   import { onMount } from 'svelte';
-  import { realtimeYCXData, categoryNameMapping, macroCategoryConfig, customRevenueTables, isAdmin, modalState } from '../../../stores.js';
+  import { realtimeYCXData, categoryNameMapping, macroCategoryConfig, customRevenueTables, isAdmin, modalState, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { adminService } from '../../../services/admin.service.js';
-  import CategoryRevenueTable from '../../health-staff/CategoryRevenueTable.svelte';
+  import { datasyncService } from '../../../services/datasync.service.js'; // [NEW]
+  import DynamicRevenueTable from '../../health-staff/DynamicRevenueTable.svelte';
 
-  export let selectedWarehouse = '';
   let filteredReport = [];
   let hasAnyData = false;
   $: tables = $customRevenueTables || [];
   $: visibleTables = tables.filter(t => t.isVisible !== false);
 
-  onMount(async () => {
-      if ($customRevenueTables.length === 0) {
-          const systemTables = await adminService.loadSystemRevenueTables();
-          const localSaved = localStorage.getItem('customRevenueTables');
-          let userTables = [];
-          if (localSaved) { try { userTables = JSON.parse(localSaved).filter(t => !t.isSystem); } catch(e) {} }
-          customRevenueTables.set([...systemTables, ...userTables]);
-      }
-  });
+  // [LOGIC MỚI] Load data khi đổi kho
+  $: if ($selectedWarehouse) {
+      loadData($selectedWarehouse);
+  }
+
+  async function loadData(kho) {
+      const systemTables = await adminService.loadSystemRevenueTables();
+      const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
+      const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
+
+      const finalSystemTables = systemTables.map(t => ({
+          ...t,
+          isSystem: true,
+          isVisible: !hiddenSystemIds.includes(t.id)
+      }));
+
+      customRevenueTables.set([...finalSystemTables, ...personalTables]);
+  }
+
+  async function savePersonalTables() {
+      if (!$selectedWarehouse) return;
+      const personalTables = $customRevenueTables.filter(t => !t.isSystem);
+      await datasyncService.savePersonalRevenueTables($selectedWarehouse, personalTables);
+  }
+
+  function saveHiddenPreferences() {
+      const hiddenIds = $customRevenueTables
+          .filter(t => t.isSystem && t.isVisible === false)
+          .map(t => t.id);
+      localStorage.setItem('hiddenSystemTableIds', JSON.stringify(hiddenIds));
+  }
 
   $: {
       const _triggerMap = $categoryNameMapping;
       const _triggerMacro = $macroCategoryConfig;
-      const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
+      const settings = settingsService.getRealtimeGoalSettings($selectedWarehouse);
       const goals = settings.goals || {};
       const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
-      if (selectedWarehouse) {
-          filteredReport = masterReport.filter(nv => nv.maKho == selectedWarehouse);
+      if ($selectedWarehouse) {
+          filteredReport = masterReport.filter(nv => nv.maKho == $selectedWarehouse);
       } else {
           filteredReport = masterReport;
       }
@@ -37,27 +59,47 @@
   }
 
   function editTable(table) {
-      if (table.isSystem && !$isAdmin) return;
+      if (table.isSystem && !$isAdmin) {
+          alert("Bạn không có quyền chỉnh sửa Bảng hệ thống.");
+          return;
+      }
       modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: table }));
   }
 
   async function deleteTable(id) {
-      if(!confirm("Bạn có chắc muốn xóa bảng này?")) return;
       const targetTable = $customRevenueTables.find(t => t.id === id);
-      customRevenueTables.update(items => items.filter(t => t.id !== id));
-      localStorage.setItem('customRevenueTables', JSON.stringify($customRevenueTables));
-      if (targetTable?.isSystem && $isAdmin) {
-          await adminService.saveSystemRevenueTables($customRevenueTables);
+      if (!targetTable) return;
+
+      if (targetTable.isSystem) {
+          if ($isAdmin) {
+              if (!confirm("CẢNH BÁO ADMIN: Xóa bảng HỆ THỐNG này vĩnh viễn?")) return;
+              const newTables = $customRevenueTables.filter(t => t.id !== id);
+              customRevenueTables.set(newTables);
+              await adminService.saveSystemRevenueTables(newTables);
+          } else {
+              if (!confirm("Ẩn bảng này khỏi màn hình của bạn?")) return;
+              customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: false } : t));
+              saveHiddenPreferences();
+          }
+      } else {
+          if (!confirm("Bạn có chắc muốn xóa bảng này? Hành động này sẽ xóa trên Cloud của kho hiện tại.")) return;
+          customRevenueTables.update(items => items.filter(t => t.id !== id));
+          await savePersonalTables();
       }
   }
 
   function openAddModal() {
+      if (!$selectedWarehouse) {
+          alert("Vui lòng chọn Kho trước khi tạo bảng mới.");
+          return;
+      }
       modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: null }));
   }
 
   function toggleTableVisibility(id) {
       customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: !t.isVisible } : t));
-      localStorage.setItem('customRevenueTables', JSON.stringify($customRevenueTables));
+      savePersonalTables();
+      saveHiddenPreferences();
   }
 
   const colors = ['teal', 'indigo', 'rose', 'blue', 'green', 'orange', 'purple'];
@@ -73,9 +115,12 @@
     {#each tables as table}
         <button 
             class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                   {table.isVisible !== false ? 'bg-teal-600 text-white border-teal-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}"
+                   {table.isVisible !== false ? 'bg-teal-600 text-white border-teal-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
+                   {table.isSystem ? 'border-dashed' : ''}"
             on:click={() => toggleTableVisibility(table.id)}
+            title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
         >
+            {#if table.isSystem}<span class="text-[10px] mr-0.5 opacity-70">🌐</span>{/if}
             {table.title}
         </button>
     {/each}
@@ -106,9 +151,9 @@
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
         {#each visibleTables as table, index (table.id)}
             <div data-capture-group="1">
-                <CategoryRevenueTable 
+                <DynamicRevenueTable 
                     config={table}
-                    reportData={filteredReport}
+                    {reportData}
                     colorTheme={getColor(index)}
                     on:edit={() => editTable(table)}
                     on:delete={() => deleteTable(table.id)}

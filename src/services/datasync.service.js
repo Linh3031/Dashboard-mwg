@@ -1,5 +1,5 @@
 // src/services/datasync.service.js
-// Version 2.1 - Full Code: Added Custom Metrics Sync
+// Version 2.2 - Add Personal Revenue Tables Sync
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
 import { firebaseStore, currentUser } from '../stores.js'; 
 import { get } from 'svelte/store';
@@ -15,7 +15,46 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- [MỚI] QUẢN LÝ CHỈ SỐ TÙY CHỈNH (ĐƠN GIÁ / HIỆU QUẢ) THEO KHO ---
+    // --- [MỚI] QUẢN LÝ BẢNG DOANH THU CÁ NHÂN THEO KHO ---
+    
+    async savePersonalRevenueTables(kho, tables) {
+        const db = getDB();
+        if (!db || !kho) return;
+        
+        // Lọc kỹ để chắc chắn không lưu nhầm bảng System vào đây
+        const personalTables = tables.filter(t => !t.isSystem);
+
+        const khoRef = doc(db, "warehouseData", kho);
+        const dataToSave = {
+            personalRevenueTables: personalTables,
+            personalTablesUpdatedAt: serverTimestamp(),
+            personalTablesUpdatedBy: getCurrentUserEmail()
+        };
+        
+        try { 
+            await setDoc(khoRef, dataToSave, { merge: true }); 
+            console.log(`[DataSync] Đã lưu ${personalTables.length} bảng cá nhân cho kho ${kho}`);
+        } catch (error) { 
+            console.error("[DataSync] Lỗi lưu bảng cá nhân:", error); 
+            throw error; 
+        }
+    },
+
+    async loadPersonalRevenueTables(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+        
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : [];
+        } catch(e) { 
+            console.error("[DataSync] Lỗi tải bảng cá nhân:", e);
+            return []; 
+        }
+    },
+
+    // --- CÁC HÀM KHÁC (GIỮ NGUYÊN) ---
     
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
@@ -30,7 +69,6 @@ export const datasyncService = {
         
         try { 
             await setDoc(khoRef, dataToSave, { merge: true }); 
-            console.log(`[DataSync] Đã lưu ${metrics.length} chỉ số tùy chỉnh cho kho ${kho}`);
         } catch (error) { 
             console.error("[DataSync] Lỗi lưu custom metrics:", error); 
             throw error; 
@@ -45,13 +83,8 @@ export const datasyncService = {
         try {
             const docSnap = await getDoc(khoRef);
             return docSnap.exists() ? (docSnap.data().customMetrics || []) : [];
-        } catch(e) { 
-            console.error("[DataSync] Lỗi tải custom metrics:", e);
-            return []; 
-        }
+        } catch(e) { return []; }
     },
-
-    // --- CÁC HÀM CŨ (GIỮ NGUYÊN) ---
 
     async saveMetadataToFirestore(kho, dataType, metadata) {
         const db = getDB();
@@ -105,8 +138,6 @@ export const datasyncService = {
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { console.error(error); throw error; }
     },
 
-    // --- CHIẾN LƯỢC ĐỒNG BỘ FILE GỐC ---
-
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db) { console.warn("Firestore chưa sẵn sàng"); return; }
@@ -124,7 +155,6 @@ export const datasyncService = {
 
         try {
             await setDoc(khoRef, dataToSave, { merge: true });
-            console.log(`[Firestore] Đã cập nhật metadata cho ${key} @ ${kho}`);
         } catch (error) {
             console.error(`[Firestore] Lỗi lưu metadata ${key}:`, error);
             throw error;

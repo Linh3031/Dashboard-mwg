@@ -1,50 +1,104 @@
 <script>
   import { onMount } from 'svelte';
-  import { customRevenueTables, modalState, isAdmin } from '../../stores.js';
+  import { customRevenueTables, modalState, isAdmin, selectedWarehouse } from '../../stores.js';
   import { adminService } from '../../services/admin.service.js';
-  import CategoryRevenueTable from './CategoryRevenueTable.svelte';
+  import { datasyncService } from '../../services/datasync.service.js'; // [NEW] Import Datasync
+  import DynamicRevenueTable from './DynamicRevenueTable.svelte';
 
   export let reportData = [];
 
   $: tables = $customRevenueTables || [];
   $: visibleTables = tables.filter(t => t.isVisible !== false);
 
-  onMount(async () => {
-      const systemTables = await adminService.loadSystemRevenueTables();
-      const localSaved = localStorage.getItem('customRevenueTables');
-      let userTables = [];
-      if (localSaved) {
-          try { userTables = JSON.parse(localSaved).filter(t => !t.isSystem); } catch(e) {}
-      }
-      customRevenueTables.set([...systemTables, ...userTables]);
-  });
+  // [LOGIC MỚI] Khi Kho thay đổi -> Tải lại dữ liệu
+  $: if ($selectedWarehouse) {
+      loadData($selectedWarehouse);
+  }
 
-  function saveLocal() {
-      localStorage.setItem('customRevenueTables', JSON.stringify($customRevenueTables));
+  async function loadData(kho) {
+      console.log(`[CategoryView] Loading tables for warehouse: ${kho}`);
+      
+      // 1. Tải bảng Hệ thống (Global)
+      const systemTables = await adminService.loadSystemRevenueTables();
+      
+      // 2. Tải bảng Cá nhân (Warehouse Cloud)
+      const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
+
+      // 3. Tải Preferences ẩn/hiện (Local)
+      const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
+
+      // 4. Merge
+      const finalSystemTables = systemTables.map(t => ({
+          ...t,
+          isSystem: true,
+          isVisible: !hiddenSystemIds.includes(t.id)
+      }));
+
+      // Set store
+      customRevenueTables.set([...finalSystemTables, ...personalTables]);
+  }
+
+  // --- HÀM LƯU ---
+  async function savePersonalTables() {
+      if (!$selectedWarehouse) return;
+      const personalTables = $customRevenueTables.filter(t => !t.isSystem);
+      // Lưu lên Cloud Kho
+      await datasyncService.savePersonalRevenueTables($selectedWarehouse, personalTables);
+  }
+
+  function saveHiddenPreferences() {
+      const hiddenIds = $customRevenueTables
+          .filter(t => t.isSystem && t.isVisible === false)
+          .map(t => t.id);
+      localStorage.setItem('hiddenSystemTableIds', JSON.stringify(hiddenIds));
   }
 
   function toggleTableVisibility(id) {
       customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: !t.isVisible } : t));
-      saveLocal();
+      
+      // Nếu là bảng cá nhân -> Lưu Cloud
+      // Nếu là bảng hệ thống -> Lưu Local Preference
+      // Để đơn giản, gọi cả 2 (hàm save sẽ tự lọc)
+      savePersonalTables();
+      saveHiddenPreferences();
   }
 
   function editTable(table) {
-      if (table.isSystem && !$isAdmin) return; 
+      if (table.isSystem && !$isAdmin) {
+          alert("Bạn không có quyền chỉnh sửa Bảng hệ thống.");
+          return;
+      }
       modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: table }));
   }
 
   async function deleteTable(id) {
-      if(!confirm("Bạn có chắc muốn xóa bảng này?")) return;
       const targetTable = $customRevenueTables.find(t => t.id === id);
-      customRevenueTables.update(items => items.filter(t => t.id !== id));
-      saveLocal();
+      if (!targetTable) return;
 
-      if (targetTable?.isSystem && $isAdmin) {
-          await adminService.saveSystemRevenueTables($customRevenueTables);
+      if (targetTable.isSystem) {
+          if ($isAdmin) {
+              if (!confirm("CẢNH BÁO ADMIN: Xóa bảng HỆ THỐNG này vĩnh viễn?")) return;
+              const newTables = $customRevenueTables.filter(t => t.id !== id);
+              customRevenueTables.set(newTables);
+              await adminService.saveSystemRevenueTables(newTables);
+          } else {
+              if (!confirm("Ẩn bảng này khỏi màn hình của bạn?")) return;
+              customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: false } : t));
+              saveHiddenPreferences();
+          }
+      } else {
+          // Bảng cá nhân
+          if (!confirm("Bạn có chắc muốn xóa bảng này? Hành động này sẽ xóa trên Cloud của kho hiện tại.")) return;
+          customRevenueTables.update(items => items.filter(t => t.id !== id));
+          await savePersonalTables();
       }
   }
 
   function openAddModal() {
+      if (!$selectedWarehouse) {
+          alert("Vui lòng chọn Kho trước khi tạo bảng mới.");
+          return;
+      }
       modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: null }));
   }
 
@@ -62,9 +116,12 @@
     {#each tables as table}
         <button 
             class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                   {table.isVisible !== false ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}"
+                   {table.isVisible !== false ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
+                   {table.isSystem ? 'border-dashed' : ''}"
             on:click={() => toggleTableVisibility(table.id)}
+            title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
         >
+            {#if table.isSystem}<span class="text-[10px] mr-0.5 opacity-70">🌐</span>{/if}
             {table.title}
         </button>
     {/each}
@@ -99,7 +156,7 @@
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
         {#each visibleTables as table, index (table.id)}
             <div data-capture-group="category-revenue">
-                <CategoryRevenueTable 
+                <DynamicRevenueTable 
                     config={table}
                     {reportData}
                     colorTheme={getColor(index)}

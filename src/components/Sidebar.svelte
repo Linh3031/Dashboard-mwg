@@ -6,7 +6,13 @@
 
   // Hàm chuyển tab (Cập nhật store global)
   function navigateTo(targetId) {
-    // [FIX] Nếu vào Khai báo mà chưa phải Admin -> Bật modal đăng nhập
+    // [LOGIC MỚI] Tự động thoát quyền Admin khi rời khỏi tab Khai báo
+    if ($activeTab === 'declaration-section' && targetId !== 'declaration-section') {
+        isAdmin.set(false);
+        console.log("[Security] Đã tự động đăng xuất quyền Admin khi rời trang Khai báo.");
+    }
+
+    // Nếu vào Khai báo mà chưa phải Admin -> Bật modal đăng nhập
     if (targetId === 'declaration-section' && !$isAdmin) {
         modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
         return;
@@ -33,7 +39,7 @@
     <div>
         <button 
            class="nav-link flex items-center p-3 rounded-lg font-semibold mb-4 w-full transition-colors
-                  {currentTab === 'home-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
+           {currentTab === 'home-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
            on:click={() => navigateTo('home-section')}
          >
             <i data-feather="home"></i>
