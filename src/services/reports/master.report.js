@@ -1,5 +1,5 @@
 // src/services/reports/master.report.js
-// Version 2.3 - Fix Macro Product Group Aggregation & Efficiency Expansion
+// Version 2.4 - Fix Macro Group Logic (Clean Name Matching & Fallback)
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
 import * as utils from '../../utils.js';
@@ -28,46 +28,59 @@ export const masterReportLogic = {
         const gioCongByMSNV = dataProcessing.processGioCongData();
         
         const $macroCategoryConfig = get(macroCategoryConfig) || [];
-        const $macroProductGroupConfig = get(macroProductGroupConfig) || []; // [MỚI]
+        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
         const $efficiencyConfig = get(efficiencyConfig) || [];
 
-        // [FIX] Map để tra ngược: Tên Macro -> Danh sách items con (Gộp cả Category và Product Group)
-        const macroToItemsMap = {};
+        // 1. Xây dựng Map tra cứu nhanh: Item -> Macro Name
+        // (Gộp cả Category Config và Product Group Config vào chung 1 map để tra cứu)
         const itemToMacroMap = {};
+        const macroToItemsMap = {}; // Dùng cho efficiency calculation sau này
 
-        // Helper build map
-        const buildMacroMap = (configs, cleanerFunc) => {
+        const buildMap = (configs) => {
             configs.forEach(macro => {
                 if (macro.items && Array.isArray(macro.items)) {
-                    // Chuẩn hóa tên con ngay lúc tạo map để khớp với dữ liệu đã clean
-                    macroToItemsMap[macro.name] = macro.items.map(i => cleanerFunc(i));
+                    // Lưu danh sách items đã clean cho macro này
+                    macroToItemsMap[macro.name] = macro.items.map(i => utils.cleanCategoryName(i));
+                    
+                    // Map ngược từ item -> macro name
                     macro.items.forEach(item => {
-                        itemToMacroMap[item] = macro.name; 
+                        const cleanName = utils.cleanCategoryName(item);
+                        itemToMacroMap[cleanName] = macro.name; 
                     });
                 }
             });
         };
 
-        // Build map cho cả 2 loại
-        buildMacroMap($macroCategoryConfig, utils.cleanCategoryName);
-        buildMacroMap($macroProductGroupConfig, utils.cleanCategoryName); // Dùng chung cleanCategoryName vì bản chất là cleanNameRaw
+        buildMap($macroCategoryConfig);
+        buildMap($macroProductGroupConfig);
 
-        const checkMacroGroup = (macroName, nhomHangCode, rawNhomHangName) => {
-            if (itemToMacroMap[rawNhomHangName] === macroName) return true;
-            
-            const fallbackMap = {
-                'ICT': PG.ICT,
-                'CE': PG.CE,
-                'Phụ kiện': PG.PHU_KIEN,
-                'Gia dụng': PG.GIA_DUNG,
-                'Máy lọc nước': PG.MAY_LOC_NUOC
+        // 2. Hàm kiểm tra một dòng dữ liệu có thuộc Macro Group (ICT, CE...) hay không
+        const checkMacroGroup = (targetMacroName, nhomHangCode, cleanNhomHang, cleanNganhHang, nganhHangCode) => {
+            // A. Ưu tiên 1: Check theo cấu hình Admin (Dựa trên tên đã làm sạch)
+            // Check Nhóm hàng
+            if (itemToMacroMap[cleanNhomHang] === targetMacroName) return true;
+            // Check Ngành hàng
+            if (itemToMacroMap[cleanNganhHang] === targetMacroName) return true;
+
+            // B. Ưu tiên 2: Fallback về Config cứng (Dựa trên mã Code)
+            // Giúp hệ thống vẫn chạy đúng nếu Admin chưa khai báo gì
+            const pgKeyMap = {
+                'ICT': 'ICT',
+                'CE': 'CE',
+                'Phụ kiện': 'PHU_KIEN',
+                'Gia dụng': 'GIA_DUNG',
+                'Máy lọc nước': 'MAY_LOC_NUOC'
             };
+            const configKey = pgKeyMap[targetMacroName];
             
-            // Ưu tiên config Admin, sau đó mới fallback code cứng
-            const isAdminDefined = $macroCategoryConfig.some(g => g.name === macroName) || $macroProductGroupConfig.some(g => g.name === macroName);
-            if (!isAdminDefined && fallbackMap[macroName]) {
-                return fallbackMap[macroName].includes(nhomHangCode);
+            if (configKey && PG[configKey]) {
+                const codes = Array.isArray(PG[configKey]) ? PG[configKey] : [PG[configKey]];
+                // Check code nhóm hàng
+                if (codes.includes(nhomHangCode)) return true;
+                // Check code ngành hàng (cho các trường hợp đặc biệt)
+                if (codes.includes(nganhHangCode)) return true;
             }
+
             return false;
         };
 
@@ -134,15 +147,19 @@ export const masterReportLogic = {
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         const trangThaiXuat = (row.trangThaiXuat || "").trim();
 
+                        // --- TRÍCH XUẤT VÀ LÀM SẠCH DỮ LIỆU ĐỂ SO SÁNH ---
                         const nhomHangCode = String(row.nhomHang || '').match(/^\d+/)?.[0] || null;
-                        const nhomHangNameRaw = String(row.nhomHang || '').trim();
                         const nganhHangCode = String(row.nganhHang || '').match(/^\d+/)?.[0] || null;
+                        
+                        const nhomHangNameClean = utils.cleanCategoryName(row.nhomHang); // VD: "Tivi Led"
+                        const nganhHangNameClean = utils.cleanCategoryName(row.nganhHang); // VD: "Điện Tử"
 
-                        const isICT = checkMacroGroup('ICT', nhomHangCode, nhomHangNameRaw);
-                        const isCE = checkMacroGroup('CE', nhomHangCode, nhomHangNameRaw);
-                        const isPhuKien = checkMacroGroup('Phụ kiện', nganhHangCode, nhomHangNameRaw) || (PG.PHU_KIEN.includes(nganhHangCode) && !$macroCategoryConfig.some(g => g.name === 'Phụ kiện'));
-                        const isGiaDung = checkMacroGroup('Gia dụng', nganhHangCode, nhomHangNameRaw) || (PG.GIA_DUNG.includes(nganhHangCode) && !$macroCategoryConfig.some(g => g.name === 'Gia dụng'));
-                        const isMLN = checkMacroGroup('Máy lọc nước', nhomHangCode, nhomHangNameRaw) || (PG.MAY_LOC_NUOC.includes(nhomHangCode) && !$macroCategoryConfig.some(g => g.name === 'Máy lọc nước'));
+                        // Kiểm tra thuộc nhóm nào bằng hàm checkMacroGroup mới
+                        const isICT = checkMacroGroup('ICT', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
+                        const isCE = checkMacroGroup('CE', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
+                        const isPhuKien = checkMacroGroup('Phụ kiện', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
+                        const isGiaDung = checkMacroGroup('Gia dụng', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
+                        const isMLN = checkMacroGroup('Máy lọc nước', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
 
                         if (trangThaiXuat === 'Chưa xuất') {
                             data.doanhThuChuaXuat += thanhTien;
@@ -150,9 +167,6 @@ export const masterReportLogic = {
                         } else if (trangThaiXuat === 'Đã xuất') {
                             const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                             if(isNaN(soLuong)) return;
-
-                            const nganhHangName = utils.cleanCategoryName(row.nganhHang);
-                            const nhomHangName = utils.cleanCategoryName(row.nhomHang);
 
                             data.doanhThu += thanhTien;
                             data.doanhThuQuyDoi += thanhTien * heSo;
@@ -166,7 +180,10 @@ export const masterReportLogic = {
                                 }
                             }
 
-                            if (hinhThucXuatTraGop.has(row.hinhThucXuat)) { data.doanhThuTraGop += thanhTien; data.doanhThuTraGopQuyDoi += thanhTien * heSo; }
+                            if (hinhThucXuatTraGop.has(row.hinhThucXuat)) { 
+                                data.doanhThuTraGop += thanhTien; 
+                                data.doanhThuTraGopQuyDoi += thanhTien * heSo; 
+                            }
 
                             const trackMetric = (container, name) => {
                                 if (!name) return;
@@ -176,15 +193,17 @@ export const masterReportLogic = {
                                 container[name].revenueQuyDoi += thanhTien * heSo;
                             }
                             
-                            trackMetric(data.doanhThuTheoNganhHang, nganhHangName);
-                            trackMetric(data.doanhThuTheoNhomHang, nhomHangName);
+                            trackMetric(data.doanhThuTheoNganhHang, nganhHangNameClean);
+                            trackMetric(data.doanhThuTheoNhomHang, nhomHangNameClean);
 
-                            if (isICT) { data.dtICT += thanhTien; }
+                            // Cộng dồn vào các nhóm lớn
+                            if (isICT) { data.dtICT += thanhTien; data.slICT += soLuong; }
                             if (isCE) { data.dtCE += thanhTien; data.slCE += soLuong; }
                             if (isPhuKien) { data.dtPhuKien += thanhTien; data.slPhuKien += soLuong; }
                             if (isGiaDung) { data.dtGiaDung += thanhTien; data.slGiaDung += soLuong; }
                             if (isMLN) { data.dtMLN += thanhTien; data.slMLN += soLuong; }
 
+                            // Logic cũ cho các nhóm con cụ thể (vẫn giữ để tính đơn giá chi tiết)
                             if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
                             if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
                             if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
@@ -200,6 +219,8 @@ export const masterReportLogic = {
                                 if (loaiBaoHiem === 'BHRV') data.slBHRV += soLuong;
                                 if (loaiBaoHiem === 'BHMR') data.slBHMR += soLuong;
                             }
+                            
+                            // Các nhóm QĐC và nhóm nhỏ khác
                             if (nhomHangCode === PG.PIN_SDP) data.slPinSDP += soLuong;
                             if (nhomHangCode === PG.CAMERA_TRONG_NHA || nhomHangCode === PG.CAMERA_NGOAI_TROI) data.slCamera += soLuong;
                             if (nhomHangCode === PG.TAI_NGHE_BLT) data.slTaiNgheBLT += soLuong;
@@ -211,26 +232,29 @@ export const masterReportLogic = {
                             if (PG.SMARTPHONE.includes(nhomHangCode)) data.slSmartphone += soLuong;
                             if (PG.BAO_HIEM_VAS.includes(nhomHangCode)) data.slBaoHiemVAS += soLuong;
                             if (PG.BAO_HIEM_DENOMINATOR.includes(nhomHangCode)) data.slBaoHiemDenominator += soLuong;
-                            for (const key in PG.QDC_GROUPS) if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
-                                data.qdc[key].sl += soLuong; data.qdc[key].dt += thanhTien; data.qdc[key].dtqd += thanhTien * heSo;
+                            
+                            for (const key in PG.QDC_GROUPS) {
+                                if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
+                                    data.qdc[key].sl += soLuong; 
+                                    data.qdc[key].dt += thanhTien; 
+                                    data.qdc[key].dtqd += thanhTien * heSo;
+                                }
                             }
                         }
                     }
                 }
             });
 
-            // [FIX] TÍNH TOÁN DYNAMIC METRICS VỚI EXPANSION LOGIC
-            // Bây giờ sẽ tìm cả trong danh sách Ngành hàng VÀ Nhóm hàng
+            // Tính toán Dynamic Metrics (Cấu hình Hiệu quả/Đơn giá)
             if ($efficiencyConfig && $efficiencyConfig.length > 0) {
                 $efficiencyConfig.forEach(cfg => {
                     const sumValues = (listNames) => {
                         let total = 0;
                         listNames.forEach(name => {
                             // 1. Bung items nếu là Macro
-                            const itemsToSum = macroToItemsMap[name] || [name];
+                            const itemsToSum = macroToItemsMap[name] || [utils.cleanCategoryName(name)];
                             
-                            itemsToSum.forEach(subName => {
-                                const cleanName = utils.cleanCategoryName(subName);
+                            itemsToSum.forEach(cleanName => {
                                 // 2. Thử tìm trong Ngành Hàng
                                 let item = data.doanhThuTheoNganhHang[cleanName];
                                 // 3. Nếu không có, tìm trong Nhóm Hàng
@@ -239,17 +263,39 @@ export const masterReportLogic = {
                                 }
 
                                 if (item) {
-                                    if (cfg.type === 'SL') total += item.quantity;
-                                    else if (cfg.type === 'DTQD') total += item.revenueQuyDoi;
-                                    else total += item.revenue; 
+                                    if (cfg.typeA === 'SL' || (cfg.type === 'UNIT_PRICE' && cfg.typeB === 'SL')) {
+                                         // Logic cũ hoặc logic đơn giá (Mẫu là SL)
+                                    }
+                                    
+                                    // Xác định giá trị cần cộng
+                                    // Lưu ý: Hàm này đang được dùng chung, nên cần check kỹ loại
+                                    // Logic này được gọi 2 lần: 1 lần cho Tử (typeA), 1 lần cho Mẫu (typeB)
+                                    // Chúng ta cần truyền loại dữ liệu vào hàm sumValues để biết cộng gì
+                                }
+                            });
+                        });
+                        return total;
+                    };
+                    
+                    // Helper mới xử lý chính xác loại dữ liệu
+                    const calcGroupValue = (groupList, valueType) => {
+                        let total = 0;
+                        groupList.forEach(name => {
+                            const itemsToSum = macroToItemsMap[name] || [utils.cleanCategoryName(name)];
+                            itemsToSum.forEach(cleanName => {
+                                let item = data.doanhThuTheoNganhHang[cleanName] || data.doanhThuTheoNhomHang[cleanName];
+                                if (item) {
+                                    if (valueType === 'SL') total += item.quantity;
+                                    else if (valueType === 'DTQD') total += item.revenueQuyDoi;
+                                    else total += item.revenue; // DTTL
                                 }
                             });
                         });
                         return total;
                     };
 
-                    const numVal = sumValues(cfg.groupA || []);
-                    const denVal = sumValues(cfg.groupB || []);
+                    const numVal = calcGroupValue(cfg.groupA || [], cfg.typeA || cfg.type); // type cũ là DTTL/SL
+                    const denVal = calcGroupValue(cfg.groupB || [], cfg.typeB || 'DTTL'); // type cũ mặc định mẫu là DTTL
 
                     data.dynamicMetrics[cfg.id] = {
                         value: denVal > 0 ? numVal / denVal : 0,
@@ -259,12 +305,37 @@ export const masterReportLogic = {
                 });
             }
 
-            data.slICT = data.slDienThoai + data.slLaptop;
+            // Tính toán các chỉ số dẫn xuất
+            const hieuQuaQuyDoi = data.doanhThu > 0 ? (data.doanhThuQuyDoi / data.doanhThu) - 1 : 0;
+            const tyLeTraCham = data.doanhThu > 0 ? data.doanhThuTraGop / data.doanhThu : 0;
+            
+            // Fix lỗi chia cho 0
+            data.slICT = data.slICT || (data.slDienThoai + data.slLaptop); 
+            
+            const pctPhuKien = data.dtICT > 0 ? data.dtPhuKien / data.dtICT : 0;
+            const pctGiaDung = data.dtCE > 0 ? data.dtGiaDung / data.dtCE : 0;
+            const pctMLN = data.dtCE > 0 ? data.dtMLN / data.dtCE : 0;
+            const pctSim = data.slSmartphone > 0 ? data.slSimOnline / data.slSmartphone : 0;
+            const pctVAS = data.slSmartphone > 0 ? data.slUDDD / data.slSmartphone : 0;
+            const pctBaoHiem = data.slBaoHiemDenominator > 0 ? data.slBaoHiemVAS / data.slBaoHiemDenominator : 0;
+            
+            // Tính đơn giá chi tiết
+            data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
+            data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
+            data.donGiaMayGiat = data.slMayGiat > 0 ? data.dtMayGiat / data.slMayGiat : 0;
+            data.donGiaMayLanh = data.slMayLanh > 0 ? data.dtMayLanh / data.slMayLanh : 0;
+            data.donGiaDienThoai = data.slDienThoai > 0 ? data.dtDienThoai / data.slDienThoai : 0;
+            data.donGiaLaptop = data.slLaptop > 0 ? data.dtLaptop / data.slLaptop : 0;
+            
+            const totalQuantity = Object.values(data.doanhThuTheoNganhHang).reduce((sum, category) => sum + category.quantity, 0);
+            const donGiaTrungBinh = totalQuantity > 0 ? data.doanhThu / totalQuantity : 0;
+
             const gioCong = gioCongByMSNV[employee.maNV] || 0;
             const thuongNong = thuongNongByMSNV[employee.maNV] || 0;
             const erpEntry = $thuongERPData.find(e => e.name.includes(employee.hoTen));
             const thuongERP = erpEntry ? parseFloat(erpEntry.bonus.replace(/,/g, '')) : 0;
             const tongThuNhap = thuongNong + thuongERP;
+            
             const today = new Date();
             const currentDay = today.getDate();
             const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
@@ -278,31 +349,19 @@ export const masterReportLogic = {
             const thuNhapThangTruoc = thuongNongThangTruoc + thuongERPThangTruoc;
             const chenhLechThuNhap = thuNhapDuKien - thuNhapThangTruoc;
 
-            const hieuQuaQuyDoi = data.doanhThu > 0 ? (data.doanhThuQuyDoi / data.doanhThu) - 1 : 0;
-            const tyLeTraCham = data.doanhThu > 0 ? data.doanhThuTraGop / data.doanhThu : 0;
-            const pctPhuKien = data.dtICT > 0 ? data.dtPhuKien / data.dtICT : 0;
-            const pctGiaDung = data.dtCE > 0 ? data.dtGiaDung / data.dtCE : 0;
-            const pctMLN = data.dtCE > 0 ? data.dtMLN / data.dtCE : 0;
-            const pctSim = data.slSmartphone > 0 ? data.slSimOnline / data.slSmartphone : 0;
-            const pctVAS = data.slSmartphone > 0 ? data.slUDDD / data.slSmartphone : 0;
-            const pctBaoHiem = data.slBaoHiemDenominator > 0 ? data.slBaoHiemVAS / data.slBaoHiemDenominator : 0;
-            data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
-            data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
-            data.donGiaMayGiat = data.slMayGiat > 0 ? data.dtMayGiat / data.slMayGiat : 0;
-            data.donGiaMayLanh = data.slMayLanh > 0 ? data.dtMayLanh / data.slMayLanh : 0;
-            data.donGiaDienThoai = data.slDienThoai > 0 ? data.dtDienThoai / data.slDienThoai : 0;
-            data.donGiaLaptop = data.slLaptop > 0 ? data.dtLaptop / data.slLaptop : 0;
-            const totalQuantity = Object.values(data.doanhThuTheoNganhHang).reduce((sum, category) => sum + category.quantity, 0);
-            const donGiaTrungBinh = totalQuantity > 0 ? data.doanhThu / totalQuantity : 0;
-
-            return { ...employee, ...data, gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, hieuQuaQuyDoi, tyLeTraCham, pctPhuKien, pctGiaDung, pctMLN, pctSim, pctVAS, pctBaoHiem, donGiaTrungBinh, mucTieu: goalSettings };
+            return { 
+                ...employee, ...data, 
+                gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, 
+                hieuQuaQuyDoi, tyLeTraCham, pctPhuKien, pctGiaDung, pctMLN, pctSim, pctVAS, pctBaoHiem, 
+                donGiaTrungBinh, mucTieu: goalSettings 
+            };
         });
     },
 
     aggregateReport(reportData, selectedWarehouse = null) {
         if (!reportData || reportData.length === 0) {
             const emptyShell = { doanhThu: 0, doanhThuQuyDoi: 0, dtCE: 0, dtICT: 0, qdc: {}, nganhHangChiTiet: {}, nhomHangChiTiet: {}, dynamicMetrics: {}, comparisonData: { value: 0, percentage: 'N/A' } };
-            const numericKeys = ['doanhThuTraGop', 'doanhThuChuaXuat','doanhThuQuyDoiChuaXuat', 'dtGiaDung', 'dtMLN', 'dtPhuKien', 'slSmartphone', 'slSimOnline', 'slUDDD', 'slBaoHiemDenominator', 'slBaoHiemVAS'];
+            const numericKeys = ['doanhThuTraGop', 'doanhThuChuaXuat','doanhThuQuyDoiChuaXuat', 'dtGiaDung', 'dtMLN', 'dtPhuKien', 'slSmartphone', 'slSimOnline', 'slUDDD', 'slBaoHiemDenominator', 'slBaoHiemVAS', 'slCE', 'slPhuKien', 'slGiaDung', 'slMLN'];
             numericKeys.forEach(key => emptyShell[key] = 0);
             return emptyShell;
         }
@@ -325,7 +384,7 @@ export const masterReportLogic = {
             return acc;
         }, {});
 
-        // Helper Aggregation: Dùng cleanerFunc để xử lý tên con
+        // Helper Aggregation
         const aggregateDetail = (sourceKey, destKey, macroConfigStore, cleanerFunc) => {
             const aggregated = {};
             reportData.forEach(employee => {
@@ -343,9 +402,6 @@ export const masterReportLogic = {
             const macros = get(macroConfigStore) || [];
             macros.forEach(macro => {
                 const macroName = macro.name;
-                // Nếu chưa có trong danh sách kết quả HOẶC đã có (để ghi đè/cộng dồn nếu logic phức tạp, ở đây là tạo mới nếu chưa có)
-                // Lưu ý: Nếu Macro trùng tên với item gốc, có thể bị ghi đè. Nên đặt tên Macro khác đi.
-                
                 if (!aggregated[macroName] && macro.items) {
                     let mQuantity = 0, mRevenue = 0, mRevenueQuyDoi = 0;
                     macro.items.forEach(childName => {
@@ -357,7 +413,6 @@ export const masterReportLogic = {
                             mRevenueQuyDoi += childData.revenueQuyDoi;
                         }
                     });
-                    // Chỉ hiển thị nếu có số liệu
                     if (mRevenue > 0 || mQuantity > 0) {
                         aggregated[macroName] = {
                             name: macroName,
@@ -371,7 +426,6 @@ export const masterReportLogic = {
                 }
             });
 
-            // Calc Unit Price
             for (const name in aggregated) {
                 const item = aggregated[name];
                 item.donGia = item.quantity > 0 ? item.revenue / item.quantity : 0;
@@ -379,16 +433,11 @@ export const masterReportLogic = {
             supermarketReport[destKey] = aggregated;
         }
 
-        // Aggregate Ngành Hàng (Category) -> dùng cleanCategoryName
         aggregateDetail('doanhThuTheoNganhHang', 'nganhHangChiTiet', macroCategoryConfig, utils.cleanCategoryName);
-        
-        // [FIX] Aggregate Nhóm Hàng (Product Group) -> dùng cleanCategoryName (vì nó là cleanNameRaw) 
-        // để khớp với logic lúc tạo employee data
         aggregateDetail('doanhThuTheoNhomHang', 'nhomHangChiTiet', macroProductGroupConfig, utils.cleanCategoryName);
 
-        // Dynamic Metrics Aggregation (Expansion Logic) - Cấp Siêu Thị
+        // Dynamic Metrics Aggregation (Siêu thị)
         const $efficiencyConfig = get(efficiencyConfig);
-        // Map lại macro (bao gồm cả Category và Product Group)
         const macroToItemsMap = {};
         const buildMacroMap = (configs, cleanerFunc) => {
             configs.forEach(macro => {
@@ -403,23 +452,15 @@ export const masterReportLogic = {
         supermarketReport.dynamicMetrics = {};
         if ($efficiencyConfig && $efficiencyConfig.length > 0) {
              $efficiencyConfig.forEach(cfg => {
-                const sumValues = (listNames) => {
+                const calcGroupValue = (groupList, valueType) => {
                     let total = 0;
-                    listNames.forEach(name => {
-                        // Bung items nếu là Macro
-                        const itemsToSum = macroToItemsMap[name] || [name];
-                        
-                        itemsToSum.forEach(subName => {
-                            const cleanName = utils.cleanCategoryName(subName);
-                            // Ưu tiên tìm trong Ngành hàng, rồi đến Nhóm hàng
-                            let item = supermarketReport.nganhHangChiTiet[cleanName];
-                            if (!item) {
-                                item = supermarketReport.nhomHangChiTiet[cleanName];
-                            }
-
+                    groupList.forEach(name => {
+                        const itemsToSum = macroToItemsMap[name] || [utils.cleanCategoryName(name)];
+                        itemsToSum.forEach(cleanName => {
+                            let item = supermarketReport.nganhHangChiTiet[cleanName] || supermarketReport.nhomHangChiTiet[cleanName];
                             if (item) {
-                                if (cfg.type === 'SL') total += item.quantity;
-                                else if (cfg.type === 'DTQD') total += item.revenueQuyDoi;
+                                if (valueType === 'SL') total += item.quantity;
+                                else if (valueType === 'DTQD') total += item.revenueQuyDoi;
                                 else total += item.revenue; 
                             }
                         });
@@ -427,8 +468,8 @@ export const masterReportLogic = {
                     return total;
                 };
 
-                const totalNum = sumValues(cfg.groupA || []);
-                const totalDen = sumValues(cfg.groupB || []);
+                const totalNum = calcGroupValue(cfg.groupA || [], cfg.typeA || cfg.type);
+                const totalDen = calcGroupValue(cfg.groupB || [], cfg.typeB || 'DTTL');
 
                 supermarketReport.dynamicMetrics[cfg.id] = {
                     value: totalDen > 0 ? totalNum / totalDen : 0,
@@ -449,7 +490,6 @@ export const masterReportLogic = {
 
         supermarketReport.comparisonData = { value: 0, percentage: 'N/A' }; 
 
-        // Fix QDC Don Gia
         if (supermarketReport.qdc) {
             for (const key in supermarketReport.qdc) {
                 const group = supermarketReport.qdc[key];
@@ -467,22 +507,36 @@ export const masterReportLogic = {
         const totals = departmentEmployees.reduce((acc, curr) => {
             Object.keys(curr).forEach(key => {
                 if (typeof curr[key] === 'number') acc[key] = (acc[key] || 0) + curr[key];
-                if (key === 'qdc' && typeof curr.qdc === 'object') {
-                    if (!acc.qdc) acc.qdc = {};
-                    for (const qdcKey in curr.qdc) {
-                        if (!acc.qdc[qdcKey]) acc.qdc[qdcKey] = { sl: 0, dt: 0, dtqd: 0 };
-                        acc.qdc[qdcKey].sl += curr.qdc[qdcKey].sl;
-                        acc.qdc[qdcKey].dt += curr.qdc[qdcKey].dt;
-                        acc.qdc[qdcKey].dtqd += curr.qdc[qdcKey].dtqd;
-                    }
-                }
             });
+            // Cộng dồn Dynamic Metrics
+            if(curr.dynamicMetrics) {
+                if(!acc.dynamicMetrics) acc.dynamicMetrics = {};
+                for(const k in curr.dynamicMetrics) {
+                    if(!acc.dynamicMetrics[k]) acc.dynamicMetrics[k] = 0;
+                    acc.dynamicMetrics[k] += curr.dynamicMetrics[k].value;
+                }
+            }
+            if (curr.qdc) {
+                if (!acc.qdc) acc.qdc = {};
+                for (const k in curr.qdc) {
+                    if (!acc.qdc[k]) acc.qdc[k] = { sl: 0, dt: 0, dtqd: 0 };
+                    acc.qdc[k].sl += curr.qdc[k].sl;
+                    acc.qdc[k].dt += curr.qdc[k].dt;
+                    acc.qdc[k].dtqd += curr.qdc[k].dtqd;
+                }
+            }
             return acc;
         }, {});
 
         const averages = {};
         for (const key in totals) {
-            if (key !== 'qdc') averages[key] = totals[key] / departmentEmployees.length;
+            if (key !== 'qdc' && key !== 'dynamicMetrics') averages[key] = totals[key] / departmentEmployees.length;
+            else if (key === 'dynamicMetrics') {
+                averages.dynamicMetrics = {};
+                for(const k in totals.dynamicMetrics) {
+                    averages.dynamicMetrics[k] = totals.dynamicMetrics[k] / departmentEmployees.length;
+                }
+            }
             else {
                 averages.qdc = {};
                 for (const qdcKey in totals.qdc) averages.qdc[qdcKey] = {

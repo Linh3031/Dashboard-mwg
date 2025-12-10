@@ -17,6 +17,10 @@
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
+  
+  // [MỚI] Import thêm RevenueDetailView
+  import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
+
   import IncomeTable from './health-staff/IncomeTable.svelte';
   import EfficiencyTable from './health-staff/EfficiencyTable.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
@@ -158,9 +162,15 @@
 
                 {:else if activeSubTab === 'doanhthu'}
                     <div id="subtab-doanhthu" class="sub-tab-content">
-                        <div id="revenue-report-container-lk">
-                            <RevenueTable reportData={processedReport} />
-                        </div>
+                        {#if !viewingDetailId}
+                            <div id="revenue-report-container-lk">
+                                <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} />
+                            </div>
+                        {:else}
+                            <div id="dtnv-lk-capture-area">
+                                <RevenueDetailView employeeId={viewingDetailId} on:back={handleBackToSummary} />
+                            </div>
+                        {/if}
                     </div>
 
                 {:else if activeSubTab === 'thunhap'}
