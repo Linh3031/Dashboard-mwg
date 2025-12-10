@@ -10,7 +10,6 @@
 
   const dispatch = createEventDispatcher();
   
-  // Tính tổng điểm để hiển thị Main KPI (Trừ QĐC)
   $: summary = employee.summary;
   $: totalAbove = employee.totalAbove;
   $: totalCriteria = employee.totalCriteria;
@@ -28,7 +27,7 @@
 >
   <div class="p-3 flex items-start relative z-10">
     <MedalIcon {rank} />
-    <CardHeader hoTen={employee.hoTen} maNV={employee.maNV} boPhan={employee.boPhan} />
+    <CardHeader hoTen={employee.hoTen} maNV={employee.maNV} boPhan={employee.boPhan} {rank} />
   </div>
 
   <CardMainKpi aboveCount={totalAbove} totalCount={totalCriteria} />

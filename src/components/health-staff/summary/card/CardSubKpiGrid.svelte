@@ -1,11 +1,12 @@
 <script>
-  export let summary; // Object chứa counts { doanhthu, nangsuat, ... }
+  export let summary; 
 
+  // Định nghĩa màu nền cố định cho từng loại thẻ (Style đồng bộ)
   const groups = [
-    { key: 'doanhthu', label: 'Doanh Thu', icon: 'trending-up' },
-    { key: 'nangsuat', label: 'Năng Suất', icon: 'dollar-sign' },
-    { key: 'hieuqua', label: 'Hiệu Quả', icon: 'award' },
-    { key: 'dongia', label: 'Đơn Giá', icon: 'tag' }
+    { key: 'doanhthu', label: 'Doanh Thu', icon: 'trending-up', bgClass: 'bg-blue-50 border-blue-100 text-blue-800' },
+    { key: 'nangsuat', label: 'Năng Suất', icon: 'dollar-sign', bgClass: 'bg-green-50 border-green-100 text-green-800' },
+    { key: 'hieuqua', label: 'Hiệu Quả', icon: 'award', bgClass: 'bg-orange-50 border-orange-100 text-orange-800' },
+    { key: 'dongia', label: 'Đơn Giá', icon: 'tag', bgClass: 'bg-purple-50 border-purple-100 text-purple-800' }
   ];
 </script>
 
@@ -13,14 +14,15 @@
   {#each groups as g}
     {@const data = summary[g.key]}
     {@const ratio = data.total > 0 ? data.above / data.total : 0}
-    {@const color = ratio >= 0.7 ? 'bg-green-50 text-green-700 border-green-200' : ratio >= 0.4 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-red-50 text-red-700 border-red-200'}
     
-    <div class="flex items-center justify-between p-1.5 rounded border {color}">
+    {@const valueColor = ratio > 0.5 ? 'text-blue-600' : 'text-red-600'}
+    
+    <div class="flex items-center justify-between p-1.5 rounded border {g.bgClass}">
       <div class="flex items-center gap-1">
-        <i data-feather={g.icon} class="w-3 h-3 opacity-75"></i>
+        <i data-feather={g.icon} class="w-3 h-3 opacity-70"></i>
         <span class="text-[10px] font-bold uppercase opacity-90">{g.label}</span>
       </div>
-      <span class="text-xs font-extrabold">{data.above}/{data.total}</span>
+      <span class="text-xs font-extrabold {valueColor}">{data.above}/{data.total}</span>
     </div>
   {/each}
 </div>

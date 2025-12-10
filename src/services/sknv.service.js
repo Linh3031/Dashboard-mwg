@@ -157,7 +157,8 @@ export const sknvService = {
                     label: metric.label,
                     rawValue: empVal,
                     rawAverage: avgVal,
-                    isCustom: true
+                    isCustom: true,
+                    rawConfig: metric // [MỚI] Lưu config gốc để có thể sửa/xóa
                 };
 
                 if (metric.type === 'UNIT_PRICE') {

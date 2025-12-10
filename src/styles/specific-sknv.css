@@ -21,11 +21,10 @@
     gap: 1.5rem;
 }
 
-@media (min-width: 768px) { /* 2 columns for tablets 
-*/
+@media (min-width: 768px) { /* 2 columns for tablets */
     .sknv-summary-grid {
         grid-template-columns: repeat(2, 1fr);
-}
+    }
 }
 
 @media (min-width: 1280px) { /* 4 columns for large desktops */
@@ -124,8 +123,7 @@
 }
 
 .sknv-card-kpi-strong { border-top: 4px solid #16a34a; } /* UPDATED: Added top border */
-.sknv-card-kpi-medium { border-top: 4px solid #f59e0b; } /* UPDATED: Added top border 
-*/
+.sknv-card-kpi-medium { border-top: 4px solid #f59e0b; } /* UPDATED: Added top border */
 .sknv-card-kpi-weak { border-top: 4px solid #ef4444; } /* UPDATED: Added top border */
 .sknv-card-kpi-strong .value { color: #16a34a; }
 .sknv-card-kpi-medium .value { color: #f59e0b; }
@@ -173,8 +171,7 @@
 }
 /* === END: NEW SUB-KPI LAYOUT === */
 
-.sknv-card__sub-kpi-item.strong { 
-border-bottom: 3px solid #22c55e; }
+.sknv-card__sub-kpi-item.strong { border-bottom: 3px solid #22c55e; }
 .sknv-card__sub-kpi-item.medium { border-bottom: 3px solid #f59e0b; }
 .sknv-card__sub-kpi-item.weak { border-bottom: 3px solid #ef4444; }
 /* === END: SKNV INFOGRAPHIC CARD STYLES === */
@@ -216,8 +213,7 @@ border-bottom: 3px solid #22c55e; }
     padding: 0.75rem 1rem;
     border-radius: 0.5rem 0.5rem 0 0;
     margin-bottom: 0; /* Remove bottom margin to connect with cards */
-    
-display: flex;
+    display: flex;
     align-items: center;
     gap: 0.75rem;
 }
@@ -248,8 +244,7 @@ display: flex;
     max-width: 1100px;
     margin: 0 auto;
 }
-.sknv-detail-header-card 
-{
+.sknv-detail-header-card {
     display: flex;
     align-items: center;
     gap: 1.5rem;
@@ -290,8 +285,7 @@ display: flex;
     line-height: 1.2;
 }
 .sknv-detail-info .department {
- 
-   font-size: 1rem;
+    font-size: 1rem;
     font-weight: 500;
 }
 .sknv-detail-info .kpi-summary {
@@ -378,7 +372,7 @@ display: flex;
     width: 100%;
     height: 100%;
     display: block;
-filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
 }
 
 /* NEW: Compact tables in detail view */
@@ -391,44 +385,68 @@ filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
 }
 /* === END: SKNV DETAIL VIEW & MEDALS === */
 
-/* === START: SKNV Rank Number Styles (v6.19 - Phương án A Mới) === */
+/* === START: SKNV Rank Number Styles (v6.21 - Soft Blue 3D) === */
 
-/* 1. (v6.19) Định dạng cho số thứ tự (1, 2, 3) của Top 3 */
+/* 1. Số thứ tự cho Top 3 (Đè lên huy chương) - Giữ nguyên */
 .sknv-card__avatar-rank {
-    font-size: 1.75rem; /* 28px */
-    font-weight: 700; /* font-bold */
+    font-size: 1.75rem; 
+    font-weight: 700; 
     line-height: 1;
-    /* Canh số vào giữa vòng tròn */
     display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
-    /* (v6.19) Nằm đè lên trên SVG huy chương */
     position: absolute;
     top: 0;
     left: 0;
-    z-index: 12; /* Nằm trên huy chương (z-11) */
-    color: #ffffff; /* (v6.19) Màu trắng cho Top 3 */
+    z-index: 12; 
+    color: #ffffff; 
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
-/* 2. (v6.19) Ẩn nền xanh của avatar Top 3, để huy chương SVG lo việc hiển thị */
+/* 2. Ẩn nền avatar mặc định khi có huy chương - Giữ nguyên */
 .sknv-card:has(.medal-container) .sknv-card__avatar {
     background-color: transparent;
 }
 
-/* 3. (v6.19) Định dạng cho Vòng tròn hạng 4+ (Đơn thuần) */
+/* 3. [DESIGN MỚI] Định dạng cho Vòng tròn hạng 4+ (Soft Blue) */
 .sknv-card__avatar--standard {
-    background-color: #e5e7eb; /* (v6.19) Vòng tròn xám (gray-200) */
+    /* Nền Gradient: Từ xanh nhạt sang xanh đậm hơn xíu để tạo khối cầu */
+    background: linear-gradient(145deg, #eff6ff, #dbeafe); 
+    
+    /* Viền: Màu xanh dương rõ nét */
+    border: 2px solid #93c5fd; 
+    
+    /* Đổ bóng: 
+       - Bóng dưới: Màu xanh đậm mờ để tạo độ nổi.
+       - Bóng trên: Màu trắng để tạo độ bóng sáng (highlight).
+    */
+    box-shadow: 
+        3px 3px 6px rgba(37, 99, 235, 0.15), 
+        -3px -3px 6px rgba(255, 255, 255, 0.8);
+    
+    width: 44px; /* Fix size */
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+    margin-left: 2px;
 }
 
-/* 4. (v6.19) Định dạng cho SỐ hạng 4+ */
+/* 4. [DESIGN MỚI] Định dạng cho SỐ hạng 4+ */
 .sknv-card__avatar--standard .sknv-card__avatar-rank {
-    color: #4b5563; /* (v6.19) Số màu xám đậm (gray-600) */
-    position: static; /* (v6.19) Reset lại position, không cần đè */
+    color: #1e40af; /* Màu chữ: Xanh dương đậm (Blue 800) thay vì màu đen/xám */
+    position: static; 
+    font-size: 1.25rem;
+    font-weight: 800; 
+    text-shadow: none; /* Bỏ bóng chữ của Top 3 */
+    font-family: 'Inter', sans-serif;
 }
 
-/* 5. (v6.19) Bỏ SVG Huy chương Thường (nếu có từ v6.18) */
+/* 5. Bỏ SVG cũ */
 .sknv-card__avatar-medal {
     display: none;
 }
@@ -448,8 +466,7 @@ filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
     padding: 1rem 0.5rem;
     cursor: pointer;
     font-size: 1.125rem; /* text-lg */
-    font-weight: 700; /* font-bold 
-*/
+    font-weight: 700; /* font-bold */
     color: #374151; /* gray-700 */
     list-style: none; /* Hide default marker */
 }
@@ -508,7 +525,7 @@ filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
 /* Keep employee name header slightly wider and no-wrap */
 #pasted-competition-report-container table th[data-sort="hoTen"] {
     white-space: nowrap;
-    width: 150px; 
+    width: 150px;
     min-width: 150px;
 }
 /* === END: Pasted Competition Styles === */
@@ -591,13 +608,6 @@ filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
 /* === END: YÊU CẦU 2 (v1.2) === */
 
 /* === START: UPDATED STYLES (v1.4) - "Multi-lane" Layout & Text Wrap === */
-
-/* Bỏ layout 3 cột cũ */
-/*
-.sknv-thidua-detail-grid { ... }
-.sknv-thidua-column { ... }
-.sknv-thidua-column-content { ... }
-*/
 
 /* Container cho mỗi "làn đường" (Đạt, Gần Đạt, Cần Cố Gắng) */
 .sknv-thidua-lane {
@@ -785,5 +795,48 @@ filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); /* Add a nice shadow */
 .rt-infographic-summary-card .value.is-negative {
     color: #dc2626 !important; /* red-600 */
 } 
+/* === START: SKNV Rank Number Styles (Design Soft Blue) === */
 
-/* === END: (v1.6) Yêu cầu tùy chỉnh === */
+/* Top 3 Rank Style */
+.sknv-card__avatar-rank {
+    /* Style mặc định cho số của Top 3 (được override bởi inline class trong MedalIcon cho màu trắng) */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* Rank 4+ Circle Style */
+.sknv-card__avatar--standard {
+    /* Nền Gradient Xanh dương phấn */
+    background: linear-gradient(145deg, #eff6ff, #dbeafe) !important;
+    
+    /* Viền Xanh dương sáng */
+    border: 2px solid #93c5fd !important;
+    
+    /* Đổ bóng nổi khối 3D */
+    box-shadow: 
+        3px 3px 6px rgba(37, 99, 235, 0.15), 
+        -3px -3px 6px rgba(255, 255, 255, 0.8) !important;
+    
+    /* Kích thước */
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    
+    /* Căn giữa số */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    /* Căn vị trí so với Card */
+    margin-top: 2px;
+    margin-left: 2px;
+}
+
+/* Rank 4+ Text Style */
+.sknv-card__avatar--standard .sknv-card__avatar-rank {
+    color: #1e40af !important; /* Xanh dương đậm */
+    font-size: 1.25rem;
+    font-weight: 800;
+    text-shadow: none; /* Bỏ bóng của Top 3 */
+    font-family: 'Inter', sans-serif;
+}
+/* === END: SKNV Rank Number Styles === */

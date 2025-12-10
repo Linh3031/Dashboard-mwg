@@ -1,5 +1,5 @@
 // src/services/datasync.service.js
-// Version 2.0 - Full Code: Lightweight Metadata Sync Strategy
+// Version 2.1 - Full Code: Added Custom Metrics Sync
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
 import { firebaseStore, currentUser } from '../stores.js'; 
 import { get } from 'svelte/store';
@@ -15,8 +15,44 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- CÁC HÀM CONFIG CŨ (GIỮ NGUYÊN) ---
+    // --- [MỚI] QUẢN LÝ CHỈ SỐ TÙY CHỈNH (ĐƠN GIÁ / HIỆU QUẢ) THEO KHO ---
     
+    async saveCustomMetrics(kho, metrics) {
+        const db = getDB();
+        if (!db || !kho) { console.warn("Missing DB or Warehouse"); return; }
+        
+        const khoRef = doc(db, "warehouseData", kho);
+        const dataToSave = {
+            customMetrics: metrics,
+            customMetricsUpdatedAt: serverTimestamp(),
+            customMetricsUpdatedBy: getCurrentUserEmail()
+        };
+        
+        try { 
+            await setDoc(khoRef, dataToSave, { merge: true }); 
+            console.log(`[DataSync] Đã lưu ${metrics.length} chỉ số tùy chỉnh cho kho ${kho}`);
+        } catch (error) { 
+            console.error("[DataSync] Lỗi lưu custom metrics:", error); 
+            throw error; 
+        }
+    },
+
+    async loadCustomMetrics(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+        
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            return docSnap.exists() ? (docSnap.data().customMetrics || []) : [];
+        } catch(e) { 
+            console.error("[DataSync] Lỗi tải custom metrics:", e);
+            return []; 
+        }
+    },
+
+    // --- CÁC HÀM CŨ (GIỮ NGUYÊN) ---
+
     async saveMetadataToFirestore(kho, dataType, metadata) {
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
@@ -69,12 +105,8 @@ export const datasyncService = {
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { console.error(error); throw error; }
     },
 
-    // --- CÁC HÀM MỚI CHO CHIẾN LƯỢC ĐỒNG BỘ FILE GỐC ---
+    // --- CHIẾN LƯỢC ĐỒNG BỘ FILE GỐC ---
 
-    /**
-     * Chỉ lưu Metadata (Link tải, tên file,...) vào Firestore. 
-     * Dữ liệu thực tế nằm trên Storage.
-     */
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db) { console.warn("Firestore chưa sẵn sàng"); return; }
@@ -82,7 +114,6 @@ export const datasyncService = {
 
         const khoRef = doc(db, "warehouseData", kho);
         
-        // Metadata bao gồm: downloadURL, fileName, fileType, rowCount, timestamp...
         const dataToSave = {
             [key]: {
                 ...metadata,
@@ -100,9 +131,6 @@ export const datasyncService = {
         }
     },
 
-    /**
-     * Tải toàn bộ dữ liệu (Metadata) của kho để lấy URL download.
-     */
     async loadWarehouseData(kho) {
         const db = getDB();
         if (!db || !kho) return null;

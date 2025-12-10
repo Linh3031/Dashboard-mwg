@@ -94,6 +94,7 @@ export const globalSpecialPrograms = writable([]);
 // [MỚI] Cấu hình động cho bảng Hiệu quả & QĐC
 export const efficiencyConfig = writable([]); 
 export const qdcConfigStore = writable([]);
+export const warehouseCustomMetrics = writable([]);
 
 /**
  * Cài đặt & Trạng thái UI

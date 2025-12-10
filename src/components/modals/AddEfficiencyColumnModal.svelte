@@ -1,232 +1,238 @@
 <script>
     import { createEventDispatcher } from 'svelte';
-    import { categoryStructure, macroCategoryConfig, macroProductGroupConfig } from '../../stores.js';
+    import { categoryStructure } from '../../stores.js';
     import { cleanCategoryName } from '../../utils.js';
 
     export let isOpen = false;
-    export let editItem = null;
-    export let mode = 'EFFICIENCY'; // 'EFFICIENCY' (Tỷ lệ) | 'UNIT_PRICE' (Đơn giá)
+    export let editItem = null; // Nếu null là thêm mới, có data là sửa
 
     const dispatch = createEventDispatcher();
 
     // Dữ liệu form
     let label = '';
-    let groupA = []; // Nhóm hàng được chọn
-    let groupB = []; // Mẫu số (Chỉ dùng cho Efficiency)
+    let groupA = []; // Danh sách tên nhóm/ngành hàng tử số
+    let groupB = []; // Danh sách tên nhóm/ngành hàng mẫu số
     let target = 80;
-    let priceType = 'REAL'; // 'REAL' (Thực) | 'CONVERTED' (Quy đổi)
-    let efficiencyType = 'DTTL'; 
-    
+    let type = 'DTTL'; // 'SL', 'DTTL' (Doanh thu thực), 'DTQD'
     let searchA = '';
     let searchB = '';
-    let step = 1; 
 
-    // Nguồn dữ liệu chọn (Gộp tất cả: Macro + Nhóm hàng + Ngành hàng)
-    $: allItems = [
-        ...($macroCategoryConfig || []).map(m => m.name),
-        ...($macroProductGroupConfig || []).map(m => m.name),
-        ...[...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nganhHang)).filter(Boolean))],
-        ...[...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))]
-    ].sort();
+    // Lấy danh sách duy nhất từ categoryStructure
+    $: uniqueCategories = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nganhHang)).filter(Boolean))].sort();
+    $: uniqueGroups = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
+    
+    let modeA = 'group'; // 'group' | 'category'
+    let modeB = 'category'; // 'group' | 'category'
 
-    $: filteredListA = allItems.filter(i => i.toLowerCase().includes(searchA.toLowerCase()));
-    $: filteredListB = allItems.filter(i => i.toLowerCase().includes(searchB.toLowerCase()));
+    $: listSourceA = modeA === 'group' ? uniqueGroups : uniqueCategories;
+    $: listSourceB = modeB === 'group' ? uniqueGroups : uniqueCategories;
 
-    // Reset khi mở modal
+    $: filteredListA = listSourceA.filter(i => i.toLowerCase().includes(searchA.toLowerCase()));
+    $: filteredListB = listSourceB.filter(i => i.toLowerCase().includes(searchB.toLowerCase()));
+
+    // Khởi tạo khi edit
     $: if (isOpen) {
-        if (!editItem) {
-            // Reset form add new
-            if (!label) {
-                target = mode === 'UNIT_PRICE' ? 0 : 80;
-                step = 1;
-            }
-        } else {
-            // Load data edit
+        if (editItem) {
             label = editItem.label;
             groupA = [...(editItem.groupA || [])];
             groupB = [...(editItem.groupB || [])];
             target = editItem.target;
-            mode = editItem.mode || mode;
+            type = editItem.type || 'DTTL';
+            modeA = editItem.modeA || 'group';
+            modeB = editItem.modeB || 'category';
+        } else {
+            // Reset logic nếu cần thiết
         }
     }
 
-    function toggleItem(list, item) {
+    function toggleSelection(list, item) {
         if (list.includes(item)) return list.filter(i => i !== item);
         return [...list, item];
     }
 
-    function handleNext() {
-        if (step === 1) {
-            if (!label.trim()) return alert("Vui lòng nhập tên chỉ số.");
-            step = 2;
-        } else if (step === 2) {
-            if (groupA.length === 0) return alert("Vui lòng chọn ít nhất 1 nhóm hàng.");
-            
-            // LOGIC QUAN TRỌNG: Nếu là Đơn giá -> Bỏ qua bước 3, Lưu luôn
-            if (mode === 'UNIT_PRICE') {
-                handleSubmit();
-            } else {
-                step = 3;
-                searchB = ''; // Reset search B khi chuyển qua bước 3
-            }
-        } else if (step === 3) {
-            if (groupB.length === 0) return alert("Vui lòng chọn nhóm Mẫu số.");
-            handleSubmit();
-        }
-    }
-
-    function handleBack() {
-        if (step > 1) step--;
-    }
-
-    function handleSubmit() {
-        const payload = {
-            id: editItem ? editItem.id : `custom_${Date.now()}`,
-            label,
-            groupA,
-            mode: mode,
-            target
-        };
-
-        if (mode === 'UNIT_PRICE') {
-            // Cấu hình Đơn giá: Tử = Doanh thu (user chọn), Mẫu = Số lượng (Tự động)
-            payload.typeA = priceType === 'REAL' ? 'DTTL' : 'DTQD';
-            payload.typeB = 'SL'; 
-            payload.groupB = groupA; // Mẫu số chính là nhóm đó
+    function toggleAll(isA, sourceList) {
+        if (isA) {
+            groupA = groupA.length === sourceList.length ? [] : [...sourceList];
         } else {
-            // Cấu hình Hiệu quả
-            payload.groupB = groupB;
-            payload.typeA = efficiencyType;
-            payload.typeB = efficiencyType === 'SL' ? 'SL' : 'DTTL';
+            groupB = groupB.length === sourceList.length ? [] : [...sourceList];
+        }
+    }
+
+    function handleSave() {
+        if (!label) {
+            alert("Vui lòng nhập Tên cột.");
+            return;
+        }
+        if (groupA.length === 0) {
+            alert("Vui lòng chọn ít nhất 1 mục cho Tử số (Nhóm A).");
+            return;
+        }
+        if (groupB.length === 0) {
+            alert("Vui lòng chọn ít nhất 1 mục cho Mẫu số (Nhóm B).");
+            return;
         }
 
-        dispatch('save', payload);
+        dispatch('save', {
+            id: editItem ? editItem.id : `eff_${Date.now()}`,
+            label, 
+            groupA, 
+            groupB, 
+            target, 
+            type, 
+            modeA, 
+            modeB
+        });
         close();
     }
 
     function close() {
         dispatch('close');
-        setTimeout(() => { step = 1; label = ''; groupA = []; groupB = []; searchA = ''; searchB = ''; }, 300);
+        setTimeout(() => {
+            label = ''; groupA = []; groupB = []; searchA = ''; searchB = ''; 
+            target = 80; type = 'DTTL';
+        }, 300);
     }
 </script>
 
 {#if isOpen}
 <div class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm" on:click={close} role="button" tabindex="0">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden" on:click|stopPropagation>
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" on:click|stopPropagation>
         
         <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
                 <h3 class="text-xl font-bold text-gray-800">
-                    {mode === 'UNIT_PRICE' ? 'Thêm Đơn giá' : 'Thêm Chỉ số Hiệu quả'}
+                    {editItem ? 'Chỉnh sửa' : 'Thêm'} Cột Tỷ lệ Nhóm hàng
                 </h3>
-                <p class="text-xs text-gray-500 mt-1">
-                    {mode === 'UNIT_PRICE' 
-                        ? 'Bước 1: Đặt tên & Loại DT -> Bước 2: Chọn nhóm hàng' 
-                        : `Bước ${step}/3: ${step===1?'Thông tin':(step===2?'Chọn Tử số':'Chọn Mẫu số')}`
-                    }
-                </p>
+                <p class="text-sm text-gray-500 mt-1">Công thức tính: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
             </div>
             <button on:click={close} class="text-gray-400 hover:text-red-500 transition-colors text-3xl leading-none">&times;</button>
         </div>
 
         <div class="p-6 overflow-y-auto flex-1 custom-scrollbar bg-white">
-            {#if step === 1}
-                <div class="space-y-5">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="space-y-4">
                     <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">Tên hiển thị</label>
-                        <input type="text" bind:value={label} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder={mode === 'UNIT_PRICE' ? "VD: ĐG Tivi Sony..." : "VD: % Tivi..."} autoFocus>
-                    </div>
-
-                    {#if mode === 'UNIT_PRICE'}
-                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                            <label class="block text-sm font-bold text-blue-800 mb-2">Tính theo doanh thu nào?</label>
-                            <div class="flex gap-6">
-                                <label class="inline-flex items-center cursor-pointer">
-                                    <input type="radio" bind:group={priceType} value="REAL" class="form-radio text-blue-600 h-4 w-4">
-                                    <span class="ml-2 text-sm text-gray-700 font-medium">Doanh thu Thực</span>
-                                </label>
-                                <label class="inline-flex items-center cursor-pointer">
-                                    <input type="radio" bind:group={priceType} value="CONVERTED" class="form-radio text-purple-600 h-4 w-4">
-                                    <span class="ml-2 text-sm text-gray-700 font-medium">Doanh thu Quy đổi</span>
-                                </label>
-                            </div>
-                            <p class="text-xs text-blue-600 mt-3 italic">
-                                * Hệ thống sẽ tự động lấy Tổng Doanh thu chia cho Tổng Số lượng của nhóm hàng bạn chọn ở bước sau.
-                            </p>
-                        </div>
-                    {:else}
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu (%)</label>
-                                <input type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-bold text-gray-700 mb-1">Loại dữ liệu tính</label>
-                                <select bind:value={efficiencyType} class="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white">
-                                    <option value="DTTL">Doanh thu Thực</option>
-                                    <option value="DTQD">Doanh thu QĐ</option>
-                                    <option value="SL">Số lượng</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800">
-                            Công thức: <strong>(Tổng Nhóm A / Tổng Nhóm B) * 100%</strong>
-                        </div>
-                    {/if}
-                </div>
-
-            {:else}
-                <div class="flex flex-col h-full">
-                    <div class="mb-3">
-                        <label class="block text-sm font-bold text-gray-700 mb-1">
-                            {step === 2 ? (mode === 'UNIT_PRICE' ? 'Chọn Nhóm Hàng' : 'Chọn Nhóm A (Tử số)') : 'Chọn Nhóm B (Mẫu số)'}
-                        </label>
-                        
-                        {#if step === 2}
-                            <input 
-                                type="text" 
-                                bind:value={searchA} 
-                                class="w-full p-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" 
-                                placeholder="Tìm kiếm..."
-                            >
-                        {:else}
-                            <input 
-                                type="text" 
-                                bind:value={searchB} 
-                                class="w-full p-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" 
-                                placeholder="Tìm kiếm..."
-                            >
-                        {/if}
-                    </div>
-
-                    <div class="flex-grow border rounded-lg overflow-y-auto p-2 bg-slate-50 custom-scrollbar max-h-60">
-                        {#each (step === 2 ? filteredListA : filteredListB) as item}
-                            {@const list = step === 2 ? groupA : groupB}
-                            <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-blue-200 mb-1">
-                                <input type="checkbox" checked={list.includes(item)} on:change={() => step === 2 ? groupA = toggleItem(groupA, item) : groupB = toggleItem(groupB, item)} class="mr-3 w-4 h-4 accent-blue-600 rounded border-gray-300">
-                                <span class="text-sm text-gray-700 font-medium">{item}</span>
-                            </label>
-                        {/each}
+                        <label for="col-label" class="block text-sm font-bold text-gray-700 mb-1">Tên hiển thị (Label)</label>
+                        <input id="col-label" type="text" bind:value={label} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="VD: % Gia dụng, % Phụ kiện...">
                     </div>
                     
-                    <div class="mt-2 text-right text-xs text-gray-500">
-                        Đã chọn: <span class="font-bold text-blue-600">{(step === 2 ? groupA : groupB).length}</span> mục
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
+                            <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Loại dữ liệu tính</label>
+                            <div class="flex flex-col gap-2 mt-1">
+                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="DTTL" class="mr-2 accent-blue-600"> Doanh thu Thực</label>
+                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="DTQD" class="mr-2 accent-blue-600"> Doanh thu QĐ</label>
+                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="SL" class="mr-2 accent-blue-600"> Số lượng</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
+                        <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
                     </div>
                 </div>
-            {/if}
+
+                <div class="hidden lg:flex items-center justify-center bg-blue-50 rounded-lg border border-blue-100 p-6 text-center">
+                    <div>
+                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </div>
+                        <h4 class="font-bold text-blue-800 mb-1">Hướng dẫn chọn nhóm</h4>
+                        <p class="text-sm text-blue-700">
+                            <strong>Nhóm A (Tử số):</strong> Các nhóm hàng con cần tính tỷ lệ (VD: Nồi cơm, Bếp ga...).<br>
+                            <strong>Nhóm B (Mẫu số):</strong> Ngành hàng mẹ để so sánh (VD: Gia dụng, CE...).
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-6 border-gray-200">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[450px]">
+                <div class="flex flex-col border rounded-xl overflow-hidden border-gray-300 shadow-sm">
+                    <div class="p-3 bg-blue-50 border-b border-blue-100">
+                        <h4 class="font-bold text-blue-800 text-sm uppercase">Tên Nhóm A (Tử số)</h4>
+                        <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
+                            <label class="flex items-center cursor-pointer hover:text-blue-700">
+                                <input type="radio" bind:group={modeA} value="group" class="mr-1 accent-blue-600"> Nhóm hàng
+                            </label>
+                            <label class="flex items-center cursor-pointer hover:text-blue-700">
+                                <input type="radio" bind:group={modeA} value="category" class="mr-1 accent-blue-600"> Ngành hàng
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="p-2 border-b border-gray-200 bg-white">
+                        <input type="text" bind:value={searchA} class="w-full p-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" placeholder="Tìm kiếm...">
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
+                        <div class="mb-2 px-2 flex justify-between items-center">
+                            <span class="text-xs font-bold text-gray-500">{groupA.length} đã chọn</span>
+                            <button class="text-xs text-blue-600 hover:underline font-medium" on:click={() => toggleAll(true, filteredListA)}>
+                                {groupA.length === filteredListA.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                            </button>
+                        </div>
+                        <div class="space-y-1">
+                            {#each filteredListA as item}
+                                <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-blue-200 group">
+                                    <input type="checkbox" checked={groupA.includes(item)} on:change={() => groupA = toggleSelection(groupA, item)} class="mr-3 w-4 h-4 accent-blue-600 rounded border-gray-300">
+                                    <span class="text-sm text-gray-700 group-hover:text-blue-700">{item}</span>
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col border rounded-xl overflow-hidden border-gray-300 shadow-sm">
+                    <div class="p-3 bg-green-50 border-b border-green-100">
+                        <h4 class="font-bold text-green-800 text-sm uppercase">Tên Nhóm B (Mẫu số)</h4>
+                        <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
+                            <label class="flex items-center cursor-pointer hover:text-green-700">
+                                <input type="radio" bind:group={modeB} value="group" class="mr-1 accent-green-600"> Nhóm hàng
+                            </label>
+                            <label class="flex items-center cursor-pointer hover:text-green-700">
+                                <input type="radio" bind:group={modeB} value="category" class="mr-1 accent-green-600"> Ngành hàng
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="p-2 border-b border-gray-200 bg-white">
+                        <input type="text" bind:value={searchB} class="w-full p-2 border border-gray-300 rounded text-sm focus:border-green-500 outline-none" placeholder="Tìm kiếm...">
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
+                        <div class="mb-2 px-2 flex justify-between items-center">
+                            <span class="text-xs font-bold text-gray-500">{groupB.length} đã chọn</span>
+                            <button class="text-xs text-green-600 hover:underline font-medium" on:click={() => toggleAll(false, filteredListB)}>
+                                {groupB.length === filteredListB.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                            </button>
+                        </div>
+                        <div class="space-y-1">
+                            {#each filteredListB as item}
+                                <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-green-200 group">
+                                    <input type="checkbox" checked={groupB.includes(item)} on:change={() => groupB = toggleSelection(groupB, item)} class="mr-3 w-4 h-4 accent-green-600 rounded border-gray-300">
+                                    <span class="text-sm text-gray-700 group-hover:text-green-700">{item}</span>
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-            {#if step > 1}
-                <button on:click={handleBack} class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm transition-colors">Quay lại</button>
-            {/if}
-            
-            <button on:click={handleNext} class="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold text-sm shadow-md transition-colors flex items-center gap-2">
-                {#if (mode === 'UNIT_PRICE' && step === 2) || step === 3}
-                    <i data-feather="check" class="w-4 h-4"></i> Lưu
-                {:else}
-                    Tiếp tục <i data-feather="arrow-right" class="w-4 h-4"></i>
-                {/if}
+            <button on:click={close} class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-medium transition-colors shadow-sm">Hủy</button>
+            <button on:click={handleSave} class="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-colors flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+                Lưu
             </button>
         </div>
     </div>
@@ -237,4 +243,5 @@
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 </style>

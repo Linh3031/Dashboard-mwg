@@ -7,17 +7,16 @@
   export let icon = '';
   export let colorClass = 'sknv-header-blue';
   export let data = []; // Array of metrics { id, label, value, average, ... }
-  export let allowAdd = false; // Cho phép thêm mới (chỉ cho Đơn giá/Hiệu quả)
+  export let allowAdd = false; 
 
   const dispatch = createEventDispatcher();
 
   let sortKey = 'label';
   let sortDirection = 'asc';
   
-  // Trạng thái hiển thị cục bộ (Map id -> boolean)
+  // Trạng thái hiển thị cục bộ
   let visibilityState = {};
 
-  // Khởi tạo visibility mặc định là true cho tất cả item mới
   $: {
       if(data) {
           data.forEach(item => {
@@ -25,7 +24,6 @@
                   visibilityState[item.id] = true;
               }
           });
-          // Tính toán lại ngay khi data thay đổi
           calculateAndEmitCount();
       }
   }
@@ -41,22 +39,15 @@
 
   function handleFilterChange(event) {
       const id = event.detail;
-      // Toggle visibility
       visibilityState[id] = !visibilityState[id];
-      // Force update UI & recalculate count
       visibilityState = { ...visibilityState }; 
       calculateAndEmitCount();
   }
 
   function calculateAndEmitCount() {
-      // Lọc các item đang hiển thị
       const visibleItems = data.filter(item => visibilityState[item.id] !== false);
-      
-      // Đếm số lượng đạt chỉ tiêu (Trên TB)
       const aboveCount = visibleItems.filter(item => isAboveAverage(item.rawValue, item.rawAverage)).length;
       const totalCount = visibleItems.length;
-
-      // Gửi sự kiện lên cha (DetailView) để cập nhật Header
       dispatch('updateCount', { title, above: aboveCount, total: totalCount });
   }
 
@@ -65,7 +56,6 @@
       return val >= avg;
   }
 
-  // Lọc và Sắp xếp dữ liệu hiển thị
   $: sortedData = [...data]
       .filter(item => visibilityState[item.id] !== false)
       .sort((a, b) => {
@@ -132,11 +122,27 @@
                     <tr><td colspan="4" class="p-4 text-center text-gray-400 italic text-xs">Đã ẩn tất cả chỉ số.</td></tr>
                 {:else}
                     {#each sortedData as row (row.id)}
-                        <tr class="hover:bg-slate-50 transition-colors">
+                        <tr class="hover:bg-slate-50 transition-colors group/row">
                             <td class="px-3 py-2 font-medium text-gray-700 flex items-center gap-1">
                                 {row.label}
                                 {#if row.isCustom}
-                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Mới</span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold whitespace-nowrap">Mới</span>
+                                    <div class="flex gap-1 ml-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                        <button 
+                                            class="p-1 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" 
+                                            title="Sửa"
+                                            on:click|stopPropagation={() => dispatch('edit', row)}
+                                        >
+                                            <i data-feather="edit-2" class="w-3 h-3"></i>
+                                        </button>
+                                        <button 
+                                            class="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" 
+                                            title="Xóa"
+                                            on:click|stopPropagation={() => dispatch('delete', row.id)}
+                                        >
+                                            <i data-feather="trash-2" class="w-3 h-3"></i>
+                                        </button>
+                                    </div>
                                 {/if}
                             </td>
                             <td class="px-3 py-2 text-right font-bold text-gray-900 {row.valueClass || ''}">{row.value}</td>

@@ -1,20 +1,23 @@
 <script>
-  import { afterUpdate, createEventDispatcher } from 'svelte';
-  import { masterReportData } from '../../../stores.js';
+  import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
+  import { masterReportData, selectedWarehouse, warehouseCustomMetrics } from '../../../stores.js';
   import { sknvService } from '../../../services/sknv.service.js';
+  import { datasyncService } from '../../../services/datasync.service.js';
   
   import DetailHeader from './DetailHeader.svelte';
   import MetricGrid from './MetricGrid.svelte';
   import DetailTableQDC from './DetailTableQDC.svelte';
   import DetailTableCategory from './DetailTableCategory.svelte';
+  
   import AddEfficiencyColumnModal from '../../modals/AddEfficiencyColumnModal.svelte';
+  import AddMetricModal from '../../modals/AddMetricModal.svelte';
 
   export let employeeId;
 
   const dispatch = createEventDispatcher();
 
   let employeeData = null;
-  let rawEmployeeData = null; // Biến này quan trọng để truyền xuống bảng con
+  let rawEmployeeData = null;
   let detailStats = {};
   let qdcData = [];
   let nganhHangData = [];
@@ -26,26 +29,41 @@
       'Đơn giá': { above: 0, total: 0 }
   };
   
-  let customMetrics = []; 
-  let isAddModalOpen = false;
-  let addModalMode = 'EFFICIENCY'; 
+  // State quản lý hiển thị Modal
+  let isEffModalOpen = false;
+  let isMetricModalOpen = false;
+  let itemToEdit = null;
 
+  // [KHÔI PHỤC] Hai dòng quan trọng bị thiếu gây lỗi ReferenceError
   $: totalAbove = Object.values(kpiCounts).reduce((sum, item) => sum + item.above, 0);
   $: totalCriteria = Object.values(kpiCounts).reduce((sum, item) => sum + item.total, 0);
 
-  $: if (employeeId && $masterReportData.sknv.length > 0) {
-      // Tìm nhân viên trong Master Data
-      const rawEmployee = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeId));
+  // Logic tải dữ liệu từ Cloud khi Warehouse thay đổi
+  $: if ($selectedWarehouse) {
+      loadMetricsFromCloud($selectedWarehouse);
+  }
+
+  async function loadMetricsFromCloud(kho) {
+      const data = await datasyncService.loadCustomMetrics(kho);
+      warehouseCustomMetrics.set(data);
+  }
+
+  // Reactive: Tính toán lại khi Store metrics thay đổi HOẶC employeeId thay đổi
+  $: calculateEmployeeData(employeeId, $masterReportData, $warehouseCustomMetrics);
+
+  function calculateEmployeeData(id, masterData, metrics) {
+      if (!id || masterData.sknv.length === 0) return;
+
+      const rawEmployee = masterData.sknv.find(e => String(e.maNV) === String(id));
       
       if (rawEmployee) {
-          // Lưu rawEmployee để truyền xuống 2 bảng dưới cùng
-          rawEmployeeData = rawEmployee; 
-
-          const deptAvg = sknvService.calculateDepartmentAverages(rawEmployee.boPhan, $masterReportData.sknv);
+          rawEmployeeData = rawEmployee;
+          const deptAvg = sknvService.calculateDepartmentAverages(rawEmployee.boPhan, masterData.sknv);
           
-          if(customMetrics.length > 0) {
-              const departmentEmployees = $masterReportData.sknv.filter(e => e.boPhan === rawEmployee.boPhan);
-              customMetrics.forEach(m => {
+          // Tính toán các chỉ số custom (Lấy từ Store)
+          if(metrics && metrics.length > 0) {
+              const departmentEmployees = masterData.sknv.filter(e => e.boPhan === rawEmployee.boPhan);
+              metrics.forEach(m => {
                   let totalVal = 0;
                   let count = 0;
                   departmentEmployees.forEach(emp => {
@@ -56,10 +74,10 @@
               });
           }
 
+          // Gán dữ liệu
           employeeData = rawEmployee;
-          detailStats = sknvService.getDetailStats(rawEmployee, deptAvg, customMetrics);
+          detailStats = sknvService.getDetailStats(rawEmployee, deptAvg, metrics);
 
-          // Data tính toán sẵn (để hiển thị mặc định)
           if (rawEmployee.qdc) {
               qdcData = Object.entries(rawEmployee.qdc)
                   .map(([id, val]) => ({ id, ...val }))
@@ -86,16 +104,56 @@
       }
   }
 
-  function openAddModal(mode) {
-      addModalMode = mode;
-      isAddModalOpen = true;
+  function handleEditMetric(event) {
+      const metricItem = event.detail;
+      if (metricItem && metricItem.rawConfig) {
+          itemToEdit = metricItem.rawConfig;
+          if (metricItem.rawConfig.type === 'UNIT_PRICE') {
+              isMetricModalOpen = true;
+          } else {
+              isEffModalOpen = true;
+          }
+      }
   }
 
-  function handleSaveMetric(event) {
-      const newMetric = event.detail;
-      customMetrics = [...customMetrics, newMetric];
-      // Gán lại để trigger reactive block chạy lại
-      employeeData = { ...employeeData }; 
+  async function handleDeleteMetric(event) {
+      const idToDelete = event.detail;
+      if (confirm("Bạn có chắc chắn muốn xóa chỉ số này không?")) {
+          // Xóa khỏi Store và Cloud
+          const newMetrics = $warehouseCustomMetrics.filter(m => m.id !== idToDelete);
+          warehouseCustomMetrics.set(newMetrics);
+          
+          if ($selectedWarehouse) {
+              await datasyncService.saveCustomMetrics($selectedWarehouse, newMetrics);
+          }
+      }
+  }
+
+  async function handleSaveMetric(event) {
+      const savedMetric = event.detail;
+      let currentMetrics = [...$warehouseCustomMetrics]; 
+      
+      const existingIndex = currentMetrics.findIndex(m => m.id === savedMetric.id);
+      
+      if (existingIndex >= 0) {
+          currentMetrics[existingIndex] = savedMetric;
+      } else {
+          currentMetrics = [...currentMetrics, savedMetric];
+      }
+      
+      // Cập nhật Store và Lưu Cloud
+      warehouseCustomMetrics.set(currentMetrics);
+      if ($selectedWarehouse) {
+          await datasyncService.saveCustomMetrics($selectedWarehouse, currentMetrics);
+      }
+      
+      itemToEdit = null;
+  }
+
+  function handleCloseModal() {
+      isEffModalOpen = false;
+      isMetricModalOpen = false;
+      itemToEdit = null;
   }
 
   function goBack() { dispatch('back'); }
@@ -125,7 +183,9 @@
                     title="Hiệu quả khai thác" icon="award" colorClass="sknv-header-orange" 
                     data={detailStats.hieuQua || []} 
                     allowAdd={true}
-                    on:add={() => openAddModal('EFFICIENCY')}
+                    on:add={() => { itemToEdit = null; isEffModalOpen = true; }} 
+                    on:edit={handleEditMetric}
+                    on:delete={handleDeleteMetric}
                     on:updateCount={handleCountUpdate} 
                 />
             </div>
@@ -140,7 +200,9 @@
                     title="Đơn giá" icon="tag" colorClass="sknv-header-yellow" 
                     data={detailStats.donGia || []}
                     allowAdd={true}
-                    on:add={() => openAddModal('UNIT_PRICE')} 
+                    on:add={() => { itemToEdit = null; isMetricModalOpen = true; }} 
+                    on:edit={handleEditMetric}
+                    on:delete={handleDeleteMetric}
                     on:updateCount={handleCountUpdate} 
                 />
             </div>
@@ -159,9 +221,16 @@
 </div>
 
 <AddEfficiencyColumnModal 
-    isOpen={isAddModalOpen} 
-    mode={addModalMode}
-    on:close={() => isAddModalOpen = false}
+    isOpen={isEffModalOpen} 
+    editItem={itemToEdit} 
+    on:close={handleCloseModal}
+    on:save={handleSaveMetric}
+/>
+
+<AddMetricModal
+    isOpen={isMetricModalOpen}
+    editItem={itemToEdit}
+    on:close={handleCloseModal}
     on:save={handleSaveMetric}
 />
 
