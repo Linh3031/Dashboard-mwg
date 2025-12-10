@@ -6,6 +6,7 @@
     let password = '';
     let showError = false;
     let passwordInput;
+    let isBackdropMouseDown = false; // [FIX] Biến cờ kiểm tra
 
     // Reactive: Kiểm tra modal
     $: isOpen = $modalState.activeModal === 'admin-modal';
@@ -31,11 +32,8 @@
     }
 
     function submit() {
-        // Gọi service để kiểm tra mật khẩu
         const isValid = authService.checkAdminPassword(password);
-
         if (isValid) {
-            // Chuyển hướng sang tab Khai báo
             activeTab.set('declaration-section');
             close();
         } else {
@@ -46,31 +44,44 @@
     }
 
     function handleKeydown(event) {
-        if (event.key === 'Enter') {
-            submit();
-        } else if (event.key === 'Escape') {
+        if (event.key === 'Enter') submit();
+        else if (event.key === 'Escape') close();
+    }
+
+    // [FIX] Logic xử lý click backdrop an toàn
+    function handleBackdropMouseDown(e) {
+        if (e.target === e.currentTarget) {
+            isBackdropMouseDown = true;
+        }
+    }
+
+    function handleBackdropClick(e) {
+        if (e.target === e.currentTarget && isBackdropMouseDown) {
             close();
         }
+        isBackdropMouseDown = false; // Reset sau mỗi lần click
     }
 </script>
 
 {#if isOpen}
     <div 
         class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-[1050] transition-opacity backdrop-blur-sm"
-        on:click={close}
+        on:mousedown={handleBackdropMouseDown}
+        on:click={handleBackdropClick}
         role="button"
         tabindex="0"
     >
         <div 
             class="bg-white p-6 rounded-xl shadow-xl w-full max-w-sm mx-4 transform transition-all scale-100"
             on:click|stopPropagation
+            on:mousedown|stopPropagation={() => isBackdropMouseDown = false} 
         >
             <div class="mb-4">
                 <h3 class="text-lg font-bold text-gray-900">Truy cập khu vực Admin</h3>
             </div>
             
             <p class="text-sm text-gray-600 mb-4">
-                Vui lòng nhập mật khẩu để xem và chỉnh sửa phần Khai báo.
+                 Vui lòng nhập mật khẩu để xem và chỉnh sửa phần Khai báo.
             </p>
 
             <div class="mb-6">

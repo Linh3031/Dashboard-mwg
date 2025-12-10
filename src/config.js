@@ -1,9 +1,9 @@
 // src/config.js
-// Version 2.2 - Ported config from legacy project
+// Version 2.3 - Update Admin Password
 // Chứa tất cả các cấu hình tĩnh của ứng dụng.
 
 export const config = {
-    ADMIN_PASSWORD: "Linh3031",
+    ADMIN_PASSWORD: "Linh3010", // [UPDATED] Mật khẩu mới
     COLUMN_MAPPINGS: {
         danhsachnv: {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },

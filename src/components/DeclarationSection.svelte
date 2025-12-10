@@ -9,9 +9,10 @@
   import AdminHelp from './admin/AdminHelp.svelte';
   import AdminUserStats from './admin/AdminUserStats.svelte';
   import AdminCompetition from './admin/AdminCompetition.svelte';
-  
-  // [MỚI] Import Component cấu hình trang chủ
   import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
+  
+  // [MỚI] Component quản lý bảng doanh thu
+  import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
 
   export let activeTab;
 
@@ -36,7 +37,7 @@
                 <i data-feather="alert-triangle" class="flex-shrink-0 w-5 h-5 text-yellow-600"></i>
                 <span>
                     <strong class="block mb-1 font-bold">Khu vực dành cho Quản trị viên:</strong> 
-                    Mọi thay đổi tại đây sẽ được đồng bộ lên Cloud (Firestore) và ảnh hưởng trực tiếp đến logic tính toán toàn hệ thống.
+                    Mọi thay đổi tại đây sẽ được đồng bộ lên Cloud (Firestore) và ảnh hưởng trực tiếp đến toàn hệ thống.
                 </span>
            </p> 
         </div>
@@ -46,6 +47,8 @@
         </div>
 
         <div class="space-y-6 mb-8">
+            <AdminRevenueTables />
+            
             <AdminCompetition />
         </div>
 

@@ -1,5 +1,4 @@
 // src/services/dataService.js
-// Version 5.7 - Full Code with Auto-load Mappings & Brand Extraction
 /* global XLSX */
 import { get } from 'svelte/store';
 import { 
@@ -50,10 +49,6 @@ const PASTE_MAPPING = {
         isThiDuaNV: true,
         name: 'Thi đua NV'
     }
-};
-
-const notify = (msg, type = 'info') => {
-    console.log(`[${type.toUpperCase()}] ${msg}`);
 };
 
 function updateSyncState(key, status, message, metadata = null) {
@@ -292,7 +287,7 @@ async function downloadFileFromCloud(key) {
                 const reader = new FileReader();
                 reader.onload = (e) => {
                      const data = new Uint8Array(e.target.result);
-                    resolve(XLSX.read(data, { type: 'array', cellDates: true, cellText: true }));
+                     resolve(XLSX.read(data, { type: 'array', cellDates: true, cellText: true }));
                 };
                 reader.onerror = reject;
                 reader.readAsArrayBuffer(blob);
@@ -311,7 +306,7 @@ async function downloadFileFromCloud(key) {
             const mapping = PASTE_MAPPING[key];
             let processedCount = 0;
             if (mapping.isThiDuaNV) {
-                localStorage.setItem('raw_paste_thiduanv', textContent);
+                 localStorage.setItem('raw_paste_thiduanv', textContent);
                 const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                 if (parsedData.success) {
                     dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
@@ -353,7 +348,6 @@ async function downloadFileFromCloud(key) {
 async function loadAllFromCache() {
     try { await storage.openDB(); } catch (err) { console.error("Lỗi DB:", err); }
 
-    // [MỚI] Tự động tải Mapping Tên & Cấu hình Nhóm Lớn ngay khi khởi động
     adminService.loadMappingsGlobal();
 
     console.log("[DataService] Bắt đầu tải DSNV từ cache...");
@@ -416,25 +410,20 @@ async function handleCategoryFile(event) {
         const categoryResult = dataProcessing.normalizeCategoryStructureData(categoryRawData);
 
         if(categoryResult.success) {
-            // Cập nhật vào Store
             categoryStructure.set(categoryResult.normalizedData);
-            
-            // [CẬP NHẬT] Trích xuất danh sách Hãng từ cột 3 (nhaSanXuat)
             const uniqueBrands = [...new Set(categoryResult.normalizedData.map(i => i.nhaSanXuat).filter(Boolean))].sort();
             brandList.set(uniqueBrands);
-
-            // Lưu lên Cloud
             await adminService.saveCategoryDataToFirestore({
                 categories: categoryResult.normalizedData,
                 brands: uniqueBrands
             });
-            notify("Đã cập nhật danh mục ngành hàng & hãng", "success");
+            // notify("Đã cập nhật danh mục ngành hàng & hãng", "success");
         } else {
             throw new Error(`Lỗi xử lý file khai báo: ${categoryResult.error}`);
         }
         event.target.value = ''; 
     } catch(e) {
-        notify(e.message, 'error');
+        // notify(e.message, 'error');
     }
 }
 
@@ -448,13 +437,13 @@ async function handleSpecialProductFileUpload(event) {
         if (result.success) {
             specialProductList.set(result.normalizedData);
             await adminService.saveSpecialProductList(result.normalizedData);
-            notify("Đã cập nhật SP Đặc quyền", "success");
+            // notify("Đã cập nhật SP Đặc quyền", "success");
         } else {
             throw new Error(`Lỗi xử lý file SPĐQ: ${result.error}`);
         }
         event.target.value = '';
     } catch(e) {
-        notify(e.message, 'error');
+        // notify(e.message, 'error');
     }
 }
 
@@ -468,14 +457,15 @@ async function handleTemplateDownload() {
         link.click();
         document.body.removeChild(link);
     } catch (e) {
-        notify('Lỗi tải file mẫu: ' + e.message, 'error');
+        // notify('Lỗi tải file mẫu: ' + e.message, 'error');
     }
 }
 
+// [FIX] Hàm này đã được thêm vào export
 async function handleRealtimeFileInput(event) {
     const file = event.target.files[0];
     if (!file) return;
-    notify('Đang xử lý file realtime...', 'success');
+    // notify('Đang xử lý file realtime...', 'success');
     realtimeYCXData.set([]);
     try {
         const workbook = await _handleFileRead(file);
@@ -483,15 +473,15 @@ async function handleRealtimeFileInput(event) {
         const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
         if (success) {
             realtimeYCXData.set(normalizedData);
-            notify(`Đã tải ${normalizedData.length} dòng realtime`, 'success');
+            // notify(`Đã tải ${normalizedData.length} dòng realtime`, 'success');
             analyticsService.trackAction();
         } else {
              console.error(`File lỗi! Thiếu cột: ${missingColumns.join(', ')}`);
-            notify(`Lỗi thiếu cột: ${missingColumns.join(', ')}`, 'error');
+            // notify(`Lỗi thiếu cột: ${missingColumns.join(', ')}`, 'error');
         }
     } catch (e) {
         console.error("Lỗi xử lý file Realtime:", e);
-        notify(e.message, 'error');
+        // notify(e.message, 'error');
     } finally {
         event.target.value = '';
     }
@@ -508,6 +498,6 @@ export const dataService = {
     handleCategoryFile,
     handleSpecialProductFileUpload,
     handleTemplateDownload,
-    handleRealtimeFileInput,
+    handleRealtimeFileInput, // [ĐÃ CÓ]
     _getSavedMetadata(warehouse, dataType) { return null; }
 };

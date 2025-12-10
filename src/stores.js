@@ -1,5 +1,4 @@
 // src/stores.js
-// Version 3.3 - Add efficiencyConfig & qdcConfigStore
 import { writable } from 'svelte/store';
 
 /**
@@ -10,7 +9,7 @@ export const activeTab = writable('data-section');
 /**
  * Trạng thái xác thực
  */
-export const isAdmin = writable(true); 
+export const isAdmin = writable(false); 
 export const currentUser = writable(null);
 
 // === DỮ LIỆU TƯƠNG TÁC & NỘI DUNG ĐỘNG ===
@@ -76,16 +75,16 @@ export const declarations = writable({
     hinhThucXuatGop: '',
     heSoQuyDoi: ''
 });
-export const categoryStructure = writable([]); // Chứa: { nganhHang, nhomHang, nhaSanXuat }
-export const brandList = writable([]); // Danh sách các hãng duy nhất (derived từ categoryStructure)
+export const categoryStructure = writable([]); 
+export const brandList = writable([]); 
 export const specialProductList = writable([]);
 
 // [Mapping Stores]
 export const macroCategoryConfig = writable([]); 
-export const macroProductGroupConfig = writable([]); // [MỚI] Cấu hình Nhóm Hàng Lớn
+export const macroProductGroupConfig = writable([]); 
 export const categoryNameMapping = writable({}); 
 export const groupNameMapping = writable({});
-export const brandNameMapping = writable({}); // [MỚI] Mapping tên Hãng
+export const brandNameMapping = writable({}); 
 
 export const localCompetitionConfigs = writable([]); 
 export const globalCompetitionConfigs = writable([]); 
@@ -95,6 +94,9 @@ export const globalSpecialPrograms = writable([]);
 export const efficiencyConfig = writable([]); 
 export const qdcConfigStore = writable([]);
 export const warehouseCustomMetrics = writable([]);
+
+// [CẬP NHẬT] Reset về mảng rỗng để không hiện bảng mẫu khi khởi tạo
+export const customRevenueTables = writable([]);
 
 /**
  * Cài đặt & Trạng thái UI
@@ -131,7 +133,7 @@ export const sortState = writable({});
 export const warehouseList = writable([]);
 export const selectedWarehouse = writable(null);
 
-// === STATE GIAO DIỆN (DRAWER & MODAL & NOTIFICATION) ===
+// === STATE GIAO DIỆN ===
 export const drawerState = writable({ activeDrawer: null });
 export const modalState = writable({ activeModal: null });
 

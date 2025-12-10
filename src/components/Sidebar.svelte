@@ -1,10 +1,16 @@
 <script>
   /* global feather */
   import { onMount } from 'svelte';
-  import { activeTab, drawerState } from '../stores.js';
+  // [FIX] Import store isAdmin và modalState để kiểm tra quyền
+  import { activeTab, drawerState, isAdmin, modalState } from '../stores.js';
 
   // Hàm chuyển tab (Cập nhật store global)
   function navigateTo(targetId) {
+    // [FIX] Nếu vào Khai báo mà chưa phải Admin -> Bật modal đăng nhập
+    if (targetId === 'declaration-section' && !$isAdmin) {
+        modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
+        return;
+    }
     activeTab.set(targetId);
   }
 
@@ -14,7 +20,6 @@
   }
 
   // Reactive: Helper để kiểm tra tab nào đang active (để tô màu)
-  // $activeTab là cú pháp auto-subscription của Svelte
   $: currentTab = $activeTab;
 
   onMount(() => {

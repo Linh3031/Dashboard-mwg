@@ -1,11 +1,9 @@
 <script>
   import { onMount, afterUpdate } from 'svelte';
   
-  import { activeTab, modalState } from './stores.js';
+  import { activeTab, modalState, efficiencyConfig, customRevenueTables, isAdmin } from './stores.js'; // Import isAdmin
   import { authService } from './services/auth.service.js';
-  // [MỚI] Import service Admin để dùng hàm save
   import { adminService } from './services/admin.service.js';
-  import { efficiencyConfig } from './stores.js';
 
   // --- COMPONENTS CHÍNH ---
   import Sidebar from './components/Sidebar.svelte';
@@ -19,55 +17,60 @@
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
 
-  // --- DRAWERS (THANH TRƯỢT) ---
+  // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
 
-  // --- MODALS (CỬA SỔ BẬT LÊN) ---
+  // --- MODALS ---
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
   import UserSpecialProgramModal from './components/modals/UserSpecialProgramModal.svelte';
-  
-  // Trình tạo nhận xét
   import ComposerModal from './components/modals/ComposerModal.svelte';
-  
-  // [MỚI] Modal Thêm Cột Hiệu Quả (Di chuyển ra đây để fix lỗi hiển thị)
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
+  import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
 
   onMount(async () => {
-    // 1. Kích hoạt đăng nhập ẩn danh Firebase (Hạ tầng)
-    try {
-        await authService.ensureAnonymousAuth();
-    } catch (e) {
-        console.error("Lỗi kết nối Firebase Auth:", e);
-    }
-
-    // 2. Kiểm tra định danh Email (Ứng dụng)
+    try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
     const isLoggedIn = authService.initAuth();
-    if (!isLoggedIn) {
-        modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
-    }
+    if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
   });
 
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
 
-  // [MỚI] Hàm xử lý lưu config từ Modal Efficiency (Global)
   function handleSaveEffConfig(event) {
       const newItem = event.detail;
       efficiencyConfig.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) {
-              items[idx] = newItem;
-              return [...items];
-          } else {
-              return [...items, newItem];
-          }
+          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
+          else { return [...items, newItem]; }
       });
-      // Lưu lên Cloud
       adminService.saveEfficiencyConfig($efficiencyConfig);
+  }
+
+  // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Local + Cloud)
+  async function handleSaveCustomTable(event) {
+      const newItem = event.detail;
+      let currentTables = [];
+      
+      customRevenueTables.update(items => {
+          const idx = items.findIndex(i => i.id === newItem.id);
+          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
+          else { return [...items, newItem]; }
+      });
+      
+      // Lấy giá trị mới nhất để lưu
+      customRevenueTables.subscribe(val => currentTables = val)();
+
+      // Lưu LocalStorage (cho User)
+      localStorage.setItem('customRevenueTables', JSON.stringify(currentTables));
+
+      // [QUAN TRỌNG] Nếu là bảng hệ thống (isSystem) và có quyền Admin -> Lưu lên Cloud
+      if (newItem.isSystem) {
+          await adminService.saveSystemRevenueTables(currentTables);
+      }
   }
 </script>
 
@@ -80,6 +83,13 @@
 <UserCompetitionModal />
 <UserSpecialProgramModal />
 <ComposerModal /> 
+
+<AddRevenueTableModal 
+    isOpen={$modalState.activeModal === 'add-revenue-table-modal'} 
+    editItem={$modalState.payload}
+    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:save={handleSaveCustomTable}
+/>
 
 <AddEfficiencyColumnModal 
     isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
