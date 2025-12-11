@@ -1,10 +1,11 @@
 <script>
   import { onMount, afterUpdate } from 'svelte';
-  import { pastedThiDuaReportData } from '../../../stores.js'; 
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
+  import { pastedThiDuaReportData, competitionNameMappings } from '../../../stores.js'; 
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js'; 
+  
+  // [YÊU CẦU] SortableTh đã có sẵn tính năng sort, ta tận dụng lại
   import SortableTh from '../../common/SortableTh.svelte'; 
 
   export let reportData = []; 
@@ -17,14 +18,48 @@
   let departmentOrder = [];
   let deptAverages = {}; 
 
+  // Palette màu cho header (YÊU CẦU: Mỗi tiêu đề 1 màu)
+  const headerColors = [
+      'bg-red-100 text-red-900 border-red-200',
+      'bg-orange-100 text-orange-900 border-orange-200',
+      'bg-amber-100 text-amber-900 border-amber-200',
+      'bg-green-100 text-green-900 border-green-200',
+      'bg-teal-100 text-teal-900 border-teal-200',
+      'bg-cyan-100 text-cyan-900 border-cyan-200',
+      'bg-blue-100 text-blue-900 border-blue-200',
+      'bg-indigo-100 text-indigo-900 border-indigo-200',
+      'bg-violet-100 text-violet-900 border-violet-200',
+      'bg-purple-100 text-purple-900 border-purple-200',
+      'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200',
+      'bg-pink-100 text-pink-900 border-pink-200',
+      'bg-rose-100 text-rose-900 border-rose-200'
+  ];
+
+  function getHeaderColor(index) {
+      return headerColors[index % headerColors.length];
+  }
+
   // Reactive: Xử lý dữ liệu khi input thay đổi
   $: {
       if (reportData && reportData.length > 0) {
+          // Load setting hiển thị cột
           columnSettings = settingsService.loadPastedCompetitionViewSettings();
+          
+          // Fallback nếu chưa có setting
           if (columnSettings.length === 0) {
              columnSettings = settingsService.loadPastedCompetitionViewSettings();
           }
 
+          // [YÊU CẦU] Cập nhật label từ competitionNameMappings
+          columnSettings = columnSettings.map(col => {
+              const shortName = $competitionNameMappings[col.tenGoc];
+              return {
+                  ...col,
+                  label: shortName || col.label || col.tenGoc // Ưu tiên tên rút gọn -> tên hiện tại -> tên gốc
+              };
+          });
+
+          // Gom nhóm theo bộ phận
           const groups = {};
           reportData.forEach(item => {
               const dept = item.boPhan || 'Chưa phân loại';
@@ -34,6 +69,7 @@
           groupedData = groups;
           departmentOrder = getSortedDepartmentList(reportData);
 
+          // Tính trung bình bộ phận (để tính điểm đạt)
           const avgs = {};
           departmentOrder.forEach(deptName => {
               const deptData = groups[deptName];
@@ -62,12 +98,14 @@
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
 
-  function handleSort(key) {
+  function handleSort(event) {
+      // SortableTh dispatch sự kiện 'sort' với detail là key
+      const key = event.detail; 
       if (sortKey === key) {
           sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
       } else {
           sortKey = key;
-          sortDirection = 'asc';
+          sortDirection = 'desc'; // Mặc định desc cho số liệu
       }
   }
 
@@ -143,13 +181,16 @@
     {:else}
         <div class="bg-white p-3 rounded-lg border border-gray-200 flex flex-wrap gap-2 items-center">
             <span class="text-xs font-bold text-gray-500 uppercase mr-2">Hiển thị cột:</span>
-            {#each columnSettings as col}
+            {#each columnSettings as col, index}
                 <button 
-                    class="px-3 py-1 rounded-full text-xs font-medium border transition-colors select-none
+                    class="px-3 py-1 rounded-full text-xs font-medium border transition-colors select-none flex items-center gap-1
                             {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}"
                     on:click={() => toggleColumn(col)}
                     title={col.loaiSoLieu}
                 >
+                    {#if col.visible}
+                        <span class="w-2 h-2 rounded-full {getHeaderColor(index).split(' ')[0].replace('bg-', 'bg-white/80 ')}"></span>
+                    {/if}
                     {col.label}
                 </button>
             {/each}
@@ -164,35 +205,34 @@
                     
                     <div class="overflow-x-auto sknv-pasted-competition-scroller relative" style="max-height: 600px;">
                         <table class="min-w-full text-sm text-left border-separate border-spacing-0">
-                            <thead class="bg-gray-100 text-xs uppercase font-bold text-gray-700 sticky top-0 z-20 shadow-sm">
+                            <thead class="text-xs uppercase font-bold sticky top-0 z-20 shadow-sm">
                                 <tr>
-                                    <th 
-                                        class="px-4 py-3 bg-gray-100 cursor-pointer hover:bg-gray-200 sticky left-0 z-30 border-b border-r border-gray-200 min-w-[180px]"
-                                        on:click={() => handleSort('hoTen')}
-                                    >
-                                        <div class="flex items-center gap-1">
-                                            Nhân viên {sortKey === 'hoTen' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-                                        </div>
-                                    </th>
+                                    <SortableTh 
+                                        key="hoTen" 
+                                        label="Nhân viên" 
+                                        className="bg-gray-100 border-b border-r border-gray-200 min-w-[180px] sticky left-0 z-30" 
+                                        {sortKey} {sortDirection} 
+                                        on:sort={handleSort} 
+                                    />
                                     
-                                    <th 
-                                        class="px-2 py-3 bg-gray-100 text-center cursor-pointer hover:bg-gray-200 sticky left-[180px] z-30 border-b border-r border-gray-200 w-[80px]"
-                                        on:click={() => handleSort('totalScore')}
-                                    >
-                                        Tổng đạt {sortKey === 'totalScore' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
-                                    </th>
+                                    <SortableTh 
+                                        key="totalScore" 
+                                        label="Tổng đạt" 
+                                        align="center"
+                                        className="bg-gray-100 border-b border-r border-gray-200 w-[80px] sticky left-[180px] z-30" 
+                                        {sortKey} {sortDirection} 
+                                        on:sort={handleSort} 
+                                    />
 
-                                    {#each visibleColumns as col}
-                                        <th 
-                                            class="px-2 py-3 text-right min-w-[100px] cursor-pointer hover:bg-gray-200 border-b border-gray-200"
-                                            title="{col.tenGoc} ({col.loaiSoLieu})"
-                                            on:click={() => handleSort(col.id)}
-                                        >
-                                            {col.label}
-                                            {#if sortKey === col.id}
-                                                <span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
-                                            {/if}
-                                        </th>
+                                    {#each visibleColumns as col, index}
+                                        <SortableTh 
+                                            key={col.id} 
+                                            label={col.label} 
+                                            align="right" 
+                                            className="min-w-[120px] border-b border-gray-200 whitespace-normal {getHeaderColor(index)}" 
+                                            {sortKey} {sortDirection} 
+                                            on:sort={handleSort} 
+                                        />
                                     {/each}
                                 </tr>
                             </thead>
@@ -202,7 +242,7 @@
                                     {@const avgScores = deptAverages[deptName]}
                                     {@const score = item.competitions.reduce((acc, c) => (avgScores[c.tenGoc] > 0 && c.giaTri >= avgScores[c.tenGoc]) ? acc + 1 : acc, 0)}
                                     
-                                    <tr class="hover:bg-blue-50 transition-colors">
+                                    <tr class="hover:bg-blue-50 transition-colors group">
                                         <td class="px-4 py-2 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap">
                                             {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                         </td>
@@ -216,8 +256,16 @@
                                             {@const avg = avgScores[col.tenGoc] || 0}
                                             {@const isBelow = avg > 0 && val < avg}
                                             
-                                            <td class="px-2 py-2 text-right border-l border-gray-50 {isBelow ? 'text-red-600 bg-red-50 font-bold' : 'text-gray-700'}">
-                                                {val === 0 ? '-' : formatters.formatNumber(val)}
+                                            {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
+                                            {@const valueColorClass = isRevenue ? 'text-blue-600' : 'text-gray-900'}
+                                            {@const cellClass = isBelow ? 'text-red-600 bg-red-50' : valueColorClass}
+
+                                            <td class="px-2 py-2 text-right border-l border-gray-50 font-bold {cellClass}">
+                                                {#if val === 0}
+                                                    <span class="text-gray-300 font-normal">-</span>
+                                                {:else}
+                                                    {formatters.formatNumber(val)}
+                                                {/if}
                                             </td>
                                         {/each}
                                     </tr>
@@ -229,7 +277,8 @@
                                     <td class="px-4 py-2 sticky left-0 bg-gray-100 border-r border-gray-300 z-30">Tổng</td>
                                     <td class="px-2 py-2 sticky left-[180px] bg-gray-100 border-r border-gray-300 z-30"></td>
                                     {#each visibleColumns as col}
-                                        <td class="px-2 py-2 text-right border-l border-gray-200">
+                                        {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
+                                        <td class="px-2 py-2 text-right border-l border-gray-200 {isRevenue ? 'text-blue-800' : 'text-gray-800'}">
                                             {formatters.formatNumber(calculateFooter(groupedData[deptName], 'total')[col.tenGoc])}
                                         </td>
                                     {/each}
@@ -238,7 +287,7 @@
                                     <td class="px-4 py-2 sticky left-0 bg-gray-200 border-r border-gray-300 z-30">Trung Bình</td>
                                     <td class="px-2 py-2 sticky left-[180px] bg-gray-200 border-r border-gray-300 z-30"></td>
                                     {#each visibleColumns as col}
-                                        <td class="px-2 py-2 text-right border-l border-gray-300">
+                                        <td class="px-2 py-2 text-right border-l border-gray-300 text-gray-600">
                                             {formatters.formatNumber(calculateFooter(groupedData[deptName], 'average')[col.tenGoc])}
                                         </td>
                                     {/each}

@@ -1,6 +1,6 @@
 // src/services/admin.service.js
 import { get } from 'svelte/store';
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
     firebaseStore, 
     isAdmin, 
@@ -14,7 +14,7 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    customRevenueTables
+    competitionNameMappings // [MỚI] Import store này
 } from '../stores.js';
 
 const getDB = () => {
@@ -31,7 +31,6 @@ const notify = (msg, type='info') => {
     if(type === 'success' || type === 'error') alert(msg);
 };
 
-// [FIX] Hàm helper để loại bỏ undefined (Firestore không nhận undefined)
 const sanitizeForFirestore = (obj) => {
     return JSON.parse(JSON.stringify(obj, (key, value) => {
         return value === undefined ? null : value;
@@ -129,7 +128,7 @@ export const adminService = {
         }
     },
 
-    // --- 4. SYSTEM REVENUE TABLES (QUAN TRỌNG: FIX LỖI SETDOC UNDEFINED) ---
+    // --- 4. SYSTEM REVENUE TABLES ---
     async loadSystemRevenueTables() {
         const db = getDB();
         if (!db) return [];
@@ -148,8 +147,6 @@ export const adminService = {
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
         if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
         
-        // Lọc chỉ lưu các bảng được đánh dấu là System
-        // [FIX] Sanitize toàn bộ object để loại bỏ undefined
         const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
         
         try {
@@ -179,7 +176,8 @@ export const adminService = {
                 "groupNameMapping", 
                 "brandNameMapping",
                 "efficiencyConfig", 
-                "qdcConfig"
+                "qdcConfig",
+                "competitionNameMappings" // [MỚI] Load thêm mapping thi đua
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             
@@ -192,6 +190,9 @@ export const adminService = {
             if (results[4].exists()) brandNameMapping.set(results[4].data().data || {});
             if (results[5].exists()) efficiencyConfig.set(results[5].data().data || []);
             if (results[6].exists()) qdcConfigStore.set(results[6].data().data || []);
+            
+            // [MỚI] Set store mapping thi đua
+            if (results[7].exists()) competitionNameMappings.set(results[7].data().mappings || {});
 
             console.log("[admin.service] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -236,6 +237,21 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu mapping: ' + error.message, 'error'); }
     },
 
+    // [MỚI] Hàm lưu Mapping tên thi đua
+    async saveCompetitionNameMappings(mappings) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
+        try {
+            const docRef = doc(db, "declarations", "competitionNameMappings");
+            await setDoc(docRef, { mappings: sanitizeForFirestore(mappings) });
+            notify('Đã lưu Bảng Ánh Xạ Tên Thi Đua thành công!', 'success');
+        } catch (error) {
+            console.error("Lỗi khi lưu Bảng Ánh Xạ Tên Thi Đua:", error);
+            notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
+        }
+    },
+
     // --- 6. LOGIC & CALCULATION ---
     async loadDeclarationsFromFirestore() {
         const db = getDB();
@@ -266,27 +282,7 @@ export const adminService = {
         } catch (error) { console.error("Error saving declarations:", error); notify('Lỗi khi đồng bộ khai báo tính toán.', 'error'); }
     },
 
-    // --- 7. COMPETITION MAPPINGS & CONFIGS ---
-    async loadCompetitionNameMappings() {
-        const db = getDB();
-        if (!db) return {};
-        try {
-            const docRef = doc(db, "declarations", "competitionNameMappings");
-            const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().mappings || {}) : {};
-        } catch (error) { console.error("Error loading mappings:", error); return {}; }
-    },
-
-    async saveCompetitionNameMappings(mappings) {
-        const db = getDB();
-        if (!db) return; 
-        if (!get(isAdmin)) return; 
-        try {
-            const docRef = doc(db, "declarations", "competitionNameMappings");
-            await setDoc(docRef, { mappings: sanitizeForFirestore(mappings) });
-        } catch (error) { console.error("Error saving mappings:", error); }
-    },
-
+    // --- 7. COMPETITION CONFIGS ---
     async saveGlobalCompetitionConfigs(configs) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }

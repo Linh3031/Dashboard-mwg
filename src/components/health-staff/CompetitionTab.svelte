@@ -12,7 +12,8 @@
   import ProgramView from './competition/ProgramView.svelte';
   import EmployeeView from './competition/EmployeeView.svelte';
 
-  let activeView = 'program';
+  // [YÊU CẦU] Mặc định vào là xem theo nhân viên
+  let activeView = 'employee'; 
   let programReportData = [];
 
   // Logic tính toán cho Program View (Tự động khi YCX hoặc Config thay đổi)

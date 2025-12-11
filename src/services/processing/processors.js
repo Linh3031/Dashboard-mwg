@@ -1,3 +1,4 @@
+// src/services/processing/processors.js
 import { get } from 'svelte/store';
 import { 
     danhSachNhanVien, employeeMaNVMap, competitionNameMappings, 
@@ -28,21 +29,28 @@ export const processors = {
         return debugResults;
     },
 
+    // [MỚI] Hàm cập nhật store Mapping khi có dữ liệu paste mới
     updateCompetitionNameMappings(mainHeaders) {
         if (!mainHeaders || mainHeaders.length === 0) return;
+        
         const oldMappings = get(competitionNameMappings) || {};
         const newMappings = { ...oldMappings };
         let hasChanges = false;
 
         mainHeaders.forEach(originalName => {
+            // Chỉ thêm nếu tên này chưa tồn tại trong mapping
             if (!newMappings.hasOwnProperty(originalName)) {
-                newMappings[originalName] = '';
+                // [YÊU CẦU] Mặc định điền tên rút gọn = tên gốc
+                newMappings[originalName] = originalName; 
                 hasChanges = true;
             }
         });
 
         if (hasChanges) {
+            console.log("[Processors] Phát hiện tên thi đua mới, cập nhật store mapping.");
             competitionNameMappings.set(newMappings);
+            // Lưu ý: Chúng ta chỉ cập nhật store ở client. 
+            // Admin sẽ cần vào tab Khai báo để review và bấm Lưu để đẩy lên Cloud.
         }
     },
 
@@ -61,6 +69,9 @@ export const processors = {
             debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
             return [];
         }
+
+        // [QUAN TRỌNG] Gọi hàm cập nhật mapping ngay khi xử lý dữ liệu
+        this.updateCompetitionNameMappings(mainHeaders);
 
         const nameMappings = get(competitionNameMappings) || {};
         const competitionTargets = (luykeCompetitionData || []).map(comp => ({
@@ -97,7 +108,10 @@ export const processors = {
             for (let i = 0; i < mainHeaders.length; i++) {
                 const originalName = mainHeaders[i];
                 const loaiSoLieu = subHeaders[i];
+                
+                // [YÊU CẦU] Lấy tên rút gọn từ mapping, fallback về tên gốc
                 const shortName = nameMappings[originalName] || originalName;
+                
                 const cleanedName = helpers.cleanCompetitionName(originalName);
                 const matchedTarget = competitionTargets.find(t => t.cleanedName === cleanedName);
                 const groupTarget = matchedTarget ? matchedTarget.target : 0;
@@ -110,8 +124,8 @@ export const processors = {
                 if (percentExpected >= 1) employeeResult.completedCount++;
 
                 employeeResult.competitions.push({
-                    tenNganhHang: shortName,
-                    tenGoc: originalName,
+                    tenNganhHang: shortName, // Dùng tên rút gọn cho hiển thị
+                    tenGoc: originalName,    // Giữ tên gốc để đối chiếu
                     loaiSoLieu: loaiSoLieu,
                     giaTri: giaTri,
                     thucHien: actualSales,
