@@ -1,141 +1,148 @@
-// Version 2.0 - Chuyển sang logic "Block List" mạnh mẽ hơn
-// Bỏ qua thư mục ẩn, thư mục build, và các file media.
+// Version 3.0 - Chiến lược "Clean & Lean"
+// 1. Whitelist: Chỉ lấy file code (.svelte, .js, .css...), bỏ qua mọi thứ khác.
+// 2. Blacklist: Chặn cứng .DS_Store, node_modules, thư mục ẩn.
+// 3. Size Limit: Tự động bỏ qua file text quá lớn (> 500KB) như file log hoặc file tham khảo.
 
 const fs = require('fs');
 const path = require('path');
 
 // --- CẤU HÌNH ---
 const config = {
-    // Thư mục gốc để bắt đầu quét
     rootDirectory: '.', 
-    
-    // Tên file output
     outputFile: 'project_snapshot_svelte.txt',
     
-    // (MỚI) Bỏ qua các thư mục này VÀ bất kỳ thư mục nào bắt đầu bằng '.'
-    excludeDirectories: [
-        'node_modules', 
-        // '.git', // Không cần nữa, logic mới sẽ bắt
-        // '.vscode', // Không cần nữa, logic mới sẽ bắt
-        '.svelte-kit', // Thư mục build của SvelteKit
-        'dist',         // Thư mục build chung
-        'build',        // Thư mục build chung
-        'public',       // Thư mục public (thường chứa assets)
-        'assets'        // Thường chứa ảnh/font, không cần cho logic
+    // 1. Chỉ chấp nhận những đuôi file này (Quan trọng để lọc rác binary)
+    allowedExtensions: [
+        '.svelte', 
+        '.js', '.ts', '.cjs', '.mjs', 
+        '.css', '.scss', '.postcss',
+        '.html', 
+        '.json', 
+        '.md',
+        '.txt' // Cẩn thận với file này, sẽ lọc bằng size limit bên dưới
     ],
-    
-    // (MỚI) Bỏ qua các đuôi file media/nhị phân không đọc được
-    excludeExtensions: [
-        // Ảnh
-        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico',
-        // Fonts
-        '.woff', '.woff2', '.ttf', '.otf', '.eot',
-        // Video/Audio
-        '.mp4', '.webm', '.ogg', '.mp3',
-        // Tài liệu
-        '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-        // Hệ thống
-        '.DS_Store'
+
+    // 2. Thư mục BẮT BUỘC bỏ qua
+    ignoredDirectories: [
+        'node_modules',
+        '.git',
+        '.vscode',
+        '.svelte-kit', // Build output
+        'dist',
+        'build',
+        'public', // Thường chứa ảnh, không chứa logic code
+        'assets'
     ],
-    
-    // (CẬP NHẬT) Bỏ qua các file cụ thể (chỉ cần tên file)
-    excludeFiles: [
-        'project_snapshot_svelte.txt', // Chính nó
-        'project_snapshot.txt',
-        'create_snapshot.cjs',  // File script này (sửa từ .js)
-        'package-lock.json',
+
+    // 3. File BẮT BUỘC bỏ qua (tên cụ thể)
+    ignoredFiles: [
+        'package-lock.json', // Quá dài và không cần thiết để AI đọc logic
+        'bun.lockb',
         'yarn.lock',
-        '.gitignore',
-        '.env',
-        '.env.local'
-    ]
+        '.DS_Store', // Rác macOS
+        'project_snapshot_svelte.txt' // Tránh đệ quy (đọc chính file output)
+    ],
+
+    // 4. Giới hạn dung lượng: 500KB (File code hiếm khi nặng hơn mức này)
+    // Giúp loại bỏ các file "Dự án gốc..." nặng hàng MB.
+    maxFileSize: 500 * 1024 
 };
 
-// --- LOGIC CHÍNH ---
+// --- LOGIC XỬ LÝ ---
 
-function walkDirectory(dir, filelist = []) {
-    const files = fs.readdirSync(dir);
-    
-    files.forEach(file => {
-        const filepath = path.join(dir, file);
-        const stat = fs.statSync(filepath);
-        const relativePath = path.relative(config.rootDirectory, filepath);
-        
-        // Chuẩn hóa đường dẫn (luôn dùng '/')
-        const normalizedPath = relativePath.replace(/\\/g, '/');
-
-        // QUY TẮC 1: Bỏ qua nếu là file bị loại trừ (so sánh tên file)
-        if (config.excludeFiles.includes(path.basename(file))) {
-            return;
-        }
-
-        // QUY TẮC 2: Bỏ qua nếu là thư mục
-        if (stat.isDirectory()) {
-            const dirName = path.basename(file);
-            
-            // Bỏ qua nếu là thư mục ẩn (bắt đầu bằng '.') HOẶC nằm trong danh sách loại trừ
-            if (dirName.startsWith('.') || config.excludeDirectories.includes(dirName)) {
-                // console.log(`Bỏ qua thư mục: ${normalizedPath}`); // Dùng để debug
-                return;
-            }
-            
-            // Nếu không bị loại trừ -> Tiếp tục đệ quy
-            filelist = walkDirectory(filepath, filelist);
-        } 
-        // QUY TẮC 3: Nếu là file
-        else if (stat.isFile()) {
-            // Bỏ qua nếu có đuôi file bị loại trừ
-            const ext = path.extname(file).toLowerCase();
-            if (config.excludeExtensions.includes(ext)) {
-                // console.log(`Bỏ qua file (đuôi file): ${normalizedPath}`); // Dùng để debug
-                return;
-            }
-            
-            // Nếu vượt qua tất cả, thêm vào danh sách
-            filelist.push(filepath);
-        }
-    });
-    return filelist;
+function shouldScanDirectory(dirName) {
+    // Bỏ qua thư mục bắt đầu bằng dấu chấm (ẩn) trừ khi cần thiết (ở đây chặn hết cho an toàn)
+    if (dirName.startsWith('.') && dirName !== '.') return false;
+    return !config.ignoredDirectories.includes(dirName);
 }
 
-// Hàm chính để chạy kịch bản (Đã cập nhật để xử lý lỗi đọc file)
-function createSnapshot() {
-    console.log('Bắt đầu quá trình tạo snapshot dự án (Phiên bản 2.0)...');
-    
-    const allFiles = walkDirectory(config.rootDirectory);
+function shouldIncludeFile(filename, size) {
+    // 1. Kiểm tra danh sách đen tên file
+    if (config.ignoredFiles.includes(filename)) return false;
+    if (filename.startsWith('.DS_Store')) return false; // Chặn biến thể
 
+    // 2. Kiểm tra dung lượng
+    if (size > config.maxFileSize) {
+        console.warn(`⚠️  Bỏ qua file lớn (>500KB): ${filename}`);
+        return false;
+    }
+
+    // 3. Kiểm tra đuôi file (Whitelist)
+    const ext = path.extname(filename).toLowerCase();
+    return config.allowedExtensions.includes(ext);
+}
+
+function scanDirectory(directory, fileList = []) {
+    const items = fs.readdirSync(directory);
+
+    items.forEach(item => {
+        const itemPath = path.join(directory, item);
+        const stats = fs.statSync(itemPath);
+
+        if (stats.isDirectory()) {
+            if (shouldScanDirectory(item)) {
+                scanDirectory(itemPath, fileList);
+            }
+        } else {
+            if (shouldIncludeFile(item, stats.size)) {
+                fileList.push(itemPath);
+            }
+        }
+    });
+
+    return fileList;
+}
+
+function createSnapshot() {
+    console.log("🚀 Đang bắt đầu quét dự án...");
+
+    // Xóa file cũ nếu tồn tại
     if (fs.existsSync(config.outputFile)) {
         fs.unlinkSync(config.outputFile);
-        console.log(`Đã xóa file snapshot cũ: ${config.outputFile}`);
     }
+
+    const allFiles = scanDirectory(config.rootDirectory);
+    
+    // Sắp xếp file để dễ đọc (ưu tiên file cấu hình ở root trước, sau đó tới src)
+    allFiles.sort((a, b) => {
+        const aDepth = a.split(path.sep).length;
+        const bDepth = b.split(path.sep).length;
+        if (aDepth !== bDepth) return aDepth - bDepth;
+        return a.localeCompare(b);
+    });
+
+    let fileCount = 0;
+    let totalSize = 0;
 
     allFiles.forEach(filepath => {
         try {
             const content = fs.readFileSync(filepath, 'utf8');
             
-            // Chuẩn hóa đường dẫn để luôn dùng dấu gạch chéo '/'
-            const normalizedPath = path.normalize(filepath).replace(/\\/g, '/');
+            // Chuẩn hóa đường dẫn
+            const normalizedPath = filepath.replace(/\\/g, '/');
             
-            // Thêm './' vào đầu để khớp định dạng chuẩn
-            const fileHeader = `--- START FILE: ./${normalizedPath} ---\n`;
-            const fileFooter = `\n--- END FILE: ./${normalizedPath} ---\n\n`;
-            
+            // Nếu root là '.' thì bỏ './' ở đầu cho đẹp (tùy chọn)
+            const displayPath = normalizedPath.startsWith('./') ? normalizedPath : `./${normalizedPath}`;
+
+            const fileHeader = `--- START FILE: ${displayPath} ---\n`;
+            const fileFooter = `\n--- END FILE: ${displayPath} ---\n\n`;
+
             fs.appendFileSync(config.outputFile, fileHeader);
             fs.appendFileSync(config.outputFile, content);
             fs.appendFileSync(config.outputFile, fileFooter);
+
+            fileCount++;
+            totalSize += content.length;
+            console.log(`+ Đã thêm: ${displayPath}`);
         } catch (err) {
-            // (MỚI) Thêm xử lý lỗi cho file nhị phân (binary) hoặc file không đọc được UTF-8
-            if (err.code === 'EILSEQ' || err.message.includes('invalid') || err.message.includes('UTF-8')) {
-                console.warn(`! Bỏ qua file (lỗi đọc UTF-8, có thể là file nhị phân): ${filepath}`);
-            } else {
-                console.error(`Lỗi khi đọc file ${filepath}:`, err);
-            }
+            console.error(`❌ Lỗi đọc file ${filepath}: ${err.message}`);
         }
     });
 
-    console.log(`\x1b[32m%s\x1b[0m`, `✅ Đã tạo thành công file '${config.outputFile}' với ${allFiles.length} file.`);
-    console.log('Bạn có thể tải file này lên cửa sổ chat mới.');
+    console.log(`\n✅ HOÀN TẤT!`);
+    console.log(`📄 Tổng số file: ${fileCount}`);
+    console.log(`💾 Dung lượng snapshot: ${(totalSize / 1024).toFixed(2)} KB`);
+    console.log(`📂 Output: ${config.outputFile}`);
 }
 
-// Chạy hàm chính
 createSnapshot();

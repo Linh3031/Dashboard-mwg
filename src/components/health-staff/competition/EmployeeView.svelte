@@ -37,12 +37,12 @@
   // --- REACTIVE PROCESSING ---
   $: {
       if (reportData && reportData.length > 0) {
-          const savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          if (savedSettings.length > 0) {
-              columnSettings = savedSettings;
-          } else {
-              columnSettings = settingsService.loadPastedCompetitionViewSettings();
+          let savedSettings = settingsService.loadPastedCompetitionViewSettings();
+          // Nếu chưa có setting lưu, load mặc định (logic loadPastedCompetitionViewSettings đã handle việc tạo default từ dữ liệu)
+          if (!savedSettings || savedSettings.length === 0) {
+              savedSettings = settingsService.loadPastedCompetitionViewSettings();
           }
+          columnSettings = savedSettings;
 
           // Map tên hiển thị
           columnSettings = columnSettings.map(col => ({
@@ -244,7 +244,10 @@
                             {@const avgScores = deptAverages[item.boPhan] || {}}
                             {@const score = item.competitions.reduce((acc, c) => (avgScores[c.tenGoc] > 0 && c.giaTri >= avgScores[c.tenGoc]) ? acc + 1 : acc, 0)}
                             
-                            <tr class="hover:bg-blue-50 transition-colors group">
+                            <tr 
+                                class="hover:bg-blue-50 transition-colors group cursor-pointer"
+                                on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
+                            >
                                 <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>

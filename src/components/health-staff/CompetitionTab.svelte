@@ -11,10 +11,16 @@
   import CompetitionModeSelector from './competition/CompetitionModeSelector.svelte';
   import ProgramView from './competition/ProgramView.svelte';
   import EmployeeView from './competition/EmployeeView.svelte';
+  // [NEW] Import view chi tiết mới
+  import CompetitionDetailView from './competition/CompetitionDetailView.svelte';
 
   // [YÊU CẦU] Mặc định vào là xem theo nhân viên
   let activeView = 'employee'; 
   let programReportData = [];
+  
+  // [NEW] State cho view chi tiết
+  let isDetailView = false;
+  let selectedEmployeeId = null;
 
   // Logic tính toán cho Program View (Tự động khi YCX hoặc Config thay đổi)
   $: {
@@ -28,6 +34,21 @@
 
   function handleViewChange(event) {
       activeView = event.detail;
+      // Reset về list khi đổi tab con
+      isDetailView = false;
+      selectedEmployeeId = null;
+  }
+
+  // [NEW] Xử lý khi click vào nhân viên
+  function handleViewDetail(event) {
+      selectedEmployeeId = event.detail.employeeId;
+      isDetailView = true;
+  }
+
+  // [NEW] Xử lý quay lại
+  function handleBackToList() {
+      isDetailView = false;
+      selectedEmployeeId = null;
   }
 </script>
 
@@ -50,7 +71,19 @@
         {#if activeView === 'program'}
             <ProgramView reportData={programReportData} />
         {:else}
-            <EmployeeView reportData={$pastedThiDuaReportData} />
+            {#if isDetailView && selectedEmployeeId}
+                <CompetitionDetailView 
+                    employeeId={selectedEmployeeId}
+                    allReportData={$pastedThiDuaReportData}
+                    on:back={handleBackToList}
+                />
+            {:else}
+                <EmployeeView 
+                    reportData={$pastedThiDuaReportData} 
+                    on:viewChange={(e) => activeView = e.detail}
+                    on:viewDetail={handleViewDetail} 
+                />
+            {/if}
         {/if}
     </div>
 </div>
