@@ -3441,7 +3441,7 @@ export const dataService = {
 
 --- START FILE: ./src/services/datasync.service.js ---
 // src/services/datasync.service.js
-// Version 2.2 - Add Personal Revenue Tables Sync
+// Version 2.3 - Add Realtime Config Sync (Hidden Categories)
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
 import { firebaseStore, currentUser } from '../stores.js'; 
 import { get } from 'svelte/store';
@@ -3457,7 +3457,48 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- [MỚI] QUẢN LÝ BẢNG DOANH THU CÁ NHÂN THEO KHO ---
+    // --- [MỚI] QUẢN LÝ CẤU HÌNH REALTIME THEO KHO ---
+    
+    // Lưu danh sách ngành hàng bị ẩn (Realtime)
+    async saveRealtimeHiddenCategories(kho, hiddenList) {
+        const db = getDB();
+        if (!db || !kho) return;
+
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            // Lưu vào field 'realtimeConfig' trong document của kho
+            await setDoc(khoRef, {
+                realtimeConfig: {
+                    hiddenCategories: hiddenList,
+                    updatedAt: serverTimestamp(),
+                    updatedBy: getCurrentUserEmail()
+                }
+            }, { merge: true });
+            console.log(`[DataSync] Đã lưu cấu hình ẩn ngành hàng Realtime cho kho ${kho}`);
+        } catch (error) {
+            console.error("[DataSync] Lỗi lưu cấu hình Realtime:", error);
+        }
+    },
+
+    // Tải danh sách ngành hàng bị ẩn (Realtime)
+    async loadRealtimeHiddenCategories(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists() && docSnap.data().realtimeConfig) {
+                return docSnap.data().realtimeConfig.hiddenCategories || [];
+            }
+            return [];
+        } catch (e) {
+            console.error("[DataSync] Lỗi tải cấu hình Realtime:", e);
+            return [];
+        }
+    },
+
+    // --- QUẢN LÝ BẢNG DOANH THU CÁ NHÂN THEO KHO ---
     
     async savePersonalRevenueTables(kho, tables) {
         const db = getDB();
@@ -3496,7 +3537,7 @@ export const datasyncService = {
         }
     },
 
-    // --- CÁC HÀM KHÁC (GIỮ NGUYÊN) ---
+    // --- CÁC HÀM KHÁC ---
     
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
@@ -3533,7 +3574,7 @@ export const datasyncService = {
         if (!db || !kho) throw new Error("Invalid parameters.");
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = {
-             [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
+            [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
         };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch(e) { throw e; }
     },
@@ -11422,69 +11463,86 @@ export const formatters = {
 
 --- START FILE: ./src/components/luyke/LuykeQdcTable.svelte ---
 <script>
-  import { afterUpdate } from 'svelte';
+  import { afterUpdate, onMount } from 'svelte';
+  // [FIX] Sửa đường dẫn import: Từ 3 cấp (../../../) thành 2 cấp (../../)
   import { formatters } from '../../utils/formatters.js';
   import { cleanCategoryName } from '../../utils.js';
   import { qdcConfigStore, categoryStructure, macroProductGroupConfig } from '../../stores.js';
   import { adminService } from '../../services/admin.service.js';
 
-  export let items = []; // Dữ liệu Nhóm hàng chi tiết (bao gồm Macro Product Groups)
+  export let items = []; 
   export let numDays = 1;
 
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
 
-  // Lấy danh sách nhóm hàng để lọc (Structure + Macro + Actual Items)
+  // [LOGIC MỚI] Tự động tải config khi component được sinh ra (F5)
+  onMount(async () => {
+      console.log("[Luyke_LOG] Component Mounted. Fetching QDC Config from Cloud...");
+      try {
+          const savedConfig = await adminService.loadQdcConfig();
+          if (savedConfig && savedConfig.length > 0) {
+              console.log("[Luyke_LOG] Config loaded:", savedConfig);
+              qdcConfigStore.set(savedConfig);
+          } else {
+              console.log("[Luyke_LOG] No config found or empty.");
+          }
+      } catch (e) {
+          console.error("[Luyke_LOG] Error loading config:", e);
+      }
+  });
+
+  // Data Sources
   $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
   $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
   $: allPresentGroups = items.map(i => i.name).sort();
-  
-  // Gộp tất cả nguồn lại
   $: allGroups = [...new Set([...allGroupsFromStructure, ...allMacroGroups, ...allPresentGroups])].sort();
 
   $: filterList = allGroups.filter(name => 
       name.toLowerCase().includes(filterSearch.toLowerCase())
   );
 
+  // [LOGIC MỚI] Hàm cập nhật ngay lập tức
   function toggleQdcSelection(name) {
       qdcConfigStore.update(current => {
-          if (current.includes(name)) return current.filter(n => n !== name);
-          return [...current, name];
+          let newConfig;
+          if (current.includes(name)) newConfig = current.filter(n => n !== name);
+          else newConfig = [...current, name];
+          
+          console.log("[Luyke_LOG] User update config:", newConfig);
+          return newConfig;
       });
+      
+      // Debounce việc lưu lên Cloud để tránh spam request, nhưng UI đã update ngay
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
+          console.log("[Luyke_LOG] Saving to cloud...");
           adminService.saveQdcConfig($qdcConfigStore);
-      }, 1000);
+      }, 500); 
   }
 
   function toggleAllVisibility(show) {
-      if (show) {
-          qdcConfigStore.set([...allGroups]);
-      } else {
-          qdcConfigStore.set([]);
-      }
-      adminService.saveQdcConfig($qdcConfigStore);
+      const newConfig = show ? [...allGroups] : [];
+      console.log("[Luyke_LOG] Toggle All:", show);
+      qdcConfigStore.set(newConfig);
+      adminService.saveQdcConfig(newConfig);
   }
 
-  // [LOGIC] Top 10 Default
+  // Logic hiển thị: Nếu chưa có config thì Top 10, nếu có config thì lọc theo config
   $: activeConfig = $qdcConfigStore;
   
   let sortedItems = [];
   $: {
       let candidates = [];
-      // Nếu không có config (người dùng mới), lấy Top 10 theo DTQD
       if (!activeConfig || activeConfig.length === 0) {
           candidates = [...items].sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0)).slice(0, 10);
       } else {
-          // Nếu đã chọn, lọc theo tên chính xác
           candidates = items.filter(item => activeConfig.includes(item.name));
       }
-      // Luôn sắp xếp giảm dần theo DTQD
       sortedItems = candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   }
 
-  // Tìm giá trị max để vẽ thanh progress bar
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
@@ -11552,17 +11610,14 @@ export const formatters = {
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50 transition-colors px-1">
             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
-               
                <div class="flex-grow min-w-0">
                    <div class="flex justify-between items-center mb-1">
                        <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
                        <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
                    </div>
-                   
                    <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
                        <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
                    </div>
-                   
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
                        <div class="flex gap-2">
                            <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
@@ -20550,203 +20605,47 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/category/CategoryTab.svelte ---
 <script>
-  import { afterUpdate, tick } from 'svelte';
-  import { formatters } from '../../../utils/formatters.js';
-  import { cleanCategoryName, getRandomBrightColor } from '../../../utils.js';
-
-  export let items = []; // Ngành hàng chi tiết
-  export let unexportedItems = []; // Danh sách chưa xuất
-
-  // --- STATE ---
-  let showUnexported = false;
-  let viewMode = 'grid'; // 'grid' | 'chart' | 'table'
-  let sortMode = 'revenue_desc';
-  let searchText = '';
+  import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
+  import { reportService } from '../../../services/reportService.js';
+  import { settingsService } from '../../../services/settings.service.js';
   
-  let chartInstancePie = null;
+  // [THAY ĐỔI QUAN TRỌNG] Import bảng Doanh thu động từ Health Staff
+  // Component này tự động đọc store `customRevenueTables` nên sẽ đồng bộ cấu hình bảng
+  import CategoryRevenueView from '../../health-staff/CategoryRevenueView.svelte';
 
-  // --- LOGIC TITLE & THEME ---
-  $: titleText = showUnexported 
-      ? "CHI TIẾT CHƯA XUẤT (QĐ)" 
-      : "CHI TIẾT NGÀNH HÀNG";
-  
-  $: titleIcon = showUnexported ? "alert-circle" : "layers";
-  $: titleClass = showUnexported ? "text-red-700" : "text-blue-700";
-  $: iconClass = showUnexported ? "text-red-600" : "text-blue-600";
+  export let selectedWarehouseProp = ''; // Nhận prop từ cha nếu có, hoặc dùng store
 
-  // Hàm chọn màu/icon cho thẻ (Copy từ Luyke)
-  function getCategoryTheme(name) {
-      const n = name.toLowerCase();
-      if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
-      if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
-      if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
-      if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', theme: 'theme-blue' };
-      if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
-      if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', theme: 'theme-teal' };
-      if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
-      if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', theme: 'theme-orange' };
-      if (n.includes('phụ kiện')) return { icon: 'headphones', theme: 'theme-purple' };
-      if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
-      return { icon: 'tag', theme: 'theme-gray' };
+  let filteredReport = [];
+
+  $: {
+    // 1. Ưu tiên dùng prop, nếu không thì dùng store global
+    const currentWarehouse = selectedWarehouseProp || $selectedWarehouse;
+    
+    // 2. Lấy mục tiêu (để tính % đạt nếu cần)
+    const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
+    const goals = settings.goals || {};
+
+    // 3. Tính toán Master Report từ dữ liệu Realtime
+    // isRealtime = true để logic tính toán xử lý đúng các trường đặc thù
+    const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
+    
+    // 4. Lọc theo kho
+    if (currentWarehouse) {
+      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
+    } else {
+      filteredReport = masterReport;
+    }
   }
-
-  // --- DATA LOGIC ---
-  $: sourceData = showUnexported ? unexportedItems : items;
-
-  $: filteredItems = sourceData.filter(item => {
-      const name = item.name || item.nganhHang || '';
-      const matchSearch = !searchText || name.toLowerCase().includes(searchText.toLowerCase());
-      const hasValue = showUnexported ? (item.doanhThuQuyDoi > 0) : (item.revenue > 0 || item.quantity > 0);
-      return matchSearch && hasValue;
-  });
-
-  $: sortedItems = [...filteredItems].sort((a, b) => {
-      const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
-      const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
-      
-      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
-      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
-      return 0;
-  });
-
-  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
-  $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
-
-  // --- CHART ---
-  async function renderChart() {
-      if (typeof Chart === 'undefined') return;
-      await tick();
-      const ctx = document.getElementById('rt-cat-chart');
-      if (!ctx) return;
-      if (chartInstancePie) chartInstancePie.destroy();
-
-      const top10 = sortedItems.slice(0, 10);
-      
-      chartInstancePie = new Chart(ctx, {
-          type: 'doughnut',
-          data: {
-              labels: top10.map(d => d.name || d.nganhHang),
-              datasets: [{
-                  data: top10.map(d => showUnexported ? d.doanhThuQuyDoi : d.revenue),
-                  backgroundColor: top10.map(() => getRandomBrightColor()),
-                  borderWidth: 1
-              }]
-          },
-          options: { 
-              responsive: true, 
-              maintainAspectRatio: false,
-              plugins: { legend: { position: 'right' } } 
-          }
-      });
-  }
-
-  $: if (viewMode === 'chart') setTimeout(renderChart, 0);
-
-  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<div class="luyke-widget h-full">
-    <div class="luyke-toolbar">
-        <div class="luyke-toolbar-left flex-grow min-w-0">
-            <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
-                <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
-                <span class="truncate">{titleText}</span>
-            </h3>
-        </div>
-
-        <div class="luyke-toolbar-right flex items-center gap-2">
-            <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-                <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ">
-                    <i data-feather="grid" class="w-4 h-4"></i>
-                </button>
-                <button class="view-mode-btn {viewMode === 'table' ? 'active' : ''}" on:click={() => viewMode = 'table'} title="Bảng">
-                    <i data-feather="list" class="w-4 h-4"></i>
-                </button>
-                <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ">
-                    <i data-feather="pie-chart" class="w-4 h-4"></i>
-                </button>
-            </div>
-
-            <div 
-                class="toggle-wrapper {showUnexported ? 'active' : ''}" 
-                on:click={() => showUnexported = !showUnexported}
-                title="Xem đơn hàng chưa xuất"
-                style="padding: 4px 8px;"
-            >
-                <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
-                <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
-            </div>
-
-            <div class="hidden sm:block">
-                <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
-            </div>
-        </div>
-    </div>
-
-    <div class="luyke-widget-body bg-white border-t border-gray-100 p-4">
-        {#if sortedItems.length === 0}
-            <div class="text-center py-10 text-gray-400 italic">Không có dữ liệu hiển thị.</div>
-        
-        {:else if viewMode === 'grid'}
-            <div class="luyke-cat-grid">
-                {#each sortedItems as item}
-                    {@const name = item.name || item.nganhHang}
-                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
-                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
-                    {@const style = getCategoryTheme(name)}
-                    {@const percent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
-                    {@const finalTheme = showUnexported ? 'theme-warning' : style.theme}
-
-                    <div class="cat-card-colorful {finalTheme}">
-                        <div class="cat-top-row">
-                            <div class="cat-icon-box"><i data-feather={style.icon} class="w-5 h-5"></i></div>
-                            {#if !showUnexported && totalRevenue > 0}
-                                <span class="cat-percent-text text-xs">{formatters.formatPercentage(revenue/totalRevenue)}</span>
-                            {/if}
-                        </div>
-                        <h4 class="cat-name-text" title={name}>{name}</h4>
-                        <div class="cat-value-text">{formatters.formatRevenue(revenue, 0)}</div>
-                        <div class="cat-footer-row">
-                            <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
-                        </div>
-                        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width: {percent}%"></div></div>
-                    </div>
-                {/each}
-            </div>
-
-        {:else if viewMode === 'table'}
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm table-bordered">
-                    <thead class="bg-gray-100 font-bold text-gray-700">
-                        <tr>
-                            <th class="px-3 py-2 text-left">Ngành hàng</th>
-                            <th class="px-3 py-2 text-right">SL</th>
-                            <th class="px-3 py-2 text-right">Doanh thu</th>
-                            {#if showUnexported}<th class="px-3 py-2 text-right">DT Thực</th>{/if}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each sortedItems as item}
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-3 py-2">{item.name || item.nganhHang}</td>
-                                <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(showUnexported ? item.soLuong : item.quantity)}</td>
-                                <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(showUnexported ? item.doanhThuQuyDoi : item.revenue)}</td>
-                                {#if showUnexported}
-                                    <td class="px-3 py-2 text-right text-gray-500">{formatters.formatRevenue(item.doanhThuThuc)}</td>
-                                {/if}
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-
-        {:else}
-            <div class="h-[350px] w-full relative">
-                <canvas id="rt-cat-chart"></canvas>
-            </div>
-        {/if}
-    </div>
+<div class="animate-fade-in pb-10">
+    <CategoryRevenueView reportData={filteredReport} />
 </div>
+
+<style>
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+</style>
 --- END FILE: ./src/components/realtime/category/CategoryTab.svelte ---
 
 --- START FILE: ./src/components/realtime/competition/CompetitionTab.svelte ---
@@ -21132,107 +21031,37 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/efficiency/EfficiencyTab.svelte ---
 <script>
-  import { realtimeYCXData, selectedWarehouse, efficiencyConfig, modalState } from '../../../stores.js';
+  import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
-  import { adminService } from '../../../services/admin.service.js';
   
-  import EfficiencyTable from './EfficiencyTable.svelte';
-  import AddEfficiencyColumnModal from '../../modals/AddEfficiencyColumnModal.svelte';
+  // [THAY ĐỔI QUAN TRỌNG] Import bảng từ Health Staff để đồng bộ giao diện
+  import EfficiencyTable from '../../health-staff/EfficiencyTable.svelte';
 
   // Biến dữ liệu
-  let supermarketReport = {};
-  let goals = {};
-  let efficiencyItems = [];
-  
-  // State modal
-  let isModalOpen = false;
-  let itemToEdit = null;
+  let filteredReport = [];
 
   $: {
     // 1. Lấy dữ liệu & Mục tiêu
     const currentWarehouse = $selectedWarehouse;
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
-    goals = settings.goals || {};
+    const goals = settings.goals || {};
 
-    // 2. Tính toán Master Report
+    // 2. Tính toán Master Report (Array danh sách nhân viên)
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    // 3. Lọc & Tổng hợp
-    let filteredReport = masterReport;
+    // 3. Lọc theo kho
     if (currentWarehouse) {
       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
+    } else {
+      filteredReport = masterReport;
     }
-    supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
-
-    // 4. Chuẩn bị các chỉ số cố định (Fixed Items)
-    const allEfficiencyConfigs = settingsService.loadEfficiencyViewSettings();
-    const goalKeyMap = {
-            pctPhuKien: 'phanTramPhuKien', pctGiaDung: 'phanTramGiaDung', 
-            pctMLN: 'phanTramMLN', pctSim: 'phanTramSim', 
-            pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem',
-            tyLeTraCham: 'phanTramTC'
-    };
-    efficiencyItems = allEfficiencyConfigs
-        .filter(item => (item.id.startsWith('pct') || item.id === 'tyLeTraCham') && item.visible !== false)
-        .map(config => ({
-            ...config,
-            value: supermarketReport[config.id] || 0,
-            target: goals[goalKeyMap[config.id]] || 0
-        }));
-  }
-
-  // --- Handlers cho Modal Thêm/Sửa/Xóa ---
-  function openAddModal() {
-      itemToEdit = null;
-      isModalOpen = true;
-  }
-
-  function handleEdit(event) {
-      itemToEdit = event.detail;
-      isModalOpen = true;
-  }
-
-  function closeModal() {
-      isModalOpen = false;
-      itemToEdit = null;
-  }
-
-  function handleSave(event) {
-      const newItem = event.detail;
-      efficiencyConfig.update(items => {
-          const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
-          else { return [...items, newItem]; }
-      });
-      adminService.saveEfficiencyConfig($efficiencyConfig);
-      closeModal();
-  }
-
-  function handleDelete(event) {
-      const id = event.detail;
-      efficiencyConfig.update(items => items.filter(i => i.id !== id));
-      adminService.saveEfficiencyConfig($efficiencyConfig);
   }
 </script>
 
-<div class="animate-fade-in pb-10 max-w-4xl mx-auto">
-    <EfficiencyTable 
-        items={efficiencyItems}
-        dynamicItems={$efficiencyConfig}
-        supermarketData={supermarketReport}
-        on:add={openAddModal}
-        on:edit={handleEdit}
-        on:delete={handleDelete}
-    />
+<div class="animate-fade-in pb-10">
+    <EfficiencyTable reportData={filteredReport} />
 </div>
-
-<AddEfficiencyColumnModal 
-    isOpen={isModalOpen} 
-    editItem={itemToEdit} 
-    on:close={closeModal}
-    on:save={handleSave}
-/>
 
 <style>
   .animate-fade-in { animation: fadeIn 0.3s ease-out; }
@@ -21779,20 +21608,29 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/summary/CategoryTable.svelte ---
 <script>
-  import { afterUpdate, tick } from 'svelte';
+  import { afterUpdate, tick, onMount } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { cleanCategoryName, getRandomBrightColor } from '../../../utils.js';
+  // [MỚI] Import service để lưu cloud
+  import { datasyncService } from '../../../services/datasync.service.js';
+  import { selectedWarehouse } from '../../../stores.js';
 
   export let items = []; 
   export let unexportedItems = []; 
-  export let rawSource = []; // [MỚI] Dữ liệu thô để tính biểu đồ hãng
+  export let rawSource = []; 
 
   // --- STATE ---
   let showUnexported = false;
-  let viewMode = 'grid'; // 'grid' | 'chart'
+  let viewMode = 'grid'; 
   let sortMode = 'revenue_desc';
   let searchText = '';
   
+  // State cho bộ lọc
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let hiddenCategories = new Set(); 
+  let isLoadingConfig = false;
+
   let chartInstancePie = null;
   let chartInstanceBar = null;
 
@@ -21820,6 +21658,51 @@ export const masterReportLogic = {
       return { icon: 'tag', theme: 'theme-gray' };
   }
 
+  // --- [MỚI] LOGIC LOAD/SAVE TỪ CLOUD ---
+  // Tự động tải cấu hình khi chọn kho
+  $: if ($selectedWarehouse) {
+      loadCloudConfig($selectedWarehouse);
+  }
+
+  async function loadCloudConfig(kho) {
+      isLoadingConfig = true;
+      const hiddenList = await datasyncService.loadRealtimeHiddenCategories(kho);
+      hiddenCategories = new Set(hiddenList);
+      isLoadingConfig = false;
+  }
+
+  async function saveCloudConfig() {
+      if ($selectedWarehouse) {
+          await datasyncService.saveRealtimeHiddenCategories($selectedWarehouse, [...hiddenCategories]);
+      }
+  }
+
+  // --- FILTER LOGIC ---
+  $: allCategoryNames = items.map(i => i.name || i.nganhHang).sort();
+  
+  $: filterList = allCategoryNames.filter(name => 
+      name.toLowerCase().includes(filterSearch.toLowerCase())
+  );
+
+  function toggleCategoryVisibility(name) {
+      if (hiddenCategories.has(name)) {
+          hiddenCategories.delete(name);
+      } else {
+          hiddenCategories.add(name);
+      }
+      hiddenCategories = new Set(hiddenCategories);
+      saveCloudConfig(); // Lưu lên Cloud ngay lập tức
+  }
+
+  function toggleAllVisibility(show) {
+      if (show) {
+          hiddenCategories = new Set();
+      } else {
+          hiddenCategories = new Set(allCategoryNames);
+      }
+      saveCloudConfig(); // Lưu lên Cloud ngay lập tức
+  }
+
   // --- DATA LOGIC ---
   $: sourceData = showUnexported ? unexportedItems : items;
 
@@ -21827,7 +21710,11 @@ export const masterReportLogic = {
       const name = item.name || item.nganhHang || '';
       const matchSearch = !searchText || name.toLowerCase().includes(searchText.toLowerCase());
       const hasValue = showUnexported ? (item.doanhThuQuyDoi > 0) : (item.revenue > 0 || item.quantity > 0);
-      return matchSearch && hasValue;
+      
+      // Kiểm tra ẩn/hiện
+      const isVisible = !hiddenCategories.has(name);
+
+      return matchSearch && hasValue && isVisible;
   });
 
   $: sortedItems = [...filteredItems].sort((a, b) => {
@@ -21843,10 +21730,9 @@ export const masterReportLogic = {
   $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
   // --- CHART LOGIC ---
-  
-  // 1. Pie Chart Data (Top 13 + Others)
+  // (Logic biểu đồ giữ nguyên)
   $: pieData = (() => {
-      const sorted = sortedItems.slice(); // Copy
+      const sorted = sortedItems.slice(); 
       if (sorted.length <= 14) return sorted;
       const top13 = sorted.slice(0, 13);
       const others = sorted.slice(13);
@@ -21854,7 +21740,6 @@ export const masterReportLogic = {
       return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
   })();
 
-  // 2. Bar Chart Data (Top 15 Hãng)
   $: barData = calculateBrandData(rawSource, filteredItems);
 
   function calculateBrandData(source, visibleItems) {
@@ -21878,7 +21763,7 @@ export const masterReportLogic = {
       if (typeof Chart === 'undefined') return;
       await tick();
 
-      // --- PIE CHART ---
+      // Pie Chart
       const ctxPie = document.getElementById('rt-cat-chart');
       if (ctxPie) {
           if (chartInstancePie) chartInstancePie.destroy();
@@ -21895,40 +21780,15 @@ export const masterReportLogic = {
                   }]
               },
               options: { 
-                  responsive: true, 
-                  maintainAspectRatio: false,
+                  responsive: true, maintainAspectRatio: false,
                   plugins: { 
-                      legend: { 
-                          position: 'right',
-                          labels: {
-                              boxWidth: 10,
-                              font: { size: 11 },
-                              generateLabels: (chart) => {
-                                  const data = chart.data;
-                                  if (data.labels.length && data.datasets.length) {
-                                      return data.labels.map((label, i) => {
-                                          const value = data.datasets[0].data[i];
-                                          const formattedValue = formatters.formatRevenue(value, 0);
-                                          const pct = totalPieRev > 0 ? (value / totalPieRev * 100).toFixed(1) + "%" : "0%";
-                                          return {
-                                              text: `${label} (${pct}) - ${formattedValue}`,
-                                              fillStyle: data.datasets[0].backgroundColor[i],
-                                              hidden: isNaN(data.datasets[0].data[i]),
-                                              index: i
-                                          };
-                                      });
-                                  }
-                                  return [];
-                              }
-                          }
-                      },
+                      legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11 } } },
                       datalabels: {
                           formatter: (value) => {
                               const pct = totalPieRev > 0 ? (value / totalPieRev * 100) : 0;
                               return pct > 3 ? pct.toFixed(1) + "%" : "";
                           },
-                          color: '#fff',
-                          font: { weight: 'bold', size: 10 }
+                          color: '#fff', font: { weight: 'bold', size: 10 }
                       }
                   } 
               },
@@ -21936,7 +21796,7 @@ export const masterReportLogic = {
           });
       }
 
-      // --- BAR CHART ---
+      // Bar Chart
       const ctxBar = document.getElementById('rt-brand-chart');
       if (ctxBar) {
           if (chartInstanceBar) chartInstanceBar.destroy();
@@ -21952,16 +21812,13 @@ export const masterReportLogic = {
                   }]
               },
               options: {
-                  indexAxis: 'y',
-                  responsive: true,
-                  maintainAspectRatio: false,
+                  indexAxis: 'y', responsive: true, maintainAspectRatio: false,
                   plugins: {
                       legend: { display: false },
                       datalabels: {
                           anchor: 'end', align: 'end',
                           formatter: (val) => formatters.formatNumber(val, 0),
-                          color: '#4b5563',
-                          font: { weight: 'bold', size: 10 }
+                          color: '#4b5563', font: { weight: 'bold', size: 10 }
                       },
                       tooltip: {
                           callbacks: { label: (ctx) => formatters.formatRevenue(ctx.raw * 1000000) }
@@ -21976,8 +21833,16 @@ export const masterReportLogic = {
 
   $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
 
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          isSettingsOpen = false;
+      }
+  }
+
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
+
+<svelte:window on:click={handleWindowClick} />
 
 <div class="luyke-widget h-full">
     <div class="luyke-toolbar">
@@ -21992,11 +21857,12 @@ export const masterReportLogic = {
             <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
                 <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ">
                     <i data-feather="grid" class="w-4 h-4"></i>
-                    <span class="hidden sm:inline text-xs ml-1">Thẻ</span>
+                </button>
+                <button class="view-mode-btn {viewMode === 'table' ? 'active' : ''}" on:click={() => viewMode = 'table'} title="Bảng">
+                    <i data-feather="list" class="w-4 h-4"></i>
                 </button>
                 <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ">
                     <i data-feather="pie-chart" class="w-4 h-4"></i>
-                    <span class="hidden sm:inline text-xs ml-1">Biểu đồ</span>
                 </button>
             </div>
 
@@ -22008,6 +21874,44 @@ export const masterReportLogic = {
             >
                 <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
                 <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
+            </div>
+
+            <div class="relative filter-wrapper">
+                <button 
+                    class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
+                    on:click={() => isSettingsOpen = !isSettingsOpen}
+                    title="Lọc hiển thị ngành hàng"
+                >
+                    {#if isLoadingConfig}
+                        <div class="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    {:else}
+                        <i data-feather="filter" class="w-4 h-4"></i>
+                    {/if}
+                </button>
+
+                {#if isSettingsOpen}
+                    <div class="filter-dropdown">
+                        <div class="filter-header">
+                             <input type="text" class="filter-search" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
+                        </div>
+                        <div class="filter-body custom-scrollbar">
+                            {#if filterList.length === 0}
+                                <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                            {:else}
+                                {#each filterList as name}
+                                    <div class="filter-item" on:click={() => toggleCategoryVisibility(name)}>
+                                        <input type="checkbox" checked={!hiddenCategories.has(name)} />
+                                        <label>{name}</label>
+                                    </div>
+                                {/each}
+                            {/if}
+                        </div>
+                        <div class="filter-actions">
+                            <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                            <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                        </div>
+                    </div>
+                {/if}
             </div>
 
             <div class="hidden sm:block">
@@ -22045,6 +21949,32 @@ export const masterReportLogic = {
                         <div class="cat-bar-bg"><div class="cat-bar-fill" style="width: {percent}%"></div></div>
                     </div>
                 {/each}
+            </div>
+
+        {:else if viewMode === 'table'}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm table-bordered">
+                    <thead class="bg-gray-100 font-bold text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2 text-left">Ngành hàng</th>
+                            <th class="px-3 py-2 text-right">SL</th>
+                            <th class="px-3 py-2 text-right">Doanh thu</th>
+                            {#if showUnexported}<th class="px-3 py-2 text-right">DT Thực</th>{/if}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedItems as item}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-3 py-2">{item.name || item.nganhHang}</td>
+                                <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(showUnexported ? item.soLuong : item.quantity)}</td>
+                                <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(showUnexported ? item.doanhThuQuyDoi : item.revenue)}</td>
+                                {#if showUnexported}
+                                    <td class="px-3 py-2 text-right text-gray-500">{formatters.formatRevenue(item.doanhThuThuc)}</td>
+                                {/if}
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
             </div>
 
         {:else}
@@ -22224,41 +22154,43 @@ export const masterReportLogic = {
   import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
   import { adminService } from '../../../services/admin.service.js';
 
-  export let items = []; // Dữ liệu hiện tại (có số liệu)
-  export let activeConfig = []; // Config từ store
+  export let items = []; 
+  export let activeConfig = []; 
 
   let isSettingsOpen = false;
   let filterSearch = '';
-  let localFilter = [...activeConfig]; 
-  let saveTimer;
+  let localFilter = []; 
 
-  // [LOGIC MỚI] Lấy danh sách đầy đủ từ cấu trúc để làm bộ lọc
+  // Đồng bộ props vào state local (Chỉ chạy khi mở trang hoặc activeConfig thay đổi từ bên ngoài)
+  $: if (activeConfig) {
+      // Chỉ update nếu local chưa có dữ liệu HOẶC không phải đang mở menu
+      // Điều này ngăn việc props đè lên lựa chọn đang dở dang của người dùng
+      if (!isSettingsOpen) {
+          console.log("[RT_LOG] Syncing activeConfig to localFilter:", activeConfig);
+          localFilter = [...activeConfig];
+      }
+  }
+
+  // ... (Giữ nguyên logic Data Sources) ...
   $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
   $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
   $: allPresentGroups = items.map(i => i.name).sort();
-  
-  // Gộp tất cả lại -> Danh sách cho bộ lọc
   $: allGroups = [...new Set([...allGroupsFromStructure, ...allMacroGroups, ...allPresentGroups])].sort();
 
   $: filterList = allGroups.filter(name => 
       name.toLowerCase().includes(filterSearch.toLowerCase())
   );
 
-  // Cập nhật filter khi store thay đổi
-  $: if (activeConfig && !isSettingsOpen) {
-      localFilter = [...activeConfig];
-  }
-
-  // Danh sách hiển thị (Sort theo DTQĐ)
+  // Danh sách hiển thị (Ưu tiên dùng localFilter để phản hồi tức thì)
   let sortedItems = [];
   $: {
       let candidates = [];
-      if (!localFilter || localFilter.length === 0) {
-          // Mặc định Top 10
+      const currentFilter = localFilter.length > 0 ? localFilter : activeConfig;
+
+      if (!currentFilter || currentFilter.length === 0) {
           candidates = [...items].sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0)).slice(0, 10);
       } else {
-          // Lọc theo config
-          candidates = items.filter(item => localFilter.includes(item.name));
+          candidates = items.filter(item => currentFilter.includes(item.name));
       }
       sortedItems = candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   }
@@ -22271,11 +22203,10 @@ export const masterReportLogic = {
       } else {
           localFilter = [...localFilter, name];
       }
-      // Lưu lại thay đổi (Debounce)
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => {
-          adminService.saveQdcConfig(localFilter);
-      }, 1000);
+      console.log("[RT_LOG] User toggled:", name, "-> New Filter:", localFilter);
+      
+      // Lưu Cloud ngay lập tức
+      adminService.saveQdcConfig(localFilter);
   }
 
   function toggleAllVisibility(show) {
@@ -22284,12 +22215,18 @@ export const masterReportLogic = {
       } else {
           localFilter = [];
       }
+      console.log("[RT_LOG] Toggle All:", show);
       adminService.saveQdcConfig(localFilter);
   }
 
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          console.log("[RT_LOG] Click outside detected. Closing menu.");
+          console.log("[RT_LOG] Keeping current selection:", localFilter);
+          
           isSettingsOpen = false;
+          // [QUAN TRỌNG] Đã xóa đoạn code reset localFilter = activeConfig ở đây
+          // Bây giờ nó sẽ giữ nguyên những gì bạn đã chọn
       }
   }
 
@@ -22314,7 +22251,7 @@ export const masterReportLogic = {
         {#if isSettingsOpen}
             <div class="filter-dropdown">
                 <div class="filter-header">
-                    <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
+                     <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
                 </div>
                 <div class="filter-body custom-scrollbar" style="max-height: 250px;">
                     {#if filterList.length === 0}

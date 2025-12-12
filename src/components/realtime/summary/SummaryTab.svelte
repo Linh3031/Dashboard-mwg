@@ -1,5 +1,5 @@
 <script>
-  import { realtimeYCXData, selectedWarehouse, efficiencyConfig, qdcConfigStore } from '../../../stores.js';
+  import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
@@ -7,6 +7,8 @@
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
   import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
+  
+  import KpiCards from './KpiCards.svelte'; // Giả sử đã tách KPI cards (nếu chưa thì giữ code cũ, ở đây tôi giữ nguyên cấu trúc)
 
   // Biến local
   let supermarketReport = {};
@@ -17,7 +19,7 @@
   let categoryItems = [];
   let unexportedItems = []; 
   
-  // [MỚI] Biến chứa raw data đã lọc để truyền cho CategoryTable vẽ biểu đồ Hãng
+  // Biến chứa raw data đã lọc để truyền cho CategoryTable vẽ biểu đồ Hãng
   let rawSourceData = [];
 
   // Reactive Calculation
@@ -49,8 +51,20 @@
     supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
 
     // 4. Prepare Sub-tables
-    qdcItems = supermarketReport.qdc 
-        ? Object.values(supermarketReport.qdc).filter(i => i.sl > 0)
+    
+    // [FIX] SỬA LỖI: Lấy dữ liệu từ nhomHangChiTiet thay vì qdc để hiển thị TOÀN BỘ nhóm hàng
+    qdcItems = supermarketReport.nhomHangChiTiet 
+        ? Object.entries(supermarketReport.nhomHangChiTiet)
+            .map(([name, values]) => ({
+                id: name,
+                name,
+                dtqd: values.revenueQuyDoi,
+                sl: values.quantity,
+                dt: values.revenue,
+                ...values
+            }))
+            // Lọc bỏ những nhóm không có số liệu để danh sách gọn hơn (tùy chọn)
+            .filter(i => i.sl > 0 || i.dt > 0) 
         : [];
 
     categoryItems = supermarketReport.nganhHangChiTiet 
@@ -118,13 +132,10 @@
   <div class="luyke-tier-1-grid">
       <EfficiencyTable 
           supermarketData={supermarketReport} 
-          dynamicItems={$efficiencyConfig} 
+          dynamicItems={[]} 
           goals={goals}
       />
-      <QdcTable 
-          items={qdcItems} 
-          activeConfig={$qdcConfigStore} 
-      />
+      <QdcTable items={qdcItems} />
   </div>
 
   <div>

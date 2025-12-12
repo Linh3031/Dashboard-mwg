@@ -2,13 +2,24 @@
   import { onMount } from 'svelte';
   import { customRevenueTables, modalState, isAdmin, selectedWarehouse } from '../../stores.js';
   import { adminService } from '../../services/admin.service.js';
-  import { datasyncService } from '../../services/datasync.service.js'; // [NEW] Import Datasync
+  import { datasyncService } from '../../services/datasync.service.js';
   import DynamicRevenueTable from './DynamicRevenueTable.svelte';
 
   export let reportData = [];
 
-  $: tables = $customRevenueTables || [];
-  $: visibleTables = tables.filter(t => t.isVisible !== false);
+  // [FIX CRASH] Logic tính toán visibleTables an toàn tuyệt đối
+  // Dù store có data rác (id=null), hàm này sẽ cấp ID tạm để render không bị lỗi
+  $: visibleTables = ($customRevenueTables || []).reduce((acc, table, index) => {
+      // Chỉ lấy bảng chưa bị ẩn
+      if (table.isVisible !== false) {
+          acc.push({
+              ...table,
+              // Nếu id null/undefined, tạo id tạm dựa trên index để Svelte không báo duplicate key
+              id: table.id ? table.id : `fallback_render_id_${index}` 
+          });
+      }
+      return acc;
+  }, []);
 
   // [LOGIC MỚI] Khi Kho thay đổi -> Tải lại dữ liệu
   $: if ($selectedWarehouse) {
@@ -18,31 +29,42 @@
   async function loadData(kho) {
       console.log(`[CategoryView] Loading tables for warehouse: ${kho}`);
       
-      // 1. Tải bảng Hệ thống (Global)
-      const systemTables = await adminService.loadSystemRevenueTables();
-      
-      // 2. Tải bảng Cá nhân (Warehouse Cloud)
-      const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
+      try {
+          // 1. Tải bảng Hệ thống (Global)
+          const systemTables = await adminService.loadSystemRevenueTables();
+          
+          // 2. Tải bảng Cá nhân (Warehouse Cloud)
+          const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
 
-      // 3. Tải Preferences ẩn/hiện (Local)
-      const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
+          // 3. Tải Preferences ẩn/hiện (Local)
+          const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
 
-      // 4. Merge
-      const finalSystemTables = systemTables.map(t => ({
-          ...t,
-          isSystem: true,
-          isVisible: !hiddenSystemIds.includes(t.id)
-      }));
+          // 4. Merge & Sanitize (Làm sạch dữ liệu)
+          const finalSystemTables = (systemTables || []).map((t, index) => ({
+              ...t,
+              // Gán ID cứng nếu thiếu để lưu vào Store chuẩn
+              id: t.id || `sys_gen_${index}_${Date.now()}`, 
+              isSystem: true,
+              isVisible: !hiddenSystemIds.includes(t.id)
+          }));
 
-      // Set store
-      customRevenueTables.set([...finalSystemTables, ...personalTables]);
+          const safePersonalTables = (personalTables || []).map((t, index) => ({
+              ...t,
+              // Gán ID cứng nếu thiếu
+              id: t.id || `per_gen_${index}_${Date.now()}` 
+          }));
+
+          // Cập nhật Store (Sẽ kích hoạt lại reactive statement visibleTables ở trên)
+          customRevenueTables.set([...finalSystemTables, ...safePersonalTables]);
+      } catch (e) {
+          console.error("[CategoryView] Lỗi tải dữ liệu bảng:", e);
+      }
   }
 
-  // --- HÀM LƯU ---
+  // --- CÁC HÀM XỬ LÝ SỰ KIỆN (GIỮ NGUYÊN) ---
   async function savePersonalTables() {
       if (!$selectedWarehouse) return;
       const personalTables = $customRevenueTables.filter(t => !t.isSystem);
-      // Lưu lên Cloud Kho
       await datasyncService.savePersonalRevenueTables($selectedWarehouse, personalTables);
   }
 
@@ -54,16 +76,19 @@
   }
 
   function toggleTableVisibility(id) {
+      // Nếu id là fallback (do lỗi dữ liệu), bỏ qua để tránh lỗi logic
+      if (!id || String(id).startsWith('fallback_render_id_')) return;
+
       customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: !t.isVisible } : t));
-      
-      // Nếu là bảng cá nhân -> Lưu Cloud
-      // Nếu là bảng hệ thống -> Lưu Local Preference
-      // Để đơn giản, gọi cả 2 (hàm save sẽ tự lọc)
       savePersonalTables();
       saveHiddenPreferences();
   }
 
   function editTable(table) {
+      if (String(table.id).startsWith('fallback_render_id_')) {
+          alert("Bảng này đang bị lỗi dữ liệu, không thể sửa.");
+          return;
+      }
       if (table.isSystem && !$isAdmin) {
           alert("Bạn không có quyền chỉnh sửa Bảng hệ thống.");
           return;
@@ -72,6 +97,12 @@
   }
 
   async function deleteTable(id) {
+      if (!id || String(id).startsWith('fallback_render_id_')) {
+          // Xóa "bảng ma" khỏi store local để sạch mắt
+          customRevenueTables.update(items => items.filter(t => t.id)); // Lọc bỏ item ko có id thực
+          return;
+      }
+
       const targetTable = $customRevenueTables.find(t => t.id === id);
       if (!targetTable) return;
 
@@ -87,7 +118,6 @@
               saveHiddenPreferences();
           }
       } else {
-          // Bảng cá nhân
           if (!confirm("Bạn có chắc muốn xóa bảng này? Hành động này sẽ xóa trên Cloud của kho hiện tại.")) return;
           customRevenueTables.update(items => items.filter(t => t.id !== id));
           await savePersonalTables();
@@ -107,22 +137,22 @@
   const getColor = (index) => colors[index % colors.length];
 </script>
 
-{#if tables.length > 0}
+{#if $customRevenueTables.length > 0}
 <div class="mb-6 flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
     <div class="text-xs font-bold uppercase text-gray-500 mr-2 flex items-center gap-1">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
         Bảng hiển thị:
     </div>
-    {#each tables as table}
+    {#each $customRevenueTables as table, index}
         <button 
             class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
                    {table.isVisible !== false ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
                    {table.isSystem ? 'border-dashed' : ''}"
-            on:click={() => toggleTableVisibility(table.id)}
+            on:click={() => toggleTableVisibility(table.id || `fallback_render_id_${index}`)}
             title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
         >
             {#if table.isSystem}<span class="text-[10px] mr-0.5 opacity-70">🌐</span>{/if}
-            {table.title}
+            {table.title || '(Không tên)'}
         </button>
     {/each}
     <button class="px-3 py-1.5 rounded-full text-xs font-bold border border-dashed border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors ml-auto flex items-center gap-1" on:click={openAddModal}>
@@ -136,7 +166,7 @@
     <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
          <p class="text-gray-500 font-medium">Chưa có dữ liệu báo cáo nhân viên.</p>
     </div>
-{:else if tables.length === 0}
+{:else if $customRevenueTables.length === 0}
     <div class="p-12 text-center bg-white rounded-xl border border-blue-100 shadow-sm flex flex-col items-center">
          <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-blue-500">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
