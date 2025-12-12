@@ -1,169 +1,198 @@
 <script>
-  import { onMount } from 'svelte';
-  import { realtimeYCXData, categoryNameMapping, macroCategoryConfig, customRevenueTables, isAdmin, modalState, selectedWarehouse } from '../../../stores.js';
-  import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../services/settings.service.js';
-  import { adminService } from '../../../services/admin.service.js';
-  import { datasyncService } from '../../../services/datasync.service.js'; // [NEW]
-  import DynamicRevenueTable from '../../health-staff/DynamicRevenueTable.svelte';
+  import { afterUpdate, tick } from 'svelte';
+  import { formatters } from '../../../utils/formatters.js';
+  import { cleanCategoryName, getRandomBrightColor } from '../../../utils.js';
 
-  let filteredReport = [];
-  let hasAnyData = false;
-  $: tables = $customRevenueTables || [];
-  $: visibleTables = tables.filter(t => t.isVisible !== false);
+  export let items = []; // Ngành hàng chi tiết
+  export let unexportedItems = []; // Danh sách chưa xuất
 
-  // [LOGIC MỚI] Load data khi đổi kho
-  $: if ($selectedWarehouse) {
-      loadData($selectedWarehouse);
+  // --- STATE ---
+  let showUnexported = false;
+  let viewMode = 'grid'; // 'grid' | 'chart' | 'table'
+  let sortMode = 'revenue_desc';
+  let searchText = '';
+  
+  let chartInstancePie = null;
+
+  // --- LOGIC TITLE & THEME ---
+  $: titleText = showUnexported 
+      ? "CHI TIẾT CHƯA XUẤT (QĐ)" 
+      : "CHI TIẾT NGÀNH HÀNG";
+  
+  $: titleIcon = showUnexported ? "alert-circle" : "layers";
+  $: titleClass = showUnexported ? "text-red-700" : "text-blue-700";
+  $: iconClass = showUnexported ? "text-red-600" : "text-blue-600";
+
+  // Hàm chọn màu/icon cho thẻ (Copy từ Luyke)
+  function getCategoryTheme(name) {
+      const n = name.toLowerCase();
+      if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
+      if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
+      if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
+      if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', theme: 'theme-blue' };
+      if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
+      if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', theme: 'theme-teal' };
+      if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
+      if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', theme: 'theme-orange' };
+      if (n.includes('phụ kiện')) return { icon: 'headphones', theme: 'theme-purple' };
+      if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
+      return { icon: 'tag', theme: 'theme-gray' };
   }
 
-  async function loadData(kho) {
-      const systemTables = await adminService.loadSystemRevenueTables();
-      const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
-      const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
+  // --- DATA LOGIC ---
+  $: sourceData = showUnexported ? unexportedItems : items;
 
-      const finalSystemTables = systemTables.map(t => ({
-          ...t,
-          isSystem: true,
-          isVisible: !hiddenSystemIds.includes(t.id)
-      }));
+  $: filteredItems = sourceData.filter(item => {
+      const name = item.name || item.nganhHang || '';
+      const matchSearch = !searchText || name.toLowerCase().includes(searchText.toLowerCase());
+      const hasValue = showUnexported ? (item.doanhThuQuyDoi > 0) : (item.revenue > 0 || item.quantity > 0);
+      return matchSearch && hasValue;
+  });
 
-      customRevenueTables.set([...finalSystemTables, ...personalTables]);
-  }
+  $: sortedItems = [...filteredItems].sort((a, b) => {
+      const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
+      const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
+      
+      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
+      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
+      return 0;
+  });
 
-  async function savePersonalTables() {
-      if (!$selectedWarehouse) return;
-      const personalTables = $customRevenueTables.filter(t => !t.isSystem);
-      await datasyncService.savePersonalRevenueTables($selectedWarehouse, personalTables);
-  }
+  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
+  $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
-  function saveHiddenPreferences() {
-      const hiddenIds = $customRevenueTables
-          .filter(t => t.isSystem && t.isVisible === false)
-          .map(t => t.id);
-      localStorage.setItem('hiddenSystemTableIds', JSON.stringify(hiddenIds));
-  }
+  // --- CHART ---
+  async function renderChart() {
+      if (typeof Chart === 'undefined') return;
+      await tick();
+      const ctx = document.getElementById('rt-cat-chart');
+      if (!ctx) return;
+      if (chartInstancePie) chartInstancePie.destroy();
 
-  $: {
-      const _triggerMap = $categoryNameMapping;
-      const _triggerMacro = $macroCategoryConfig;
-      const settings = settingsService.getRealtimeGoalSettings($selectedWarehouse);
-      const goals = settings.goals || {};
-      const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
-      if ($selectedWarehouse) {
-          filteredReport = masterReport.filter(nv => nv.maKho == $selectedWarehouse);
-      } else {
-          filteredReport = masterReport;
-      }
-      hasAnyData = filteredReport.length > 0;
-  }
-
-  function editTable(table) {
-      if (table.isSystem && !$isAdmin) {
-          alert("Bạn không có quyền chỉnh sửa Bảng hệ thống.");
-          return;
-      }
-      modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: table }));
-  }
-
-  async function deleteTable(id) {
-      const targetTable = $customRevenueTables.find(t => t.id === id);
-      if (!targetTable) return;
-
-      if (targetTable.isSystem) {
-          if ($isAdmin) {
-              if (!confirm("CẢNH BÁO ADMIN: Xóa bảng HỆ THỐNG này vĩnh viễn?")) return;
-              const newTables = $customRevenueTables.filter(t => t.id !== id);
-              customRevenueTables.set(newTables);
-              await adminService.saveSystemRevenueTables(newTables);
-          } else {
-              if (!confirm("Ẩn bảng này khỏi màn hình của bạn?")) return;
-              customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: false } : t));
-              saveHiddenPreferences();
+      const top10 = sortedItems.slice(0, 10);
+      
+      chartInstancePie = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+              labels: top10.map(d => d.name || d.nganhHang),
+              datasets: [{
+                  data: top10.map(d => showUnexported ? d.doanhThuQuyDoi : d.revenue),
+                  backgroundColor: top10.map(() => getRandomBrightColor()),
+                  borderWidth: 1
+              }]
+          },
+          options: { 
+              responsive: true, 
+              maintainAspectRatio: false,
+              plugins: { legend: { position: 'right' } } 
           }
-      } else {
-          if (!confirm("Bạn có chắc muốn xóa bảng này? Hành động này sẽ xóa trên Cloud của kho hiện tại.")) return;
-          customRevenueTables.update(items => items.filter(t => t.id !== id));
-          await savePersonalTables();
-      }
+      });
   }
 
-  function openAddModal() {
-      if (!$selectedWarehouse) {
-          alert("Vui lòng chọn Kho trước khi tạo bảng mới.");
-          return;
-      }
-      modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: null }));
-  }
+  $: if (viewMode === 'chart') setTimeout(renderChart, 0);
 
-  function toggleTableVisibility(id) {
-      customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: !t.isVisible } : t));
-      savePersonalTables();
-      saveHiddenPreferences();
-  }
-
-  const colors = ['teal', 'indigo', 'rose', 'blue', 'green', 'orange', 'purple'];
-  const getColor = (index) => colors[index % colors.length];
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-{#if tables.length > 0}
-<div class="mb-6 flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
-    <div class="text-xs font-bold uppercase text-gray-500 mr-2 flex items-center gap-1">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
-        Bảng hiển thị:
-    </div>
-    {#each tables as table}
-        <button 
-            class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                   {table.isVisible !== false ? 'bg-teal-600 text-white border-teal-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
-                   {table.isSystem ? 'border-dashed' : ''}"
-            on:click={() => toggleTableVisibility(table.id)}
-            title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
-        >
-            {#if table.isSystem}<span class="text-[10px] mr-0.5 opacity-70">🌐</span>{/if}
-            {table.title}
-        </button>
-    {/each}
-</div>
-{/if}
+<div class="luyke-widget h-full">
+    <div class="luyke-toolbar">
+        <div class="luyke-toolbar-left flex-grow min-w-0">
+            <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
+                <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
+                <span class="truncate">{titleText}</span>
+            </h3>
+        </div>
 
-{#if !hasAnyData}
-    <div class="p-12 text-center bg-yellow-50 rounded-lg border border-yellow-200">
-         <p class="text-yellow-700 font-semibold text-lg">Không tìm thấy doanh thu cho các ngành hàng chính.</p>
-    </div>
-{:else if tables.length === 0}
-    <div class="p-12 text-center bg-white rounded-xl border border-teal-100 shadow-sm flex flex-col items-center">
-         <div class="w-16 h-16 bg-teal-50 rounded-full flex items-center justify-center mb-4 text-teal-500">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-         </div>
-         <h4 class="text-lg font-bold text-gray-800 mb-2">Chưa có Bảng theo dõi Realtime</h4>
-         <p class="text-gray-500 mb-6 max-w-md">Tạo bảng mới để theo dõi tiến độ doanh thu theo thời gian thực.</p>
-         <button class="px-6 py-2.5 bg-teal-600 text-white rounded-lg font-bold hover:bg-teal-700 shadow-md flex items-center gap-2" on:click={openAddModal}>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-            Tạo bảng ngay
-        </button>
-    </div>
-{:else if visibleTables.length === 0}
-    <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200">
-         <p class="text-gray-500 font-medium">Bạn đã ẩn tất cả các bảng.</p>
-    </div>
-{:else}
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
-        {#each visibleTables as table, index (table.id)}
-            <div data-capture-group="1">
-                <DynamicRevenueTable 
-                    config={table}
-                    {reportData}
-                    colorTheme={getColor(index)}
-                    on:edit={() => editTable(table)}
-                    on:delete={() => deleteTable(table.id)}
-                />
+        <div class="luyke-toolbar-right flex items-center gap-2">
+            <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ">
+                    <i data-feather="grid" class="w-4 h-4"></i>
+                </button>
+                <button class="view-mode-btn {viewMode === 'table' ? 'active' : ''}" on:click={() => viewMode = 'table'} title="Bảng">
+                    <i data-feather="list" class="w-4 h-4"></i>
+                </button>
+                <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ">
+                    <i data-feather="pie-chart" class="w-4 h-4"></i>
+                </button>
             </div>
-        {/each}
-    </div>
-{/if}
 
-<style>
-  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-</style>
+            <div 
+                class="toggle-wrapper {showUnexported ? 'active' : ''}" 
+                on:click={() => showUnexported = !showUnexported}
+                title="Xem đơn hàng chưa xuất"
+                style="padding: 4px 8px;"
+            >
+                <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
+                <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
+            </div>
+
+            <div class="hidden sm:block">
+                <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
+            </div>
+        </div>
+    </div>
+
+    <div class="luyke-widget-body bg-white border-t border-gray-100 p-4">
+        {#if sortedItems.length === 0}
+            <div class="text-center py-10 text-gray-400 italic">Không có dữ liệu hiển thị.</div>
+        
+        {:else if viewMode === 'grid'}
+            <div class="luyke-cat-grid">
+                {#each sortedItems as item}
+                    {@const name = item.name || item.nganhHang}
+                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
+                    {@const style = getCategoryTheme(name)}
+                    {@const percent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
+                    {@const finalTheme = showUnexported ? 'theme-warning' : style.theme}
+
+                    <div class="cat-card-colorful {finalTheme}">
+                        <div class="cat-top-row">
+                            <div class="cat-icon-box"><i data-feather={style.icon} class="w-5 h-5"></i></div>
+                            {#if !showUnexported && totalRevenue > 0}
+                                <span class="cat-percent-text text-xs">{formatters.formatPercentage(revenue/totalRevenue)}</span>
+                            {/if}
+                        </div>
+                        <h4 class="cat-name-text" title={name}>{name}</h4>
+                        <div class="cat-value-text">{formatters.formatRevenue(revenue, 0)}</div>
+                        <div class="cat-footer-row">
+                            <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
+                        </div>
+                        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width: {percent}%"></div></div>
+                    </div>
+                {/each}
+            </div>
+
+        {:else if viewMode === 'table'}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm table-bordered">
+                    <thead class="bg-gray-100 font-bold text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2 text-left">Ngành hàng</th>
+                            <th class="px-3 py-2 text-right">SL</th>
+                            <th class="px-3 py-2 text-right">Doanh thu</th>
+                            {#if showUnexported}<th class="px-3 py-2 text-right">DT Thực</th>{/if}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedItems as item}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-3 py-2">{item.name || item.nganhHang}</td>
+                                <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(showUnexported ? item.soLuong : item.quantity)}</td>
+                                <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(showUnexported ? item.doanhThuQuyDoi : item.revenue)}</td>
+                                {#if showUnexported}
+                                    <td class="px-3 py-2 text-right text-gray-500">{formatters.formatRevenue(item.doanhThuThuc)}</td>
+                                {/if}
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+
+        {:else}
+            <div class="h-[350px] w-full relative">
+                <canvas id="rt-cat-chart"></canvas>
+            </div>
+        {/if}
+    </div>
+</div>

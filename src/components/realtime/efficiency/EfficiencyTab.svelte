@@ -1,49 +1,70 @@
 <script>
-  // Version 1.2 - Fix import paths (modules -> services)
-  import { realtimeYCXData } from '../../../stores.js';
-  import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng
-  import { settingsService } from '../../../services/settings.service.js';
-  
-  import EfficiencyTable from './EfficiencyTable.svelte';
+  import { afterUpdate } from 'svelte';
+  import { formatters } from '../../../utils/formatters.js';
 
-  export let selectedWarehouse = '';
+  export let items = []; 
 
-  let filteredReport = [];
+  const iconMap = {
+      'pctPhuKien': 'headphones', 'pctGiaDung': 'home', 'pctMLN': 'droplet',
+      'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
+  };
 
-  $: {
-    // 1. Lấy mục tiêu
-    const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
-    const goals = settings.goals || {};
-
-    // 2. Tính Master Report
-    const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
-    
-    // 3. Lọc theo Kho
-    if (selectedWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == selectedWarehouse);
-    } else {
-      filteredReport = masterReport;
-    }
+  function getProgressColor(val, target) {
+      const t = (target || 0) / 100;
+      if (t === 0) return '#3b82f6'; 
+      return val >= t ? '#3b82f6' : '#ef4444'; 
   }
+
+  afterUpdate(() => { if (window.feather) feather.replace(); });
 </script>
 
-<div class="animate-fade-in pb-10">
-  {#if filteredReport.length > 0}
-    <EfficiencyTable reportData={filteredReport} />
-  {:else}
-    <div class="p-12 text-center bg-gray-50 rounded-lg border border-gray-200">
-      <p class="text-gray-500 text-lg">Không có dữ liệu hiệu quả nào phù hợp với bộ lọc.</p>
+<div class="luyke-widget h-full">
+  <div class="luyke-widget-header">
+    <div class="luyke-widget-title">
+      <div class="p-1.5 bg-blue-100 rounded text-blue-600 mr-2">
+          <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+      </div>
+      <span>HIỆU QUẢ KHAI THÁC</span>
     </div>
-  {/if}
-</div>
+  </div>
 
-<style>
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-</style>
+  <div class="luyke-widget-body custom-scrollbar">
+    {#if items.length === 0}
+       <div class="flex flex-col items-center justify-center h-full text-gray-400">
+          <p class="text-sm">Không có dữ liệu.</p>
+       </div>
+    {:else}
+      <div class="flex flex-col gap-0">
+        {#each items as item (item.id)}
+          {@const targetVal = (item.target || 0) / 100}
+          {@const color = getProgressColor(item.value, item.target)}
+          {@const percent = Math.min((item.value * 100), 100)}
+          
+          <div class="eff-item-compact group relative hover:bg-gray-50 transition-colors">
+            <div class="eff-icon-compact">
+                <i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i>
+            </div>
+            
+            <div class="eff-content-compact">
+                <div class="eff-row-top">
+                    <span class="eff-label-text">{item.label}</span>
+                    <span class="eff-value-text" style="color: {color}">
+                        {formatters.formatPercentage(item.value)}
+                    </span>
+                </div>
+                
+                <div class="eff-row-bottom">
+                    <div class="eff-bar-container">
+                         <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
+                    </div>
+                    {#if targetVal > 0}
+                        <span class="eff-target-text">MT: {item.target}%</span>
+                    {/if}
+                </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+</div>

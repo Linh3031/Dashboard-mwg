@@ -9,20 +9,20 @@ export const dataService = {
     init(controller) { this.appController = controller; },
 
     // --- File Handlers ---
-    // Kiểm tra xem fileHandler có tồn tại không để tránh crash
-    handleFileChange: fileHandler ? fileHandler.handleFileChange : () => console.error("fileHandler missing"),
-    handleCategoryFile: fileHandler?.handleCategoryFile,
-    handleSpecialProductFileUpload: fileHandler?.handleSpecialProductFileUpload,
-    handleRealtimeFileInput: fileHandler?.handleRealtimeFileInput,
-    handleTemplateDownload: fileHandler?.handleTemplateDownload,
+    // [FIX] Sử dụng arrow function để wrap, tránh lỗi undefined khi khởi tạo module
+    handleFileChange: (file, key) => fileHandler.handleFileChange(file, key),
+    handleRealtimeFileInput: (event) => fileHandler.handleRealtimeFileInput(event),
+    handleCategoryFile: (event) => fileHandler.handleCategoryFile(event),
+    handleSpecialProductFileUpload: (event) => fileHandler.handleSpecialProductFileUpload(event),
+    handleTemplateDownload: () => fileHandler.handleTemplateDownload(),
 
     // --- Paste Handlers ---
-    handlePasteChange: pasteHandler?.handlePasteChange,
+    handlePasteChange: (text, key1, key2, key3) => pasteHandler.handlePasteChange(text, key1, key2, key3),
 
     // --- Sync & Cache ---
-    syncDownFromCloud: syncHandler?.syncDownFromCloud.bind(syncHandler),
-    downloadFileFromCloud: syncHandler?.downloadFileFromCloud.bind(syncHandler),
-    loadAllFromCache: cacheHandler?.loadAllFromCache,
+    syncDownFromCloud: (wh) => syncHandler.syncDownFromCloud(wh),
+    downloadFileFromCloud: (key) => syncHandler.downloadFileFromCloud(key),
+    loadAllFromCache: () => cacheHandler.loadAllFromCache(),
 
     _getSavedMetadata(warehouse, dataType) { return null; }
 };

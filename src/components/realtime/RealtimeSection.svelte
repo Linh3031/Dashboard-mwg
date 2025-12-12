@@ -1,7 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   
-  import * as dataService from '../../services/dataService.js';
+  // [FIX] Sửa 'import * as dataService' thành 'import { dataService }'
+  import { dataService } from '../../services/dataService.js';
+  
   import { warehouseList, modalState, selectedWarehouse } from '../../stores.js';
   import { actionService } from '../../services/action.service.js';
 
@@ -25,6 +27,7 @@
   }
 
   async function handleFileUpload(event) {
+    // Bây giờ hàm này sẽ hoạt động đúng
     await dataService.handleRealtimeFileInput(event);
   }
 
@@ -57,7 +60,7 @@
                 <div class="flex items-center gap-2">
                     <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Doanh Thu Realtime</h2>
                     <button class="page-header__help-btn" data-help-id="realtime" title="Xem hướng dẫn">
-                       <i data-feather="help-circle"></i>
+                        <i data-feather="help-circle"></i>
                     </button>
                 </div>
 
@@ -100,7 +103,7 @@
                      <button id="compose-realtime-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}>
                         <i data-feather="pen-tool" class="w-4 h-4"></i>
                         <span class="hidden lg:inline">Nhận xét</span>
-                    </button>
+                     </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
                         <span class="hidden lg:inline">Xuất Excel</span>
@@ -126,7 +129,7 @@
                         <span>Siêu thị Realtime</span>
                     </button>
                        
-                     <button 
+                    <button 
                         class="sub-tab-btn {activeSubTabId === 'subtab-realtime-nhan-vien' ? 'active' : ''}" 
                         data-target="subtab-realtime-nhan-vien"
                         data-title="DTNVRealtime"
@@ -211,7 +214,7 @@
                     
                 {:else}
                     <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                         <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
+                        <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
                     </div>
                 {/if}
             </div>

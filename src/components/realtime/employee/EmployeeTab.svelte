@@ -1,29 +1,32 @@
 <script>
-  // Version 1.1 - Fix import paths (modules -> services)
-  import { realtimeYCXData } from '../../../stores.js';
+  // [FIX] Thêm import selectedWarehouse
+  import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../../services/settings.service.js';
   
   import EmployeeList from './EmployeeList.svelte';
   import EmployeeDetail from './EmployeeDetail.svelte';
 
-  export let selectedWarehouse = '';
+  // [FIX] Bỏ export let selectedWarehouse
   
   let selectedEmployeeId = null;
-  let masterReport = [];
   let filteredReport = [];
 
   $: {
-    const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
+    // [FIX] Dùng $selectedWarehouse
+    const currentWarehouse = $selectedWarehouse;
+    const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     const goals = settings.goals || {};
-    masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    if (selectedWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == selectedWarehouse);
+    const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
+    
+    if (currentWarehouse) {
+      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
       filteredReport = masterReport;
     }
+    
+    console.log(`[EmployeeTab] Report generated for ${filteredReport.length} employees (Warehouse: ${currentWarehouse}).`);
   }
 
   function handleViewDetail(event) {

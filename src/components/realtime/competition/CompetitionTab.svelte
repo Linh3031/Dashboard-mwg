@@ -3,61 +3,54 @@
       realtimeYCXData, 
       globalSpecialPrograms, 
       globalCompetitionConfigs, 
-      localCompetitionConfigs 
+      localCompetitionConfigs,
+      selectedWarehouse // [FIX] Import store này
   } from '../../../stores.js';
-  import { services } from '../../../services.js'; // Gọi service tính toán
+  import { services } from '../../../services.js'; 
   
-  // Import 2 component con đã tạo ở Bước 1 & 2
   import SpecialProgramTable from './SpecialProgramTable.svelte';
   import FocusCompetitionTable from './FocusCompetitionTable.svelte';
 
-  export let selectedWarehouse = '';
+  // [FIX] Bỏ export let selectedWarehouse
 
   let specialReportData = [];
   let competitionReportData = [];
   let hasData = false;
 
-  // Reactive Statement: Tính toán lại khi dữ liệu hoặc kho thay đổi
   $: {
-      // 1. Lọc dữ liệu Realtime theo kho (nếu có chọn)
-      let filteredData = $realtimeYCXData;
-      if (selectedWarehouse) {
-          // Lọc theo mã kho trong cột 'nguoiTao' hoặc logic tương tự nếu có cột 'maKho'
-          // Lưu ý: realtimeYCXData chuẩn hóa thường chưa có maKho trực tiếp, 
-          // nhưng services.calculate... sẽ map với DSNV để lấy kho.
-          // Tuy nhiên, để tối ưu, ta cứ truyền full data vào service, 
-          // service sẽ map với DSNV. Nếu DSNV đã được lọc (hoặc logic service hỗ trợ), nó sẽ đúng.
-          // Ở đây ta truyền full data đã chuẩn hóa.
-      }
+      // [FIX] Dùng $selectedWarehouse
+      const currentWarehouse = $selectedWarehouse;
+      let filteredData = $realtimeYCXData || [];
+      
+      console.log(`[CompetitionTab] Recalculating... Rows: ${filteredData.length}, Warehouse: ${currentWarehouse}`);
 
       // 2. Tính toán SP Đặc Quyền
-      // Logic cũ: services.calculateSpecialProductReport(data, configs)
-      specialReportData = services.calculateSpecialProductReport(
+      const spReport = services.calculateSpecialProductReport(
           filteredData, 
-          $globalSpecialPrograms
+          $globalSpecialPrograms || []
       );
 
       // 3. Tính toán Thi Đua Tùy Chỉnh (Hãng)
-      // Gộp config chung (Admin) và riêng (Local)
-      const allConfigs = [ ...$globalCompetitionConfigs, ...$localCompetitionConfigs ];
-      
-      competitionReportData = services.calculateCompetitionFocusReport(
+      const allConfigs = [ ...($globalCompetitionConfigs || []), ...($localCompetitionConfigs || []) ];
+      const compReport = services.calculateCompetitionFocusReport(
           filteredData,
           allConfigs
       );
 
-      // Lọc lại kết quả theo kho (Vì service trả về mảng nhân viên toàn hệ thống nếu không lọc trước)
-      if (selectedWarehouse) {
-          // Hàm lọc helper
+      // 4. Lọc kết quả theo kho
+      if (currentWarehouse) {
           const filterByWarehouse = (reports) => {
               return reports.map(group => ({
                   ...group,
-                  employeeData: group.employeeData.filter(emp => emp.maKho === selectedWarehouse)
+                  employeeData: group.employeeData.filter(emp => String(emp.maKho) === String(currentWarehouse))
               })).filter(group => group.employeeData.length > 0);
           };
 
-          specialReportData = filterByWarehouse(specialReportData);
-          competitionReportData = filterByWarehouse(competitionReportData);
+          specialReportData = filterByWarehouse(spReport);
+          competitionReportData = filterByWarehouse(compReport);
+      } else {
+          specialReportData = spReport;
+          competitionReportData = compReport;
       }
 
       hasData = specialReportData.length > 0 || competitionReportData.length > 0;
