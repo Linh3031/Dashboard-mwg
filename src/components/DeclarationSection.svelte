@@ -10,9 +10,8 @@
   import AdminUserStats from './admin/AdminUserStats.svelte';
   import AdminCompetition from './admin/AdminCompetition.svelte';
   import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
-  
-  // [MỚI] Component quản lý bảng doanh thu
   import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
+  import AdminEfficiency from './admin/AdminEfficiency.svelte'; // [MỚI]
 
   export let activeTab;
 
@@ -48,8 +47,7 @@
 
         <div class="space-y-6 mb-8">
             <AdminRevenueTables />
-            
-            <AdminCompetition />
+            <AdminEfficiency /> <AdminCompetition />
         </div>
 
         <div class="space-y-6">

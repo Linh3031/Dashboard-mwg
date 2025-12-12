@@ -5,17 +5,19 @@
     selectedWarehouse,
     interfaceSettings,
     macroCategoryConfig,
-    macroProductGroupConfig, // [QUAN TRỌNG] Import thêm store này
+    macroProductGroupConfig, 
     efficiencyConfig,
     qdcConfigStore,
     modalState,
-    categoryNameMapping // Import thêm để lắng nghe mapping
+    categoryNameMapping,
+    warehouseCustomMetrics
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
   import { settingsService } from '../../services/settings.service.js';
   import { dataProcessing } from '../../services/dataProcessing.js';
   import { adminService } from '../../services/admin.service.js';
+  import { datasyncService } from '../../services/datasync.service.js';
   import * as utils from '../../utils.js';
   
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
@@ -44,13 +46,33 @@
       tgdd: { val: 0, pct: 0 }
   };
 
+  // [MỚI] Biến chứa danh sách chỉ số gộp (Global + Local)
+  let combinedEfficiencyItems = [];
+
   onMount(async () => {
+      // 1. Tải Config Global (Hệ thống)
       const savedEffConfig = await adminService.loadEfficiencyConfig();
       if(savedEffConfig.length > 0) efficiencyConfig.set(savedEffConfig);
       
       const savedQdcConfig = await adminService.loadQdcConfig();
       if(savedQdcConfig.length > 0) qdcConfigStore.set(savedQdcConfig);
   });
+
+  // [MỚI] Tải Config Local khi đổi kho
+  $: if ($selectedWarehouse) {
+      loadLocalMetrics($selectedWarehouse);
+  }
+
+  async function loadLocalMetrics(kho) {
+      const localData = await datasyncService.loadCustomMetrics(kho);
+      warehouseCustomMetrics.set(localData);
+  }
+
+  // [MỚI] Logic Gộp (Reactive)
+  $: combinedEfficiencyItems = [
+      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })), // Đánh dấu hệ thống
+      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false })) // Đánh dấu cá nhân
+  ];
 
   const cleanValue = (str) => {
       if (typeof str === 'number') return str;
@@ -61,11 +83,12 @@
   };
 
   $: {
-    // [FIX QUAN TRỌNG] Khai báo dependency để kích hoạt tính toán lại khi Config thay đổi
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
     const _triggerEff = $efficiencyConfig;
     const _triggerMap = $categoryNameMapping;
+    // [MỚI] Trigger khi local custom metrics thay đổi
+    const _triggerLocalEff = $warehouseCustomMetrics;
 
     localSupermarketReport = supermarketReport || {};
     localGoals = goals || {};
@@ -183,8 +206,6 @@
         target: localGoals[goalKeyMap[config.id]] 
       }));
 
-    // [CẬP NHẬT] Lấy dữ liệu cho bảng QĐC từ Nhóm Hàng Chi Tiết (Product Groups)
-    // Bao gồm cả Nhóm Hàng Lớn (Macro) và Nhóm Hàng Thường
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
       .map(([name, values]) => ({ 
           id: name,
@@ -195,8 +216,6 @@
           ...values 
       }));
 
-    // [CẬP NHẬT] Lấy dữ liệu cho bảng Ngành Hàng (Category)
-    // Bao gồm cả Ngành Hàng Lớn (Macro) và Ngành Hàng Thường
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
       .map(([name, values]) => ({ name, dtqd: values.revenueQuyDoi, ...values }));
   }
@@ -209,10 +228,23 @@
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
   }
 
-  function handleDeleteEffConfig(event) {
+  // [MỚI] Xử lý xóa chỉ số (phân biệt System vs Local)
+  async function handleDeleteEffConfig(event) {
       const id = event.detail;
-      efficiencyConfig.update(items => items.filter(i => i.id !== id));
-      adminService.saveEfficiencyConfig($efficiencyConfig);
+      const isSystem = $efficiencyConfig.some(i => i.id === id);
+      
+      if (isSystem) {
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          return;
+      }
+
+      if (confirm("Xóa chỉ số cá nhân này?")) {
+          const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
+          warehouseCustomMetrics.set(newLocalMetrics);
+          if ($selectedWarehouse) {
+              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
+          }
+      }
   }
 
   afterUpdate(() => {
@@ -322,7 +354,7 @@
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
       <LuykeEfficiencyTable 
           items={efficiencyItems} 
-          dynamicItems={$efficiencyConfig}
+          dynamicItems={combinedEfficiencyItems} 
           supermarketData={localSupermarketReport}
           on:add={openAddEffModal}
           on:edit={handleEditEffConfig}

@@ -1,4 +1,5 @@
 // src/services/admin.service.js
+// Version 3.1 - Fix Data Compatibility (Restore Old Data)
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -14,7 +15,7 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    competitionNameMappings // [MỚI] Import store này
+    competitionNameMappings
 } from '../stores.js';
 
 const getDB = () => {
@@ -80,7 +81,9 @@ export const adminService = {
             const docRef = doc(db, "declarations", "homeConfig");
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
-                const data = docSnap.data().data;
+                const raw = docSnap.data();
+                // Fallback đọc nhiều trường
+                const data = raw.data || raw.config || raw;
                 if (data) homeConfig.set(data);
             }
         } catch (error) { console.error("Error loading home config:", error); }
@@ -115,8 +118,15 @@ export const adminService = {
             
             const [catSnap, brandSnap] = await Promise.all([getDoc(catRef), getDoc(brandRef)]);
             
-            const categories = catSnap.exists() ? (catSnap.data().data || []) : [];
-            const brands = brandSnap.exists() ? (brandSnap.data().data || []) : [];
+            // [FIX] Fallback đọc data
+            const getArray = (snap) => {
+                if (!snap.exists()) return [];
+                const d = snap.data();
+                return d.data || d.items || d.list || [];
+            };
+
+            const categories = getArray(catSnap);
+            const brands = getArray(brandSnap);
 
             categoryStructure.set(categories);
             brandList.set(brands);
@@ -128,14 +138,21 @@ export const adminService = {
         }
     },
 
-    // --- 4. SYSTEM REVENUE TABLES ---
+    // --- 4. SYSTEM REVENUE TABLES (BẢNG DOANH THU) ---
     async loadSystemRevenueTables() {
         const db = getDB();
         if (!db) return [];
         try {
             const docRef = doc(db, "declarations", "systemRevenueTables");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().tables || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                // [FIX] Ưu tiên 'tables', nếu không có thì tìm 'data', 'items'
+                const tables = d.tables || d.data || d.items || [];
+                console.log(`[AdminService] Loaded ${tables.length} system tables.`);
+                return tables;
+            }
+            return [];
         } catch (e) {
             console.error("Lỗi tải bảng hệ thống:", e);
             return [];
@@ -147,10 +164,12 @@ export const adminService = {
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
         if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
         
+        // Chỉ lưu bảng có cờ isSystem = true
         const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
         
         try {
             const docRef = doc(db, "declarations", "systemRevenueTables");
+            // Lưu thống nhất vào field 'tables'
             await setDoc(docRef, { 
                 tables: systemTables,
                 updatedAt: serverTimestamp() 
@@ -169,6 +188,14 @@ export const adminService = {
         
         try {
             console.log("[admin.service] Đang tải cấu hình Mapping từ Cloud...");
+            // Helper để lấy dữ liệu array an toàn
+            const safeGet = (docSnap, defaultVal = []) => {
+                if (!docSnap.exists()) return defaultVal;
+                const d = docSnap.data();
+                // Kiểm tra các trường phổ biến
+                return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
+            };
+
             const docsToLoad = [
                 "macroCategoryConfig", 
                 "macroProductGroupConfig", 
@@ -177,22 +204,20 @@ export const adminService = {
                 "brandNameMapping",
                 "efficiencyConfig", 
                 "qdcConfig",
-                "competitionNameMappings" // [MỚI] Load thêm mapping thi đua
+                "competitionNameMappings"
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             
             const results = await Promise.all(promises);
             
-            if (results[0].exists()) macroCategoryConfig.set(results[0].data().data || []);
-            if (results[1].exists()) macroProductGroupConfig.set(results[1].data().data || []);
-            if (results[2].exists()) categoryNameMapping.set(results[2].data().data || {});
-            if (results[3].exists()) groupNameMapping.set(results[3].data().data || {});
-            if (results[4].exists()) brandNameMapping.set(results[4].data().data || {});
-            if (results[5].exists()) efficiencyConfig.set(results[5].data().data || []);
-            if (results[6].exists()) qdcConfigStore.set(results[6].data().data || []);
-            
-            // [MỚI] Set store mapping thi đua
-            if (results[7].exists()) competitionNameMappings.set(results[7].data().mappings || {});
+            macroCategoryConfig.set(safeGet(results[0]));
+            macroProductGroupConfig.set(safeGet(results[1]));
+            categoryNameMapping.set(safeGet(results[2], {}));
+            groupNameMapping.set(safeGet(results[3], {}));
+            brandNameMapping.set(safeGet(results[4], {}));
+            efficiencyConfig.set(safeGet(results[5])); // Bảng hiệu quả
+            qdcConfigStore.set(safeGet(results[6]));
+            competitionNameMappings.set(safeGet(results[7], {}));
 
             console.log("[admin.service] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -237,7 +262,6 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu mapping: ' + error.message, 'error'); }
     },
 
-    // [MỚI] Hàm lưu Mapping tên thi đua
     async saveCompetitionNameMappings(mappings) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
@@ -299,7 +323,11 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "globalCompetitionConfigs");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().configs || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.configs || d.data || [];
+            }
+            return [];
         } catch (error) { return []; }
     },
 
@@ -321,7 +349,11 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "specialProductList");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().products || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.products || d.data || [];
+            }
+            return [];
         } catch (error) { console.error("Error loading SPĐQ:", error); return []; }
     },
 
@@ -331,20 +363,33 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "globalSpecialPrograms");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().programs || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.programs || d.configs || d.data || [];
+            }
+            return [];
         } catch (error) { return []; }
     },
 
     // --- 9. EFFICIENCY & QDC CONFIGS ---
+    // (BẢNG HIỆU QUẢ)
     async saveEfficiencyConfig(config) {
         const db = getDB();
-        if (!db || !get(isAdmin)) return;
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
+        
         try {
             const docRef = doc(db, "declarations", "efficiencyConfig");
-            await setDoc(docRef, { data: sanitizeForFirestore(config) });
+            await setDoc(docRef, { 
+                data: sanitizeForFirestore(config),
+                updatedAt: serverTimestamp() 
+            });
             efficiencyConfig.set(config);
-            notify('Đã lưu cấu hình bảng Hiệu quả!', 'success');
-        } catch (e) { console.error(e); notify('Lỗi lưu config: ' + e.message, 'error'); }
+            notify('Đã lưu cấu hình Bảng Hiệu quả hệ thống!', 'success');
+        } catch (e) { 
+            console.error(e); 
+            notify('Lỗi lưu config: ' + e.message, 'error'); 
+        }
     },
 
     async loadEfficiencyConfig() {
@@ -353,10 +398,21 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "efficiencyConfig");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().data || []) : [];
-        } catch (e) { return []; }
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                // [FIX] Đọc fallback 'data' hoặc 'items' hoặc 'config'
+                const data = d.data || d.items || d.config || [];
+                console.log(`[AdminService] Loaded efficiency config: ${data.length} items`);
+                return data;
+            }
+            return [];
+        } catch (e) { 
+            console.error("Lỗi tải efficiency config:", e);
+            return []; 
+        }
     },
     
+    // (TOP NHÓM HÀNG)
     async saveQdcConfig(selectedGroups) {
          const db = getDB();
         if (!db || !get(isAdmin)) return;
@@ -373,7 +429,11 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "qdcConfig");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().data || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.data || d.config || d.items || [];
+            }
+            return [];
         } catch (e) { return []; }
     }
 };

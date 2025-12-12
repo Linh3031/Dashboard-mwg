@@ -1,14 +1,20 @@
 <script>
-  import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
+  import { 
+    realtimeYCXData, 
+    selectedWarehouse, 
+    efficiencyConfig, 
+    warehouseCustomMetrics // [MỚI]
+  } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
+  import { datasyncService } from '../../../services/datasync.service.js'; // [MỚI]
+  import { adminService } from '../../../services/admin.service.js'; // [MỚI]
   
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
   import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
-  
-  import KpiCards from './KpiCards.svelte'; // Giả sử đã tách KPI cards (nếu chưa thì giữ code cũ, ở đây tôi giữ nguyên cấu trúc)
+  import { onMount } from 'svelte'; // [MỚI]
 
   // Biến local
   let supermarketReport = {};
@@ -19,8 +25,52 @@
   let categoryItems = [];
   let unexportedItems = []; 
   
-  // Biến chứa raw data đã lọc để truyền cho CategoryTable vẽ biểu đồ Hãng
+  // Biến chứa raw data đã lọc
   let rawSourceData = [];
+
+  // [MỚI] Biến chứa danh sách chỉ số gộp
+  let combinedEfficiencyItems = [];
+
+  onMount(async () => {
+      // 1. Load Global Config (Hệ thống)
+      const globalConfig = await adminService.loadEfficiencyConfig();
+      efficiencyConfig.set(globalConfig);
+  });
+
+  // [MỚI] Khi Kho thay đổi -> Load Local Config
+  $: if ($selectedWarehouse) {
+      loadLocalMetrics($selectedWarehouse);
+  }
+
+  async function loadLocalMetrics(kho) {
+      const localData = await datasyncService.loadCustomMetrics(kho);
+      warehouseCustomMetrics.set(localData);
+  }
+
+  // [MỚI] Gộp Global + Local
+  $: combinedEfficiencyItems = [
+      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
+      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
+  ];
+
+  // Logic xóa chỉ số
+  async function handleDeleteMetric(event) {
+      const id = event.detail;
+      const isSystem = $efficiencyConfig.some(i => i.id === id);
+      
+      if (isSystem) {
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          return;
+      }
+
+      if (confirm("Xóa chỉ số cá nhân này?")) {
+          const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
+          warehouseCustomMetrics.set(newLocalMetrics);
+          if ($selectedWarehouse) {
+              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
+          }
+      }
+  }
 
   // Reactive Calculation
   $: {
@@ -44,15 +94,12 @@
       });
     }
     
-    // Gán vào biến để truyền xuống dưới
     rawSourceData = filteredRawData;
 
     // 3. Aggregate
     supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
 
     // 4. Prepare Sub-tables
-    
-    // [FIX] SỬA LỖI: Lấy dữ liệu từ nhomHangChiTiet thay vì qdc để hiển thị TOÀN BỘ nhóm hàng
     qdcItems = supermarketReport.nhomHangChiTiet 
         ? Object.entries(supermarketReport.nhomHangChiTiet)
             .map(([name, values]) => ({
@@ -63,7 +110,6 @@
                 dt: values.revenue,
                 ...values
             }))
-            // Lọc bỏ những nhóm không có số liệu để danh sách gọn hơn (tùy chọn)
             .filter(i => i.sl > 0 || i.dt > 0) 
         : [];
 
@@ -74,7 +120,6 @@
     unexportedItems = reportService.generateRealtimeChuaXuatReport(filteredRawData);
   }
 
-  // Helper tính % KPI
   $: pctDTT = (parseFloat(goals?.doanhThuThuc) || 0) > 0 ? (supermarketReport.doanhThu / 1000000) / parseFloat(goals.doanhThuThuc) : 0;
   $: pctDTQD = (parseFloat(goals?.doanhThuQD) || 0) > 0 ? (supermarketReport.doanhThuQuyDoi / 1000000) / parseFloat(goals.doanhThuQD) : 0;
 </script>
@@ -132,9 +177,8 @@
   <div class="luyke-tier-1-grid">
       <EfficiencyTable 
           supermarketData={supermarketReport} 
-          dynamicItems={[]} 
-          goals={goals}
-      />
+          dynamicItems={combinedEfficiencyItems} goals={goals}
+          on:delete={handleDeleteMetric} />
       <QdcTable items={qdcItems} />
   </div>
 
