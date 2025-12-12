@@ -383,9 +383,19 @@ export default defineConfig({
 <script>
   import { onMount, afterUpdate } from 'svelte';
   
-  import { activeTab, modalState, efficiencyConfig, customRevenueTables, isAdmin } from './stores.js'; // Import isAdmin
+  import { 
+      activeTab, 
+      modalState, 
+      efficiencyConfig, 
+      customRevenueTables, 
+      isAdmin, 
+      warehouseCustomMetrics,
+      selectedWarehouse
+  } from './stores.js'; 
+  import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
+  import { datasyncService } from './services/datasync.service.js';
 
   // --- COMPONENTS CHÍNH ---
   import Sidebar from './components/Sidebar.svelte';
@@ -422,14 +432,48 @@ export default defineConfig({
     if (window.feather) window.feather.replace();
   });
 
+  // [FIX] Tách biệt logic lưu Admin vs User
   function handleSaveEffConfig(event) {
-      const newItem = event.detail;
-      efficiencyConfig.update(items => {
-          const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
-          else { return [...items, newItem]; }
-      });
-      adminService.saveEfficiencyConfig($efficiencyConfig);
+      // Clone object để tránh tham chiếu
+      const newItem = { ...event.detail };
+      
+      // LOGIC ADMIN (Tab Khai Báo)
+      if ($activeTab === 'declaration-section') {
+          // Admin thì đánh dấu isSystem = true (nếu chưa có)
+          newItem.isSystem = true;
+          
+          efficiencyConfig.update(items => {
+              const idx = items.findIndex(i => i.id === newItem.id);
+              if (idx >= 0) { items[idx] = newItem; return [...items]; } 
+              else { return [...items, newItem]; }
+          });
+          adminService.saveEfficiencyConfig(get(efficiencyConfig));
+      } 
+      // LOGIC USER (Tab Lũy kế / Realtime)
+      else {
+          // User thì đánh dấu isSystem = false
+          newItem.isSystem = false;
+
+          let currentLocal = get(warehouseCustomMetrics) || [];
+          const idx = currentLocal.findIndex(i => i.id === newItem.id);
+          
+          if (idx >= 0) {
+              // Sửa
+              currentLocal[idx] = newItem;
+          } else {
+              // Thêm mới
+              currentLocal = [...currentLocal, newItem];
+          }
+          
+          warehouseCustomMetrics.set(currentLocal);
+          
+          const wh = get(selectedWarehouse);
+          if(wh) {
+              datasyncService.saveCustomMetrics(wh, currentLocal);
+          } else {
+              alert("Vui lòng chọn Kho để lưu chỉ số này.");
+          }
+      }
   }
 
   // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Local + Cloud)
@@ -1247,9 +1291,8 @@ export function getSortedDepartmentList(reportData) {
   import AdminUserStats from './admin/AdminUserStats.svelte';
   import AdminCompetition from './admin/AdminCompetition.svelte';
   import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
-  
-  // [MỚI] Component quản lý bảng doanh thu
   import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
+  import AdminEfficiency from './admin/AdminEfficiency.svelte'; // [MỚI]
 
   export let activeTab;
 
@@ -1285,8 +1328,7 @@ export function getSortedDepartmentList(reportData) {
 
         <div class="space-y-6 mb-8">
             <AdminRevenueTables />
-            
-            <AdminCompetition />
+            <AdminEfficiency /> <AdminCompetition />
         </div>
 
         <div class="space-y-6">
@@ -2360,6 +2402,7 @@ export const actionService = {
 
 --- START FILE: ./src/services/admin.service.js ---
 // src/services/admin.service.js
+// Version 3.1 - Fix Data Compatibility (Restore Old Data)
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -2375,7 +2418,7 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    competitionNameMappings // [MỚI] Import store này
+    competitionNameMappings
 } from '../stores.js';
 
 const getDB = () => {
@@ -2441,7 +2484,9 @@ export const adminService = {
             const docRef = doc(db, "declarations", "homeConfig");
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
-                const data = docSnap.data().data;
+                const raw = docSnap.data();
+                // Fallback đọc nhiều trường
+                const data = raw.data || raw.config || raw;
                 if (data) homeConfig.set(data);
             }
         } catch (error) { console.error("Error loading home config:", error); }
@@ -2476,8 +2521,15 @@ export const adminService = {
             
             const [catSnap, brandSnap] = await Promise.all([getDoc(catRef), getDoc(brandRef)]);
             
-            const categories = catSnap.exists() ? (catSnap.data().data || []) : [];
-            const brands = brandSnap.exists() ? (brandSnap.data().data || []) : [];
+            // [FIX] Fallback đọc data
+            const getArray = (snap) => {
+                if (!snap.exists()) return [];
+                const d = snap.data();
+                return d.data || d.items || d.list || [];
+            };
+
+            const categories = getArray(catSnap);
+            const brands = getArray(brandSnap);
 
             categoryStructure.set(categories);
             brandList.set(brands);
@@ -2489,14 +2541,21 @@ export const adminService = {
         }
     },
 
-    // --- 4. SYSTEM REVENUE TABLES ---
+    // --- 4. SYSTEM REVENUE TABLES (BẢNG DOANH THU) ---
     async loadSystemRevenueTables() {
         const db = getDB();
         if (!db) return [];
         try {
             const docRef = doc(db, "declarations", "systemRevenueTables");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().tables || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                // [FIX] Ưu tiên 'tables', nếu không có thì tìm 'data', 'items'
+                const tables = d.tables || d.data || d.items || [];
+                console.log(`[AdminService] Loaded ${tables.length} system tables.`);
+                return tables;
+            }
+            return [];
         } catch (e) {
             console.error("Lỗi tải bảng hệ thống:", e);
             return [];
@@ -2508,10 +2567,12 @@ export const adminService = {
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
         if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
         
+        // Chỉ lưu bảng có cờ isSystem = true
         const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
         
         try {
             const docRef = doc(db, "declarations", "systemRevenueTables");
+            // Lưu thống nhất vào field 'tables'
             await setDoc(docRef, { 
                 tables: systemTables,
                 updatedAt: serverTimestamp() 
@@ -2530,6 +2591,14 @@ export const adminService = {
         
         try {
             console.log("[admin.service] Đang tải cấu hình Mapping từ Cloud...");
+            // Helper để lấy dữ liệu array an toàn
+            const safeGet = (docSnap, defaultVal = []) => {
+                if (!docSnap.exists()) return defaultVal;
+                const d = docSnap.data();
+                // Kiểm tra các trường phổ biến
+                return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
+            };
+
             const docsToLoad = [
                 "macroCategoryConfig", 
                 "macroProductGroupConfig", 
@@ -2538,22 +2607,20 @@ export const adminService = {
                 "brandNameMapping",
                 "efficiencyConfig", 
                 "qdcConfig",
-                "competitionNameMappings" // [MỚI] Load thêm mapping thi đua
+                "competitionNameMappings"
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             
             const results = await Promise.all(promises);
             
-            if (results[0].exists()) macroCategoryConfig.set(results[0].data().data || []);
-            if (results[1].exists()) macroProductGroupConfig.set(results[1].data().data || []);
-            if (results[2].exists()) categoryNameMapping.set(results[2].data().data || {});
-            if (results[3].exists()) groupNameMapping.set(results[3].data().data || {});
-            if (results[4].exists()) brandNameMapping.set(results[4].data().data || {});
-            if (results[5].exists()) efficiencyConfig.set(results[5].data().data || []);
-            if (results[6].exists()) qdcConfigStore.set(results[6].data().data || []);
-            
-            // [MỚI] Set store mapping thi đua
-            if (results[7].exists()) competitionNameMappings.set(results[7].data().mappings || {});
+            macroCategoryConfig.set(safeGet(results[0]));
+            macroProductGroupConfig.set(safeGet(results[1]));
+            categoryNameMapping.set(safeGet(results[2], {}));
+            groupNameMapping.set(safeGet(results[3], {}));
+            brandNameMapping.set(safeGet(results[4], {}));
+            efficiencyConfig.set(safeGet(results[5])); // Bảng hiệu quả
+            qdcConfigStore.set(safeGet(results[6]));
+            competitionNameMappings.set(safeGet(results[7], {}));
 
             console.log("[admin.service] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -2598,7 +2665,6 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu mapping: ' + error.message, 'error'); }
     },
 
-    // [MỚI] Hàm lưu Mapping tên thi đua
     async saveCompetitionNameMappings(mappings) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
@@ -2660,7 +2726,11 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "globalCompetitionConfigs");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().configs || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.configs || d.data || [];
+            }
+            return [];
         } catch (error) { return []; }
     },
 
@@ -2682,7 +2752,11 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "specialProductList");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().products || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.products || d.data || [];
+            }
+            return [];
         } catch (error) { console.error("Error loading SPĐQ:", error); return []; }
     },
 
@@ -2692,20 +2766,33 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "globalSpecialPrograms");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().programs || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.programs || d.configs || d.data || [];
+            }
+            return [];
         } catch (error) { return []; }
     },
 
     // --- 9. EFFICIENCY & QDC CONFIGS ---
+    // (BẢNG HIỆU QUẢ)
     async saveEfficiencyConfig(config) {
         const db = getDB();
-        if (!db || !get(isAdmin)) return;
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
+        
         try {
             const docRef = doc(db, "declarations", "efficiencyConfig");
-            await setDoc(docRef, { data: sanitizeForFirestore(config) });
+            await setDoc(docRef, { 
+                data: sanitizeForFirestore(config),
+                updatedAt: serverTimestamp() 
+            });
             efficiencyConfig.set(config);
-            notify('Đã lưu cấu hình bảng Hiệu quả!', 'success');
-        } catch (e) { console.error(e); notify('Lỗi lưu config: ' + e.message, 'error'); }
+            notify('Đã lưu cấu hình Bảng Hiệu quả hệ thống!', 'success');
+        } catch (e) { 
+            console.error(e); 
+            notify('Lỗi lưu config: ' + e.message, 'error'); 
+        }
     },
 
     async loadEfficiencyConfig() {
@@ -2714,10 +2801,21 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "efficiencyConfig");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().data || []) : [];
-        } catch (e) { return []; }
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                // [FIX] Đọc fallback 'data' hoặc 'items' hoặc 'config'
+                const data = d.data || d.items || d.config || [];
+                console.log(`[AdminService] Loaded efficiency config: ${data.length} items`);
+                return data;
+            }
+            return [];
+        } catch (e) { 
+            console.error("Lỗi tải efficiency config:", e);
+            return []; 
+        }
     },
     
+    // (TOP NHÓM HÀNG)
     async saveQdcConfig(selectedGroups) {
          const db = getDB();
         if (!db || !get(isAdmin)) return;
@@ -2734,7 +2832,11 @@ export const adminService = {
         try {
             const docRef = doc(db, "declarations", "qdcConfig");
             const docSnap = await getDoc(docRef);
-            return docSnap.exists() ? (docSnap.data().data || []) : [];
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.data || d.config || d.items || [];
+            }
+            return [];
         } catch (e) { return []; }
     }
 };
@@ -3441,7 +3543,6 @@ export const dataService = {
 
 --- START FILE: ./src/services/datasync.service.js ---
 // src/services/datasync.service.js
-// Version 2.3 - Add Realtime Config Sync (Hidden Categories)
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
 import { firebaseStore, currentUser } from '../stores.js'; 
 import { get } from 'svelte/store';
@@ -3457,16 +3558,50 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- [MỚI] QUẢN LÝ CẤU HÌNH REALTIME THEO KHO ---
+    // --- [MỚI] QUẢN LÝ CẤU HÌNH TOP NHÓM HÀNG (QDC) THEO KHO ---
     
-    // Lưu danh sách ngành hàng bị ẩn (Realtime)
-    async saveRealtimeHiddenCategories(kho, hiddenList) {
+    // Lưu danh sách nhóm hàng hiển thị
+    async saveQdcConfig(kho, config) {
         const db = getDB();
         if (!db || !kho) return;
 
         const khoRef = doc(db, "warehouseData", kho);
         try {
-            // Lưu vào field 'realtimeConfig' trong document của kho
+            await setDoc(khoRef, {
+                qdcConfig: config, // Lưu mảng tên các nhóm hàng đã chọn
+                qdcConfigUpdatedAt: serverTimestamp(),
+                qdcConfigUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+            console.log(`[DataSync] Đã lưu cấu hình Top nhóm hàng cho kho ${kho}`);
+        } catch (error) {
+            console.error("[DataSync] Lỗi lưu cấu hình Top nhóm hàng:", error);
+        }
+    },
+
+    // Tải cấu hình
+    async loadQdcConfig(kho) {
+        const db = getDB();
+        if (!db || !kho) return null; // Trả về null để biết là chưa có config
+
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists() && docSnap.data().qdcConfig) {
+                return docSnap.data().qdcConfig;
+            }
+            return null; // Chưa từng lưu
+        } catch (e) {
+            console.error("[DataSync] Lỗi tải cấu hình Top nhóm hàng:", e);
+            return null;
+        }
+    },
+
+    // --- CÁC HÀM CŨ (GIỮ NGUYÊN) ---
+    async saveRealtimeHiddenCategories(kho, hiddenList) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
             await setDoc(khoRef, {
                 realtimeConfig: {
                     hiddenCategories: hiddenList,
@@ -3474,17 +3609,14 @@ export const datasyncService = {
                     updatedBy: getCurrentUserEmail()
                 }
             }, { merge: true });
-            console.log(`[DataSync] Đã lưu cấu hình ẩn ngành hàng Realtime cho kho ${kho}`);
         } catch (error) {
             console.error("[DataSync] Lỗi lưu cấu hình Realtime:", error);
         }
     },
 
-    // Tải danh sách ngành hàng bị ẩn (Realtime)
     async loadRealtimeHiddenCategories(kho) {
         const db = getDB();
         if (!db || !kho) return [];
-
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
@@ -3493,75 +3625,48 @@ export const datasyncService = {
             }
             return [];
         } catch (e) {
-            console.error("[DataSync] Lỗi tải cấu hình Realtime:", e);
             return [];
         }
     },
 
-    // --- QUẢN LÝ BẢNG DOANH THU CÁ NHÂN THEO KHO ---
-    
     async savePersonalRevenueTables(kho, tables) {
         const db = getDB();
         if (!db || !kho) return;
-        
-        // Lọc kỹ để chắc chắn không lưu nhầm bảng System vào đây
         const personalTables = tables.filter(t => !t.isSystem);
-
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = {
             personalRevenueTables: personalTables,
             personalTablesUpdatedAt: serverTimestamp(),
             personalTablesUpdatedBy: getCurrentUserEmail()
         };
-        
-        try { 
-            await setDoc(khoRef, dataToSave, { merge: true }); 
-            console.log(`[DataSync] Đã lưu ${personalTables.length} bảng cá nhân cho kho ${kho}`);
-        } catch (error) { 
-            console.error("[DataSync] Lỗi lưu bảng cá nhân:", error); 
-            throw error; 
-        }
+        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadPersonalRevenueTables(kho) {
         const db = getDB();
         if (!db || !kho) return [];
-        
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
             return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : [];
-        } catch(e) { 
-            console.error("[DataSync] Lỗi tải bảng cá nhân:", e);
-            return []; 
-        }
+        } catch(e) { return []; }
     },
 
-    // --- CÁC HÀM KHÁC ---
-    
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
-        if (!db || !kho) { console.warn("Missing DB or Warehouse"); return; }
-        
+        if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = {
             customMetrics: metrics,
             customMetricsUpdatedAt: serverTimestamp(),
             customMetricsUpdatedBy: getCurrentUserEmail()
         };
-        
-        try { 
-            await setDoc(khoRef, dataToSave, { merge: true }); 
-        } catch (error) { 
-            console.error("[DataSync] Lỗi lưu custom metrics:", error); 
-            throw error; 
-        }
+        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadCustomMetrics(kho) {
         const db = getDB();
         if (!db || !kho) return [];
-        
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
@@ -3589,14 +3694,14 @@ export const datasyncService = {
 
     async saveCompetitionConfigs(kho, configs) {
         const db = getDB();
-        if (!db || !kho) { alert("Vui lòng chọn Kho trước."); return; }
+        if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = {
             competitionConfigs: configs,
             competitionConfigsUpdatedAt: serverTimestamp(),
             competitionConfigsUpdatedBy: getCurrentUserEmail()
         };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { console.error(error); throw error; }
+        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadCompetitionConfigs(kho) {
@@ -3611,23 +3716,21 @@ export const datasyncService = {
 
     async saveSpecialPrograms(kho, programs) {
         const db = getDB();
-        if (!db || !kho) { alert("Vui lòng chọn Kho trước."); return; }
+        if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = {
             specialPrograms: programs,
             specialProgramsUpdatedAt: serverTimestamp(),
             specialProgramsUpdatedBy: getCurrentUserEmail()
         };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { console.error(error); throw error; }
+        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
-        if (!db) { console.warn("Firestore chưa sẵn sàng"); return; }
+        if (!db) return;
         if (!kho) return;
-
         const khoRef = doc(db, "warehouseData", kho);
-        
         const dataToSave = {
             [key]: {
                 ...metadata,
@@ -3635,31 +3738,17 @@ export const datasyncService = {
                 updatedBy: getCurrentUserEmail()
             }
         };
-
-        try {
-            await setDoc(khoRef, dataToSave, { merge: true });
-        } catch (error) {
-            console.error(`[Firestore] Lỗi lưu metadata ${key}:`, error);
-            throw error;
-        }
+        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadWarehouseData(kho) {
         const db = getDB();
         if (!db || !kho) return null;
-
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
-            if (docSnap.exists()) {
-                return docSnap.data();
-            } else {
-                return null;
-            }
-        } catch (error) {
-            console.error(`[Firestore] Lỗi tải kho ${kho}:`, error);
-            throw error;
-        }
+            return docSnap.exists() ? docSnap.data() : null;
+        } catch (error) { throw error; }
     }
 };
 --- END FILE: ./src/services/datasync.service.js ---
@@ -3898,7 +3987,6 @@ export const reportService = {
 
 --- START FILE: ./src/services/settings.service.js ---
 // src/services/settings.service.js
-// Version 5.9 - Fix missing functions (Restore Realtime Logic)
 import { get } from 'svelte/store';
 import { 
     luykeGoalSettings, 
@@ -3907,7 +3995,7 @@ import {
     pastedThiDuaReportData
 } from '../stores.js';
 
-// Hằng số chứa danh sách đầy đủ và thứ tự cột chính xác cho bảng Hiệu quả khai thác
+// ... (Giữ nguyên các hằng số ALL_EFFICIENCY_ITEMS, PASTED_COMPETITION_SETTINGS_KEY) ...
 const ALL_EFFICIENCY_ITEMS = [
     { id: 'dtICT', label: 'DT ICT' },
     { id: 'dtPhuKien', label: 'DT Phụ kiện' },
@@ -3920,11 +4008,10 @@ const ALL_EFFICIENCY_ITEMS = [
     { id: 'pctVAS',    label: '% VAS' },
     { id: 'pctBaoHiem', label: '% Bảo hiểm' }
 ];
-
 const PASTED_COMPETITION_SETTINGS_KEY = 'pastedCompetitionViewSettings';
 
 export const settingsService = {
-    // --- INTERFACE SETTINGS ---
+    // --- INTERFACE SETTINGS (ĐÃ SỬA LỖI) ---
     loadInterfaceSettings() {
         try {
             const saved = localStorage.getItem('interfaceSettings');
@@ -3932,7 +4019,9 @@ export const settingsService = {
                 const parsed = JSON.parse(saved);
                 interfaceSettings.set({ ...get(interfaceSettings), ...parsed });
             }
+            // Áp dụng ngay khi load
             this.applyInterfaceStyles(get(interfaceSettings));
+            
             const contrast = localStorage.getItem('contrastLevel') || '3';
             this.updateContrast(contrast);
         } catch (e) {
@@ -3955,25 +4044,37 @@ export const settingsService = {
     applyInterfaceStyles(settings) {
         const root = document.documentElement;
         if (!settings) return;
-        if (settings.globalFontSize) root.style.setProperty('--global-font-size', `${settings.globalFontSize}px`);
-        if (settings.kpiFontSize) root.style.setProperty('--kpi-main-font-size', `${settings.kpiFontSize}px`);
+
+        // [FIX] Cập nhật font-size trực tiếp cho HTML để Tailwind (rem) scale theo
+        // Mặc định trình duyệt là 16px. Slider của bạn từ 12-25.
+        if (settings.globalFontSize) {
+            root.style.fontSize = `${settings.globalFontSize}px`;
+        }
+
+        // Cập nhật biến CSS cho các thẻ KPI
         for (let i = 1; i <= 8; i++) {
             const key = `kpiCard${i}Bg`;
-            if (settings[key]) root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
+            if (settings[key]) {
+                root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
+            }
         }
+
+        // Cập nhật biến màu chữ KPI
         if (settings.kpiTitleColor) root.style.setProperty('--kpi-title-color', settings.kpiTitleColor);
         if (settings.kpiMainColor) root.style.setProperty('--kpi-main-color', settings.kpiMainColor);
         if (settings.kpiSubColor) root.style.setProperty('--kpi-sub-color', settings.kpiSubColor);
+        
+        // Cập nhật cỡ chữ riêng cho KPI (nếu cần)
+        if (settings.kpiFontSize) root.style.setProperty('--kpi-main-font-size', `${settings.kpiFontSize}px`);
     },
 
-    // --- GOAL SETTINGS (LUY KE) ---
+    // ... (Giữ nguyên các hàm load/save goal settings, view settings không đổi) ...
     loadLuykeGoalSettings() {
         try {
             const saved = localStorage.getItem('luykeGoalSettings');
             if (saved) luykeGoalSettings.set(JSON.parse(saved));
         } catch (e) { console.error("Lỗi tải mục tiêu lũy kế:", e); }
     },
-
     saveLuykeGoalForWarehouse(warehouse, goals) {
         luykeGoalSettings.update(current => {
             const updated = { ...current, [warehouse]: goals };
@@ -3981,7 +4082,6 @@ export const settingsService = {
             return updated;
         });
     },
-
     getLuykeGoalSettings(selectedWarehouse = null) {
         const $luykeGoalSettings = get(luykeGoalSettings);
         const settings = { goals: {} };
@@ -3991,6 +4091,7 @@ export const settingsService = {
              const source = $luykeGoalSettings[selectedWarehouse];
              goalKeys.forEach(key => settings.goals[key] = parseFloat(source[key]) || 0);
         } else if (!selectedWarehouse) {
+            // Logic tính trung bình
             const allSettings = $luykeGoalSettings || {};
             const warehouseKeys = Object.keys(allSettings);
             const percentCounts = {};
@@ -4007,22 +4108,19 @@ export const settingsService = {
                          settings.goals[key] += value;
                     }
                 });
-            });
+           });
             Object.keys(percentCounts).forEach(key => {
                 if (percentCounts[key] > 0) settings.goals[key] /= percentCounts[key];
             });
         }
         return settings;
     },
-
-    // --- [KHÔI PHỤC] GOAL SETTINGS (REALTIME) ---
     loadRealtimeGoalSettings() {
         try {
             const saved = localStorage.getItem('realtimeGoalSettings');
             if (saved) realtimeGoalSettings.set(JSON.parse(saved));
         } catch (e) { console.error("Lỗi tải mục tiêu realtime:", e); }
     },
-
     saveRealtimeGoalForWarehouse(warehouse, settings) {
         realtimeGoalSettings.update(current => {
             const updated = { ...current, [warehouse]: settings };
@@ -4030,7 +4128,6 @@ export const settingsService = {
             return updated;
         });
     },
-
     getRealtimeGoalSettings(selectedWarehouse = null) {
         const $realtimeGoalSettings = get(realtimeGoalSettings);
         if (selectedWarehouse && $realtimeGoalSettings && $realtimeGoalSettings[selectedWarehouse]) {
@@ -4061,13 +4158,10 @@ export const settingsService = {
         }
         return { goals: {}, timing: {} };
     },
-
-    // --- TABLE VIEW SETTINGS ---
     saveEfficiencyViewSettings(settings) {
-        if (!Array.isArray(settings)) return;
+         if (!Array.isArray(settings)) return;
         try { localStorage.setItem('efficiencyViewSettings', JSON.stringify(settings)); } catch (e) { console.error("Lỗi lưu efficiency settings:", e); }
     },
-    
     loadEfficiencyViewSettings() {
         try {
             const savedSettingsJSON = localStorage.getItem('efficiencyViewSettings');
@@ -4083,7 +4177,7 @@ export const settingsService = {
                         .filter(item => ALL_EFFICIENCY_ITEMS.some(config => config.id === item.id))
                         .map(item => {
                             const defaultItem = ALL_EFFICIENCY_ITEMS.find(d => d.id === item.id);
-                            return defaultItem ? { ...item, label: defaultItem.label } : item;
+                             return defaultItem ? { ...item, label: defaultItem.label } : item;
                         });
 
                     return [...currentItems, ...newItems];
@@ -4092,17 +4186,14 @@ export const settingsService = {
         } catch (e) { console.error("Lỗi tải efficiency settings:", e); }
         return ALL_EFFICIENCY_ITEMS.map(item => ({ ...item, visible: true }));
     },
-
     saveQdcViewSettings(settings) {
         if (!Array.isArray(settings)) return;
         try { localStorage.setItem('qdcViewSettings', JSON.stringify(settings)); } catch (e) {}
     },
-
     saveCategoryViewSettings(settings) {
         if (!Array.isArray(settings)) return;
         try { localStorage.setItem('categoryViewSettings', JSON.stringify(settings)); } catch (e) {}
     },
-
     loadQdcViewSettings(allItems) {
         try {
             const saved = localStorage.getItem('qdcViewSettings');
@@ -4110,7 +4201,6 @@ export const settingsService = {
         } catch (e) {}
         return allItems;
     },
-
     loadCategoryViewSettings(allItems) {
         try {
             const saved = localStorage.getItem('categoryViewSettings');
@@ -4118,11 +4208,9 @@ export const settingsService = {
         } catch (e) {}
         return allItems;
     },
-
     savePastedCompetitionViewSettings(settings) {
         try { localStorage.setItem(PASTED_COMPETITION_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
     },
-
     loadPastedCompetitionViewSettings() {
         const pastedDataStoreValue = get(pastedThiDuaReportData);
         if (!pastedDataStoreValue || pastedDataStoreValue.length === 0) return [];
@@ -5116,7 +5204,7 @@ details[open] > summary .arrow { transform: rotate(180deg); }
 
 --- START FILE: ./src/styles/dashboard-luyke.css ---
 /* src/styles/dashboard-luyke.css */
-/* Version 3.2 - Fix Efficiency Layout & Add Filter Dropdown */
+/* Version 3.3 - Add CSS Variables support for KPI Cards */
 
 /* =========================================
    1. LAYOUT & SCROLLING
@@ -5180,7 +5268,7 @@ details[open] > summary .arrow { transform: rotate(180deg); }
 }
 
 /* =========================================
-   2. KPI CARDS (SOLID STYLE)
+   2. KPI CARDS (SOLID STYLE - CSS VARIABLES)
    ========================================= */
 .kpi-grid-fixed {
     display: grid;
@@ -5198,11 +5286,21 @@ details[open] > summary .arrow { transform: rotate(180deg); }
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s; /* Thêm transition bg */
     min-height: 140px;
     position: relative;
     overflow: hidden;
 }
+
+/* [MỚI] Mapping biến CSS cho các thẻ KPI */
+.kpi-card-solid.card-1 { background-color: var(--kpi-card-1-bg, #38bdf8); }
+.kpi-card-solid.card-2 { background-color: var(--kpi-card-2-bg, #34d399); }
+.kpi-card-solid.card-3 { background-color: var(--kpi-card-3-bg, #fbbf24); }
+.kpi-card-solid.card-4 { background-color: var(--kpi-card-4-bg, #2dd4bf); }
+.kpi-card-solid.card-5 { background-color: var(--kpi-card-5-bg, #a78bfa); }
+.kpi-card-solid.card-6 { background-color: var(--kpi-card-6-bg, #f472b6); }
+.kpi-card-solid.card-7 { background-color: var(--kpi-card-7-bg, #818cf8); }
+.kpi-card-solid.card-8 { background-color: var(--kpi-card-8-bg, #f87171); }
 
 .kpi-card-solid:hover {
     transform: translateY(-2px);
@@ -5229,14 +5327,16 @@ details[open] > summary .arrow { transform: rotate(180deg); }
     display: flex;
     justify-content: space-between;
     align-items: center;
+    color: var(--kpi-title-color, #ffffff); /* Dùng biến */
 }
 
 .kpi-solid-value {
-    font-size: 2rem;
+    font-size: var(--kpi-main-font-size, 2rem); /* Dùng biến */
     font-weight: 800;
     line-height: 1;
     margin-bottom: 0.75rem;
     text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    color: var(--kpi-main-color, #ffffff); /* Dùng biến */
 }
 
 .kpi-solid-sub {
@@ -5246,23 +5346,21 @@ details[open] > summary .arrow { transform: rotate(180deg); }
     padding-top: 0.5rem;
     display: flex;
     justify-content: space-between;
+    color: var(--kpi-sub-color, #ffffff); /* Dùng biến */
 }
 
-/* =========================================
-   3. EFFICIENCY LIST (FIXED LAYOUT)
-   ========================================= */
+/* ... (Phần còn lại của file giữ nguyên: EFFICIENCY LIST, CATEGORY CARDS, TOOLBAR, FILTER DROPDOWN) ... */
 .eff-item-compact {
     display: flex;
-    align-items: center; /* Canh giữa dọc */
+    align-items: center;
     gap: 0.75rem;
     padding: 0.75rem 0;
     border-bottom: 1px dashed #f3f4f6;
-    width: 100%; /* Đảm bảo chiếm hết chiều ngang */
+    width: 100%;
 }
 .eff-item-compact:last-child { border-bottom: none; }
-
 .eff-icon-compact {
-    width: 2.5rem; /* Tăng kích thước chút */
+    width: 2.5rem;
     height: 2.5rem;
     border-radius: 0.5rem;
     background-color: #f3f4f6;
@@ -5270,17 +5368,15 @@ details[open] > summary .arrow { transform: rotate(180deg); }
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0; /* Không bị co lại */
+    flex-shrink: 0;
 }
-
 .eff-content-compact {
     flex-grow: 1;
-    min-width: 0; /* Cho phép text truncate nếu cần */
+    min-width: 0;
     display: flex;
     flex-direction: column;
     justify-content: center;
 }
-
 .eff-row-top {
     display: flex;
     justify-content: space-between;
@@ -5288,407 +5384,76 @@ details[open] > summary .arrow { transform: rotate(180deg); }
     margin-bottom: 4px;
     width: 100%;
 }
-
-.eff-label-text {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #374151;
-}
-
-.eff-value-text {
-    font-size: 1rem;
-    font-weight: 800;
-}
-
-.eff-row-bottom {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-}
-
-.eff-bar-container {
-    flex-grow: 1;
-    height: 8px; /* Tăng độ dày */
-    background-color: #e5e7eb;
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.eff-bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.6s ease-out;
-}
-
-.eff-target-text {
-    font-size: 0.75rem;
-    color: #6b7280;
-    font-weight: 500;
-    white-space: nowrap;
-    min-width: 65px;
-    text-align: right;
-}
-
-/* =========================================
-   4. CATEGORY CARDS (COMPACT GRID 6)
-   ========================================= */
-.luyke-cat-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.75rem;
-}
-
-.cat-card-colorful {
-    border-radius: 0.75rem;
-    padding: 0.75rem;
-    transition: all 0.2s;
-    border: 1px solid transparent;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    min-height: 110px;
-}
-
-.cat-card-colorful:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-/* Theme Colors */
+.eff-label-text { font-size: 0.9rem; font-weight: 600; color: #374151; }
+.eff-value-text { font-size: 1rem; font-weight: 800; }
+.eff-row-bottom { display: flex; align-items: center; gap: 0.75rem; width: 100%; }
+.eff-bar-container { flex-grow: 1; height: 8px; background-color: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.eff-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease-out; }
+.eff-target-text { font-size: 0.75rem; color: #6b7280; font-weight: 500; white-space: nowrap; min-width: 65px; text-align: right; }
+.luyke-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.cat-card-colorful { border-radius: 0.75rem; padding: 0.75rem; transition: all 0.2s; border: 1px solid transparent; display: flex; flex-direction: column; justify-content: space-between; min-height: 110px; }
+.cat-card-colorful:hover { transform: translateY(-3px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
 .theme-blue { background-color: #eff6ff; border-color: #bfdbfe; }
 .theme-blue .cat-icon-box { background-color: #dbeafe; color: #2563eb; }
 .theme-blue .cat-value-text { color: #1e40af; }
-
 .theme-green { background-color: #ecfdf5; border-color: #a7f3d0; }
 .theme-green .cat-icon-box { background-color: #d1fae5; color: #059669; }
 .theme-green .cat-value-text { color: #065f46; }
-
 .theme-orange { background-color: #fff7ed; border-color: #fed7aa; }
 .theme-orange .cat-icon-box { background-color: #ffedd5; color: #ea580c; }
 .theme-orange .cat-value-text { color: #9a3412; }
-
 .theme-purple { background-color: #f5f3ff; border-color: #ddd6fe; }
 .theme-purple .cat-icon-box { background-color: #ede9fe; color: #7c3aed; }
 .theme-purple .cat-value-text { color: #5b21b6; }
-
 .theme-teal { background-color: #f0fdfa; border-color: #99f6e4; }
 .theme-teal .cat-icon-box { background-color: #ccfbf1; color: #0f766e; }
 .theme-teal .cat-value-text { color: #115e59; }
-
 .theme-gray { background-color: #f9fafb; border-color: #e5e7eb; }
 .theme-gray .cat-icon-box { background-color: #f3f4f6; color: #4b5563; }
 .theme-gray .cat-value-text { color: #1f2937; }
-
-.theme-warning { 
-    background-color: #fffbeb; 
-    border-color: #fde047; 
-    background-image: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 10px, #fef3c7 10px, #fef3c7 20px);
-}
+.theme-warning { background-color: #fffbeb; border-color: #fde047; background-image: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 10px, #fef3c7 10px, #fef3c7 20px); }
 .theme-warning .cat-icon-box { background-color: #fff7ed; color: #d97706; }
 .theme-warning .cat-value-text { color: #b45309; }
-
-.cat-top-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 0.5rem;
-}
-
-.cat-icon-box {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.cat-name-text {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #374151;
-    margin-bottom: 0.25rem;
-    line-height: 1.2;
-    min-height: 2.4em;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.cat-value-text {
-    font-size: 1.25rem;
-    font-weight: 800;
-    line-height: 1;
-    margin-bottom: 0.5rem;
-}
-
-.cat-footer-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.7rem;
-    color: #6b7280;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgba(0,0,0,0.05);
-}
-
-.cat-percent-text {
-    font-weight: 600;
-    opacity: 0.8;
-}
-
-/* =========================================
-   5. TOOLBAR (FIX)
-   ========================================= */
-.luyke-toolbar {
-    background-color: #ffffff;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid #e5e7eb;
-    border-radius: 0.75rem 0.75rem 0 0;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-}
-
-.luyke-toolbar + .luyke-cat-grid, 
-.luyke-toolbar + .luyke-charts-container {
-    background-color: white;
-    padding: 1rem;
-    border: 1px solid #e5e7eb;
-    border-top: none;
-    border-radius: 0 0 0.75rem 0.75rem;
-}
-
-.toggle-wrapper {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    user-select: none;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background-color: #f3f4f6;
-    border: 1px solid #e5e7eb;
-    transition: all 0.2s;
-}
-
+.cat-top-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+.cat-icon-box { width: 2rem; height: 2rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; }
+.cat-name-text { font-size: 0.85rem; font-weight: 700; color: #374151; margin-bottom: 0.25rem; line-height: 1.2; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cat-value-text { font-size: 1.25rem; font-weight: 800; line-height: 1; margin-bottom: 0.5rem; }
+.cat-footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: #6b7280; padding-top: 0.5rem; border-top: 1px solid rgba(0,0,0,0.05); }
+.cat-percent-text { font-weight: 600; opacity: 0.8; }
+.luyke-toolbar { background-color: #ffffff; padding: 0.5rem 1rem; border-bottom: 1px solid #e5e7eb; border-radius: 0.75rem 0.75rem 0 0; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
+.luyke-toolbar + .luyke-cat-grid, .luyke-toolbar + .luyke-charts-container { background-color: white; padding: 1rem; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 0.75rem 0.75rem; }
+.toggle-wrapper { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; padding: 6px 12px; border-radius: 999px; background-color: #f3f4f6; border: 1px solid #e5e7eb; transition: all 0.2s; }
 .toggle-wrapper:hover { background-color: #e5e7eb; }
-
-.toggle-wrapper.active {
-    background-color: #fff7ed;
-    border-color: #fdba74;
-}
-
-.toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    background-color: #d1d5db;
-    border-radius: 9999px;
-    transition: background-color 0.3s;
-    flex-shrink: 0;
-}
-
-.toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: 50%;
-    transition: transform 0.3s;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-
-.toggle-wrapper.active .toggle-switch {
-    background-color: #f97316;
-}
-
-.toggle-wrapper.active .toggle-switch::after {
-    transform: translateX(16px);
-}
-
-.toggle-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #4b5563;
-}
-
-.toggle-wrapper.active .toggle-label {
-    color: #c2410c;
-}
-
-.view-mode-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #6b7280;
-    background-color: transparent;
-    border: 1px solid transparent;
-    transition: all 0.2s;
-}
+.toggle-wrapper.active { background-color: #fff7ed; border-color: #fdba74; }
+.toggle-switch { position: relative; width: 36px; height: 20px; background-color: #d1d5db; border-radius: 9999px; transition: background-color 0.3s; flex-shrink: 0; }
+.toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background-color: white; border-radius: 50%; transition: transform 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.toggle-wrapper.active .toggle-switch { background-color: #f97316; }
+.toggle-wrapper.active .toggle-switch::after { transform: translateX(16px); }
+.toggle-label { font-size: 0.8rem; font-weight: 600; color: #4b5563; }
+.toggle-wrapper.active .toggle-label { color: #c2410c; }
+.view-mode-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; color: #6b7280; background-color: transparent; border: 1px solid transparent; transition: all 0.2s; }
 .view-mode-btn:hover { background-color: #f3f4f6; }
-.view-mode-btn.active {
-    background-color: #eff6ff;
-    color: #2563eb;
-    border-color: #bfdbfe;
-}
-
-.luyke-charts-container {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-}
-@media (min-width: 1024px) {
-    .luyke-charts-container {
-        grid-template-columns: 4fr 6fr;
-    }
-}
-.chart-box {
-    display: flex;
-    flex-direction: column;
-    height: 350px;
-    position: relative;
-}
-
-/* =========================================
-   6. FILTER DROPDOWN (MỚI)
-   ========================================= */
-.filter-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 0.5rem;
-    width: 280px;
-    background-color: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    max-height: 400px;
-}
-
-.filter-header {
-    padding: 0.75rem;
-    border-bottom: 1px solid #f3f4f6;
-    background-color: #f9fafb;
-    border-radius: 0.5rem 0.5rem 0 0;
-}
-
-.filter-search {
-    width: 100%;
-    padding: 0.5rem;
-    font-size: 0.85rem;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
-    outline: none;
-}
+.view-mode-btn.active { background-color: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+.luyke-charts-container { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+@media (min-width: 1024px) { .luyke-charts-container { grid-template-columns: 4fr 6fr; } }
+.chart-box { display: flex; flex-direction: column; height: 350px; position: relative; }
+.filter-dropdown { position: absolute; top: 100%; right: 0; margin-top: 0.5rem; width: 280px; background-color: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); z-index: 50; display: flex; flex-direction: column; max-height: 400px; }
+.filter-header { padding: 0.75rem; border-bottom: 1px solid #f3f4f6; background-color: #f9fafb; border-radius: 0.5rem 0.5rem 0 0; }
+.filter-search { width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid #d1d5db; border-radius: 0.375rem; outline: none; }
 .filter-search:focus { border-color: #3b82f6; }
-
-.filter-body {
-    overflow-y: auto;
-    padding: 0.5rem;
-}
-
-.filter-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    cursor: pointer;
-    border-radius: 0.25rem;
-    transition: background-color 0.1s;
-}
+.filter-body { overflow-y: auto; padding: 0.5rem; }
+.filter-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; cursor: pointer; border-radius: 0.25rem; transition: background-color 0.1s; }
 .filter-item:hover { background-color: #f3f4f6; }
-
-.filter-item input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    border-radius: 0.25rem;
-    cursor: pointer;
-    accent-color: #3b82f6;
-}
-
-.filter-item label {
-    flex-grow: 1;
-    font-size: 0.85rem;
-    color: #374151;
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.filter-actions {
-    padding: 0.5rem;
-    border-top: 1px solid #f3f4f6;
-    display: flex;
-    justify-content: space-between;
-    background-color: #f9fafb;
-    border-radius: 0 0 0.5rem 0.5rem;
-}
-
-.filter-btn-link {
-    font-size: 0.75rem;
-    color: #2563eb;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-weight: 600;
-}
+.filter-item input[type="checkbox"] { width: 1rem; height: 1rem; border-radius: 0.25rem; cursor: pointer; accent-color: #3b82f6; }
+.filter-item label { flex-grow: 1; font-size: 0.85rem; color: #374151; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filter-actions { padding: 0.5rem; border-top: 1px solid #f3f4f6; display: flex; justify-content: space-between; background-color: #f9fafb; border-radius: 0 0 0.5rem 0.5rem; }
+.filter-btn-link { font-size: 0.75rem; color: #2563eb; background: none; border: none; cursor: pointer; font-weight: 600; }
 .filter-btn-link:hover { text-decoration: underline; }
-
-.luyke-icon-btn {
-    padding: 0.4rem;
-    border-radius: 0.375rem;
-    color: #6b7280;
-    background-color: white;
-    border: 1px solid #d1d5db;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.luyke-icon-btn:hover {
-    color: #3b82f6;
-    border-color: #3b82f6;
-    background-color: #eff6ff;
-}
-
-.luyke-icon-btn.active {
-    background-color: #dbeafe;
-    color: #1e40af;
-    border-color: #93c5fd;
-}
-
-.luyke-search-input {
-    padding: 0.4rem 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    outline: none;
-    transition: border-color 0.2s;
-    width: 200px;
-}
-
-.luyke-search-input:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-}
+.luyke-icon-btn { padding: 0.4rem; border-radius: 0.375rem; color: #6b7280; background-color: white; border: 1px solid #d1d5db; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+.luyke-icon-btn:hover { color: #3b82f6; border-color: #3b82f6; background-color: #eff6ff; }
+.luyke-icon-btn.active { background-color: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.luyke-search-input { padding: 0.4rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; outline: none; transition: border-color 0.2s; width: 200px; }
+.luyke-search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
 --- END FILE: ./src/styles/dashboard-luyke.css ---
 
 --- START FILE: ./src/styles/layout.css ---
@@ -7350,7 +7115,7 @@ function replaceCanvasWithImg(canvasNode, src) {
 --- END FILE: ./src/utils/capture.utils.js ---
 
 --- START FILE: ./src/utils/formatters.js ---
-// File: src/utils/formatters.js
+// src/utils/formatters.js
 // MODULE: UI FORMATTERS
 // Chứa các hàm thuần túy để định dạng dữ liệu (tách ra từ ui-components.js)
 // Những hàm này không phụ thuộc vào DOM hoặc appState.
@@ -7368,10 +7133,15 @@ export const formatters = {
      * Định dạng doanh thu (chia cho 1 triệu) và trả về chuỗi.
      */
     formatRevenue(value, decimals = 1) {
-         if (!isFinite(value) || value === null || value === 0) return '-';
+         if (!isFinite(value) || value === null) return '-';
+         
+         // [FIX] Xử lý số 0 tuyệt đối hoặc rất nhỏ
+         if (Math.abs(value) < 1000) return '0'; 
+
          const millions = value / 1000000;
          const roundedValue = parseFloat(millions.toFixed(decimals));
-         if (roundedValue === 0 && millions !== 0) {
+         
+         if (roundedValue === 0 && Math.abs(millions) > 0.000001) {
               return millions > 0 ? '> 0' : '< 0';
          }
          return new Intl.NumberFormat('vi-VN', {
@@ -7384,12 +7154,10 @@ export const formatters = {
       * Định dạng số, trả về '-' nếu là 0.
       */
      formatNumberOrDash: (value, decimals = 1) => {
-         if (!isFinite(value) || value === null || value === 0) return '-';
+          if (!isFinite(value) || value === null) return '-';
+          if (Math.abs(value) < 0.01) return '-'; // Coi như bằng 0
+
           const roundedValue = parseFloat(value.toFixed(decimals));
-          if (roundedValue === 0 && value !== 0) {
-               return value > 0 ? '> 0' : '< 0';
-          }
-           if (roundedValue === 0) return '-';
           return new Intl.NumberFormat('vi-VN', {
               minimumFractionDigits: 0,
               maximumFractionDigits: decimals
@@ -7400,13 +7168,18 @@ export const formatters = {
        * Định dạng số thành phần trăm (nhân 100).
        */
      formatPercentage: (value, decimals = 0) => {
-         if (!isFinite(value) || value === null) return '-';
-          if (value === 0) return '-';
-          const percentageValue = value * 100;
-          const roundedValue = parseFloat(percentageValue.toFixed(decimals));
-          if (roundedValue === 0 && percentageValue !== 0) {
+         if (!isFinite(value) || value === null) return '0%';
+         
+         // [FIX] Sửa lỗi hiển thị >0% cho số 0 hoặc số cực nhỏ
+         if (Math.abs(value) < 0.0001) return '0%';
+
+         const percentageValue = value * 100;
+         const roundedValue = parseFloat(percentageValue.toFixed(decimals));
+         
+         if (roundedValue === 0 && Math.abs(percentageValue) > 0.000001) {
              return percentageValue > 0 ? '> 0%' : '< 0%';
-          }
+         }
+         
          return new Intl.NumberFormat('vi-VN', {
              minimumFractionDigits: decimals,
               maximumFractionDigits: decimals
@@ -7891,6 +7664,94 @@ export const formatters = {
     </div>
 </div>
 --- END FILE: ./src/components/admin/AdminCompetition.svelte ---
+
+--- START FILE: ./src/components/admin/AdminEfficiency.svelte ---
+<script>
+    import { onMount } from 'svelte';
+    import { efficiencyConfig, modalState } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    
+    // Load config khi mount
+    onMount(async () => {
+        const configs = await adminService.loadEfficiencyConfig();
+        efficiencyConfig.set(configs);
+    });
+
+    function openAddModal() {
+        // Mở modal thêm chỉ số (Tận dụng modal đã có)
+        modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
+    }
+
+    function editItem(item) {
+        modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: item }));
+    }
+
+    async function deleteItem(id) {
+        if (!confirm("Bạn có chắc muốn xóa chỉ số hệ thống này? Nó sẽ biến mất khỏi bảng của tất cả người dùng.")) return;
+        
+        const newConfig = $efficiencyConfig.filter(i => i.id !== id);
+        efficiencyConfig.set(newConfig);
+        await adminService.saveEfficiencyConfig(newConfig);
+    }
+
+    // Hàm này được gọi khi Modal lưu thành công (thông qua sự kiện dispatch hoặc store update)
+    // Ở đây ta lắng nghe sự kiện từ App.svelte (nơi đặt modal) hoặc update trực tiếp store trong modal
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="p-2.5 bg-orange-50 rounded-lg text-orange-600 shadow-sm">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-slate-800 text-lg">Cấu hình Bảng Hiệu quả (Hệ thống)</h3>
+                    <span class="bg-orange-100 text-orange-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-orange-200">Global</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-0.5">Các chỉ số này sẽ hiển thị mặc định cho toàn bộ nhân viên/siêu thị</p>
+            </div>
+        </div>
+        <button on:click={openAddModal} class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-bold shadow-sm flex items-center gap-2 text-sm transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            Thêm chỉ số
+        </button>
+    </div>
+    
+    <div class="p-6 bg-slate-50/50">
+        {#if $efficiencyConfig.length === 0}
+            <div class="text-center py-8 border-2 border-dashed border-slate-300 rounded-xl">
+                <p class="text-slate-500 italic">Chưa có chỉ số hệ thống nào.</p>
+            </div>
+        {:else}
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {#each $efficiencyConfig as item}
+                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col hover:border-orange-300 transition-colors group relative">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-bold text-slate-800">{item.label}</h4>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 bg-white/90 p-1 rounded border border-gray-100 shadow-sm">
+                                <button class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Sửa" on:click={() => editItem(item)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Xóa" on:click={() => deleteItem(item.id)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="text-xs text-slate-500 space-y-1 mt-auto">
+                            <p><strong>Loại:</strong> {item.type === 'SL' ? 'Số lượng' : (item.type === 'DTQD' ? 'Doanh thu QĐ' : 'Doanh thu Thực')}</p>
+                            <p><strong>Mục tiêu:</strong> {item.target}%</p>
+                            <p class="truncate" title={item.groupA.join(', ')}><strong>Tử số:</strong> {item.groupA.join(', ')}</p>
+                            <p class="truncate" title={item.groupB.join(', ')}><strong>Mẫu số:</strong> {item.groupB.join(', ')}</p>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    </div>
+</div>
+--- END FILE: ./src/components/admin/AdminEfficiency.svelte ---
 
 --- START FILE: ./src/components/admin/AdminHelp.svelte ---
 <script>
@@ -9138,10 +8999,12 @@ export const formatters = {
         realtimeGoalSettings,
         modalState,
         localCompetitionConfigs, 
-        selectedWarehouse 
+        selectedWarehouse,
+        efficiencyConfig // [MỚI]
     } from '../../stores.js';
     import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
+    import { adminService } from '../../services/admin.service.js'; // [MỚI]
     
     let activeTab = 'monthly';
     let localSelectedWarehouse = ''; 
@@ -9151,12 +9014,10 @@ export const formatters = {
 
     $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
 
-    // Tự động chọn kho đầu tiên
     $: if (isOpen && !localSelectedWarehouse && $warehouseList.length > 0) {
         localSelectedWarehouse = $warehouseList[0];
     }
 
-    // Load settings
     $: if (localSelectedWarehouse) {
         currentLuykeGoals = { ...($luykeGoalSettings[localSelectedWarehouse] || {}) };
         const rtSettings = $realtimeGoalSettings[localSelectedWarehouse] || { goals: {}, timing: {} };
@@ -9166,7 +9027,13 @@ export const formatters = {
         };
     }
     
-    // Cập nhật icon feather sau khi render danh sách
+    // [MỚI] Load config toàn cục
+    onMount(async () => {
+        const configs = await adminService.loadEfficiencyConfig();
+        efficiencyConfig.set(configs);
+        if (typeof feather !== 'undefined') feather.replace();
+    });
+
     afterUpdate(() => {
         if (typeof feather !== 'undefined') feather.replace();
     });
@@ -9189,23 +9056,16 @@ export const formatters = {
         settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
-    // Mở modal tạo mới
     function openCompetitionManager() {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
-        // Reset editing index bằng cách truyền payload null hoặc xử lý bên modal
-        // Ở đây ta mở modal, modal sẽ tự reset về state 'menu'
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
     }
 
-    // Mở modal để sửa (Lưu ý: Cần update logic Modal để nhận index này, tạm thời mở modal trước)
     function editCompetition(index) {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
-        // Truyền index cần sửa qua modalState (cần update UserCompetitionModal để đọc cái này nếu muốn flow hoàn hảo)
-        // Hiện tại mở modal lên để người dùng thấy danh sách bên trong
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
     }
 
-    // Hàm xóa nhanh
     async function deleteCompetition(index) {
         if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
         
@@ -9224,15 +9084,10 @@ export const formatters = {
         }
     }
 
+    // [FIX] Chỉ giữ lại các chỉ số cơ bản, phần còn lại render động
     const percentageInputs = [
         { id: 'phanTramQD', label: '% Quy đổi' },
-        { id: 'phanTramTC', label: '% Trả chậm' },
-        { id: 'phanTramGiaDung', label: '% Gia dụng' },
-        { id: 'phanTramMLN', label: '% MLN' },
-        { id: 'phanTramPhuKien', label: '% Phụ kiện' },
-        { id: 'phanTramBaoHiem', label: '% Bảo hiểm' },
-        { id: 'phanTramSim', label: '% Sim' },
-        { id: 'phanTramVAS', label: '% VAS' },
+        { id: 'phanTramTC', label: '% Trả chậm' }
     ];
 </script>
 
@@ -9293,6 +9148,22 @@ export const formatters = {
                             <div>
                                 <label for="luyke-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
                                 <input type="number" id="luyke-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals[input.id]} on:input={saveLuyke}>
+                            </div>
+                        {/each}
+                        
+                        {#each $efficiencyConfig as item}
+                            <div>
+                                <label for="goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>
+                                    {item.label} (MT: {item.target}%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="goal-{item.id}" 
+                                    class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder={item.target} 
+                                    bind:value={currentLuykeGoals[item.id]} 
+                                    on:input={saveLuyke}
+                                >
                             </div>
                         {/each}
                     </div>
@@ -9391,7 +9262,6 @@ export const formatters = {
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
     
-    /* Custom scrollbar */
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
@@ -9563,13 +9433,24 @@ export const formatters = {
   import { onMount } from 'svelte';
   import { customRevenueTables, modalState, isAdmin, selectedWarehouse } from '../../stores.js';
   import { adminService } from '../../services/admin.service.js';
-  import { datasyncService } from '../../services/datasync.service.js'; // [NEW] Import Datasync
+  import { datasyncService } from '../../services/datasync.service.js';
   import DynamicRevenueTable from './DynamicRevenueTable.svelte';
 
   export let reportData = [];
 
-  $: tables = $customRevenueTables || [];
-  $: visibleTables = tables.filter(t => t.isVisible !== false);
+  // [FIX CRASH] Logic tính toán visibleTables an toàn tuyệt đối
+  // Dù store có data rác (id=null), hàm này sẽ cấp ID tạm để render không bị lỗi
+  $: visibleTables = ($customRevenueTables || []).reduce((acc, table, index) => {
+      // Chỉ lấy bảng chưa bị ẩn
+      if (table.isVisible !== false) {
+          acc.push({
+              ...table,
+              // Nếu id null/undefined, tạo id tạm dựa trên index để Svelte không báo duplicate key
+              id: table.id ? table.id : `fallback_render_id_${index}` 
+          });
+      }
+      return acc;
+  }, []);
 
   // [LOGIC MỚI] Khi Kho thay đổi -> Tải lại dữ liệu
   $: if ($selectedWarehouse) {
@@ -9579,31 +9460,42 @@ export const formatters = {
   async function loadData(kho) {
       console.log(`[CategoryView] Loading tables for warehouse: ${kho}`);
       
-      // 1. Tải bảng Hệ thống (Global)
-      const systemTables = await adminService.loadSystemRevenueTables();
-      
-      // 2. Tải bảng Cá nhân (Warehouse Cloud)
-      const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
+      try {
+          // 1. Tải bảng Hệ thống (Global)
+          const systemTables = await adminService.loadSystemRevenueTables();
+          
+          // 2. Tải bảng Cá nhân (Warehouse Cloud)
+          const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
 
-      // 3. Tải Preferences ẩn/hiện (Local)
-      const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
+          // 3. Tải Preferences ẩn/hiện (Local)
+          const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
 
-      // 4. Merge
-      const finalSystemTables = systemTables.map(t => ({
-          ...t,
-          isSystem: true,
-          isVisible: !hiddenSystemIds.includes(t.id)
-      }));
+          // 4. Merge & Sanitize (Làm sạch dữ liệu)
+          const finalSystemTables = (systemTables || []).map((t, index) => ({
+              ...t,
+              // Gán ID cứng nếu thiếu để lưu vào Store chuẩn
+              id: t.id || `sys_gen_${index}_${Date.now()}`, 
+              isSystem: true,
+              isVisible: !hiddenSystemIds.includes(t.id)
+          }));
 
-      // Set store
-      customRevenueTables.set([...finalSystemTables, ...personalTables]);
+          const safePersonalTables = (personalTables || []).map((t, index) => ({
+              ...t,
+              // Gán ID cứng nếu thiếu
+              id: t.id || `per_gen_${index}_${Date.now()}` 
+          }));
+
+          // Cập nhật Store (Sẽ kích hoạt lại reactive statement visibleTables ở trên)
+          customRevenueTables.set([...finalSystemTables, ...safePersonalTables]);
+      } catch (e) {
+          console.error("[CategoryView] Lỗi tải dữ liệu bảng:", e);
+      }
   }
 
-  // --- HÀM LƯU ---
+  // --- CÁC HÀM XỬ LÝ SỰ KIỆN (GIỮ NGUYÊN) ---
   async function savePersonalTables() {
       if (!$selectedWarehouse) return;
       const personalTables = $customRevenueTables.filter(t => !t.isSystem);
-      // Lưu lên Cloud Kho
       await datasyncService.savePersonalRevenueTables($selectedWarehouse, personalTables);
   }
 
@@ -9615,16 +9507,19 @@ export const formatters = {
   }
 
   function toggleTableVisibility(id) {
+      // Nếu id là fallback (do lỗi dữ liệu), bỏ qua để tránh lỗi logic
+      if (!id || String(id).startsWith('fallback_render_id_')) return;
+
       customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: !t.isVisible } : t));
-      
-      // Nếu là bảng cá nhân -> Lưu Cloud
-      // Nếu là bảng hệ thống -> Lưu Local Preference
-      // Để đơn giản, gọi cả 2 (hàm save sẽ tự lọc)
       savePersonalTables();
       saveHiddenPreferences();
   }
 
   function editTable(table) {
+      if (String(table.id).startsWith('fallback_render_id_')) {
+          alert("Bảng này đang bị lỗi dữ liệu, không thể sửa.");
+          return;
+      }
       if (table.isSystem && !$isAdmin) {
           alert("Bạn không có quyền chỉnh sửa Bảng hệ thống.");
           return;
@@ -9633,6 +9528,12 @@ export const formatters = {
   }
 
   async function deleteTable(id) {
+      if (!id || String(id).startsWith('fallback_render_id_')) {
+          // Xóa "bảng ma" khỏi store local để sạch mắt
+          customRevenueTables.update(items => items.filter(t => t.id)); // Lọc bỏ item ko có id thực
+          return;
+      }
+
       const targetTable = $customRevenueTables.find(t => t.id === id);
       if (!targetTable) return;
 
@@ -9648,7 +9549,6 @@ export const formatters = {
               saveHiddenPreferences();
           }
       } else {
-          // Bảng cá nhân
           if (!confirm("Bạn có chắc muốn xóa bảng này? Hành động này sẽ xóa trên Cloud của kho hiện tại.")) return;
           customRevenueTables.update(items => items.filter(t => t.id !== id));
           await savePersonalTables();
@@ -9668,22 +9568,22 @@ export const formatters = {
   const getColor = (index) => colors[index % colors.length];
 </script>
 
-{#if tables.length > 0}
+{#if $customRevenueTables.length > 0}
 <div class="mb-6 flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
     <div class="text-xs font-bold uppercase text-gray-500 mr-2 flex items-center gap-1">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
         Bảng hiển thị:
     </div>
-    {#each tables as table}
+    {#each $customRevenueTables as table, index}
         <button 
             class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
                    {table.isVisible !== false ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
                    {table.isSystem ? 'border-dashed' : ''}"
-            on:click={() => toggleTableVisibility(table.id)}
+            on:click={() => toggleTableVisibility(table.id || `fallback_render_id_${index}`)}
             title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
         >
             {#if table.isSystem}<span class="text-[10px] mr-0.5 opacity-70">🌐</span>{/if}
-            {table.title}
+            {table.title || '(Không tên)'}
         </button>
     {/each}
     <button class="px-3 py-1.5 rounded-full text-xs font-bold border border-dashed border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors ml-auto flex items-center gap-1" on:click={openAddModal}>
@@ -9697,7 +9597,7 @@ export const formatters = {
     <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
          <p class="text-gray-500 font-medium">Chưa có dữ liệu báo cáo nhân viên.</p>
     </div>
-{:else if tables.length === 0}
+{:else if $customRevenueTables.length === 0}
     <div class="p-12 text-center bg-white rounded-xl border border-blue-100 shadow-sm flex flex-col items-center">
          <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-blue-500">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
@@ -11463,12 +11363,11 @@ export const formatters = {
 
 --- START FILE: ./src/components/luyke/LuykeQdcTable.svelte ---
 <script>
-  import { afterUpdate, onMount } from 'svelte';
-  // [FIX] Sửa đường dẫn import: Từ 3 cấp (../../../) thành 2 cấp (../../)
+  import { afterUpdate } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
   import { cleanCategoryName } from '../../utils.js';
-  import { qdcConfigStore, categoryStructure, macroProductGroupConfig } from '../../stores.js';
-  import { adminService } from '../../services/admin.service.js';
+  import { categoryStructure, macroProductGroupConfig, selectedWarehouse } from '../../stores.js';
+  import { datasyncService } from '../../services/datasync.service.js';
 
   export let items = []; 
   export let numDays = 1;
@@ -11476,24 +11375,9 @@ export const formatters = {
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
+  let localConfig = []; // Danh sách các nhóm ĐƯỢC CHỌN
 
-  // [LOGIC MỚI] Tự động tải config khi component được sinh ra (F5)
-  onMount(async () => {
-      console.log("[Luyke_LOG] Component Mounted. Fetching QDC Config from Cloud...");
-      try {
-          const savedConfig = await adminService.loadQdcConfig();
-          if (savedConfig && savedConfig.length > 0) {
-              console.log("[Luyke_LOG] Config loaded:", savedConfig);
-              qdcConfigStore.set(savedConfig);
-          } else {
-              console.log("[Luyke_LOG] No config found or empty.");
-          }
-      } catch (e) {
-          console.error("[Luyke_LOG] Error loading config:", e);
-      }
-  });
-
-  // Data Sources
+  // 1. Data Sources: Tạo danh sách tất cả nhóm hàng có thể có
   $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
   $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
   $: allPresentGroups = items.map(i => i.name).sort();
@@ -11503,45 +11387,66 @@ export const formatters = {
       name.toLowerCase().includes(filterSearch.toLowerCase())
   );
 
-  // [LOGIC MỚI] Hàm cập nhật ngay lập tức
+  // 2. Logic Load Config theo Kho
+  $: if ($selectedWarehouse) {
+      loadConfigForWarehouse($selectedWarehouse);
+  } else {
+      // Nếu không có kho (view toàn bộ), mặc định hiện tất cả
+      localConfig = [...allGroups];
+  }
+
+  async function loadConfigForWarehouse(kho) {
+      console.log(`[LuykeQdc] Loading config for warehouse: ${kho}`);
+      try {
+          const savedConfig = await datasyncService.loadQdcConfig(kho);
+          if (savedConfig && Array.isArray(savedConfig)) {
+              localConfig = savedConfig;
+          } else {
+              // [QUAN TRỌNG] Nếu chưa có config (null), mặc định chọn TẤT CẢ
+              localConfig = [...allGroups];
+          }
+      } catch (e) {
+          console.error("Error loading config:", e);
+          localConfig = [...allGroups];
+      }
+  }
+
+  // 3. Logic Lưu Config theo Kho
   function toggleQdcSelection(name) {
-      qdcConfigStore.update(current => {
-          let newConfig;
-          if (current.includes(name)) newConfig = current.filter(n => n !== name);
-          else newConfig = [...current, name];
-          
-          console.log("[Luyke_LOG] User update config:", newConfig);
-          return newConfig;
-      });
+      if (localConfig.includes(name)) {
+          localConfig = localConfig.filter(n => n !== name);
+      } else {
+          localConfig = [...localConfig, name];
+      }
       
-      // Debounce việc lưu lên Cloud để tránh spam request, nhưng UI đã update ngay
+      // Debounce lưu cloud để tránh spam request
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
-          console.log("[Luyke_LOG] Saving to cloud...");
-          adminService.saveQdcConfig($qdcConfigStore);
+          if ($selectedWarehouse) {
+              console.log(`[LuykeQdc] Saving config for ${$selectedWarehouse}...`);
+              datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
+          }
       }, 500); 
   }
 
   function toggleAllVisibility(show) {
-      const newConfig = show ? [...allGroups] : [];
-      console.log("[Luyke_LOG] Toggle All:", show);
-      qdcConfigStore.set(newConfig);
-      adminService.saveQdcConfig(newConfig);
+      if (show) {
+          localConfig = [...allGroups];
+      } else {
+          localConfig = [];
+      }
+      
+      if ($selectedWarehouse) {
+          datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
+      }
   }
 
-  // Logic hiển thị: Nếu chưa có config thì Top 10, nếu có config thì lọc theo config
-  $: activeConfig = $qdcConfigStore;
-  
-  let sortedItems = [];
-  $: {
-      let candidates = [];
-      if (!activeConfig || activeConfig.length === 0) {
-          candidates = [...items].sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0)).slice(0, 10);
-      } else {
-          candidates = items.filter(item => activeConfig.includes(item.name));
-      }
-      sortedItems = candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
-  }
+  // 4. Logic Hiển thị
+  $: sortedItems = (() => {
+      // Lọc danh sách items dựa trên localConfig
+      let candidates = items.filter(item => localConfig.includes(item.name));
+      return candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+  })();
 
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
 
@@ -11569,7 +11474,7 @@ export const formatters = {
 
     <div class="relative filter-wrapper">
         <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Chọn nhóm hàng">
-            <i data-feather="filter" class="w-4 h-4"></i>
+             <i data-feather="filter" class="w-4 h-4"></i>
         </button>
         {#if isSettingsOpen}
             <div class="filter-dropdown">
@@ -11578,17 +11483,17 @@ export const formatters = {
                 </div>
                 <div class="filter-body custom-scrollbar" style="max-height: 250px;">
                     {#if filterList.length === 0}
-                        <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                         <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
                         {#each filterList as name}
-                            {@const isChecked = $qdcConfigStore.includes(name)}
+                            {@const isChecked = localConfig.includes(name)}
                             <div class="filter-item" on:click={() => toggleQdcSelection(name)}>
-                                <input type="checkbox" checked={isChecked} />
+                                 <input type="checkbox" checked={isChecked} />
                                 <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{name}</label>
                             </div>
                         {/each}
                     {/if}
-                </div>
+                 </div>
                 <div class="filter-actions">
                     <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                     <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
@@ -11600,8 +11505,11 @@ export const formatters = {
 
   <div class="luyke-widget-body custom-scrollbar">
     {#if sortedItems.length === 0}
-       <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+        <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
           <p class="text-sm">Không có dữ liệu hiển thị.</p>
+          {#if items.length > 0}
+             <p class="text-xs mt-1">Bạn đã ẩn tất cả nhóm hàng.</p>
+          {/if}
        </div>
     {:else}
       <div class="flex flex-col gap-0">
@@ -11610,13 +11518,13 @@ export const formatters = {
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50 transition-colors px-1">
             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
-               <div class="flex-grow min-w-0">
+                <div class="flex-grow min-w-0">
                    <div class="flex justify-between items-center mb-1">
                        <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
                        <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
                    </div>
                    <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
-                       <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
+                        <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
                    </div>
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
                        <div class="flex gap-2">
@@ -11627,7 +11535,7 @@ export const formatters = {
                            <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
                            <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
                        </div>
-                   </div>
+                    </div>
                </div>
             </div>
           </div>
@@ -11646,17 +11554,19 @@ export const formatters = {
     selectedWarehouse,
     interfaceSettings,
     macroCategoryConfig,
-    macroProductGroupConfig, // [QUAN TRỌNG] Import thêm store này
+    macroProductGroupConfig, 
     efficiencyConfig,
     qdcConfigStore,
     modalState,
-    categoryNameMapping // Import thêm để lắng nghe mapping
+    categoryNameMapping,
+    warehouseCustomMetrics
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
   import { settingsService } from '../../services/settings.service.js';
   import { dataProcessing } from '../../services/dataProcessing.js';
   import { adminService } from '../../services/admin.service.js';
+  import { datasyncService } from '../../services/datasync.service.js';
   import * as utils from '../../utils.js';
   
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
@@ -11676,7 +11586,6 @@ export const formatters = {
   let luotKhachData = { value: 0, percentage: 'N/A' };
   
   let chuaXuatReport = [];
-  let efficiencyItems = [];
   let categoryItems = []; 
   let qdcItems = []; 
 
@@ -11685,6 +11594,8 @@ export const formatters = {
       tgdd: { val: 0, pct: 0 }
   };
 
+  let combinedEfficiencyItems = [];
+
   onMount(async () => {
       const savedEffConfig = await adminService.loadEfficiencyConfig();
       if(savedEffConfig.length > 0) efficiencyConfig.set(savedEffConfig);
@@ -11692,6 +11603,20 @@ export const formatters = {
       const savedQdcConfig = await adminService.loadQdcConfig();
       if(savedQdcConfig.length > 0) qdcConfigStore.set(savedQdcConfig);
   });
+
+  $: if ($selectedWarehouse) {
+      loadLocalMetrics($selectedWarehouse);
+  }
+
+  async function loadLocalMetrics(kho) {
+      const localData = await datasyncService.loadCustomMetrics(kho);
+      warehouseCustomMetrics.set(localData);
+  }
+
+  $: combinedEfficiencyItems = [
+      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
+      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
+  ];
 
   const cleanValue = (str) => {
       if (typeof str === 'number') return str;
@@ -11702,11 +11627,11 @@ export const formatters = {
   };
 
   $: {
-    // [FIX QUAN TRỌNG] Khai báo dependency để kích hoạt tính toán lại khi Config thay đổi
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
     const _triggerEff = $efficiencyConfig;
     const _triggerMap = $categoryNameMapping;
+    const _triggerLocalEff = $warehouseCustomMetrics;
 
     localSupermarketReport = supermarketReport || {};
     localGoals = goals || {};
@@ -11808,24 +11733,6 @@ export const formatters = {
 
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
-    // --- LỌC ITEMS HIỆN THỊ ---
-    const efficiencySettings = settingsService.loadEfficiencyViewSettings();
-    const HARDCODED_IDS = ['pctSim', 'pctVAS', 'pctBaoHiem', 'tyLeTraCham']; 
-    
-    const goalKeyMap = {
-      pctSim: 'phanTramSim', pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem', tyLeTraCham: 'phanTramTC'
-    };
-
-    efficiencyItems = efficiencySettings
-      .filter(item => HARDCODED_IDS.includes(item.id) && item.visible)
-      .map(config => ({
-        ...config, 
-        value: localSupermarketReport[config.id] || 0, 
-        target: localGoals[goalKeyMap[config.id]] 
-      }));
-
-    // [CẬP NHẬT] Lấy dữ liệu cho bảng QĐC từ Nhóm Hàng Chi Tiết (Product Groups)
-    // Bao gồm cả Nhóm Hàng Lớn (Macro) và Nhóm Hàng Thường
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
       .map(([name, values]) => ({ 
           id: name,
@@ -11836,8 +11743,6 @@ export const formatters = {
           ...values 
       }));
 
-    // [CẬP NHẬT] Lấy dữ liệu cho bảng Ngành Hàng (Category)
-    // Bao gồm cả Ngành Hàng Lớn (Macro) và Ngành Hàng Thường
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
       .map(([name, values]) => ({ name, dtqd: values.revenueQuyDoi, ...values }));
   }
@@ -11850,10 +11755,22 @@ export const formatters = {
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
   }
 
-  function handleDeleteEffConfig(event) {
+  async function handleDeleteEffConfig(event) {
       const id = event.detail;
-      efficiencyConfig.update(items => items.filter(i => i.id !== id));
-      adminService.saveEfficiencyConfig($efficiencyConfig);
+      const isSystem = $efficiencyConfig.some(i => i.id === id);
+      
+      if (isSystem) {
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          return;
+      }
+
+      if (confirm("Xóa chỉ số cá nhân này?")) {
+          const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
+          warehouseCustomMetrics.set(newLocalMetrics);
+          if ($selectedWarehouse) {
+              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
+          }
+      }
   }
 
   afterUpdate(() => {
@@ -11871,7 +11788,7 @@ export const formatters = {
 
       <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
         
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard1Bg}">
+        <div class="kpi-card-solid card-1">
             <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
             <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
             <div class="kpi-solid-sub">
@@ -11881,7 +11798,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard2Bg}">
+        <div class="kpi-card-solid card-2">
             <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
             <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</div>
             <div class="kpi-solid-sub">
@@ -11891,7 +11808,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard3Bg}">
+        <div class="kpi-card-solid card-3">
             <div class="kpi-solid-header">% HT Target (QĐ) <i data-feather="target"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramTargetQd || 0)}</div>
             <div class="kpi-solid-sub">
@@ -11900,7 +11817,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="target"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard4Bg}">
+        <div class="kpi-card-solid card-4">
             <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
             <div class="kpi-solid-sub">
@@ -11909,7 +11826,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard5Bg}">
+        <div class="kpi-card-solid card-5">
             <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
             <div class="kpi-solid-sub">
@@ -11918,7 +11835,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard6Bg}">
+        <div class="kpi-card-solid card-6">
             <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
             <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
             <div class="kpi-solid-sub">
@@ -11927,7 +11844,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="award"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard7Bg}">
+        <div class="kpi-card-solid card-7">
             <div class="kpi-solid-header">Tăng trưởng CK <i data-feather="activity"></i></div>
             <div class="kpi-solid-value">{comparisonData.percentage || 'N/A'}</div>
             <div class="kpi-solid-sub">
@@ -11936,7 +11853,7 @@ export const formatters = {
             <div class="kpi-bg-icon"><i data-feather="activity"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard8Bg}">
+        <div class="kpi-card-solid card-8">
             <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
             <div class="flex flex-col gap-1 mt-1">
                 <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
@@ -11962,8 +11879,8 @@ export const formatters = {
 
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
       <LuykeEfficiencyTable 
-          items={efficiencyItems} 
-          dynamicItems={$efficiencyConfig}
+          items={[]} 
+          dynamicItems={combinedEfficiencyItems} 
           supermarketData={localSupermarketReport}
           on:add={openAddEffModal}
           on:edit={handleEditEffConfig}
@@ -17035,7 +16952,6 @@ export const generalReportLogic = {
 
 --- START FILE: ./src/services/reports/master.report.js ---
 // src/services/reports/master.report.js
-// Version 2.4 - Fix Macro Group Logic (Clean Name Matching & Fallback)
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
 import * as utils from '../../utils.js';
@@ -17052,6 +16968,15 @@ import {
     efficiencyConfig
 } from '../../stores.js';
 
+// Helper chuẩn hóa chuỗi
+const normalizeStr = (str) => {
+    if (!str) return '';
+    return str.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
 export const masterReportLogic = {
     generateMasterReportData: (sourceData, goalSettings, isRealtime = false) => {
         const $danhSachNhanVien = get(danhSachNhanVien);
@@ -17067,63 +16992,22 @@ export const masterReportLogic = {
         const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
         const $efficiencyConfig = get(efficiencyConfig) || [];
 
-        // 1. Xây dựng Map tra cứu nhanh: Item -> Macro Name
-        // (Gộp cả Category Config và Product Group Config vào chung 1 map để tra cứu)
-        const itemToMacroMap = {};
-        const macroToItemsMap = {}; // Dùng cho efficiency calculation sau này
-
-        const buildMap = (configs) => {
+        // 1. Build Macro Map
+        const macroToItemsMap = {};
+        const buildMacroMap = (configs) => {
             configs.forEach(macro => {
                 if (macro.items && Array.isArray(macro.items)) {
-                    // Lưu danh sách items đã clean cho macro này
-                    macroToItemsMap[macro.name] = macro.items.map(i => utils.cleanCategoryName(i));
-                    
-                    // Map ngược từ item -> macro name
-                    macro.items.forEach(item => {
-                        const cleanName = utils.cleanCategoryName(item);
-                        itemToMacroMap[cleanName] = macro.name; 
-                    });
+                    macroToItemsMap[normalizeStr(macro.name)] = macro.items.map(i => normalizeStr(i));
                 }
             });
         };
-
-        buildMap($macroCategoryConfig);
-        buildMap($macroProductGroupConfig);
-
-        // 2. Hàm kiểm tra một dòng dữ liệu có thuộc Macro Group (ICT, CE...) hay không
-        const checkMacroGroup = (targetMacroName, nhomHangCode, cleanNhomHang, cleanNganhHang, nganhHangCode) => {
-            // A. Ưu tiên 1: Check theo cấu hình Admin (Dựa trên tên đã làm sạch)
-            // Check Nhóm hàng
-            if (itemToMacroMap[cleanNhomHang] === targetMacroName) return true;
-            // Check Ngành hàng
-            if (itemToMacroMap[cleanNganhHang] === targetMacroName) return true;
-
-            // B. Ưu tiên 2: Fallback về Config cứng (Dựa trên mã Code)
-            // Giúp hệ thống vẫn chạy đúng nếu Admin chưa khai báo gì
-            const pgKeyMap = {
-                'ICT': 'ICT',
-                'CE': 'CE',
-                'Phụ kiện': 'PHU_KIEN',
-                'Gia dụng': 'GIA_DUNG',
-                'Máy lọc nước': 'MAY_LOC_NUOC'
-            };
-            const configKey = pgKeyMap[targetMacroName];
-            
-            if (configKey && PG[configKey]) {
-                const codes = Array.isArray(PG[configKey]) ? PG[configKey] : [PG[configKey]];
-                // Check code nhóm hàng
-                if (codes.includes(nhomHangCode)) return true;
-                // Check code ngành hàng (cho các trường hợp đặc biệt)
-                if (codes.includes(nganhHangCode)) return true;
-            }
-
-            return false;
-        };
+        buildMacroMap($macroCategoryConfig);
+        buildMacroMap($macroProductGroupConfig);
 
         const $thuongNongData = get(thuongNongData);
         const $employeeNameToMaNVMap = get(employeeNameToMaNVMap);
-        const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc);
         const $thuongERPData = get(thuongERPData);
+        const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc);
         const $thuongERPDataThangTruoc = get(thuongERPDataThangTruoc);
 
         const thuongNongByMSNV = {};
@@ -17150,22 +17034,17 @@ export const masterReportLogic = {
 
         return $danhSachNhanVien.map((employee) => {
             let data = {
-                doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuTraGopQuyDoi: 0,
+                doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
                 doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
                 doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
-                dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtMLN: 0,
-                slICT: 0, dtBaoHiem: 0, slBaoHiem: 0,
-                slPhuKien: 0, slGiaDung: 0, slCE: 0, slPinSDP: 0, slCamera: 0,
-                slTaiNgheBLT: 0, slNoiChien: 0, slMLN: 0, slRobotHB: 0,
-                slBH1d1: 0, slBHXM: 0, slBHRV: 0, slBHMR: 0,
-                dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0,
-                dtMayGiat: 0, slMayGiat: 0, dtMayLanh: 0, slMayLanh: 0,
-                dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
                 doanhThuTheoNganhHang: {}, 
                 doanhThuTheoNhomHang: {}, 
                 dynamicMetrics: {},
-                slSimOnline: 0, slUDDD: 0, slBaoHiemVAS: 0, slSmartphone: 0, slBaoHiemDenominator: 0,
-                qdc: {}
+                qdc: {},
+                dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0,
+                dtMayGiat: 0, slMayGiat: 0, dtMayLanh: 0, slMayLanh: 0,
+                dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
+                dtICT: 0, dtCE: 0
             };
 
             for (const key in PG.QDC_GROUPS) data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
@@ -17174,34 +17053,41 @@ export const masterReportLogic = {
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
                 if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                     const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-                    const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' && (row.trangThaiHuy || "").trim() === 'Chưa hủy' && (row.tinhTrangTra || "").trim() === 'Chưa trả';
+                    const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
+                                      (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
+                                      (row.tinhTrangTra || "").trim() === 'Chưa trả';
 
                     if (isBaseValid && isDoanhThuHTX) {
                         const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                        if(isNaN(thanhTien)) return;
-
+                        const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         const trangThaiXuat = (row.trangThaiXuat || "").trim();
-
-                        // --- TRÍCH XUẤT VÀ LÀM SẠCH DỮ LIỆU ĐỂ SO SÁNH ---
                         const nhomHangCode = String(row.nhomHang || '').match(/^\d+/)?.[0] || null;
-                        const nganhHangCode = String(row.nganhHang || '').match(/^\d+/)?.[0] || null;
                         
-                        const nhomHangNameClean = utils.cleanCategoryName(row.nhomHang); // VD: "Tivi Led"
-                        const nganhHangNameClean = utils.cleanCategoryName(row.nganhHang); // VD: "Điện Tử"
-
-                        // Kiểm tra thuộc nhóm nào bằng hàm checkMacroGroup mới
-                        const isICT = checkMacroGroup('ICT', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
-                        const isCE = checkMacroGroup('CE', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
-                        const isPhuKien = checkMacroGroup('Phụ kiện', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
-                        const isGiaDung = checkMacroGroup('Gia dụng', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
-                        const isMLN = checkMacroGroup('Máy lọc nước', nhomHangCode, nhomHangNameClean, nganhHangNameClean, nganhHangCode);
+                        const trackMetric = (container, name) => {
+                            if (!name) return;
+                            const cleanName = utils.cleanCategoryName(name); 
+                            if (!container[cleanName]) {
+                                container[cleanName] = { 
+                                    name: cleanName, 
+                                    rawName: name, 
+                                    revenue: 0, 
+                                    quantity: 0, 
+                                    revenueQuyDoi: 0 
+                                };
+                            }
+                            container[cleanName].revenue += thanhTien;
+                            container[cleanName].quantity += soLuong;
+                            container[cleanName].revenueQuyDoi += thanhTien * heSo;
+                        }
+                        
+                        trackMetric(data.doanhThuTheoNganhHang, row.nganhHang);
+                        trackMetric(data.doanhThuTheoNhomHang, row.nhomHang);
 
                         if (trangThaiXuat === 'Chưa xuất') {
                             data.doanhThuChuaXuat += thanhTien;
                             data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
                         } else if (trangThaiXuat === 'Đã xuất') {
-                            const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                             if(isNaN(soLuong)) return;
 
                             data.doanhThu += thanhTien;
@@ -17218,56 +17104,14 @@ export const masterReportLogic = {
 
                             if (hinhThucXuatTraGop.has(row.hinhThucXuat)) { 
                                 data.doanhThuTraGop += thanhTien; 
-                                data.doanhThuTraGopQuyDoi += thanhTien * heSo; 
                             }
 
-                            const trackMetric = (container, name) => {
-                                if (!name) return;
-                                if (!container[name]) container[name] = { name: name, revenue: 0, quantity: 0, revenueQuyDoi: 0 };
-                                container[name].revenue += thanhTien;
-                                container[name].quantity += soLuong;
-                                container[name].revenueQuyDoi += thanhTien * heSo;
-                            }
-                            
-                            trackMetric(data.doanhThuTheoNganhHang, nganhHangNameClean);
-                            trackMetric(data.doanhThuTheoNhomHang, nhomHangNameClean);
-
-                            // Cộng dồn vào các nhóm lớn
-                            if (isICT) { data.dtICT += thanhTien; data.slICT += soLuong; }
-                            if (isCE) { data.dtCE += thanhTien; data.slCE += soLuong; }
-                            if (isPhuKien) { data.dtPhuKien += thanhTien; data.slPhuKien += soLuong; }
-                            if (isGiaDung) { data.dtGiaDung += thanhTien; data.slGiaDung += soLuong; }
-                            if (isMLN) { data.dtMLN += thanhTien; data.slMLN += soLuong; }
-
-                            // Logic cũ cho các nhóm con cụ thể (vẫn giữ để tính đơn giá chi tiết)
                             if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
                             if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
                             if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
                             if (PG.TU_LANH.includes(nhomHangCode)) { data.dtTuLanh += thanhTien; data.slTuLanh += soLuong; }
                             if (PG.MAY_GIAT.includes(nhomHangCode)) { data.dtMayGiat += thanhTien; data.slMayGiat += soLuong; }
                             if (PG.MAY_LANH.includes(nhomHangCode)) { data.dtMayLanh += thanhTien; data.slMayLanh += soLuong; }
-
-                            const loaiBaoHiem = dataProcessing.classifyInsurance(row.tenSanPham);
-                            if (loaiBaoHiem) {
-                                data.dtBaoHiem += thanhTien; data.slBaoHiem += soLuong;
-                                if (loaiBaoHiem === 'BH1d1') data.slBH1d1 += soLuong;
-                                if (loaiBaoHiem === 'BHXM') data.slBHXM += soLuong;
-                                if (loaiBaoHiem === 'BHRV') data.slBHRV += soLuong;
-                                if (loaiBaoHiem === 'BHMR') data.slBHMR += soLuong;
-                            }
-                            
-                            // Các nhóm QĐC và nhóm nhỏ khác
-                            if (nhomHangCode === PG.PIN_SDP) data.slPinSDP += soLuong;
-                            if (nhomHangCode === PG.CAMERA_TRONG_NHA || nhomHangCode === PG.CAMERA_NGOAI_TROI) data.slCamera += soLuong;
-                            if (nhomHangCode === PG.TAI_NGHE_BLT) data.slTaiNgheBLT += soLuong;
-                            if (nhomHangCode === PG.NOI_CHIEN) data.slNoiChien += soLuong;
-                            if (nhomHangCode === PG.ROBOT_HB) data.slRobotHB += soLuong;
-
-                            if (PG.SIM.includes(nhomHangCode)) data.slSimOnline += soLuong;
-                            if (PG.VAS.includes(nhomHangCode)) data.slUDDD += soLuong;
-                            if (PG.SMARTPHONE.includes(nhomHangCode)) data.slSmartphone += soLuong;
-                            if (PG.BAO_HIEM_VAS.includes(nhomHangCode)) data.slBaoHiemVAS += soLuong;
-                            if (PG.BAO_HIEM_DENOMINATOR.includes(nhomHangCode)) data.slBaoHiemDenominator += soLuong;
                             
                             for (const key in PG.QDC_GROUPS) {
                                 if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
@@ -17281,249 +17125,216 @@ export const masterReportLogic = {
                 }
             });
 
-            // Tính toán Dynamic Metrics (Cấu hình Hiệu quả/Đơn giá)
             if ($efficiencyConfig && $efficiencyConfig.length > 0) {
                 $efficiencyConfig.forEach(cfg => {
-                    const sumValues = (listNames) => {
-                        let total = 0;
-                        listNames.forEach(name => {
-                            // 1. Bung items nếu là Macro
-                            const itemsToSum = macroToItemsMap[name] || [utils.cleanCategoryName(name)];
-                            
-                            itemsToSum.forEach(cleanName => {
-                                // 2. Thử tìm trong Ngành Hàng
-                                let item = data.doanhThuTheoNganhHang[cleanName];
-                                // 3. Nếu không có, tìm trong Nhóm Hàng
-                                if (!item) {
-                                    item = data.doanhThuTheoNhomHang[cleanName];
-                                }
+                    const numType = cfg.typeA || cfg.type || 'DTTL';
+                    const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
 
-                                if (item) {
-                                    if (cfg.typeA === 'SL' || (cfg.type === 'UNIT_PRICE' && cfg.typeB === 'SL')) {
-                                         // Logic cũ hoặc logic đơn giá (Mẫu là SL)
-                                    }
-                                    
-                                    // Xác định giá trị cần cộng
-                                    // Lưu ý: Hàm này đang được dùng chung, nên cần check kỹ loại
-                                    // Logic này được gọi 2 lần: 1 lần cho Tử (typeA), 1 lần cho Mẫu (typeB)
-                                    // Chúng ta cần truyền loại dữ liệu vào hàm sumValues để biết cộng gì
-                                }
-                            });
-                        });
-                        return total;
-                    };
-                    
-                    // Helper mới xử lý chính xác loại dữ liệu
                     const calcGroupValue = (groupList, valueType) => {
                         let total = 0;
-                        groupList.forEach(name => {
-                            const itemsToSum = macroToItemsMap[name] || [utils.cleanCategoryName(name)];
-                            itemsToSum.forEach(cleanName => {
-                                let item = data.doanhThuTheoNganhHang[cleanName] || data.doanhThuTheoNhomHang[cleanName];
+                        if (!groupList || groupList.length === 0) return 0;
+
+                        groupList.forEach(rawName => {
+                            const cleanCfgName = normalizeStr(rawName);
+                            const itemsToSum = macroToItemsMap[cleanCfgName] || [cleanCfgName];
+
+                            itemsToSum.forEach(targetName => {
+                                const findItem = (container) => {
+                                    for (const key in container) {
+                                        if (normalizeStr(key) === targetName) return container[key];
+                                    }
+                                    for (const key in container) {
+                                        const normKey = normalizeStr(key);
+                                        if (normKey.includes(targetName) || targetName.includes(normKey)) {
+                                            return container[key];
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                let item = findItem(data.doanhThuTheoNganhHang) || findItem(data.doanhThuTheoNhomHang);
+
                                 if (item) {
                                     if (valueType === 'SL') total += item.quantity;
                                     else if (valueType === 'DTQD') total += item.revenueQuyDoi;
-                                    else total += item.revenue; // DTTL
+                                    else total += item.revenue; 
                                 }
                             });
                         });
                         return total;
                     };
 
-                    const numVal = calcGroupValue(cfg.groupA || [], cfg.typeA || cfg.type); // type cũ là DTTL/SL
-                    const denVal = calcGroupValue(cfg.groupB || [], cfg.typeB || 'DTTL'); // type cũ mặc định mẫu là DTTL
+                    const numVal = calcGroupValue(cfg.groupA, numType);
+                    const denVal = calcGroupValue(cfg.groupB, denType);
 
                     data.dynamicMetrics[cfg.id] = {
                         value: denVal > 0 ? numVal / denVal : 0,
-                        target: cfg.target,
+                        target: goalSettings[cfg.id] !== undefined ? parseFloat(goalSettings[cfg.id]) : cfg.target,
                         label: cfg.label
                     };
                 });
             }
 
-            // Tính toán các chỉ số dẫn xuất
             const hieuQuaQuyDoi = data.doanhThu > 0 ? (data.doanhThuQuyDoi / data.doanhThu) - 1 : 0;
             const tyLeTraCham = data.doanhThu > 0 ? data.doanhThuTraGop / data.doanhThu : 0;
-            
-            // Fix lỗi chia cho 0
-            data.slICT = data.slICT || (data.slDienThoai + data.slLaptop); 
-            
-            const pctPhuKien = data.dtICT > 0 ? data.dtPhuKien / data.dtICT : 0;
-            const pctGiaDung = data.dtCE > 0 ? data.dtGiaDung / data.dtCE : 0;
-            const pctMLN = data.dtCE > 0 ? data.dtMLN / data.dtCE : 0;
-            const pctSim = data.slSmartphone > 0 ? data.slSimOnline / data.slSmartphone : 0;
-            const pctVAS = data.slSmartphone > 0 ? data.slUDDD / data.slSmartphone : 0;
-            const pctBaoHiem = data.slBaoHiemDenominator > 0 ? data.slBaoHiemVAS / data.slBaoHiemDenominator : 0;
-            
-            // Tính đơn giá chi tiết
-            data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
-            data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
-            data.donGiaMayGiat = data.slMayGiat > 0 ? data.dtMayGiat / data.slMayGiat : 0;
-            data.donGiaMayLanh = data.slMayLanh > 0 ? data.dtMayLanh / data.slMayLanh : 0;
-            data.donGiaDienThoai = data.slDienThoai > 0 ? data.dtDienThoai / data.slDienThoai : 0;
-            data.donGiaLaptop = data.slLaptop > 0 ? data.dtLaptop / data.slLaptop : 0;
-            
             const totalQuantity = Object.values(data.doanhThuTheoNganhHang).reduce((sum, category) => sum + category.quantity, 0);
             const donGiaTrungBinh = totalQuantity > 0 ? data.doanhThu / totalQuantity : 0;
-
             const gioCong = gioCongByMSNV[employee.maNV] || 0;
             const thuongNong = thuongNongByMSNV[employee.maNV] || 0;
             const erpEntry = $thuongERPData.find(e => e.name.includes(employee.hoTen));
             const thuongERP = erpEntry ? parseFloat(erpEntry.bonus.replace(/,/g, '')) : 0;
             const tongThuNhap = thuongNong + thuongERP;
-            
             const today = new Date();
             const currentDay = today.getDate();
             const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
             let thuNhapDuKien = 0;
             if (currentDay > 1) thuNhapDuKien = (tongThuNhap / (currentDay - 1)) * daysInMonth;
             else if (currentDay === 1) thuNhapDuKien = tongThuNhap * daysInMonth;
-
             const thuongNongThangTruoc = thuongNongThangTruocByMSNV[employee.maNV] || 0;
             const erpEntryThangTruoc = $thuongERPDataThangTruoc.find(e => e.name.includes(employee.hoTen));
             const thuongERPThangTruoc = erpEntryThangTruoc ? parseFloat(erpEntryThangTruoc.bonus.replace(/,/g, '')) : 0;
-            const thuNhapThangTruoc = thuongNongThangTruoc + thuongERPThangTruoc;
+            const thuNhapThangTruoc = (thuongNongThangTruoc || 0) + thuongERPThangTruoc;
             const chenhLechThuNhap = thuNhapDuKien - thuNhapThangTruoc;
 
             return { 
                 ...employee, ...data, 
                 gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, 
-                hieuQuaQuyDoi, tyLeTraCham, pctPhuKien, pctGiaDung, pctMLN, pctSim, pctVAS, pctBaoHiem, 
+                hieuQuaQuyDoi, tyLeTraCham,
                 donGiaTrungBinh, mucTieu: goalSettings 
             };
         });
     },
 
     aggregateReport(reportData, selectedWarehouse = null) {
-        if (!reportData || reportData.length === 0) {
-            const emptyShell = { doanhThu: 0, doanhThuQuyDoi: 0, dtCE: 0, dtICT: 0, qdc: {}, nganhHangChiTiet: {}, nhomHangChiTiet: {}, dynamicMetrics: {}, comparisonData: { value: 0, percentage: 'N/A' } };
-            const numericKeys = ['doanhThuTraGop', 'doanhThuChuaXuat','doanhThuQuyDoiChuaXuat', 'dtGiaDung', 'dtMLN', 'dtPhuKien', 'slSmartphone', 'slSimOnline', 'slUDDD', 'slBaoHiemDenominator', 'slBaoHiemVAS', 'slCE', 'slPhuKien', 'slGiaDung', 'slMLN'];
-            numericKeys.forEach(key => emptyShell[key] = 0);
-            return emptyShell;
-        }
+        if (!reportData || reportData.length === 0) return {};
 
         const supermarketReport = reportData.reduce((acc, curr) => {
             for (const key in curr) {
                 if (typeof curr[key] === 'number') {
                     acc[key] = (acc[key] || 0) + curr[key];
-                } else if (key === 'qdc' && typeof curr.qdc === 'object') {
-                    if (!acc.qdc) acc.qdc = {};
-                    for (const qdcKey in curr.qdc) {
-                        if (!acc.qdc[qdcKey]) acc.qdc[qdcKey] = { sl: 0, dt: 0, dtqd: 0, name: curr.qdc[qdcKey].name };
-                        acc.qdc[qdcKey].sl += curr.qdc[qdcKey].sl;
-                        acc.qdc[qdcKey].dt += curr.qdc[qdcKey].dt;
-                        acc.qdc[qdcKey].dtqd += curr.qdc[qdcKey].dtqd;
-                    }
                 }
             }
-            acc.maKho = selectedWarehouse || '';
-            return acc;
-        }, {});
-
-        // Helper Aggregation
-        const aggregateDetail = (sourceKey, destKey, macroConfigStore, cleanerFunc) => {
-            const aggregated = {};
-            reportData.forEach(employee => {
-                if (employee[sourceKey]) {
-                    Object.entries(employee[sourceKey]).forEach(([name, values]) => {
-                        if (!aggregated[name]) aggregated[name] = { name: name, quantity: 0, revenue: 0, revenueQuyDoi: 0, donGia: 0 };
-                        aggregated[name].quantity += values.quantity;
-                        aggregated[name].revenue += values.revenue;
-                        aggregated[name].revenueQuyDoi += values.revenueQuyDoi;
+            
+            ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang'].forEach(dictKey => {
+                if(curr[dictKey]) {
+                    if(!acc[dictKey]) acc[dictKey] = {};
+                    Object.entries(curr[dictKey]).forEach(([k, v]) => {
+                        if(!acc[dictKey][k]) acc[dictKey][k] = { ...v };
+                        else {
+                            acc[dictKey][k].revenue += v.revenue;
+                            acc[dictKey][k].quantity += v.quantity;
+                            acc[dictKey][k].revenueQuyDoi += v.revenueQuyDoi;
+                        }
                     });
                 }
             });
 
-            // Apply Macro Logic
-            const macros = get(macroConfigStore) || [];
-            macros.forEach(macro => {
-                const macroName = macro.name;
-                if (!aggregated[macroName] && macro.items) {
-                    let mQuantity = 0, mRevenue = 0, mRevenueQuyDoi = 0;
-                    macro.items.forEach(childName => {
-                        const cleanChild = cleanerFunc(childName);
-                        const childData = aggregated[cleanChild];
-                        if (childData) {
-                            mQuantity += childData.quantity;
-                            mRevenue += childData.revenue;
-                            mRevenueQuyDoi += childData.revenueQuyDoi;
-                        }
-                    });
-                    if (mRevenue > 0 || mQuantity > 0) {
-                        aggregated[macroName] = {
+            return acc;
+        }, { doanhThu: 0, dynamicMetrics: {} });
+
+        supermarketReport.nganhHangChiTiet = supermarketReport.doanhThuTheoNganhHang;
+        supermarketReport.nhomHangChiTiet = supermarketReport.doanhThuTheoNhomHang;
+
+        // [FIX] TÍNH TOÁN LẠI MACRO GROUP CHO CẤP SIÊU THỊ
+        // Để đảm bảo bảng "Top Nhóm Hàng" hiện dữ liệu của nhóm lớn (VD: Bảo hiểm)
+        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
+        $macroProductGroupConfig.forEach(macro => {
+            const macroName = macro.name;
+            const cleanMacroName = utils.cleanCategoryName(macroName);
+            
+            if (macro.items && Array.isArray(macro.items)) {
+                let mQuantity = 0, mRevenue = 0, mRevenueQuyDoi = 0;
+                
+                macro.items.forEach(childName => {
+                    const cleanChild = utils.cleanCategoryName(childName);
+                    // Tìm trong nhomHangChiTiet (ưu tiên) hoặc nganhHangChiTiet
+                    const childData = supermarketReport.nhomHangChiTiet[cleanChild] || supermarketReport.nganhHangChiTiet[cleanChild];
+                    
+                    if (childData) {
+                        mQuantity += childData.quantity;
+                        mRevenue += childData.revenue;
+                        mRevenueQuyDoi += childData.revenueQuyDoi;
+                    }
+                });
+
+                if (mRevenue > 0 || mQuantity > 0 || mRevenueQuyDoi > 0) {
+                    // Thêm vào nhomHangChiTiet để bảng Top Nhóm Hàng (QdcTable) có thể đọc được
+                    if (!supermarketReport.nhomHangChiTiet[cleanMacroName]) {
+                        supermarketReport.nhomHangChiTiet[cleanMacroName] = {
                             name: macroName,
                             quantity: mQuantity,
                             revenue: mRevenue,
                             revenueQuyDoi: mRevenueQuyDoi,
-                            donGia: mQuantity > 0 ? mRevenue / mQuantity : 0,
-                            isMacro: true 
+                            isMacro: true
                         };
                     }
                 }
-            });
-
-            for (const name in aggregated) {
-                const item = aggregated[name];
-                item.donGia = item.quantity > 0 ? item.revenue / item.quantity : 0;
             }
-            supermarketReport[destKey] = aggregated;
-        }
+        });
 
-        aggregateDetail('doanhThuTheoNganhHang', 'nganhHangChiTiet', macroCategoryConfig, utils.cleanCategoryName);
-        aggregateDetail('doanhThuTheoNhomHang', 'nhomHangChiTiet', macroProductGroupConfig, utils.cleanCategoryName);
-
-        // Dynamic Metrics Aggregation (Siêu thị)
-        const $efficiencyConfig = get(efficiencyConfig);
-        const macroToItemsMap = {};
-        const buildMacroMap = (configs, cleanerFunc) => {
-            configs.forEach(macro => {
-                if (macro.items && Array.isArray(macro.items)) {
-                    macroToItemsMap[macro.name] = macro.items.map(i => cleanerFunc(i));
-                }
-            });
-        };
-        buildMacroMap(get(macroCategoryConfig) || [], utils.cleanCategoryName);
-        buildMacroMap(get(macroProductGroupConfig) || [], utils.cleanCategoryName);
-
+        // TÍNH LẠI DYNAMIC METRICS CHO CẤP SIÊU THỊ
+        const $efficiencyConfig = get(efficiencyConfig) || [];
         supermarketReport.dynamicMetrics = {};
-        if ($efficiencyConfig && $efficiencyConfig.length > 0) {
-             $efficiencyConfig.forEach(cfg => {
-                const calcGroupValue = (groupList, valueType) => {
+        
+        const macroToItemsMap = {}; 
+        const addToMap = (configs) => {
+            (configs||[]).forEach(m => { if(m.items) macroToItemsMap[normalizeStr(m.name)] = m.items.map(i=>normalizeStr(i)); });
+        };
+        addToMap(get(macroCategoryConfig));
+        addToMap(get(macroProductGroupConfig));
+
+        if ($efficiencyConfig.length > 0) {
+            $efficiencyConfig.forEach(cfg => {
+                 const numType = cfg.typeA || cfg.type || 'DTTL';
+                 const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
+
+                 const calcGroupValue = (groupList, valueType) => {
                     let total = 0;
-                    groupList.forEach(name => {
-                        const itemsToSum = macroToItemsMap[name] || [utils.cleanCategoryName(name)];
-                        itemsToSum.forEach(cleanName => {
-                            let item = supermarketReport.nganhHangChiTiet[cleanName] || supermarketReport.nhomHangChiTiet[cleanName];
+                    if (!groupList) return 0;
+                    groupList.forEach(rawName => {
+                        const cleanCfgName = normalizeStr(rawName);
+                        const itemsToSum = macroToItemsMap[cleanCfgName] || [cleanCfgName];
+                        
+                        itemsToSum.forEach(targetName => {
+                            const findItem = (container) => {
+                                if(!container) return null;
+                                for (const key in container) {
+                                    if (normalizeStr(key) === targetName) return container[key];
+                                }
+                                for (const key in container) {
+                                    const normKey = normalizeStr(key);
+                                    if (normKey.includes(targetName) || targetName.includes(normKey)) {
+                                        return container[key];
+                                    }
+                                }
+                                return null;
+                            };
+
+                            let item = findItem(supermarketReport.doanhThuTheoNganhHang) || findItem(supermarketReport.doanhThuTheoNhomHang);
+
                             if (item) {
                                 if (valueType === 'SL') total += item.quantity;
                                 else if (valueType === 'DTQD') total += item.revenueQuyDoi;
-                                else total += item.revenue; 
+                                else total += item.revenue;
                             }
                         });
                     });
                     return total;
                 };
 
-                const totalNum = calcGroupValue(cfg.groupA || [], cfg.typeA || cfg.type);
-                const totalDen = calcGroupValue(cfg.groupB || [], cfg.typeB || 'DTTL');
-
+                const numVal = calcGroupValue(cfg.groupA, numType);
+                const denVal = calcGroupValue(cfg.groupB, denType);
+                
                 supermarketReport.dynamicMetrics[cfg.id] = {
-                    value: totalDen > 0 ? totalNum / totalDen : 0,
+                    value: denVal > 0 ? numVal / denVal : 0,
                     target: cfg.target,
                     label: cfg.label
                 };
-             });
+            });
         }
 
         supermarketReport.hieuQuaQuyDoi = supermarketReport.doanhThu > 0 ? (supermarketReport.doanhThuQuyDoi / supermarketReport.doanhThu) - 1 : 0;
         supermarketReport.tyLeTraCham = supermarketReport.doanhThu > 0 ? supermarketReport.doanhThuTraGop / supermarketReport.doanhThu : 0;
-        supermarketReport.pctGiaDung = supermarketReport.dtCE > 0 ? supermarketReport.dtGiaDung / supermarketReport.dtCE : 0;
-        supermarketReport.pctMLN = supermarketReport.dtCE > 0 ? supermarketReport.dtMLN / supermarketReport.dtCE : 0;
-        supermarketReport.pctPhuKien = supermarketReport.dtICT > 0 ? supermarketReport.dtPhuKien / supermarketReport.dtICT : 0;
-        supermarketReport.pctSim = supermarketReport.slSmartphone > 0 ? supermarketReport.slSimOnline / supermarketReport.slSmartphone : 0;
-        supermarketReport.pctVAS = supermarketReport.slSmartphone > 0 ? supermarketReport.slUDDD / supermarketReport.slSmartphone : 0;
-        supermarketReport.pctBaoHiem = supermarketReport.slBaoHiemDenominator > 0 ? supermarketReport.slBaoHiemVAS / supermarketReport.slBaoHiemDenominator : 0;
-
         supermarketReport.comparisonData = { value: 0, percentage: 'N/A' }; 
 
         if (supermarketReport.qdc) {
@@ -17534,56 +17345,7 @@ export const masterReportLogic = {
         }
 
         return supermarketReport;
-    },
-
-    calculateDepartmentAverages(departmentName, reportData) {
-        const departmentEmployees = reportData.filter(e => e.boPhan === departmentName);
-        if (departmentEmployees.length === 0) return {};
-
-        const totals = departmentEmployees.reduce((acc, curr) => {
-            Object.keys(curr).forEach(key => {
-                if (typeof curr[key] === 'number') acc[key] = (acc[key] || 0) + curr[key];
-            });
-            // Cộng dồn Dynamic Metrics
-            if(curr.dynamicMetrics) {
-                if(!acc.dynamicMetrics) acc.dynamicMetrics = {};
-                for(const k in curr.dynamicMetrics) {
-                    if(!acc.dynamicMetrics[k]) acc.dynamicMetrics[k] = 0;
-                    acc.dynamicMetrics[k] += curr.dynamicMetrics[k].value;
-                }
-            }
-            if (curr.qdc) {
-                if (!acc.qdc) acc.qdc = {};
-                for (const k in curr.qdc) {
-                    if (!acc.qdc[k]) acc.qdc[k] = { sl: 0, dt: 0, dtqd: 0 };
-                    acc.qdc[k].sl += curr.qdc[k].sl;
-                    acc.qdc[k].dt += curr.qdc[k].dt;
-                    acc.qdc[k].dtqd += curr.qdc[k].dtqd;
-                }
-            }
-            return acc;
-        }, {});
-
-        const averages = {};
-        for (const key in totals) {
-            if (key !== 'qdc' && key !== 'dynamicMetrics') averages[key] = totals[key] / departmentEmployees.length;
-            else if (key === 'dynamicMetrics') {
-                averages.dynamicMetrics = {};
-                for(const k in totals.dynamicMetrics) {
-                    averages.dynamicMetrics[k] = totals.dynamicMetrics[k] / departmentEmployees.length;
-                }
-            }
-            else {
-                averages.qdc = {};
-                for (const qdcKey in totals.qdc) averages.qdc[qdcKey] = {
-                    sl: totals.qdc[qdcKey].sl / departmentEmployees.length,
-                    dt: totals.qdc[qdcKey].dt / departmentEmployees.length,
-                    dtqd: totals.qdc[qdcKey].dtqd / departmentEmployees.length
-                };
-            }
-        }
-        return averages;
-    },
+    }
 };
 --- END FILE: ./src/services/reports/master.report.js ---
 
@@ -22151,27 +21913,18 @@ export const masterReportLogic = {
   import { afterUpdate } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { cleanCategoryName } from '../../../utils.js';
-  import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
-  import { adminService } from '../../../services/admin.service.js';
+  import { categoryStructure, macroProductGroupConfig, selectedWarehouse } from '../../../stores.js';
+  import { datasyncService } from '../../../services/datasync.service.js';
 
   export let items = []; 
-  export let activeConfig = []; 
-
+  // Loại bỏ props activeConfig vì ta sẽ tự load từ kho
+  
   let isSettingsOpen = false;
   let filterSearch = '';
   let localFilter = []; 
+  let saveTimer;
 
-  // Đồng bộ props vào state local (Chỉ chạy khi mở trang hoặc activeConfig thay đổi từ bên ngoài)
-  $: if (activeConfig) {
-      // Chỉ update nếu local chưa có dữ liệu HOẶC không phải đang mở menu
-      // Điều này ngăn việc props đè lên lựa chọn đang dở dang của người dùng
-      if (!isSettingsOpen) {
-          console.log("[RT_LOG] Syncing activeConfig to localFilter:", activeConfig);
-          localFilter = [...activeConfig];
-      }
-  }
-
-  // ... (Giữ nguyên logic Data Sources) ...
+  // 1. Data Sources
   $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
   $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
   $: allPresentGroups = items.map(i => i.name).sort();
@@ -22181,32 +21934,43 @@ export const masterReportLogic = {
       name.toLowerCase().includes(filterSearch.toLowerCase())
   );
 
-  // Danh sách hiển thị (Ưu tiên dùng localFilter để phản hồi tức thì)
-  let sortedItems = [];
-  $: {
-      let candidates = [];
-      const currentFilter = localFilter.length > 0 ? localFilter : activeConfig;
-
-      if (!currentFilter || currentFilter.length === 0) {
-          candidates = [...items].sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0)).slice(0, 10);
-      } else {
-          candidates = items.filter(item => currentFilter.includes(item.name));
-      }
-      sortedItems = candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+  // 2. Load Config
+  $: if ($selectedWarehouse) {
+      loadConfigForWarehouse($selectedWarehouse);
+  } else {
+      localFilter = [...allGroups];
   }
 
-  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
+  async function loadConfigForWarehouse(kho) {
+      console.log(`[RTQdc] Loading config for warehouse: ${kho}`);
+      try {
+          const savedConfig = await datasyncService.loadQdcConfig(kho);
+          if (savedConfig && Array.isArray(savedConfig)) {
+              localFilter = savedConfig;
+          } else {
+              // [QUAN TRỌNG] Mặc định hiện tất cả nếu chưa có config
+              localFilter = [...allGroups];
+          }
+      } catch (e) {
+          console.error("Error loading config:", e);
+          localFilter = [...allGroups];
+      }
+  }
 
+  // 3. Update & Save Config
   function toggleQdcSelection(name) {
       if (localFilter.includes(name)) {
           localFilter = localFilter.filter(n => n !== name);
       } else {
           localFilter = [...localFilter, name];
       }
-      console.log("[RT_LOG] User toggled:", name, "-> New Filter:", localFilter);
       
-      // Lưu Cloud ngay lập tức
-      adminService.saveQdcConfig(localFilter);
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+          if ($selectedWarehouse) {
+              datasyncService.saveQdcConfig($selectedWarehouse, localFilter);
+          }
+      }, 500);
   }
 
   function toggleAllVisibility(show) {
@@ -22215,18 +21979,22 @@ export const masterReportLogic = {
       } else {
           localFilter = [];
       }
-      console.log("[RT_LOG] Toggle All:", show);
-      adminService.saveQdcConfig(localFilter);
+      if ($selectedWarehouse) {
+          datasyncService.saveQdcConfig($selectedWarehouse, localFilter);
+      }
   }
+
+  // 4. Render
+  $: sortedItems = (() => {
+      let candidates = items.filter(item => localFilter.includes(item.name));
+      return candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+  })();
+
+  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
-          console.log("[RT_LOG] Click outside detected. Closing menu.");
-          console.log("[RT_LOG] Keeping current selection:", localFilter);
-          
           isSettingsOpen = false;
-          // [QUAN TRỌNG] Đã xóa đoạn code reset localFilter = activeConfig ở đây
-          // Bây giờ nó sẽ giữ nguyên những gì bạn đã chọn
       }
   }
 
@@ -22248,25 +22016,25 @@ export const masterReportLogic = {
         <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Chọn nhóm hàng hiển thị">
             <i data-feather="filter" class="w-4 h-4"></i>
         </button>
-        {#if isSettingsOpen}
+         {#if isSettingsOpen}
             <div class="filter-dropdown">
                 <div class="filter-header">
                      <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
                 </div>
                 <div class="filter-body custom-scrollbar" style="max-height: 250px;">
                     {#if filterList.length === 0}
-                        <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                         <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
                         {#each filterList as name}
                             {@const isChecked = localFilter.includes(name)}
                             <div class="filter-item" on:click={() => toggleQdcSelection(name)}>
-                                <input type="checkbox" checked={isChecked} />
+                                 <input type="checkbox" checked={isChecked} />
                                 <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{name}</label>
                             </div>
                         {/each}
                     {/if}
                 </div>
-                <div class="filter-actions">
+                 <div class="filter-actions">
                     <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                     <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
                 </div>
@@ -22278,7 +22046,10 @@ export const masterReportLogic = {
   <div class="luyke-widget-body custom-scrollbar">
     {#if sortedItems.length === 0}
        <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
-          <p class="text-sm">Chưa có dữ liệu.</p>
+           <p class="text-sm">Chưa có dữ liệu.</p>
+           {#if items.length > 0}
+             <p class="text-xs mt-1">Bạn đã ẩn tất cả.</p>
+           {/if}
        </div>
     {:else}
       <div class="flex flex-col gap-0">
@@ -22288,20 +22059,20 @@ export const masterReportLogic = {
             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                <div class="flex-grow min-w-0">
-                   <div class="flex justify-between items-center mb-1">
+                    <div class="flex justify-between items-center mb-1">
                        <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
                        <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
                    </div>
                    <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
                        <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
-                   </div>
+                    </div>
                    <div class="flex justify-between text-[10px] text-gray-500">
                        <span>DT: <strong>{formatters.formatRevenue(item.dt || item.revenue)}</strong></span>
                        <span>SL: <strong>{formatters.formatNumber(item.sl || item.quantity)}</strong></span>
                    </div>
                </div>
             </div>
-          </div>
+           </div>
         {/each}
       </div>
     {/if}
@@ -22311,37 +22082,77 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/summary/SummaryTab.svelte ---
 <script>
-  import { realtimeYCXData, selectedWarehouse, efficiencyConfig, qdcConfigStore } from '../../../stores.js';
+  import { 
+    realtimeYCXData, 
+    selectedWarehouse, 
+    efficiencyConfig, 
+    warehouseCustomMetrics 
+  } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
+  import { datasyncService } from '../../../services/datasync.service.js';
+  import { adminService } from '../../../services/admin.service.js';
   
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
   import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
+  import { onMount } from 'svelte';
 
-  // Biến local
   let supermarketReport = {};
   let goals = {};
   
-  // Data cho các bảng con
   let qdcItems = [];
   let categoryItems = [];
   let unexportedItems = []; 
-  
-  // [MỚI] Biến chứa raw data đã lọc để truyền cho CategoryTable vẽ biểu đồ Hãng
   let rawSourceData = [];
 
-  // Reactive Calculation
+  let combinedEfficiencyItems = [];
+
+  onMount(async () => {
+      const globalConfig = await adminService.loadEfficiencyConfig();
+      efficiencyConfig.set(globalConfig);
+  });
+
+  $: if ($selectedWarehouse) {
+      loadLocalMetrics($selectedWarehouse);
+  }
+
+  async function loadLocalMetrics(kho) {
+      const localData = await datasyncService.loadCustomMetrics(kho);
+      warehouseCustomMetrics.set(localData);
+  }
+
+  $: combinedEfficiencyItems = [
+      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
+      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
+  ];
+
+  async function handleDeleteMetric(event) {
+      const id = event.detail;
+      const item = combinedEfficiencyItems.find(i => i.id === id);
+      
+      if (item && item.isSystem) {
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          return;
+      }
+
+      if (confirm("Xóa chỉ số cá nhân này?")) {
+          const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
+          warehouseCustomMetrics.set(newLocalMetrics);
+          if ($selectedWarehouse) {
+              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
+          }
+      }
+  }
+
   $: {
     const currentWarehouse = $selectedWarehouse;
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     goals = settings.goals || {};
 
-    // 1. Master Report
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    // 2. Filter theo kho
     let filteredReport = masterReport;
     let filteredRawData = $realtimeYCXData;
 
@@ -22354,15 +22165,21 @@ export const masterReportLogic = {
       });
     }
     
-    // Gán vào biến để truyền xuống dưới
     rawSourceData = filteredRawData;
 
-    // 3. Aggregate
     supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
 
-    // 4. Prepare Sub-tables
-    qdcItems = supermarketReport.qdc 
-        ? Object.values(supermarketReport.qdc).filter(i => i.sl > 0)
+    qdcItems = supermarketReport.nhomHangChiTiet 
+        ? Object.entries(supermarketReport.nhomHangChiTiet)
+            .map(([name, values]) => ({
+                id: name,
+                name,
+                dtqd: values.revenueQuyDoi,
+                sl: values.quantity,
+                dt: values.revenue,
+                ...values
+            }))
+            .filter(i => i.sl > 0 || i.dt > 0) 
         : [];
 
     categoryItems = supermarketReport.nganhHangChiTiet 
@@ -22372,7 +22189,6 @@ export const masterReportLogic = {
     unexportedItems = reportService.generateRealtimeChuaXuatReport(filteredRawData);
   }
 
-  // Helper tính % KPI
   $: pctDTT = (parseFloat(goals?.doanhThuThuc) || 0) > 0 ? (supermarketReport.doanhThu / 1000000) / parseFloat(goals.doanhThuThuc) : 0;
   $: pctDTQD = (parseFloat(goals?.doanhThuQD) || 0) > 0 ? (supermarketReport.doanhThuQuyDoi / 1000000) / parseFloat(goals.doanhThuQD) : 0;
 </script>
@@ -22388,7 +22204,7 @@ export const masterReportLogic = {
   </h2>
 
   <div id="realtime-kpi-cards-container" class="kpi-grid-fixed">
-      <div class="kpi-card-solid bg-[#38bdf8]">
+      <div class="kpi-card-solid card-1">
           <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
           <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThu || 0) / 1000000, 1)}</div>
           <div class="kpi-solid-sub">
@@ -22398,7 +22214,7 @@ export const masterReportLogic = {
           <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
       </div>
 
-      <div class="kpi-card-solid bg-[#34d399]">
+      <div class="kpi-card-solid card-2">
           <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
           <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThuQuyDoi || 0) / 1000000, 1)}</div>
           <div class="kpi-solid-sub">
@@ -22408,7 +22224,7 @@ export const masterReportLogic = {
           <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
       </div>
 
-      <div class="kpi-card-solid bg-[#fbbf24]">
+      <div class="kpi-card-solid card-3">
           <div class="kpi-solid-header">Tỷ lệ Quy Đổi <i data-feather="trending-up"></i></div>
           <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.hieuQuaQuyDoi || 0)}</div>
           <div class="kpi-solid-sub">
@@ -22417,7 +22233,7 @@ export const masterReportLogic = {
           <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
       </div>
 
-      <div class="kpi-card-solid bg-[#2dd4bf]">
+      <div class="kpi-card-solid card-4">
           <div class="kpi-solid-header">Trả Chậm <i data-feather="credit-card"></i></div>
           <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.tyLeTraCham || 0)}</div>
           <div class="kpi-solid-sub">
@@ -22430,13 +22246,12 @@ export const masterReportLogic = {
   <div class="luyke-tier-1-grid">
       <EfficiencyTable 
           supermarketData={supermarketReport} 
-          dynamicItems={$efficiencyConfig} 
+          dynamicItems={combinedEfficiencyItems} 
+          items={[]} 
           goals={goals}
+          on:delete={handleDeleteMetric}
       />
-      <QdcTable 
-          items={qdcItems} 
-          activeConfig={$qdcConfigStore} 
-      />
+      <QdcTable items={qdcItems} />
   </div>
 
   <div>

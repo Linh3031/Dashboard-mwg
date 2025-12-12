@@ -1,4 +1,5 @@
 // src/services/reports/master.report.js
+// Version 4.1 - Logic: Substring Matching based on Admin Config
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
 import * as utils from '../../utils.js';
@@ -15,57 +16,82 @@ import {
     efficiencyConfig
 } from '../../stores.js';
 
-// Helper chuẩn hóa chuỗi
-const normalizeStr = (str) => {
+// Hàm chuẩn hóa chuỗi để so sánh (chữ thường)
+const normalize = (str) => {
     if (!str) return '';
-    return str.toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, ' ')
-        .trim();
+    return str.toLowerCase().trim();
 };
 
 export const masterReportLogic = {
     generateMasterReportData: (sourceData, goalSettings, isRealtime = false) => {
         const $danhSachNhanVien = get(danhSachNhanVien);
-        if ($danhSachNhanVien.length === 0) return [];
+        if (!$danhSachNhanVien || $danhSachNhanVien.length === 0) return [];
 
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
         const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
-        const PG = config.PRODUCT_GROUPS; 
         const gioCongByMSNV = dataProcessing.processGioCongData();
         
-        const $macroCategoryConfig = get(macroCategoryConfig) || [];
+        // 1. Tải cấu hình từ Admin
         const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
+        const $macroCategoryConfig = get(macroCategoryConfig) || [];
         const $efficiencyConfig = get(efficiencyConfig) || [];
 
-        // 1. Build Macro Map
-        const macroToItemsMap = {};
-        const buildMacroMap = (configs) => {
-            configs.forEach(macro => {
-                if (macro.items && Array.isArray(macro.items)) {
-                    macroToItemsMap[normalizeStr(macro.name)] = macro.items.map(i => normalizeStr(i));
+        // 2. Xây dựng bộ lọc từ khóa cho các cột UI cố định
+        // Map: UI_Key -> Danh sách từ khóa (tên nhóm hàng rút gọn)
+        const uiKeywords = {
+            dtICT: [], dtCE: [], dtPhuKien: [], dtGiaDung: [],
+            dtMLN: [], dtSim: [], dtVAS: [], dtBaoHiem: []
+        };
+
+        // Từ khóa định danh cột trên giao diện (để map với Config Admin)
+        const uiIdentity = {
+            dtICT: ['ict'], 
+            dtCE: ['ce'], 
+            dtPhuKien: ['phụ kiện'], 
+            dtGiaDung: ['gia dụng'], 
+            dtMLN: ['máy lọc nước', 'mln'], 
+            dtSim: ['sim'], 
+            dtVAS: ['vas'], 
+            dtBaoHiem: ['bảo hiểm']
+        };
+
+        // Quét Config Admin để lấy danh sách "items" (tên rút gọn) đưa vào bộ lọc
+        const loadKeywords = (configs) => {
+            if (!Array.isArray(configs)) return;
+            configs.forEach(group => {
+                const groupName = normalize(group.name);
+                for (const [uiKey, ids] of Object.entries(uiIdentity)) {
+                    // Nếu tên Nhóm lớn chứa từ khóa định danh (VD: "Gia dụng lớn" chứa "gia dụng")
+                    if (ids.some(id => groupName.includes(id))) {
+                        if (group.items && Array.isArray(group.items)) {
+                            // Thêm các item con (tên rút gọn) vào danh sách cần tìm
+                            group.items.forEach(i => uiKeywords[uiKey].push(normalize(i)));
+                        }
+                    }
                 }
             });
         };
-        buildMacroMap($macroCategoryConfig);
-        buildMacroMap($macroProductGroupConfig);
+        loadKeywords($macroProductGroupConfig);
+        loadKeywords($macroCategoryConfig);
 
-        const $thuongNongData = get(thuongNongData);
+        // Cache kết quả so khớp để tăng tốc độ (Memoization)
+        // Key: Tên nhóm hàng trong data -> Value: Set các uiKey khớp
+        const matchCache = {};
+
+        // Dữ liệu lương thưởng (Giữ nguyên)
+        const $thuongNongData = get(thuongNongData) || [];
         const $employeeNameToMaNVMap = get(employeeNameToMaNVMap);
-        const $thuongERPData = get(thuongERPData);
-        const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc);
-        const $thuongERPDataThangTruoc = get(thuongERPDataThangTruoc);
+        const $thuongERPData = get(thuongERPData) || [];
+        const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc) || [];
+        const $thuongERPDataThangTruoc = get(thuongERPDataThangTruoc) || [];
 
         const thuongNongByMSNV = {};
         $thuongNongData.forEach(row => {
             const maNV = String(row.maNV || '').trim();
             const hoTen = String(row.hoTen || '').trim().replace(/\s+/g, ' ');
             let foundMaNV = maNV || $employeeNameToMaNVMap.get(hoTen.toLowerCase()) || null;
-            if (foundMaNV) {
-                const diemThuongValue = parseFloat(String(row.diemThuong || '0').replace(/,/g, '')) || 0;
-                thuongNongByMSNV[foundMaNV] = (thuongNongByMSNV[foundMaNV] || 0) + diemThuongValue;
-            }
+            if (foundMaNV) thuongNongByMSNV[foundMaNV] = (thuongNongByMSNV[foundMaNV] || 0) + (parseFloat(String(row.diemThuong || '0').replace(/,/g, '')) || 0);
         });
 
         const thuongNongThangTruocByMSNV = {};
@@ -73,12 +99,10 @@ export const masterReportLogic = {
             const maNV = String(row.maNV || '').trim();
             const hoTen = String(row.hoTen || '').trim().replace(/\s+/g, ' ');
             let foundMaNV = maNV || $employeeNameToMaNVMap.get(hoTen.toLowerCase()) || null;
-            if (foundMaNV) {
-                const diemThuongValue = parseFloat(String(row.diemThuong || '0').replace(/,/g, '')) || 0;
-                thuongNongThangTruocByMSNV[foundMaNV] = (thuongNongThangTruocByMSNV[foundMaNV] || 0) + diemThuongValue;
-            }
+            if (foundMaNV) thuongNongThangTruocByMSNV[foundMaNV] = (thuongNongThangTruocByMSNV[foundMaNV] || 0) + (parseFloat(String(row.diemThuong || '0').replace(/,/g, '')) || 0);
         });
 
+        // --- XỬ LÝ DỮ LIỆU ---
         return $danhSachNhanVien.map((employee) => {
             let data = {
                 doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
@@ -88,155 +112,147 @@ export const masterReportLogic = {
                 doanhThuTheoNhomHang: {}, 
                 dynamicMetrics: {},
                 qdc: {},
-                dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0,
-                dtMayGiat: 0, slMayGiat: 0, dtMayLanh: 0, slMayLanh: 0,
-                dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
-                dtICT: 0, dtCE: 0
+                dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0
             };
 
-            for (const key in PG.QDC_GROUPS) data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
-
-            sourceData.forEach(row => {
-                const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
-                if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
-                    const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-                    const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
-                                      (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
-                                      (row.tinhTrangTra || "").trim() === 'Chưa trả';
-
-                    if (isBaseValid && isDoanhThuHTX) {
-                        const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                        const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
-                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                        const trangThaiXuat = (row.trangThaiXuat || "").trim();
-                        const nhomHangCode = String(row.nhomHang || '').match(/^\d+/)?.[0] || null;
+            if (sourceData && Array.isArray(sourceData)) {
+                sourceData.forEach(row => {
+                    const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+                    if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                         
-                        const trackMetric = (container, name) => {
-                            if (!name) return;
-                            const cleanName = utils.cleanCategoryName(name); 
-                            if (!container[cleanName]) {
-                                container[cleanName] = { 
-                                    name: cleanName, 
-                                    rawName: name, 
-                                    revenue: 0, 
-                                    quantity: 0, 
-                                    revenueQuyDoi: 0 
-                                };
+                        // [QUAN TRỌNG] Logic lọc dữ liệu theo yêu cầu
+                        const hinhThucXuat = row.hinhThucXuat;
+                        const trangThaiXuat = row.trangThaiXuat;
+                        
+                        const isDoanhThuHTX = !hinhThucXuat || hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
+                        // Chỉ lấy "Đã xuất" hoặc "Đã giao" (tùy dữ liệu gốc, ở đây dùng chuẩn 'Đã xuất')
+                        const isDaXuat = !trangThaiXuat || trangThaiXuat.trim() === 'Đã xuất';
+
+                        if (isDoanhThuHTX && isDaXuat) {
+                            const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                            const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
+                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            
+                            // Tên nhóm hàng/ngành hàng trong dữ liệu (Full name)
+                            const rawNhomHang = normalize(row.nhomHang);
+                            const rawNganhHang = normalize(row.nganhHang);
+
+                            // Tracking chi tiết
+                            const trackMetric = (container, name) => {
+                                if (!name) return;
+                                const cleanName = utils.cleanCategoryName(name); 
+                                if (!container[cleanName]) {
+                                    container[cleanName] = { name: cleanName, revenue: 0, quantity: 0, revenueQuyDoi: 0 };
+                                }
+                                container[cleanName].revenue += thanhTien;
+                                container[cleanName].quantity += soLuong;
+                                container[cleanName].revenueQuyDoi += thanhTien * heSo;
                             }
-                            container[cleanName].revenue += thanhTien;
-                            container[cleanName].quantity += soLuong;
-                            container[cleanName].revenueQuyDoi += thanhTien * heSo;
-                        }
-                        
-                        trackMetric(data.doanhThuTheoNganhHang, row.nganhHang);
-                        trackMetric(data.doanhThuTheoNhomHang, row.nhomHang);
-
-                        if (trangThaiXuat === 'Chưa xuất') {
-                            data.doanhThuChuaXuat += thanhTien;
-                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
-                        } else if (trangThaiXuat === 'Đã xuất') {
-                            if(isNaN(soLuong)) return;
+                            trackMetric(data.doanhThuTheoNganhHang, row.nganhHang);
+                            trackMetric(data.doanhThuTheoNhomHang, row.nhomHang);
 
                             data.doanhThu += thanhTien;
                             data.doanhThuQuyDoi += thanhTien * heSo;
 
-                            if (isRealtime && row.ngayTao && row.ngayHenGiao) {
-                                const diffTime = row.ngayHenGiao - row.ngayTao;
-                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                if (diffDays >= 2) {
-                                    data.doanhThuGiaoXa += thanhTien;
-                                    data.doanhThuQuyDoiGiaoXa += thanhTien * heSo;
-                                }
+                            if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
+                                data.doanhThuTraGop += thanhTien;
                             }
 
-                            if (hinhThucXuatTraGop.has(row.hinhThucXuat)) { 
-                                data.doanhThuTraGop += thanhTien; 
-                            }
-
-                            if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
-                            if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
-                            if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
-                            if (PG.TU_LANH.includes(nhomHangCode)) { data.dtTuLanh += thanhTien; data.slTuLanh += soLuong; }
-                            if (PG.MAY_GIAT.includes(nhomHangCode)) { data.dtMayGiat += thanhTien; data.slMayGiat += soLuong; }
-                            if (PG.MAY_LANH.includes(nhomHangCode)) { data.dtMayLanh += thanhTien; data.slMayLanh += soLuong; }
-                            
-                            for (const key in PG.QDC_GROUPS) {
-                                if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
-                                    data.qdc[key].sl += soLuong; 
-                                    data.qdc[key].dt += thanhTien; 
-                                    data.qdc[key].dtqd += thanhTien * heSo;
+                            // --- LOGIC MAP MỚI: CHUỖI CHỨA CHUỖI ---
+                            const checkAndAdd = (uiKey) => {
+                                const keywords = uiKeywords[uiKey];
+                                // Nếu tên trong data chứa bất kỳ từ khóa nào trong list rút gọn của Admin -> Cộng tiền
+                                const isMatch = keywords.some(k => rawNhomHang.includes(k) || rawNganhHang.includes(k));
+                                if (isMatch) {
+                                    data[uiKey] += thanhTien;
                                 }
-                            }
+                            };
+
+                            checkAndAdd('dtICT');
+                            checkAndAdd('dtCE');
+                            checkAndAdd('dtPhuKien');
+                            checkAndAdd('dtGiaDung');
+                            checkAndAdd('dtMLN');
+                            checkAndAdd('dtSim');
+                            checkAndAdd('dtVAS');
+                            checkAndAdd('dtBaoHiem');
+                        }
+                        // Xử lý chưa xuất
+                        else if (trangThaiXuat === 'Chưa xuất') {
+                            const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            data.doanhThuChuaXuat += thanhTien;
+                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
                         }
                     }
-                }
-            });
-
-            if ($efficiencyConfig && $efficiencyConfig.length > 0) {
-                $efficiencyConfig.forEach(cfg => {
-                    const numType = cfg.typeA || cfg.type || 'DTTL';
-                    const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
-
-                    const calcGroupValue = (groupList, valueType) => {
-                        let total = 0;
-                        if (!groupList || groupList.length === 0) return 0;
-
-                        groupList.forEach(rawName => {
-                            const cleanCfgName = normalizeStr(rawName);
-                            const itemsToSum = macroToItemsMap[cleanCfgName] || [cleanCfgName];
-
-                            itemsToSum.forEach(targetName => {
-                                const findItem = (container) => {
-                                    for (const key in container) {
-                                        if (normalizeStr(key) === targetName) return container[key];
-                                    }
-                                    for (const key in container) {
-                                        const normKey = normalizeStr(key);
-                                        if (normKey.includes(targetName) || targetName.includes(normKey)) {
-                                            return container[key];
-                                        }
-                                    }
-                                    return null;
-                                };
-
-                                let item = findItem(data.doanhThuTheoNganhHang) || findItem(data.doanhThuTheoNhomHang);
-
-                                if (item) {
-                                    if (valueType === 'SL') total += item.quantity;
-                                    else if (valueType === 'DTQD') total += item.revenueQuyDoi;
-                                    else total += item.revenue; 
-                                }
-                            });
-                        });
-                        return total;
-                    };
-
-                    const numVal = calcGroupValue(cfg.groupA, numType);
-                    const denVal = calcGroupValue(cfg.groupB, denType);
-
-                    data.dynamicMetrics[cfg.id] = {
-                        value: denVal > 0 ? numVal / denVal : 0,
-                        target: goalSettings[cfg.id] !== undefined ? parseFloat(goalSettings[cfg.id]) : cfg.target,
-                        label: cfg.label
-                    };
                 });
             }
 
+            // --- TÍNH CHỈ SỐ ĐỘNG (DYNAMIC) ---
+            if ($efficiencyConfig && Array.isArray($efficiencyConfig)) {
+                $efficiencyConfig.forEach(cfg => {
+                    try {
+                        if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
+
+                        const numType = cfg.typeA || cfg.type || 'DTTL';
+                        const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
+
+                        const calcValue = (groupList, type) => {
+                            let total = 0;
+                            // Duyệt qua danh sách tên rút gọn user cấu hình
+                            groupList.forEach(shortName => {
+                                const normShort = normalize(shortName);
+                                // Quét toàn bộ bucket đã tính
+                                const scanBucket = (bucket) => {
+                                    for (const [key, val] of Object.entries(bucket)) {
+                                        // Key trong bucket là tên đã cleanCategoryName
+                                        // Ta so sánh: Nếu TênBucket chứa TênRútGọnAdmin
+                                        if (normalize(key).includes(normShort)) {
+                                            if (type === 'SL') total += val.quantity;
+                                            else if (type === 'DTQD') total += val.revenueQuyDoi;
+                                            else total += val.revenue;
+                                        }
+                                    }
+                                };
+                                scanBucket(data.doanhThuTheoNganhHang);
+                                scanBucket(data.doanhThuTheoNhomHang);
+                            });
+                            return total;
+                        };
+
+                        const num = calcValue(cfg.groupA, numType);
+                        const den = calcValue(cfg.groupB, denType);
+
+                        data.dynamicMetrics[cfg.id] = {
+                            value: den > 0 ? num / den : 0,
+                            target: goalSettings && goalSettings[cfg.id] ? parseFloat(goalSettings[cfg.id]) : (cfg.target || 0),
+                            label: cfg.label
+                        };
+                    } catch (e) {}
+                });
+            }
+
+            // Tính % Cố định
+            const totalRevenue = data.doanhThu > 0 ? data.doanhThu : 1;
+            const pctPhuKien = data.dtPhuKien / totalRevenue;
+            const pctGiaDung = data.dtGiaDung / totalRevenue;
+            const pctMLN = data.dtMLN / totalRevenue;
+            const pctSim = data.dtSim / totalRevenue;
+            const pctVAS = data.dtVAS / totalRevenue;
+            const pctBaoHiem = data.dtBaoHiem / totalRevenue;
             const hieuQuaQuyDoi = data.doanhThu > 0 ? (data.doanhThuQuyDoi / data.doanhThu) - 1 : 0;
             const tyLeTraCham = data.doanhThu > 0 ? data.doanhThuTraGop / data.doanhThu : 0;
-            const totalQuantity = Object.values(data.doanhThuTheoNganhHang).reduce((sum, category) => sum + category.quantity, 0);
-            const donGiaTrungBinh = totalQuantity > 0 ? data.doanhThu / totalQuantity : 0;
+            
+            // Lương (Giữ nguyên)
             const gioCong = gioCongByMSNV[employee.maNV] || 0;
             const thuongNong = thuongNongByMSNV[employee.maNV] || 0;
             const erpEntry = $thuongERPData.find(e => e.name.includes(employee.hoTen));
             const thuongERP = erpEntry ? parseFloat(erpEntry.bonus.replace(/,/g, '')) : 0;
             const tongThuNhap = thuongNong + thuongERP;
             const today = new Date();
-            const currentDay = today.getDate();
             const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-            let thuNhapDuKien = 0;
-            if (currentDay > 1) thuNhapDuKien = (tongThuNhap / (currentDay - 1)) * daysInMonth;
-            else if (currentDay === 1) thuNhapDuKien = tongThuNhap * daysInMonth;
+            let thuNhapDuKien = (today.getDate() > 1) ? (tongThuNhap / (today.getDate() - 1)) * daysInMonth : tongThuNhap * daysInMonth;
+            
             const thuongNongThangTruoc = thuongNongThangTruocByMSNV[employee.maNV] || 0;
             const erpEntryThangTruoc = $thuongERPDataThangTruoc.find(e => e.name.includes(employee.hoTen));
             const thuongERPThangTruoc = erpEntryThangTruoc ? parseFloat(erpEntryThangTruoc.bonus.replace(/,/g, '')) : 0;
@@ -245,9 +261,10 @@ export const masterReportLogic = {
 
             return { 
                 ...employee, ...data, 
-                gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, 
+                pctPhuKien, pctGiaDung, pctMLN, pctSim, pctVAS, pctBaoHiem,
                 hieuQuaQuyDoi, tyLeTraCham,
-                donGiaTrungBinh, mucTieu: goalSettings 
+                gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, 
+                mucTieu: goalSettings 
             };
         });
     },
@@ -256,12 +273,13 @@ export const masterReportLogic = {
         if (!reportData || reportData.length === 0) return {};
 
         const supermarketReport = reportData.reduce((acc, curr) => {
+            // Cộng dồn các trường số (dtICT, dtPhuKien...)
             for (const key in curr) {
                 if (typeof curr[key] === 'number') {
                     acc[key] = (acc[key] || 0) + curr[key];
                 }
             }
-            
+            // Merge chi tiết
             ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang'].forEach(dictKey => {
                 if(curr[dictKey]) {
                     if(!acc[dictKey]) acc[dictKey] = {};
@@ -275,120 +293,62 @@ export const masterReportLogic = {
                     });
                 }
             });
-
             return acc;
         }, { doanhThu: 0, dynamicMetrics: {} });
 
         supermarketReport.nganhHangChiTiet = supermarketReport.doanhThuTheoNganhHang;
         supermarketReport.nhomHangChiTiet = supermarketReport.doanhThuTheoNhomHang;
 
-        // [FIX] TÍNH TOÁN LẠI MACRO GROUP CHO CẤP SIÊU THỊ
-        // Để đảm bảo bảng "Top Nhóm Hàng" hiện dữ liệu của nhóm lớn (VD: Bảo hiểm)
-        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
-        $macroProductGroupConfig.forEach(macro => {
-            const macroName = macro.name;
-            const cleanMacroName = utils.cleanCategoryName(macroName);
-            
-            if (macro.items && Array.isArray(macro.items)) {
-                let mQuantity = 0, mRevenue = 0, mRevenueQuyDoi = 0;
-                
-                macro.items.forEach(childName => {
-                    const cleanChild = utils.cleanCategoryName(childName);
-                    // Tìm trong nhomHangChiTiet (ưu tiên) hoặc nganhHangChiTiet
-                    const childData = supermarketReport.nhomHangChiTiet[cleanChild] || supermarketReport.nganhHangChiTiet[cleanChild];
-                    
-                    if (childData) {
-                        mQuantity += childData.quantity;
-                        mRevenue += childData.revenue;
-                        mRevenueQuyDoi += childData.revenueQuyDoi;
-                    }
-                });
+        // Tính % Tổng hợp
+        const totalRevenue = supermarketReport.doanhThu || 1;
+        supermarketReport.pctPhuKien = (supermarketReport.dtPhuKien || 0) / totalRevenue;
+        supermarketReport.pctGiaDung = (supermarketReport.dtGiaDung || 0) / totalRevenue;
+        supermarketReport.pctMLN = (supermarketReport.dtMLN || 0) / totalRevenue;
+        supermarketReport.pctSim = (supermarketReport.dtSim || 0) / totalRevenue;
+        supermarketReport.pctVAS = (supermarketReport.dtVAS || 0) / totalRevenue;
+        supermarketReport.pctBaoHiem = (supermarketReport.dtBaoHiem || 0) / totalRevenue;
+        supermarketReport.hieuQuaQuyDoi = (supermarketReport.doanhThuQuyDoi || 0) / totalRevenue - 1;
+        supermarketReport.tyLeTraCham = (supermarketReport.doanhThuTraGop || 0) / totalRevenue;
 
-                if (mRevenue > 0 || mQuantity > 0 || mRevenueQuyDoi > 0) {
-                    // Thêm vào nhomHangChiTiet để bảng Top Nhóm Hàng (QdcTable) có thể đọc được
-                    if (!supermarketReport.nhomHangChiTiet[cleanMacroName]) {
-                        supermarketReport.nhomHangChiTiet[cleanMacroName] = {
-                            name: macroName,
-                            quantity: mQuantity,
-                            revenue: mRevenue,
-                            revenueQuyDoi: mRevenueQuyDoi,
-                            isMacro: true
-                        };
-                    }
-                }
-            }
-        });
-
-        // TÍNH LẠI DYNAMIC METRICS CHO CẤP SIÊU THỊ
+        // Aggregate Dynamic Metrics (Đơn giản hóa: tính lại tỷ lệ trên tổng)
         const $efficiencyConfig = get(efficiencyConfig) || [];
-        supermarketReport.dynamicMetrics = {};
-        
-        const macroToItemsMap = {}; 
-        const addToMap = (configs) => {
-            (configs||[]).forEach(m => { if(m.items) macroToItemsMap[normalizeStr(m.name)] = m.items.map(i=>normalizeStr(i)); });
-        };
-        addToMap(get(macroCategoryConfig));
-        addToMap(get(macroProductGroupConfig));
-
-        if ($efficiencyConfig.length > 0) {
+        if (Array.isArray($efficiencyConfig)) {
             $efficiencyConfig.forEach(cfg => {
-                 const numType = cfg.typeA || cfg.type || 'DTTL';
-                 const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
-
-                 const calcGroupValue = (groupList, valueType) => {
-                    let total = 0;
-                    if (!groupList) return 0;
-                    groupList.forEach(rawName => {
-                        const cleanCfgName = normalizeStr(rawName);
-                        const itemsToSum = macroToItemsMap[cleanCfgName] || [cleanCfgName];
-                        
-                        itemsToSum.forEach(targetName => {
-                            const findItem = (container) => {
-                                if(!container) return null;
-                                for (const key in container) {
-                                    if (normalizeStr(key) === targetName) return container[key];
-                                }
-                                for (const key in container) {
-                                    const normKey = normalizeStr(key);
-                                    if (normKey.includes(targetName) || targetName.includes(normKey)) {
-                                        return container[key];
+                // Logic tính tổng tương tự như loop nhân viên, nhưng trên data tổng
+                // Để đơn giản, ta có thể cộng dồn từ các nhân viên, hoặc tính lại từ bucket tổng
+                // Ở đây chọn cách tính lại từ bucket tổng để chính xác hơn
+                try {
+                    const numType = cfg.typeA || cfg.type || 'DTTL';
+                    const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
+                    
+                    const calcVal = (groupList, type) => {
+                        let total = 0;
+                        groupList.forEach(short => {
+                            const nShort = normalize(short);
+                            const scan = (bucket) => {
+                                for (const [k, v] of Object.entries(bucket)) {
+                                    if (normalize(k).includes(nShort)) {
+                                        if(type==='SL') total+=v.quantity;
+                                        else if(type==='DTQD') total+=v.revenueQuyDoi;
+                                        else total+=v.revenue;
                                     }
                                 }
-                                return null;
                             };
-
-                            let item = findItem(supermarketReport.doanhThuTheoNganhHang) || findItem(supermarketReport.doanhThuTheoNhomHang);
-
-                            if (item) {
-                                if (valueType === 'SL') total += item.quantity;
-                                else if (valueType === 'DTQD') total += item.revenueQuyDoi;
-                                else total += item.revenue;
-                            }
+                            scan(supermarketReport.doanhThuTheoNganhHang);
+                            scan(supermarketReport.doanhThuTheoNhomHang);
                         });
-                    });
-                    return total;
-                };
-
-                const numVal = calcGroupValue(cfg.groupA, numType);
-                const denVal = calcGroupValue(cfg.groupB, denType);
-                
-                supermarketReport.dynamicMetrics[cfg.id] = {
-                    value: denVal > 0 ? numVal / denVal : 0,
-                    target: cfg.target,
-                    label: cfg.label
-                };
+                        return total;
+                    };
+                    const num = calcVal(cfg.groupA || [], numType);
+                    const den = calcVal(cfg.groupB || [], denType);
+                    
+                    supermarketReport.dynamicMetrics[cfg.id] = {
+                        value: den > 0 ? num/den : 0,
+                        target: cfg.target,
+                        label: cfg.label
+                    };
+                } catch(e) {}
             });
-        }
-
-        supermarketReport.hieuQuaQuyDoi = supermarketReport.doanhThu > 0 ? (supermarketReport.doanhThuQuyDoi / supermarketReport.doanhThu) - 1 : 0;
-        supermarketReport.tyLeTraCham = supermarketReport.doanhThu > 0 ? supermarketReport.doanhThuTraGop / supermarketReport.doanhThu : 0;
-        supermarketReport.comparisonData = { value: 0, percentage: 'N/A' }; 
-
-        if (supermarketReport.qdc) {
-            for (const key in supermarketReport.qdc) {
-                const group = supermarketReport.qdc[key];
-                group.donGia = group.sl > 0 ? group.dt / group.sl : 0;
-            }
         }
 
         return supermarketReport;

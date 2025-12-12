@@ -4,20 +4,19 @@
 
   export let reportData = [];
 
-  // Cấu hình cột chuẩn theo thiết kế gốc
   const ALL_COLUMNS = [
-      { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
-      { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
-      { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
+      { id: 'dtICT', label: 'DT ICT', type: 'dt', headerClass: 'bg-blue-100 text-blue-900' },
+      { id: 'dtPhuKien', label: 'DT Phụ kiện', type: 'dt', headerClass: 'bg-blue-100 text-blue-900' },
+      { id: 'pctPhuKien', label: '% Phụ kiện', type: 'pct', targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
       
-      { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900' },
-      { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900' },
-      { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
-      { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
+      { id: 'dtCE', label: 'DT CE', type: 'dt', headerClass: 'bg-green-100 text-green-900' },
+      { id: 'dtGiaDung', label: 'DT Gia dụng', type: 'dt', headerClass: 'bg-green-100 text-green-900' },
+      { id: 'pctGiaDung', label: '% Gia dụng', type: 'pct', targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
+      { id: 'pctMLN', label: '% MLN', type: 'pct', targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
       
-      { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
-      { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
-      { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
+      { id: 'pctSim', label: '% Sim', type: 'pct', targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
+      { id: 'pctVAS', label: '% VAS', type: 'pct', targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
+      { id: 'pctBaoHiem', label: '% Bảo hiểm', type: 'pct', targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
   ];
 
   let visibleColumnIds = ALL_COLUMNS.map(c => c.id);
@@ -26,16 +25,15 @@
   let groupedData = {};
   let departmentOrder = [];
 
-  // --- FIX LỖI TẠI ĐÂY ---
   $: {
-    const groups = {}; // Dùng biến cục bộ trước
+    const groups = {}; 
     if (reportData && reportData.length > 0) {
         reportData.forEach(item => {
           const dept = item.boPhan || 'Khác';
           if (!groups[dept]) groups[dept] = []; 
           groups[dept].push(item);
         });
-        groupedData = groups; // Gán lại cho biến state
+        groupedData = groups; 
         departmentOrder = getSortedDepartmentList(reportData);
     } else { 
         groupedData = {};
@@ -52,9 +50,10 @@
     }
   }
 
-  function sortEmployees(employees) {
-      if (!employees) return [];
-      return [...employees].sort((a, b) => {
+  // Reactive Sort
+  $: sortEmployees = (dept) => {
+      const items = groupedData[dept] || [];
+      return [...items].sort((a, b) => {
           if (sortKey === 'hoTen') {
              const nameA = a.hoTen || '';
              const nameB = b.hoTen || '';
@@ -64,7 +63,7 @@
           let valB = Number(b[sortKey]) || 0;
           return sortDirection === 'asc' ? valA - valB : valB - valA;
       });
-  }
+  };
 
   function toggleColumn(columnId) {
       if (visibleColumnIds.includes(columnId)) {
@@ -74,16 +73,20 @@
       }
   }
 
+  // [MỚI] Logic màu sắc chuẩn
   function getCellClass(item, colDef) {
     const value = item[colDef.id] || 0;
     
-    if (colDef.isRate) {
-        const target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
-        if (target <= 0) return 'text-gray-900';
-        if (value < target) return 'text-red-600 bg-red-50 font-bold';
-        return 'text-green-600 font-bold';
+    if (colDef.type === 'pct') {
+        // Màu đỏ đậm cho %
+        return 'text-red-800 font-bold'; 
+    } else if (colDef.type === 'dt') {
+        // Màu xanh dương cho doanh thu
+        return 'text-blue-700 font-medium';
+    } else {
+        // Màu đen cho số lượng (hoặc mặc định)
+        return 'text-gray-900 font-medium';
     }
-    return 'text-gray-900 font-medium';
   }
 
   function getHeaderClass(deptName) {
@@ -119,7 +122,7 @@
             <thead class="text-xs text-gray-700 uppercase font-bold sticky top-0 z-20 shadow-sm">
                <tr>
                 <th class="px-4 py-3 bg-gray-200 cursor-pointer hover:bg-gray-300 transition sticky left-0 z-30 min-w-[200px]" on:click={() => handleSort('hoTen')}>
-                  <div class="flex items-center gap-1">
+                   <div class="flex items-center gap-1">
                     <span>Nhân viên</span>
                     {#if sortKey === 'hoTen'}<span>{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                   </div>
@@ -127,18 +130,18 @@
 
                 {#each ALL_COLUMNS as col}
                   {#if visibleColumnIds.includes(col.id)}
-                    <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition whitespace-nowrap text-right {col.headerClass}" on:click={() => handleSort(col.id)}>
+                     <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition whitespace-nowrap text-right {col.headerClass}" on:click={() => handleSort(col.id)}>
                        <div class="flex items-center justify-end gap-1">
                          <span>{col.label}</span>
                          {#if sortKey === col.id}<span>{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                        </div>
-                    </th>
+                     </th>
                   {/if}
                 {/each}
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
-              {#each sortEmployees(groupedData[deptName]) as item (item.maNV)}
+              {#each sortEmployees(deptName) as item (item.maNV)}
                 <tr class="hover:bg-blue-50 transition-colors duration-150">
                   <td class="px-4 py-2 font-semibold text-blue-700 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200 whitespace-nowrap">
                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
@@ -146,13 +149,13 @@
                   {#each ALL_COLUMNS as col}
                     {#if visibleColumnIds.includes(col.id)}
                        <td class="px-4 py-2 text-right border-l border-gray-100 {getCellClass(item, col)}">
-                         {#if col.isRate}
+                          {#if col.type === 'pct'}
                             {formatters.formatPercentage(item[col.id])}
                          {:else}
                             {formatters.formatRevenue(item[col.id])}
                          {/if}
                       </td>
-                    {/if}
+                     {/if}
                   {/each}
                 </tr>
               {/each}
