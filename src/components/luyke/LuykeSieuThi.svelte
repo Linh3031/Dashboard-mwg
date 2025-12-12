@@ -37,7 +37,8 @@
   let luotKhachData = { value: 0, percentage: 'N/A' };
   
   let chuaXuatReport = [];
-  let efficiencyItems = [];
+  // [FIX] Xóa bỏ danh sách items cứng
+  // let efficiencyItems = []; 
   let categoryItems = []; 
   let qdcItems = []; 
 
@@ -46,11 +47,9 @@
       tgdd: { val: 0, pct: 0 }
   };
 
-  // [MỚI] Biến chứa danh sách chỉ số gộp (Global + Local)
   let combinedEfficiencyItems = [];
 
   onMount(async () => {
-      // 1. Tải Config Global (Hệ thống)
       const savedEffConfig = await adminService.loadEfficiencyConfig();
       if(savedEffConfig.length > 0) efficiencyConfig.set(savedEffConfig);
       
@@ -58,7 +57,6 @@
       if(savedQdcConfig.length > 0) qdcConfigStore.set(savedQdcConfig);
   });
 
-  // [MỚI] Tải Config Local khi đổi kho
   $: if ($selectedWarehouse) {
       loadLocalMetrics($selectedWarehouse);
   }
@@ -68,10 +66,9 @@
       warehouseCustomMetrics.set(localData);
   }
 
-  // [MỚI] Logic Gộp (Reactive)
   $: combinedEfficiencyItems = [
-      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })), // Đánh dấu hệ thống
-      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false })) // Đánh dấu cá nhân
+      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
+      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
   ];
 
   const cleanValue = (str) => {
@@ -87,7 +84,6 @@
     const _triggerMacroProd = $macroProductGroupConfig;
     const _triggerEff = $efficiencyConfig;
     const _triggerMap = $categoryNameMapping;
-    // [MỚI] Trigger khi local custom metrics thay đổi
     const _triggerLocalEff = $warehouseCustomMetrics;
 
     localSupermarketReport = supermarketReport || {};
@@ -190,22 +186,6 @@
 
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
-    // --- LỌC ITEMS HIỆN THỊ ---
-    const efficiencySettings = settingsService.loadEfficiencyViewSettings();
-    const HARDCODED_IDS = ['pctSim', 'pctVAS', 'pctBaoHiem', 'tyLeTraCham']; 
-    
-    const goalKeyMap = {
-      pctSim: 'phanTramSim', pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem', tyLeTraCham: 'phanTramTC'
-    };
-
-    efficiencyItems = efficiencySettings
-      .filter(item => HARDCODED_IDS.includes(item.id) && item.visible)
-      .map(config => ({
-        ...config, 
-        value: localSupermarketReport[config.id] || 0, 
-        target: localGoals[goalKeyMap[config.id]] 
-      }));
-
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
       .map(([name, values]) => ({ 
           id: name,
@@ -228,7 +208,6 @@
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
   }
 
-  // [MỚI] Xử lý xóa chỉ số (phân biệt System vs Local)
   async function handleDeleteEffConfig(event) {
       const id = event.detail;
       const isSystem = $efficiencyConfig.some(i => i.id === id);
@@ -353,8 +332,7 @@
 
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
       <LuykeEfficiencyTable 
-          items={efficiencyItems} 
-          dynamicItems={combinedEfficiencyItems} 
+          items={[]} dynamicItems={combinedEfficiencyItems} 
           supermarketData={localSupermarketReport}
           on:add={openAddEffModal}
           on:edit={handleEditEffConfig}

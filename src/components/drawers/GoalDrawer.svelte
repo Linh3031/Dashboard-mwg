@@ -7,10 +7,12 @@
         realtimeGoalSettings,
         modalState,
         localCompetitionConfigs, 
-        selectedWarehouse 
+        selectedWarehouse,
+        efficiencyConfig // [MỚI]
     } from '../../stores.js';
     import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
+    import { adminService } from '../../services/admin.service.js'; // [MỚI]
     
     let activeTab = 'monthly';
     let localSelectedWarehouse = ''; 
@@ -20,12 +22,10 @@
 
     $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
 
-    // Tự động chọn kho đầu tiên
     $: if (isOpen && !localSelectedWarehouse && $warehouseList.length > 0) {
         localSelectedWarehouse = $warehouseList[0];
     }
 
-    // Load settings
     $: if (localSelectedWarehouse) {
         currentLuykeGoals = { ...($luykeGoalSettings[localSelectedWarehouse] || {}) };
         const rtSettings = $realtimeGoalSettings[localSelectedWarehouse] || { goals: {}, timing: {} };
@@ -35,7 +35,13 @@
         };
     }
     
-    // Cập nhật icon feather sau khi render danh sách
+    // [MỚI] Load config toàn cục
+    onMount(async () => {
+        const configs = await adminService.loadEfficiencyConfig();
+        efficiencyConfig.set(configs);
+        if (typeof feather !== 'undefined') feather.replace();
+    });
+
     afterUpdate(() => {
         if (typeof feather !== 'undefined') feather.replace();
     });
@@ -58,23 +64,16 @@
         settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
-    // Mở modal tạo mới
     function openCompetitionManager() {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
-        // Reset editing index bằng cách truyền payload null hoặc xử lý bên modal
-        // Ở đây ta mở modal, modal sẽ tự reset về state 'menu'
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
     }
 
-    // Mở modal để sửa (Lưu ý: Cần update logic Modal để nhận index này, tạm thời mở modal trước)
     function editCompetition(index) {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
-        // Truyền index cần sửa qua modalState (cần update UserCompetitionModal để đọc cái này nếu muốn flow hoàn hảo)
-        // Hiện tại mở modal lên để người dùng thấy danh sách bên trong
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
     }
 
-    // Hàm xóa nhanh
     async function deleteCompetition(index) {
         if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
         
@@ -93,15 +92,10 @@
         }
     }
 
+    // [FIX] Chỉ giữ lại các chỉ số cơ bản, phần còn lại render động
     const percentageInputs = [
         { id: 'phanTramQD', label: '% Quy đổi' },
-        { id: 'phanTramTC', label: '% Trả chậm' },
-        { id: 'phanTramGiaDung', label: '% Gia dụng' },
-        { id: 'phanTramMLN', label: '% MLN' },
-        { id: 'phanTramPhuKien', label: '% Phụ kiện' },
-        { id: 'phanTramBaoHiem', label: '% Bảo hiểm' },
-        { id: 'phanTramSim', label: '% Sim' },
-        { id: 'phanTramVAS', label: '% VAS' },
+        { id: 'phanTramTC', label: '% Trả chậm' }
     ];
 </script>
 
@@ -162,6 +156,22 @@
                             <div>
                                 <label for="luyke-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
                                 <input type="number" id="luyke-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals[input.id]} on:input={saveLuyke}>
+                            </div>
+                        {/each}
+                        
+                        {#each $efficiencyConfig as item}
+                            <div>
+                                <label for="goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>
+                                    {item.label} (MT: {item.target}%)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    id="goal-{item.id}" 
+                                    class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder={item.target} 
+                                    bind:value={currentLuykeGoals[item.id]} 
+                                    on:input={saveLuyke}
+                                >
                             </div>
                         {/each}
                     </div>
@@ -260,7 +270,6 @@
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
     
-    /* Custom scrollbar */
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }

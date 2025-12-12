@@ -1,9 +1,19 @@
 <script>
   import { onMount, afterUpdate } from 'svelte';
   
-  import { activeTab, modalState, efficiencyConfig, customRevenueTables, isAdmin } from './stores.js'; // Import isAdmin
+  import { 
+      activeTab, 
+      modalState, 
+      efficiencyConfig, 
+      customRevenueTables, 
+      isAdmin, 
+      warehouseCustomMetrics,
+      selectedWarehouse
+  } from './stores.js'; 
+  import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
+  import { datasyncService } from './services/datasync.service.js';
 
   // --- COMPONENTS CHÍNH ---
   import Sidebar from './components/Sidebar.svelte';
@@ -40,14 +50,48 @@
     if (window.feather) window.feather.replace();
   });
 
+  // [FIX] Tách biệt logic lưu Admin vs User
   function handleSaveEffConfig(event) {
-      const newItem = event.detail;
-      efficiencyConfig.update(items => {
-          const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
-          else { return [...items, newItem]; }
-      });
-      adminService.saveEfficiencyConfig($efficiencyConfig);
+      // Clone object để tránh tham chiếu
+      const newItem = { ...event.detail };
+      
+      // LOGIC ADMIN (Tab Khai Báo)
+      if ($activeTab === 'declaration-section') {
+          // Admin thì đánh dấu isSystem = true (nếu chưa có)
+          newItem.isSystem = true;
+          
+          efficiencyConfig.update(items => {
+              const idx = items.findIndex(i => i.id === newItem.id);
+              if (idx >= 0) { items[idx] = newItem; return [...items]; } 
+              else { return [...items, newItem]; }
+          });
+          adminService.saveEfficiencyConfig(get(efficiencyConfig));
+      } 
+      // LOGIC USER (Tab Lũy kế / Realtime)
+      else {
+          // User thì đánh dấu isSystem = false
+          newItem.isSystem = false;
+
+          let currentLocal = get(warehouseCustomMetrics) || [];
+          const idx = currentLocal.findIndex(i => i.id === newItem.id);
+          
+          if (idx >= 0) {
+              // Sửa
+              currentLocal[idx] = newItem;
+          } else {
+              // Thêm mới
+              currentLocal = [...currentLocal, newItem];
+          }
+          
+          warehouseCustomMetrics.set(currentLocal);
+          
+          const wh = get(selectedWarehouse);
+          if(wh) {
+              datasyncService.saveCustomMetrics(wh, currentLocal);
+          } else {
+              alert("Vui lòng chọn Kho để lưu chỉ số này.");
+          }
+      }
   }
 
   // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Local + Cloud)

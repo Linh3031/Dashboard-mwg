@@ -3,18 +3,18 @@
     realtimeYCXData, 
     selectedWarehouse, 
     efficiencyConfig, 
-    warehouseCustomMetrics // [MỚI]
+    warehouseCustomMetrics 
   } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
-  import { datasyncService } from '../../../services/datasync.service.js'; // [MỚI]
-  import { adminService } from '../../../services/admin.service.js'; // [MỚI]
+  import { datasyncService } from '../../../services/datasync.service.js';
+  import { adminService } from '../../../services/admin.service.js';
   
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
   import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
-  import { onMount } from 'svelte'; // [MỚI]
+  import { onMount } from 'svelte';
 
   // Biến local
   let supermarketReport = {};
@@ -25,19 +25,15 @@
   let categoryItems = [];
   let unexportedItems = []; 
   
-  // Biến chứa raw data đã lọc
   let rawSourceData = [];
 
-  // [MỚI] Biến chứa danh sách chỉ số gộp
   let combinedEfficiencyItems = [];
 
   onMount(async () => {
-      // 1. Load Global Config (Hệ thống)
       const globalConfig = await adminService.loadEfficiencyConfig();
       efficiencyConfig.set(globalConfig);
   });
 
-  // [MỚI] Khi Kho thay đổi -> Load Local Config
   $: if ($selectedWarehouse) {
       loadLocalMetrics($selectedWarehouse);
   }
@@ -47,13 +43,11 @@
       warehouseCustomMetrics.set(localData);
   }
 
-  // [MỚI] Gộp Global + Local
   $: combinedEfficiencyItems = [
       ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
       ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
   ];
 
-  // Logic xóa chỉ số
   async function handleDeleteMetric(event) {
       const id = event.detail;
       const isSystem = $efficiencyConfig.some(i => i.id === id);
@@ -72,16 +66,13 @@
       }
   }
 
-  // Reactive Calculation
   $: {
     const currentWarehouse = $selectedWarehouse;
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     goals = settings.goals || {};
 
-    // 1. Master Report
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    // 2. Filter theo kho
     let filteredReport = masterReport;
     let filteredRawData = $realtimeYCXData;
 
@@ -96,10 +87,8 @@
     
     rawSourceData = filteredRawData;
 
-    // 3. Aggregate
     supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
 
-    // 4. Prepare Sub-tables
     qdcItems = supermarketReport.nhomHangChiTiet 
         ? Object.entries(supermarketReport.nhomHangChiTiet)
             .map(([name, values]) => ({
@@ -177,8 +166,10 @@
   <div class="luyke-tier-1-grid">
       <EfficiencyTable 
           supermarketData={supermarketReport} 
-          dynamicItems={combinedEfficiencyItems} goals={goals}
-          on:delete={handleDeleteMetric} />
+          dynamicItems={combinedEfficiencyItems} 
+          items={[]} goals={goals}
+          on:delete={handleDeleteMetric}
+      />
       <QdcTable items={qdcItems} />
   </div>
 
