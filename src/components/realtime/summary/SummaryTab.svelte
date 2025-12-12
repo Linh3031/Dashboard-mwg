@@ -16,15 +16,12 @@
   import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
   import { onMount } from 'svelte';
 
-  // Biến local
   let supermarketReport = {};
   let goals = {};
   
-  // Data cho các bảng con
   let qdcItems = [];
   let categoryItems = [];
   let unexportedItems = []; 
-  
   let rawSourceData = [];
 
   let combinedEfficiencyItems = [];
@@ -50,9 +47,9 @@
 
   async function handleDeleteMetric(event) {
       const id = event.detail;
-      const isSystem = $efficiencyConfig.some(i => i.id === id);
+      const item = combinedEfficiencyItems.find(i => i.id === id);
       
-      if (isSystem) {
+      if (item && item.isSystem) {
           alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
           return;
       }
@@ -124,7 +121,7 @@
   </h2>
 
   <div id="realtime-kpi-cards-container" class="kpi-grid-fixed">
-      <div class="kpi-card-solid bg-[#38bdf8]">
+      <div class="kpi-card-solid card-1">
           <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
           <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThu || 0) / 1000000, 1)}</div>
           <div class="kpi-solid-sub">
@@ -134,7 +131,7 @@
           <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
       </div>
 
-      <div class="kpi-card-solid bg-[#34d399]">
+      <div class="kpi-card-solid card-2">
           <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
           <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThuQuyDoi || 0) / 1000000, 1)}</div>
           <div class="kpi-solid-sub">
@@ -144,7 +141,7 @@
           <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
       </div>
 
-      <div class="kpi-card-solid bg-[#fbbf24]">
+      <div class="kpi-card-solid card-3">
           <div class="kpi-solid-header">Tỷ lệ Quy Đổi <i data-feather="trending-up"></i></div>
           <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.hieuQuaQuyDoi || 0)}</div>
           <div class="kpi-solid-sub">
@@ -153,7 +150,7 @@
           <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
       </div>
 
-      <div class="kpi-card-solid bg-[#2dd4bf]">
+      <div class="kpi-card-solid card-4">
           <div class="kpi-solid-header">Trả Chậm <i data-feather="credit-card"></i></div>
           <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.tyLeTraCham || 0)}</div>
           <div class="kpi-solid-sub">
@@ -167,7 +164,8 @@
       <EfficiencyTable 
           supermarketData={supermarketReport} 
           dynamicItems={combinedEfficiencyItems} 
-          items={[]} goals={goals}
+          items={[]} 
+          goals={goals}
           on:delete={handleDeleteMetric}
       />
       <QdcTable items={qdcItems} />

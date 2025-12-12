@@ -37,8 +37,6 @@
   let luotKhachData = { value: 0, percentage: 'N/A' };
   
   let chuaXuatReport = [];
-  // [FIX] Xóa bỏ danh sách items cứng
-  // let efficiencyItems = []; 
   let categoryItems = []; 
   let qdcItems = []; 
 
@@ -241,7 +239,7 @@
 
       <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
         
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard1Bg}">
+        <div class="kpi-card-solid card-1">
             <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
             <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
             <div class="kpi-solid-sub">
@@ -251,7 +249,7 @@
             <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard2Bg}">
+        <div class="kpi-card-solid card-2">
             <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
             <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</div>
             <div class="kpi-solid-sub">
@@ -261,7 +259,7 @@
             <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard3Bg}">
+        <div class="kpi-card-solid card-3">
             <div class="kpi-solid-header">% HT Target (QĐ) <i data-feather="target"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramTargetQd || 0)}</div>
             <div class="kpi-solid-sub">
@@ -270,7 +268,7 @@
             <div class="kpi-bg-icon"><i data-feather="target"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard4Bg}">
+        <div class="kpi-card-solid card-4">
             <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
             <div class="kpi-solid-sub">
@@ -279,7 +277,7 @@
             <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard5Bg}">
+        <div class="kpi-card-solid card-5">
             <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
             <div class="kpi-solid-sub">
@@ -288,7 +286,7 @@
             <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard6Bg}">
+        <div class="kpi-card-solid card-6">
             <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
             <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
             <div class="kpi-solid-sub">
@@ -297,7 +295,7 @@
             <div class="kpi-bg-icon"><i data-feather="award"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard7Bg}">
+        <div class="kpi-card-solid card-7">
             <div class="kpi-solid-header">Tăng trưởng CK <i data-feather="activity"></i></div>
             <div class="kpi-solid-value">{comparisonData.percentage || 'N/A'}</div>
             <div class="kpi-solid-sub">
@@ -306,7 +304,7 @@
             <div class="kpi-bg-icon"><i data-feather="activity"></i></div>
         </div>
 
-        <div class="kpi-card-solid" style="background-color: {$interfaceSettings.kpiCard8Bg}">
+        <div class="kpi-card-solid card-8">
             <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
             <div class="flex flex-col gap-1 mt-1">
                 <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
@@ -332,7 +330,8 @@
 
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
       <LuykeEfficiencyTable 
-          items={[]} dynamicItems={combinedEfficiencyItems} 
+          items={[]} 
+          dynamicItems={combinedEfficiencyItems} 
           supermarketData={localSupermarketReport}
           on:add={openAddEffModal}
           on:edit={handleEditEffConfig}

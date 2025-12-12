@@ -1,5 +1,4 @@
 // src/services/settings.service.js
-// Version 5.9 - Fix missing functions (Restore Realtime Logic)
 import { get } from 'svelte/store';
 import { 
     luykeGoalSettings, 
@@ -8,7 +7,7 @@ import {
     pastedThiDuaReportData
 } from '../stores.js';
 
-// Hằng số chứa danh sách đầy đủ và thứ tự cột chính xác cho bảng Hiệu quả khai thác
+// ... (Giữ nguyên các hằng số ALL_EFFICIENCY_ITEMS, PASTED_COMPETITION_SETTINGS_KEY) ...
 const ALL_EFFICIENCY_ITEMS = [
     { id: 'dtICT', label: 'DT ICT' },
     { id: 'dtPhuKien', label: 'DT Phụ kiện' },
@@ -21,11 +20,10 @@ const ALL_EFFICIENCY_ITEMS = [
     { id: 'pctVAS',    label: '% VAS' },
     { id: 'pctBaoHiem', label: '% Bảo hiểm' }
 ];
-
 const PASTED_COMPETITION_SETTINGS_KEY = 'pastedCompetitionViewSettings';
 
 export const settingsService = {
-    // --- INTERFACE SETTINGS ---
+    // --- INTERFACE SETTINGS (ĐÃ SỬA LỖI) ---
     loadInterfaceSettings() {
         try {
             const saved = localStorage.getItem('interfaceSettings');
@@ -33,7 +31,9 @@ export const settingsService = {
                 const parsed = JSON.parse(saved);
                 interfaceSettings.set({ ...get(interfaceSettings), ...parsed });
             }
+            // Áp dụng ngay khi load
             this.applyInterfaceStyles(get(interfaceSettings));
+            
             const contrast = localStorage.getItem('contrastLevel') || '3';
             this.updateContrast(contrast);
         } catch (e) {
@@ -56,25 +56,37 @@ export const settingsService = {
     applyInterfaceStyles(settings) {
         const root = document.documentElement;
         if (!settings) return;
-        if (settings.globalFontSize) root.style.setProperty('--global-font-size', `${settings.globalFontSize}px`);
-        if (settings.kpiFontSize) root.style.setProperty('--kpi-main-font-size', `${settings.kpiFontSize}px`);
+
+        // [FIX] Cập nhật font-size trực tiếp cho HTML để Tailwind (rem) scale theo
+        // Mặc định trình duyệt là 16px. Slider của bạn từ 12-25.
+        if (settings.globalFontSize) {
+            root.style.fontSize = `${settings.globalFontSize}px`;
+        }
+
+        // Cập nhật biến CSS cho các thẻ KPI
         for (let i = 1; i <= 8; i++) {
             const key = `kpiCard${i}Bg`;
-            if (settings[key]) root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
+            if (settings[key]) {
+                root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
+            }
         }
+
+        // Cập nhật biến màu chữ KPI
         if (settings.kpiTitleColor) root.style.setProperty('--kpi-title-color', settings.kpiTitleColor);
         if (settings.kpiMainColor) root.style.setProperty('--kpi-main-color', settings.kpiMainColor);
         if (settings.kpiSubColor) root.style.setProperty('--kpi-sub-color', settings.kpiSubColor);
+        
+        // Cập nhật cỡ chữ riêng cho KPI (nếu cần)
+        if (settings.kpiFontSize) root.style.setProperty('--kpi-main-font-size', `${settings.kpiFontSize}px`);
     },
 
-    // --- GOAL SETTINGS (LUY KE) ---
+    // ... (Giữ nguyên các hàm load/save goal settings, view settings không đổi) ...
     loadLuykeGoalSettings() {
         try {
             const saved = localStorage.getItem('luykeGoalSettings');
             if (saved) luykeGoalSettings.set(JSON.parse(saved));
         } catch (e) { console.error("Lỗi tải mục tiêu lũy kế:", e); }
     },
-
     saveLuykeGoalForWarehouse(warehouse, goals) {
         luykeGoalSettings.update(current => {
             const updated = { ...current, [warehouse]: goals };
@@ -82,7 +94,6 @@ export const settingsService = {
             return updated;
         });
     },
-
     getLuykeGoalSettings(selectedWarehouse = null) {
         const $luykeGoalSettings = get(luykeGoalSettings);
         const settings = { goals: {} };
@@ -92,6 +103,7 @@ export const settingsService = {
              const source = $luykeGoalSettings[selectedWarehouse];
              goalKeys.forEach(key => settings.goals[key] = parseFloat(source[key]) || 0);
         } else if (!selectedWarehouse) {
+            // Logic tính trung bình
             const allSettings = $luykeGoalSettings || {};
             const warehouseKeys = Object.keys(allSettings);
             const percentCounts = {};
@@ -108,22 +120,19 @@ export const settingsService = {
                          settings.goals[key] += value;
                     }
                 });
-            });
+           });
             Object.keys(percentCounts).forEach(key => {
                 if (percentCounts[key] > 0) settings.goals[key] /= percentCounts[key];
             });
         }
         return settings;
     },
-
-    // --- [KHÔI PHỤC] GOAL SETTINGS (REALTIME) ---
     loadRealtimeGoalSettings() {
         try {
             const saved = localStorage.getItem('realtimeGoalSettings');
             if (saved) realtimeGoalSettings.set(JSON.parse(saved));
         } catch (e) { console.error("Lỗi tải mục tiêu realtime:", e); }
     },
-
     saveRealtimeGoalForWarehouse(warehouse, settings) {
         realtimeGoalSettings.update(current => {
             const updated = { ...current, [warehouse]: settings };
@@ -131,7 +140,6 @@ export const settingsService = {
             return updated;
         });
     },
-
     getRealtimeGoalSettings(selectedWarehouse = null) {
         const $realtimeGoalSettings = get(realtimeGoalSettings);
         if (selectedWarehouse && $realtimeGoalSettings && $realtimeGoalSettings[selectedWarehouse]) {
@@ -162,13 +170,10 @@ export const settingsService = {
         }
         return { goals: {}, timing: {} };
     },
-
-    // --- TABLE VIEW SETTINGS ---
     saveEfficiencyViewSettings(settings) {
-        if (!Array.isArray(settings)) return;
+         if (!Array.isArray(settings)) return;
         try { localStorage.setItem('efficiencyViewSettings', JSON.stringify(settings)); } catch (e) { console.error("Lỗi lưu efficiency settings:", e); }
     },
-    
     loadEfficiencyViewSettings() {
         try {
             const savedSettingsJSON = localStorage.getItem('efficiencyViewSettings');
@@ -184,7 +189,7 @@ export const settingsService = {
                         .filter(item => ALL_EFFICIENCY_ITEMS.some(config => config.id === item.id))
                         .map(item => {
                             const defaultItem = ALL_EFFICIENCY_ITEMS.find(d => d.id === item.id);
-                            return defaultItem ? { ...item, label: defaultItem.label } : item;
+                             return defaultItem ? { ...item, label: defaultItem.label } : item;
                         });
 
                     return [...currentItems, ...newItems];
@@ -193,17 +198,14 @@ export const settingsService = {
         } catch (e) { console.error("Lỗi tải efficiency settings:", e); }
         return ALL_EFFICIENCY_ITEMS.map(item => ({ ...item, visible: true }));
     },
-
     saveQdcViewSettings(settings) {
         if (!Array.isArray(settings)) return;
         try { localStorage.setItem('qdcViewSettings', JSON.stringify(settings)); } catch (e) {}
     },
-
     saveCategoryViewSettings(settings) {
         if (!Array.isArray(settings)) return;
         try { localStorage.setItem('categoryViewSettings', JSON.stringify(settings)); } catch (e) {}
     },
-
     loadQdcViewSettings(allItems) {
         try {
             const saved = localStorage.getItem('qdcViewSettings');
@@ -211,7 +213,6 @@ export const settingsService = {
         } catch (e) {}
         return allItems;
     },
-
     loadCategoryViewSettings(allItems) {
         try {
             const saved = localStorage.getItem('categoryViewSettings');
@@ -219,11 +220,9 @@ export const settingsService = {
         } catch (e) {}
         return allItems;
     },
-
     savePastedCompetitionViewSettings(settings) {
         try { localStorage.setItem(PASTED_COMPETITION_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
     },
-
     loadPastedCompetitionViewSettings() {
         const pastedDataStoreValue = get(pastedThiDuaReportData);
         if (!pastedDataStoreValue || pastedDataStoreValue.length === 0) return [];
