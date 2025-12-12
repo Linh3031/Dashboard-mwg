@@ -3420,20 +3420,20 @@ export const dataService = {
     init(controller) { this.appController = controller; },
 
     // --- File Handlers ---
-    // Kiểm tra xem fileHandler có tồn tại không để tránh crash
-    handleFileChange: fileHandler ? fileHandler.handleFileChange : () => console.error("fileHandler missing"),
-    handleCategoryFile: fileHandler?.handleCategoryFile,
-    handleSpecialProductFileUpload: fileHandler?.handleSpecialProductFileUpload,
-    handleRealtimeFileInput: fileHandler?.handleRealtimeFileInput,
-    handleTemplateDownload: fileHandler?.handleTemplateDownload,
+    // [FIX] Sử dụng arrow function để wrap, tránh lỗi undefined khi khởi tạo module
+    handleFileChange: (file, key) => fileHandler.handleFileChange(file, key),
+    handleRealtimeFileInput: (event) => fileHandler.handleRealtimeFileInput(event),
+    handleCategoryFile: (event) => fileHandler.handleCategoryFile(event),
+    handleSpecialProductFileUpload: (event) => fileHandler.handleSpecialProductFileUpload(event),
+    handleTemplateDownload: () => fileHandler.handleTemplateDownload(),
 
     // --- Paste Handlers ---
-    handlePasteChange: pasteHandler?.handlePasteChange,
+    handlePasteChange: (text, key1, key2, key3) => pasteHandler.handlePasteChange(text, key1, key2, key3),
 
     // --- Sync & Cache ---
-    syncDownFromCloud: syncHandler?.syncDownFromCloud.bind(syncHandler),
-    downloadFileFromCloud: syncHandler?.downloadFileFromCloud.bind(syncHandler),
-    loadAllFromCache: cacheHandler?.loadAllFromCache,
+    syncDownFromCloud: (wh) => syncHandler.syncDownFromCloud(wh),
+    downloadFileFromCloud: (key) => syncHandler.downloadFileFromCloud(key),
+    loadAllFromCache: () => cacheHandler.loadAllFromCache(),
 
     _getSavedMetadata(warehouse, dataType) { return null; }
 };
@@ -9703,10 +9703,16 @@ export const formatters = {
   import CompetitionModeSelector from './competition/CompetitionModeSelector.svelte';
   import ProgramView from './competition/ProgramView.svelte';
   import EmployeeView from './competition/EmployeeView.svelte';
+  // [NEW] Import view chi tiết mới
+  import CompetitionDetailView from './competition/CompetitionDetailView.svelte';
 
   // [YÊU CẦU] Mặc định vào là xem theo nhân viên
   let activeView = 'employee'; 
   let programReportData = [];
+  
+  // [NEW] State cho view chi tiết
+  let isDetailView = false;
+  let selectedEmployeeId = null;
 
   // Logic tính toán cho Program View (Tự động khi YCX hoặc Config thay đổi)
   $: {
@@ -9720,6 +9726,21 @@ export const formatters = {
 
   function handleViewChange(event) {
       activeView = event.detail;
+      // Reset về list khi đổi tab con
+      isDetailView = false;
+      selectedEmployeeId = null;
+  }
+
+  // [NEW] Xử lý khi click vào nhân viên
+  function handleViewDetail(event) {
+      selectedEmployeeId = event.detail.employeeId;
+      isDetailView = true;
+  }
+
+  // [NEW] Xử lý quay lại
+  function handleBackToList() {
+      isDetailView = false;
+      selectedEmployeeId = null;
   }
 </script>
 
@@ -9742,7 +9763,19 @@ export const formatters = {
         {#if activeView === 'program'}
             <ProgramView reportData={programReportData} />
         {:else}
-            <EmployeeView reportData={$pastedThiDuaReportData} />
+            {#if isDetailView && selectedEmployeeId}
+                <CompetitionDetailView 
+                    employeeId={selectedEmployeeId}
+                    allReportData={$pastedThiDuaReportData}
+                    on:back={handleBackToList}
+                />
+            {:else}
+                <EmployeeView 
+                    reportData={$pastedThiDuaReportData} 
+                    on:viewChange={(e) => activeView = e.detail}
+                    on:viewDetail={handleViewDetail} 
+                />
+            {/if}
         {/if}
     </div>
 </div>
@@ -14792,7 +14825,9 @@ export const formatters = {
 <script>
   import { onMount } from 'svelte';
   
-  import * as dataService from '../../services/dataService.js';
+  // [FIX] Sửa 'import * as dataService' thành 'import { dataService }'
+  import { dataService } from '../../services/dataService.js';
+  
   import { warehouseList, modalState, selectedWarehouse } from '../../stores.js';
   import { actionService } from '../../services/action.service.js';
 
@@ -14816,6 +14851,7 @@ export const formatters = {
   }
 
   async function handleFileUpload(event) {
+    // Bây giờ hàm này sẽ hoạt động đúng
     await dataService.handleRealtimeFileInput(event);
   }
 
@@ -14848,7 +14884,7 @@ export const formatters = {
                 <div class="flex items-center gap-2">
                     <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Doanh Thu Realtime</h2>
                     <button class="page-header__help-btn" data-help-id="realtime" title="Xem hướng dẫn">
-                       <i data-feather="help-circle"></i>
+                        <i data-feather="help-circle"></i>
                     </button>
                 </div>
 
@@ -14891,7 +14927,7 @@ export const formatters = {
                      <button id="compose-realtime-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}>
                         <i data-feather="pen-tool" class="w-4 h-4"></i>
                         <span class="hidden lg:inline">Nhận xét</span>
-                    </button>
+                     </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
                         <span class="hidden lg:inline">Xuất Excel</span>
@@ -14917,7 +14953,7 @@ export const formatters = {
                         <span>Siêu thị Realtime</span>
                     </button>
                        
-                     <button 
+                    <button 
                         class="sub-tab-btn {activeSubTabId === 'subtab-realtime-nhan-vien' ? 'active' : ''}" 
                         data-target="subtab-realtime-nhan-vien"
                         data-title="DTNVRealtime"
@@ -15002,7 +15038,7 @@ export const formatters = {
                     
                 {:else}
                     <div class="p-12 text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                         <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
+                        <p class="text-gray-500 font-medium">Chức năng tab <strong>{activeSubTabId}</strong> đang được phát triển.</p>
                     </div>
                 {/if}
             </div>
@@ -15131,15 +15167,22 @@ export const PASTE_MAPPING = {
 --- START FILE: ./src/services/data/fileHandler.js ---
 /* global XLSX */
 import { get } from 'svelte/store';
-import { selectedWarehouse, currentUser, realtimeYCXData, categoryStructure, brandList, specialProductList } from '../../stores.js';
+import { 
+    selectedWarehouse, 
+    currentUser, 
+    realtimeYCXData, 
+    categoryStructure, 
+    brandList, 
+    specialProductList 
+} from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
 import { datasyncService } from '../datasync.service.js';
 import { analyticsService } from '../analytics.service.js';
-import { adminService } from '../admin.service.js';
 import { FILE_MAPPING, LOCAL_DSNV_FILENAME_KEY } from './constants.js';
 import { updateSyncState } from './syncHandler.js';
 
+// Hàm đọc file Excel thành Workbook
 async function _handleFileRead(fileBlob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -15150,37 +15193,52 @@ async function _handleFileRead(fileBlob) {
                 resolve(workbook);
             } catch (err) { reject(err); }
         };
-        reader.onerror = (err) => reject(new Error("Could not read the file/blob."));
+        reader.onerror = (err) => reject(new Error("Không thể đọc file."));
         reader.readAsArrayBuffer(fileBlob);
     });
 }
 
 export const fileHandler = {
+    // 1. Xử lý các file dữ liệu chính (DSNV, Giờ công, YCX, Thưởng nóng...)
     async handleFileChange(file, saveKey) {
         const mapping = FILE_MAPPING[saveKey];
         if (!mapping) return { success: false, message: `Lỗi mapping: ${saveKey}` };
+        
         updateSyncState(saveKey, 'uploading', 'Đang đọc & chuẩn hóa...');
+        
         try {
             const workbook = await _handleFileRead(file);
-            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
+            const sheetName = workbook.SheetNames[0];
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+            
             const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+            
             if (!success) {
                 updateSyncState(saveKey, 'error', `Thiếu cột: ${missingColumns.join(', ')}`);
-                return { success: false, message: `Thiếu cột: ${missingColumns.join(', ')}` };
+                return { success: false, message: `Thiếu cột bắt buộc: ${missingColumns.join(', ')}` };
             }
+
+            // Lưu vào Store
             mapping.store.set(normalizedData);
+            
+            // Lưu vào IndexedDB (Cache Local)
             await storage.setItem(saveKey, normalizedData); 
+            
+            // Xử lý riêng cho DSNV (chỉ lưu local)
             if (saveKey === 'saved_danhsachnv') {
                 localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
                 updateSyncState(saveKey, 'cached', `✓ Đã tải ${normalizedData.length} dòng (Local)`, null);
                 return { success: true, count: normalizedData.length, message: `Thành công` };
             }
+
+            // Xử lý Upload lên Cloud (nếu đã chọn kho)
             const warehouse = get(selectedWarehouse);
             if (warehouse && !mapping.localOnly) {
                 updateSyncState(saveKey, 'uploading', 'Đang tải lên Cloud...');
                 try {
                     const path = `warehouse_data/${warehouse}/${saveKey}_${Date.now()}_${file.name}`;
                     const downloadUrl = await storageService.uploadFileToStorage(file, path);
+                    
                     const metadata = {
                         downloadURL: downloadUrl,
                         fileName: file.name,
@@ -15189,29 +15247,148 @@ export const fileHandler = {
                         updatedAt: new Date(),
                         updatedBy: get(currentUser)?.email || 'Tôi'
                     };
+                    
                     await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
                     updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
                 } catch (e) {
+                    console.error("Lỗi upload cloud:", e);
                     updateSyncState(saveKey, 'error', `Lỗi lưu Cloud: ${e.message}`, null);
+                    // Không return false ở đây vì dữ liệu local đã ok
                 }
             } else {
                  updateSyncState(saveKey, 'synced', `✓ Đã tải ${normalizedData.length} dòng`, null);
             }
+            
             analyticsService.trackAction();
             return { success: true, count: normalizedData.length, message: `Thành công` };
+
         } catch (err) {
+            console.error(err);
             updateSyncState(saveKey, 'error', `Lỗi: ${err.message}`, null);
-            return { success: false, message: `Lỗi: ${err.message}` };
+            return { success: false, message: `Lỗi xử lý file: ${err.message}` };
         }
     },
-    // ... Các hàm khác (rút gọn để tránh lỗi copy paste, nếu cần tôi gửi full)
-    handleRealtimeFileInput: async (event) => { /* logic */ },
-    handleCategoryFile: async (event) => { /* logic */ },
-    handleSpecialProductFileUpload: async (event) => { /* logic */ },
-    handleTemplateDownload: async () => { /* logic */ }
-};
 
-// Bổ sung các hàm handleRealtimeFileInput, handleCategoryFile... y hệt code cũ vào đây nếu bạn cần full code file này
+    // 2. Xử lý file Realtime (Tương tự YCX nhưng lưu vào store riêng)
+    async handleRealtimeFileInput(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        console.log("[FileHandler] Bắt đầu xử lý Realtime:", file.name);
+        
+        try {
+            const workbook = await _handleFileRead(file);
+            const sheetName = workbook.SheetNames[0];
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+
+            // Tái sử dụng logic chuẩn hóa của 'ycx' vì cấu trúc file giống nhau
+            const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
+
+            if (!success) {
+                alert(`File thiếu cột: ${missingColumns.join(', ')}`);
+                return;
+            }
+
+            // Cập nhật store
+            realtimeYCXData.set(normalizedData);
+            
+            // Ghi nhận analytics
+            analyticsService.trackAction();
+            
+            console.log(`[FileHandler] Đã nạp ${normalizedData.length} dòng realtime.`);
+            // Reset input
+            event.target.value = null;
+
+        } catch (error) {
+            console.error("Lỗi xử lý Realtime:", error);
+            alert("Lỗi đọc file Realtime: " + error.message);
+        }
+    },
+
+    // 3. Xử lý file Cấu trúc Ngành hàng (Admin)
+    async handleCategoryFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const workbook = await _handleFileRead(file);
+            const sheetName = workbook.SheetNames[0];
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+
+            const { success, normalizedData, error } = dataProcessing.normalizeCategoryStructureData(rawData);
+            
+            if (!success) {
+                throw new Error(error);
+            }
+
+            // Cập nhật Store
+            categoryStructure.set(normalizedData);
+            
+            // Tách danh sách Hãng (Brand) từ dữ liệu
+            const brands = [...new Set(normalizedData.map(i => i.nhaSanXuat).filter(Boolean))].sort();
+            brandList.set(brands);
+
+            console.log(`[FileHandler] Đã nạp ${normalizedData.length} dòng cấu trúc & ${brands.length} hãng.`);
+            
+            // Reset input
+            event.target.value = null;
+            return { success: true, count: normalizedData.length };
+
+        } catch (err) {
+            console.error("Lỗi file cấu trúc:", err);
+            throw err;
+        }
+    },
+
+    // 4. Xử lý file Sản phẩm Đặc quyền (Admin)
+    async handleSpecialProductFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const workbook = await _handleFileRead(file);
+            const sheetName = workbook.SheetNames[0];
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+
+            const { success, normalizedData, error } = dataProcessing.normalizeSpecialProductData(rawData);
+
+            if (!success) {
+                throw new Error(error);
+            }
+
+            specialProductList.set(normalizedData);
+            console.log(`[FileHandler] Đã nạp ${normalizedData.length} SPĐQ.`);
+            
+            event.target.value = null;
+            return { success: true, count: normalizedData.length };
+
+        } catch (err) {
+            console.error("Lỗi file SPĐQ:", err);
+            throw err;
+        }
+    },
+
+    // 5. Tải file mẫu
+    async handleTemplateDownload() {
+        try {
+            const url = await storageService.getTemplateDownloadURL();
+            if (url) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.target = "_blank";
+                a.download = "Template_DSNV.xlsx";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } else {
+                alert("Không tìm thấy link tải mẫu.");
+            }
+        } catch (e) {
+            console.error("Lỗi tải template:", e);
+            alert("Lỗi khi lấy link tải mẫu: " + e.message);
+        }
+    }
+};
 --- END FILE: ./src/services/data/fileHandler.js ---
 
 --- START FILE: ./src/services/data/pasteHandler.js ---
@@ -17975,6 +18152,282 @@ export const masterReportLogic = {
 </div>
 --- END FILE: ./src/components/health-staff/competition/CompetitionCard.svelte ---
 
+--- START FILE: ./src/components/health-staff/competition/CompetitionDetailView.svelte ---
+<script>
+    import { createEventDispatcher, afterUpdate } from 'svelte'; // [QUAN TRỌNG] Thêm afterUpdate
+    import { formatters } from '../../../utils/formatters.js';
+    import { competitionNameMappings } from '../../../stores.js';
+    import { settingsService } from '../../../services/settings.service.js';
+
+    export let employeeId;
+    export let allReportData = []; 
+
+    const dispatch = createEventDispatcher();
+
+    // --- LOGIC TÍNH TOÁN ---
+    let employee = null;
+    let stats = {
+        dat: [],
+        ganDat: [],
+        canCoGang: [],
+        summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
+    };
+
+    $: {
+        if (employeeId && allReportData.length > 0) {
+            employee = allReportData.find(e => e.maNV === employeeId);
+
+            if (employee) {
+                // Lấy cấu hình tên cột hiển thị
+                let columnSettings = settingsService.loadPastedCompetitionViewSettings();
+                if (!columnSettings || columnSettings.length === 0) {
+                     columnSettings = settingsService.loadPastedCompetitionViewSettings(); 
+                }
+                
+                const activeColumns = columnSettings
+                    .filter(col => col.visible)
+                    .map(col => ({
+                        ...col,
+                        label: $competitionNameMappings[col.tenGoc] || col.label || col.tenGoc
+                    }));
+
+                // Tính Trung bình bộ phận
+                const deptEmployees = allReportData.filter(e => e.boPhan === employee.boPhan);
+                const deptAvgs = {};
+                
+                activeColumns.forEach(col => {
+                    let sum = 0;
+                    let count = 0;
+                    deptEmployees.forEach(e => {
+                        const comp = e.competitions.find(c => c.tenGoc === col.tenGoc);
+                        if (comp && comp.giaTri > 0) {
+                            sum += comp.giaTri;
+                            count++;
+                        }
+                    });
+                    deptAvgs[col.tenGoc] = count > 0 ? sum / count : 0;
+                });
+
+                // Phân loại chỉ số
+                let datList = [], ganDatList = [], canCoGangList = [];
+
+                activeColumns.forEach(col => {
+                    const compData = employee.competitions.find(c => c.tenGoc === col.tenGoc);
+                    const val = compData ? compData.giaTri : 0;
+                    const avg = deptAvgs[col.tenGoc] || 0;
+                    
+                    if (avg > 0 || val > 0) {
+                        const item = {
+                            name: col.label,
+                            value: val,
+                            avg: avg,
+                            diff: val - avg,
+                            percentOfAvg: avg > 0 ? (val / avg) * 100 : 0
+                        };
+
+                        if (val >= avg) {
+                            datList.push(item);
+                        } else if (item.percentOfAvg >= 70) {
+                            ganDatList.push(item);
+                        } else {
+                            canCoGangList.push(item);
+                        }
+                    }
+                });
+
+                stats = {
+                    dat: datList.sort((a,b) => b.percentOfAvg - a.percentOfAvg),
+                    ganDat: ganDatList.sort((a,b) => b.percentOfAvg - a.percentOfAvg),
+                    canCoGang: canCoGangList.sort((a,b) => a.percentOfAvg - b.percentOfAvg),
+                    summary: {
+                        total: datList.length + ganDatList.length + canCoGangList.length,
+                        dat: datList.length,
+                        ganDat: ganDatList.length,
+                        canCoGang: canCoGangList.length,
+                        rate: 0
+                    }
+                };
+                stats.summary.rate = stats.summary.total > 0 
+                    ? (stats.summary.dat / stats.summary.total) * 100 
+                    : 0;
+            }
+        }
+    }
+
+    function goBack() {
+        dispatch('back');
+    }
+
+    // [QUAN TRỌNG] Kích hoạt icon sau khi render
+    afterUpdate(() => {
+        if (typeof feather !== 'undefined') feather.replace();
+    });
+</script>
+
+<div class="animate-fade-in pb-10 bg-gray-50 min-h-screen p-4 sm:p-6">
+    <button on:click={goBack} class="mb-4 flex items-center gap-2 text-gray-500 hover:text-blue-600 transition-colors font-semibold">
+        <i data-feather="arrow-left" class="w-5 h-5"></i> Quay lại bảng tổng hợp
+    </button>
+
+    {#if employee}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 flex items-center gap-5">
+            <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 border border-gray-200 shadow-inner">
+                <i data-feather="user" class="w-8 h-8"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">{employee.hoTen} <span class="text-gray-400 font-medium text-lg">- {employee.maNV}</span></h2>
+                <span class="inline-block mt-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100">
+                    {employee.boPhan}
+                </span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Ngành hàng Đạt</p>
+                <p class="text-3xl font-extrabold text-gray-800">
+                    <span class="text-blue-600">{stats.summary.dat}</span>
+                    <span class="text-gray-300 text-xl">/ {stats.summary.total}</span>
+                </p>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Tỷ lệ đạt (trên nhóm có TB)</p>
+                <p class="text-3xl font-extrabold text-red-500">
+                    {formatters.formatNumber(stats.summary.rate, 0)}%
+                </p>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Gần Đạt (>=70%)</p>
+                <p class="text-3xl font-extrabold text-yellow-500">{stats.summary.ganDat}</p>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Cần Cố Gắng</p>
+                <p class="text-3xl font-extrabold text-red-600">{stats.summary.canCoGang}</p>
+            </div>
+        </div>
+
+        <div class="space-y-8">
+            
+            <div class="bg-blue-50/50 rounded-xl border border-blue-100 overflow-hidden">
+                <div class="px-5 py-3 bg-blue-100/50 border-b border-blue-200 flex items-center gap-2">
+                    <i data-feather="check-circle" class="w-5 h-5 text-blue-600"></i>
+                    <h3 class="font-bold text-blue-800 uppercase text-lg">Nhóm Đạt ({stats.dat.length})</h3>
+                </div>
+                <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each stats.dat as item}
+                        <div class="bg-white p-4 rounded-lg border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+                            <h4 class="font-bold text-gray-800 mb-2 truncate" title={item.name}>{item.name}</h4>
+                            <div class="w-full bg-gray-100 rounded-full h-2 mb-3">
+                                <div class="bg-blue-500 h-2 rounded-full" style="width: 100%"></div>
+                            </div>
+                            <div class="text-xs space-y-1">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Thực hiện:</span>
+                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.value)}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">TB Bộ phận:</span>
+                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.avg)}</span>
+                                </div>
+                                <div class="flex justify-between border-t border-dashed border-gray-200 pt-1 mt-1">
+                                    <span class="text-gray-500">Chênh lệch:</span>
+                                    <span class="font-bold text-green-600">+{formatters.formatNumber(item.diff)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {/each}
+                    {#if stats.dat.length === 0}
+                        <p class="text-sm text-gray-400 italic col-span-full text-center py-4">Không có ngành hàng nào đạt.</p>
+                    {/if}
+                </div>
+            </div>
+
+            <div class="bg-yellow-50/50 rounded-xl border border-yellow-100 overflow-hidden">
+                <div class="px-5 py-3 bg-yellow-100/50 border-b border-yellow-200 flex items-center gap-2">
+                    <i data-feather="trending-up" class="w-5 h-5 text-yellow-600"></i>
+                    <h3 class="font-bold text-yellow-800 uppercase text-lg">Nhóm Gần Đạt ({stats.ganDat.length})</h3>
+                </div>
+                <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each stats.ganDat as item}
+                        <div class="bg-white p-4 rounded-lg border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
+                            <h4 class="font-bold text-gray-800 mb-2 truncate" title={item.name}>{item.name}</h4>
+                            <div class="w-full bg-gray-100 rounded-full h-2 mb-3">
+                                <div class="bg-yellow-400 h-2 rounded-full" style="width: {item.percentOfAvg}%"></div>
+                            </div>
+                            <div class="text-xs space-y-1">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Thực hiện:</span>
+                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.value)}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">TB Bộ phận:</span>
+                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.avg)}</span>
+                                </div>
+                                <div class="flex justify-between border-t border-dashed border-gray-200 pt-1 mt-1">
+                                    <span class="text-gray-500">Chênh lệch:</span>
+                                    <span class="font-bold text-red-500">{formatters.formatNumber(item.diff)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {/each}
+                    {#if stats.ganDat.length === 0}
+                        <p class="text-sm text-gray-400 italic col-span-full text-center py-4">Không có ngành hàng nào.</p>
+                    {/if}
+                </div>
+            </div>
+
+            <div class="bg-red-50/50 rounded-xl border border-red-100 overflow-hidden">
+                <div class="px-5 py-3 bg-red-100/50 border-b border-red-200 flex items-center gap-2">
+                    <i data-feather="alert-circle" class="w-5 h-5 text-red-600"></i>
+                    <h3 class="font-bold text-red-800 uppercase text-lg">Nhóm Cần Cố Gắng ({stats.canCoGang.length})</h3>
+                </div>
+                <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each stats.canCoGang as item}
+                        <div class="bg-white p-4 rounded-lg border border-red-100 shadow-sm hover:shadow-md transition-shadow">
+                            <h4 class="font-bold text-gray-800 mb-2 truncate" title={item.name}>{item.name}</h4>
+                            <div class="w-full bg-gray-100 rounded-full h-2 mb-3">
+                                <div class="bg-red-400 h-2 rounded-full" style="width: {Math.max(item.percentOfAvg, 5)}%"></div>
+                            </div>
+                            <div class="text-xs space-y-1">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Thực hiện:</span>
+                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.value)}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">TB Bộ phận:</span>
+                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.avg)}</span>
+                                </div>
+                                <div class="flex justify-between border-t border-dashed border-gray-200 pt-1 mt-1">
+                                    <span class="text-gray-500">Chênh lệch:</span>
+                                    <span class="font-bold text-red-600">{formatters.formatNumber(item.diff)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {/each}
+                    {#if stats.canCoGang.length === 0}
+                        <p class="text-sm text-gray-400 italic col-span-full text-center py-4">Tuyệt vời! Không có ngành hàng yếu kém.</p>
+                    {/if}
+                </div>
+            </div>
+
+        </div>
+
+    {:else}
+        <div class="p-10 text-center">
+            <p class="text-gray-500">Đang tải dữ liệu chi tiết...</p>
+        </div>
+    {/if}
+</div>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+--- END FILE: ./src/components/health-staff/competition/CompetitionDetailView.svelte ---
+
 --- START FILE: ./src/components/health-staff/competition/CompetitionModeSelector.svelte ---
 <script>
   import { createEventDispatcher } from 'svelte';
@@ -18045,12 +18498,12 @@ export const masterReportLogic = {
   // --- REACTIVE PROCESSING ---
   $: {
       if (reportData && reportData.length > 0) {
-          const savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          if (savedSettings.length > 0) {
-              columnSettings = savedSettings;
-          } else {
-              columnSettings = settingsService.loadPastedCompetitionViewSettings();
+          let savedSettings = settingsService.loadPastedCompetitionViewSettings();
+          // Nếu chưa có setting lưu, load mặc định (logic loadPastedCompetitionViewSettings đã handle việc tạo default từ dữ liệu)
+          if (!savedSettings || savedSettings.length === 0) {
+              savedSettings = settingsService.loadPastedCompetitionViewSettings();
           }
+          columnSettings = savedSettings;
 
           // Map tên hiển thị
           columnSettings = columnSettings.map(col => ({
@@ -18252,7 +18705,10 @@ export const masterReportLogic = {
                             {@const avgScores = deptAverages[item.boPhan] || {}}
                             {@const score = item.competitions.reduce((acc, c) => (avgScores[c.tenGoc] > 0 && c.giaTri >= avgScores[c.tenGoc]) ? acc + 1 : acc, 0)}
                             
-                            <tr class="hover:bg-blue-50 transition-colors group">
+                            <tr 
+                                class="hover:bg-blue-50 transition-colors group cursor-pointer"
+                                on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
+                            >
                                 <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
@@ -20094,174 +20550,203 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/category/CategoryTab.svelte ---
 <script>
-  import { onMount } from 'svelte';
-  import { realtimeYCXData, categoryNameMapping, macroCategoryConfig, customRevenueTables, isAdmin, modalState, selectedWarehouse } from '../../../stores.js';
-  import { reportService } from '../../../services/reportService.js';
-  import { settingsService } from '../../../services/settings.service.js';
-  import { adminService } from '../../../services/admin.service.js';
-  import { datasyncService } from '../../../services/datasync.service.js'; // [NEW]
-  import DynamicRevenueTable from '../../health-staff/DynamicRevenueTable.svelte';
+  import { afterUpdate, tick } from 'svelte';
+  import { formatters } from '../../../utils/formatters.js';
+  import { cleanCategoryName, getRandomBrightColor } from '../../../utils.js';
 
-  let filteredReport = [];
-  let hasAnyData = false;
-  $: tables = $customRevenueTables || [];
-  $: visibleTables = tables.filter(t => t.isVisible !== false);
+  export let items = []; // Ngành hàng chi tiết
+  export let unexportedItems = []; // Danh sách chưa xuất
 
-  // [LOGIC MỚI] Load data khi đổi kho
-  $: if ($selectedWarehouse) {
-      loadData($selectedWarehouse);
+  // --- STATE ---
+  let showUnexported = false;
+  let viewMode = 'grid'; // 'grid' | 'chart' | 'table'
+  let sortMode = 'revenue_desc';
+  let searchText = '';
+  
+  let chartInstancePie = null;
+
+  // --- LOGIC TITLE & THEME ---
+  $: titleText = showUnexported 
+      ? "CHI TIẾT CHƯA XUẤT (QĐ)" 
+      : "CHI TIẾT NGÀNH HÀNG";
+  
+  $: titleIcon = showUnexported ? "alert-circle" : "layers";
+  $: titleClass = showUnexported ? "text-red-700" : "text-blue-700";
+  $: iconClass = showUnexported ? "text-red-600" : "text-blue-600";
+
+  // Hàm chọn màu/icon cho thẻ (Copy từ Luyke)
+  function getCategoryTheme(name) {
+      const n = name.toLowerCase();
+      if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
+      if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
+      if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
+      if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', theme: 'theme-blue' };
+      if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
+      if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', theme: 'theme-teal' };
+      if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
+      if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', theme: 'theme-orange' };
+      if (n.includes('phụ kiện')) return { icon: 'headphones', theme: 'theme-purple' };
+      if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
+      return { icon: 'tag', theme: 'theme-gray' };
   }
 
-  async function loadData(kho) {
-      const systemTables = await adminService.loadSystemRevenueTables();
-      const personalTables = await datasyncService.loadPersonalRevenueTables(kho);
-      const hiddenSystemIds = JSON.parse(localStorage.getItem('hiddenSystemTableIds') || '[]');
+  // --- DATA LOGIC ---
+  $: sourceData = showUnexported ? unexportedItems : items;
 
-      const finalSystemTables = systemTables.map(t => ({
-          ...t,
-          isSystem: true,
-          isVisible: !hiddenSystemIds.includes(t.id)
-      }));
+  $: filteredItems = sourceData.filter(item => {
+      const name = item.name || item.nganhHang || '';
+      const matchSearch = !searchText || name.toLowerCase().includes(searchText.toLowerCase());
+      const hasValue = showUnexported ? (item.doanhThuQuyDoi > 0) : (item.revenue > 0 || item.quantity > 0);
+      return matchSearch && hasValue;
+  });
 
-      customRevenueTables.set([...finalSystemTables, ...personalTables]);
-  }
+  $: sortedItems = [...filteredItems].sort((a, b) => {
+      const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
+      const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
+      
+      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
+      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
+      return 0;
+  });
 
-  async function savePersonalTables() {
-      if (!$selectedWarehouse) return;
-      const personalTables = $customRevenueTables.filter(t => !t.isSystem);
-      await datasyncService.savePersonalRevenueTables($selectedWarehouse, personalTables);
-  }
+  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
+  $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
-  function saveHiddenPreferences() {
-      const hiddenIds = $customRevenueTables
-          .filter(t => t.isSystem && t.isVisible === false)
-          .map(t => t.id);
-      localStorage.setItem('hiddenSystemTableIds', JSON.stringify(hiddenIds));
-  }
+  // --- CHART ---
+  async function renderChart() {
+      if (typeof Chart === 'undefined') return;
+      await tick();
+      const ctx = document.getElementById('rt-cat-chart');
+      if (!ctx) return;
+      if (chartInstancePie) chartInstancePie.destroy();
 
-  $: {
-      const _triggerMap = $categoryNameMapping;
-      const _triggerMacro = $macroCategoryConfig;
-      const settings = settingsService.getRealtimeGoalSettings($selectedWarehouse);
-      const goals = settings.goals || {};
-      const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
-      if ($selectedWarehouse) {
-          filteredReport = masterReport.filter(nv => nv.maKho == $selectedWarehouse);
-      } else {
-          filteredReport = masterReport;
-      }
-      hasAnyData = filteredReport.length > 0;
-  }
-
-  function editTable(table) {
-      if (table.isSystem && !$isAdmin) {
-          alert("Bạn không có quyền chỉnh sửa Bảng hệ thống.");
-          return;
-      }
-      modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: table }));
-  }
-
-  async function deleteTable(id) {
-      const targetTable = $customRevenueTables.find(t => t.id === id);
-      if (!targetTable) return;
-
-      if (targetTable.isSystem) {
-          if ($isAdmin) {
-              if (!confirm("CẢNH BÁO ADMIN: Xóa bảng HỆ THỐNG này vĩnh viễn?")) return;
-              const newTables = $customRevenueTables.filter(t => t.id !== id);
-              customRevenueTables.set(newTables);
-              await adminService.saveSystemRevenueTables(newTables);
-          } else {
-              if (!confirm("Ẩn bảng này khỏi màn hình của bạn?")) return;
-              customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: false } : t));
-              saveHiddenPreferences();
+      const top10 = sortedItems.slice(0, 10);
+      
+      chartInstancePie = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+              labels: top10.map(d => d.name || d.nganhHang),
+              datasets: [{
+                  data: top10.map(d => showUnexported ? d.doanhThuQuyDoi : d.revenue),
+                  backgroundColor: top10.map(() => getRandomBrightColor()),
+                  borderWidth: 1
+              }]
+          },
+          options: { 
+              responsive: true, 
+              maintainAspectRatio: false,
+              plugins: { legend: { position: 'right' } } 
           }
-      } else {
-          if (!confirm("Bạn có chắc muốn xóa bảng này? Hành động này sẽ xóa trên Cloud của kho hiện tại.")) return;
-          customRevenueTables.update(items => items.filter(t => t.id !== id));
-          await savePersonalTables();
-      }
+      });
   }
 
-  function openAddModal() {
-      if (!$selectedWarehouse) {
-          alert("Vui lòng chọn Kho trước khi tạo bảng mới.");
-          return;
-      }
-      modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: null }));
-  }
+  $: if (viewMode === 'chart') setTimeout(renderChart, 0);
 
-  function toggleTableVisibility(id) {
-      customRevenueTables.update(items => items.map(t => t.id === id ? { ...t, isVisible: !t.isVisible } : t));
-      savePersonalTables();
-      saveHiddenPreferences();
-  }
-
-  const colors = ['teal', 'indigo', 'rose', 'blue', 'green', 'orange', 'purple'];
-  const getColor = (index) => colors[index % colors.length];
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-{#if tables.length > 0}
-<div class="mb-6 flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
-    <div class="text-xs font-bold uppercase text-gray-500 mr-2 flex items-center gap-1">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
-        Bảng hiển thị:
-    </div>
-    {#each tables as table}
-        <button 
-            class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                   {table.isVisible !== false ? 'bg-teal-600 text-white border-teal-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
-                   {table.isSystem ? 'border-dashed' : ''}"
-            on:click={() => toggleTableVisibility(table.id)}
-            title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
-        >
-            {#if table.isSystem}<span class="text-[10px] mr-0.5 opacity-70">🌐</span>{/if}
-            {table.title}
-        </button>
-    {/each}
-</div>
-{/if}
+<div class="luyke-widget h-full">
+    <div class="luyke-toolbar">
+        <div class="luyke-toolbar-left flex-grow min-w-0">
+            <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
+                <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
+                <span class="truncate">{titleText}</span>
+            </h3>
+        </div>
 
-{#if !hasAnyData}
-    <div class="p-12 text-center bg-yellow-50 rounded-lg border border-yellow-200">
-         <p class="text-yellow-700 font-semibold text-lg">Không tìm thấy doanh thu cho các ngành hàng chính.</p>
-    </div>
-{:else if tables.length === 0}
-    <div class="p-12 text-center bg-white rounded-xl border border-teal-100 shadow-sm flex flex-col items-center">
-         <div class="w-16 h-16 bg-teal-50 rounded-full flex items-center justify-center mb-4 text-teal-500">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-         </div>
-         <h4 class="text-lg font-bold text-gray-800 mb-2">Chưa có Bảng theo dõi Realtime</h4>
-         <p class="text-gray-500 mb-6 max-w-md">Tạo bảng mới để theo dõi tiến độ doanh thu theo thời gian thực.</p>
-         <button class="px-6 py-2.5 bg-teal-600 text-white rounded-lg font-bold hover:bg-teal-700 shadow-md flex items-center gap-2" on:click={openAddModal}>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-            Tạo bảng ngay
-        </button>
-    </div>
-{:else if visibleTables.length === 0}
-    <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200">
-         <p class="text-gray-500 font-medium">Bạn đã ẩn tất cả các bảng.</p>
-    </div>
-{:else}
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
-        {#each visibleTables as table, index (table.id)}
-            <div data-capture-group="1">
-                <DynamicRevenueTable 
-                    config={table}
-                    {reportData}
-                    colorTheme={getColor(index)}
-                    on:edit={() => editTable(table)}
-                    on:delete={() => deleteTable(table.id)}
-                />
+        <div class="luyke-toolbar-right flex items-center gap-2">
+            <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ">
+                    <i data-feather="grid" class="w-4 h-4"></i>
+                </button>
+                <button class="view-mode-btn {viewMode === 'table' ? 'active' : ''}" on:click={() => viewMode = 'table'} title="Bảng">
+                    <i data-feather="list" class="w-4 h-4"></i>
+                </button>
+                <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ">
+                    <i data-feather="pie-chart" class="w-4 h-4"></i>
+                </button>
             </div>
-        {/each}
-    </div>
-{/if}
 
-<style>
-  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-</style>
+            <div 
+                class="toggle-wrapper {showUnexported ? 'active' : ''}" 
+                on:click={() => showUnexported = !showUnexported}
+                title="Xem đơn hàng chưa xuất"
+                style="padding: 4px 8px;"
+            >
+                <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
+                <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
+            </div>
+
+            <div class="hidden sm:block">
+                <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
+            </div>
+        </div>
+    </div>
+
+    <div class="luyke-widget-body bg-white border-t border-gray-100 p-4">
+        {#if sortedItems.length === 0}
+            <div class="text-center py-10 text-gray-400 italic">Không có dữ liệu hiển thị.</div>
+        
+        {:else if viewMode === 'grid'}
+            <div class="luyke-cat-grid">
+                {#each sortedItems as item}
+                    {@const name = item.name || item.nganhHang}
+                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
+                    {@const style = getCategoryTheme(name)}
+                    {@const percent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
+                    {@const finalTheme = showUnexported ? 'theme-warning' : style.theme}
+
+                    <div class="cat-card-colorful {finalTheme}">
+                        <div class="cat-top-row">
+                            <div class="cat-icon-box"><i data-feather={style.icon} class="w-5 h-5"></i></div>
+                            {#if !showUnexported && totalRevenue > 0}
+                                <span class="cat-percent-text text-xs">{formatters.formatPercentage(revenue/totalRevenue)}</span>
+                            {/if}
+                        </div>
+                        <h4 class="cat-name-text" title={name}>{name}</h4>
+                        <div class="cat-value-text">{formatters.formatRevenue(revenue, 0)}</div>
+                        <div class="cat-footer-row">
+                            <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
+                        </div>
+                        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width: {percent}%"></div></div>
+                    </div>
+                {/each}
+            </div>
+
+        {:else if viewMode === 'table'}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm table-bordered">
+                    <thead class="bg-gray-100 font-bold text-gray-700">
+                        <tr>
+                            <th class="px-3 py-2 text-left">Ngành hàng</th>
+                            <th class="px-3 py-2 text-right">SL</th>
+                            <th class="px-3 py-2 text-right">Doanh thu</th>
+                            {#if showUnexported}<th class="px-3 py-2 text-right">DT Thực</th>{/if}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each sortedItems as item}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-3 py-2">{item.name || item.nganhHang}</td>
+                                <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(showUnexported ? item.soLuong : item.quantity)}</td>
+                                <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(showUnexported ? item.doanhThuQuyDoi : item.revenue)}</td>
+                                {#if showUnexported}
+                                    <td class="px-3 py-2 text-right text-gray-500">{formatters.formatRevenue(item.doanhThuThuc)}</td>
+                                {/if}
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+
+        {:else}
+            <div class="h-[350px] w-full relative">
+                <canvas id="rt-cat-chart"></canvas>
+            </div>
+        {/if}
+    </div>
+</div>
 --- END FILE: ./src/components/realtime/category/CategoryTab.svelte ---
 
 --- START FILE: ./src/components/realtime/competition/CompetitionTab.svelte ---
@@ -20270,61 +20755,54 @@ export const masterReportLogic = {
       realtimeYCXData, 
       globalSpecialPrograms, 
       globalCompetitionConfigs, 
-      localCompetitionConfigs 
+      localCompetitionConfigs,
+      selectedWarehouse // [FIX] Import store này
   } from '../../../stores.js';
-  import { services } from '../../../services.js'; // Gọi service tính toán
+  import { services } from '../../../services.js'; 
   
-  // Import 2 component con đã tạo ở Bước 1 & 2
   import SpecialProgramTable from './SpecialProgramTable.svelte';
   import FocusCompetitionTable from './FocusCompetitionTable.svelte';
 
-  export let selectedWarehouse = '';
+  // [FIX] Bỏ export let selectedWarehouse
 
   let specialReportData = [];
   let competitionReportData = [];
   let hasData = false;
 
-  // Reactive Statement: Tính toán lại khi dữ liệu hoặc kho thay đổi
   $: {
-      // 1. Lọc dữ liệu Realtime theo kho (nếu có chọn)
-      let filteredData = $realtimeYCXData;
-      if (selectedWarehouse) {
-          // Lọc theo mã kho trong cột 'nguoiTao' hoặc logic tương tự nếu có cột 'maKho'
-          // Lưu ý: realtimeYCXData chuẩn hóa thường chưa có maKho trực tiếp, 
-          // nhưng services.calculate... sẽ map với DSNV để lấy kho.
-          // Tuy nhiên, để tối ưu, ta cứ truyền full data vào service, 
-          // service sẽ map với DSNV. Nếu DSNV đã được lọc (hoặc logic service hỗ trợ), nó sẽ đúng.
-          // Ở đây ta truyền full data đã chuẩn hóa.
-      }
+      // [FIX] Dùng $selectedWarehouse
+      const currentWarehouse = $selectedWarehouse;
+      let filteredData = $realtimeYCXData || [];
+      
+      console.log(`[CompetitionTab] Recalculating... Rows: ${filteredData.length}, Warehouse: ${currentWarehouse}`);
 
       // 2. Tính toán SP Đặc Quyền
-      // Logic cũ: services.calculateSpecialProductReport(data, configs)
-      specialReportData = services.calculateSpecialProductReport(
+      const spReport = services.calculateSpecialProductReport(
           filteredData, 
-          $globalSpecialPrograms
+          $globalSpecialPrograms || []
       );
 
       // 3. Tính toán Thi Đua Tùy Chỉnh (Hãng)
-      // Gộp config chung (Admin) và riêng (Local)
-      const allConfigs = [ ...$globalCompetitionConfigs, ...$localCompetitionConfigs ];
-      
-      competitionReportData = services.calculateCompetitionFocusReport(
+      const allConfigs = [ ...($globalCompetitionConfigs || []), ...($localCompetitionConfigs || []) ];
+      const compReport = services.calculateCompetitionFocusReport(
           filteredData,
           allConfigs
       );
 
-      // Lọc lại kết quả theo kho (Vì service trả về mảng nhân viên toàn hệ thống nếu không lọc trước)
-      if (selectedWarehouse) {
-          // Hàm lọc helper
+      // 4. Lọc kết quả theo kho
+      if (currentWarehouse) {
           const filterByWarehouse = (reports) => {
               return reports.map(group => ({
                   ...group,
-                  employeeData: group.employeeData.filter(emp => emp.maKho === selectedWarehouse)
+                  employeeData: group.employeeData.filter(emp => String(emp.maKho) === String(currentWarehouse))
               })).filter(group => group.employeeData.length > 0);
           };
 
-          specialReportData = filterByWarehouse(specialReportData);
-          competitionReportData = filterByWarehouse(competitionReportData);
+          specialReportData = filterByWarehouse(spReport);
+          competitionReportData = filterByWarehouse(compReport);
+      } else {
+          specialReportData = spReport;
+          competitionReportData = compReport;
       }
 
       hasData = specialReportData.length > 0 || competitionReportData.length > 0;
@@ -20654,221 +21132,314 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/efficiency/EfficiencyTab.svelte ---
 <script>
-  // Version 1.2 - Fix import paths (modules -> services)
-  import { realtimeYCXData } from '../../../stores.js';
+  import { realtimeYCXData, selectedWarehouse, efficiencyConfig, modalState } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng
   import { settingsService } from '../../../services/settings.service.js';
+  import { adminService } from '../../../services/admin.service.js';
   
   import EfficiencyTable from './EfficiencyTable.svelte';
+  import AddEfficiencyColumnModal from '../../modals/AddEfficiencyColumnModal.svelte';
 
-  export let selectedWarehouse = '';
-
-  let filteredReport = [];
+  // Biến dữ liệu
+  let supermarketReport = {};
+  let goals = {};
+  let efficiencyItems = [];
+  
+  // State modal
+  let isModalOpen = false;
+  let itemToEdit = null;
 
   $: {
-    // 1. Lấy mục tiêu
-    const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
-    const goals = settings.goals || {};
+    // 1. Lấy dữ liệu & Mục tiêu
+    const currentWarehouse = $selectedWarehouse;
+    const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
+    goals = settings.goals || {};
 
-    // 2. Tính Master Report
+    // 2. Tính toán Master Report
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    // 3. Lọc theo Kho
-    if (selectedWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == selectedWarehouse);
-    } else {
-      filteredReport = masterReport;
+    // 3. Lọc & Tổng hợp
+    let filteredReport = masterReport;
+    if (currentWarehouse) {
+      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     }
+    supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
+
+    // 4. Chuẩn bị các chỉ số cố định (Fixed Items)
+    const allEfficiencyConfigs = settingsService.loadEfficiencyViewSettings();
+    const goalKeyMap = {
+            pctPhuKien: 'phanTramPhuKien', pctGiaDung: 'phanTramGiaDung', 
+            pctMLN: 'phanTramMLN', pctSim: 'phanTramSim', 
+            pctVAS: 'phanTramVAS', pctBaoHiem: 'phanTramBaoHiem',
+            tyLeTraCham: 'phanTramTC'
+    };
+    efficiencyItems = allEfficiencyConfigs
+        .filter(item => (item.id.startsWith('pct') || item.id === 'tyLeTraCham') && item.visible !== false)
+        .map(config => ({
+            ...config,
+            value: supermarketReport[config.id] || 0,
+            target: goals[goalKeyMap[config.id]] || 0
+        }));
+  }
+
+  // --- Handlers cho Modal Thêm/Sửa/Xóa ---
+  function openAddModal() {
+      itemToEdit = null;
+      isModalOpen = true;
+  }
+
+  function handleEdit(event) {
+      itemToEdit = event.detail;
+      isModalOpen = true;
+  }
+
+  function closeModal() {
+      isModalOpen = false;
+      itemToEdit = null;
+  }
+
+  function handleSave(event) {
+      const newItem = event.detail;
+      efficiencyConfig.update(items => {
+          const idx = items.findIndex(i => i.id === newItem.id);
+          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
+          else { return [...items, newItem]; }
+      });
+      adminService.saveEfficiencyConfig($efficiencyConfig);
+      closeModal();
+  }
+
+  function handleDelete(event) {
+      const id = event.detail;
+      efficiencyConfig.update(items => items.filter(i => i.id !== id));
+      adminService.saveEfficiencyConfig($efficiencyConfig);
   }
 </script>
 
-<div class="animate-fade-in pb-10">
-  {#if filteredReport.length > 0}
-    <EfficiencyTable reportData={filteredReport} />
-  {:else}
-    <div class="p-12 text-center bg-gray-50 rounded-lg border border-gray-200">
-      <p class="text-gray-500 text-lg">Không có dữ liệu hiệu quả nào phù hợp với bộ lọc.</p>
-    </div>
-  {/if}
+<div class="animate-fade-in pb-10 max-w-4xl mx-auto">
+    <EfficiencyTable 
+        items={efficiencyItems}
+        dynamicItems={$efficiencyConfig}
+        supermarketData={supermarketReport}
+        on:add={openAddModal}
+        on:edit={handleEdit}
+        on:delete={handleDelete}
+    />
 </div>
 
+<AddEfficiencyColumnModal 
+    isOpen={isModalOpen} 
+    editItem={itemToEdit} 
+    on:close={closeModal}
+    on:save={handleSave}
+/>
+
 <style>
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 --- END FILE: ./src/components/realtime/efficiency/EfficiencyTab.svelte ---
 
 --- START FILE: ./src/components/realtime/efficiency/EfficiencyTable.svelte ---
 <script>
+  import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
-  import { getSortedDepartmentList } from '../../../utils.js';
-  import { settingsService } from '../../../services/settings.service.js';
-  import SortableTh from '../../common/SortableTh.svelte';
 
-  export let reportData = [];
+  export let items = []; 
+  export let dynamicItems = [];
+  export let supermarketData = {}; 
   
-  // [CẬP NHẬT] Đổi label % MLN -> % Máy lọc nước
-  const ALL_COLUMNS = [
-    { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
-    { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
-    { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
-    { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900' },
-    { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900' },
-    { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
-    { id: 'pctMLN', label: '% Máy lọc nước', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' }, // Đã sửa
-    { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
-    { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
-    { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
+  const dispatch = createEventDispatcher();
+
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let hiddenIds = new Set(); 
+
+  const STORAGE_KEY = 'realtime_efficiency_hidden_ids';
+
+  onMount(() => {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+          try {
+              hiddenIds = new Set(JSON.parse(saved));
+          } catch (e) {}
+      }
+  });
+
+  function saveHiddenState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenIds]));
+  }
+
+  const iconMap = {
+      'pctPhuKien': 'headphones', 'pctGiaDung': 'home', 'pctMLN': 'droplet',
+      'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
+  };
+
+  // Merge items (Cố định + Động)
+  $: displayItems = [
+      ...items,
+      ...(dynamicItems || []).map(cfg => {
+          const metric = supermarketData.dynamicMetrics?.[cfg.id];
+          return {
+              id: cfg.id,
+              label: cfg.label,
+              value: metric ? metric.value : 0,
+              target: cfg.target,
+              isDynamic: true,
+              rawConfig: cfg
+          };
+      })
   ];
 
-  let allItemsConfig = settingsService.loadEfficiencyViewSettings();
-  let visibleColumnIds = allItemsConfig.filter(c => c.visible).map(c => c.id);
+  $: filterList = displayItems.filter(item => 
+      item.label.toLowerCase().includes(filterSearch.toLowerCase())
+  );
 
-  let sortKey = 'dtICT';
-  let sortDirection = 'desc';
-  let groupedData = {};
-  let departmentOrder = [];
-
-  $: {
-    groupedData = {};
-    if (reportData && reportData.length > 0) {
-        reportData.forEach(item => {
-          const dept = item.boPhan || 'Khác';
-          if (!groupedData[dept]) groupedData[dept] = []; 
-          groupedData[dept].push(item);
-        });
-        departmentOrder = getSortedDepartmentList(reportData);
-    } else { 
-        departmentOrder = []; 
-    }
-  }
-
-  function handleSort(event) {
-    const key = event.detail;
-    if (sortKey === key) {
-      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    } else {
-      sortKey = key;
-      sortDirection = 'desc';
-    }
-  }
-  
-  function sortEmployees(employees, key, dir) {
-      return [...employees].sort((a, b) => {
-          if (key === 'hoTen') {
-             const nameA = a.hoTen || '';
-             const nameB = b.hoTen || '';
-             return dir === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-          }
-  
-          let valA = Number(a[key]) || 0;
-          let valB = Number(b[key]) || 0;
-          return dir === 'asc' ? valA - valB : valB - valA;
-      });
-  }
-
-  function toggleColumn(columnId) {
-      if (visibleColumnIds.includes(columnId)) {
-          visibleColumnIds = visibleColumnIds.filter(id => id !== columnId);
+  function toggleVisibility(id) {
+      if (hiddenIds.has(id)) {
+          hiddenIds.delete(id);
       } else {
-          visibleColumnIds = [...visibleColumnIds, columnId];
+          hiddenIds.add(id);
+      }
+      hiddenIds = new Set(hiddenIds);
+      saveHiddenState();
+  }
+
+  function toggleAllVisibility(show) {
+      if (show) {
+          hiddenIds = new Set();
+      } else {
+          hiddenIds = new Set(displayItems.map(i => i.id));
+      }
+      saveHiddenState();
+  }
+
+  $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
+
+  function getProgressColor(val, target) {
+      const t = (target || 0) / 100;
+      if (t === 0) return '#3b82f6'; 
+      return val >= t ? '#3b82f6' : '#ef4444'; 
+  }
+
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          isSettingsOpen = false;
       }
   }
   
-  // [FIX] Cập nhật logic màu sắc: Xanh dương cho đạt, Đỏ cho không đạt
-  function getCellClass(item, colDef) {
-    const value = item[colDef.id] || 0;
-    
-    if (!colDef.isRate) return 'text-gray-900';
+  function handleDelete(id) {
+      if(confirm('Bạn có chắc muốn xóa chỉ số này?')) {
+          dispatch('delete', id);
+      }
+  }
 
-    const target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
-    
-    // Nếu có mục tiêu > 0 và giá trị < mục tiêu -> Đỏ
-    if (target > 0 && value < target) return 'text-red-600 bg-red-50 font-bold';
-    
-    // Ngược lại (Đạt hoặc không có mục tiêu) -> Xanh dương
-    return 'text-blue-600 font-bold'; 
-  }
-  
-  function getHeaderClass(deptName) {
-    if (deptName.includes('Tư Vấn')) return 'bg-blue-100 text-blue-800 border-blue-200';
-    if (deptName.includes('Kho')) return 'bg-green-100 text-green-800 border-green-200';
-    return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') feather.replace();
+  });
 </script>
 
-<div class="space-y-6">
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-     <span class="text-sm font-bold text-gray-700 mr-2 block mb-2">Tùy chỉnh cột hiển thị:</span>
-     <div class="flex flex-wrap gap-2">
-      {#each ALL_COLUMNS as col}
+<svelte:window on:click={handleWindowClick} />
+<div class="luyke-widget h-full bg-white border border-gray-200 rounded-xl shadow-sm">
+  <div class="luyke-widget-header">
+    <div class="luyke-widget-title">
+      <div class="p-1.5 bg-blue-100 rounded text-blue-600 mr-2">
+          <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+      </div>
+      <span>HIỆU QUẢ KHAI THÁC</span>
+    </div>
+
+    <div class="flex items-center gap-2">
         <button 
-          class="px-3 py-1 rounded-full text-xs font-medium border transition-colors select-none focus:outline-none
-                 {visibleColumnIds.includes(col.id) ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}"
-          on:click={() => toggleColumn(col.id)}
-        >{col.label}</button>
-      {/each}
+            class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200 transition-colors"
+            on:click={() => dispatch('add')}
+            title="Thêm chỉ số mới"
+        >
+            <i data-feather="plus" class="w-3 h-3"></i> Thêm
+        </button>
+
+        <div class="relative filter-wrapper">
+            <button 
+                class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
+                on:click={() => isSettingsOpen = !isSettingsOpen}
+                title="Lọc chỉ số hiển thị"
+            >
+                <i data-feather="filter" class="w-4 h-4"></i>
+            </button>
+
+            {#if isSettingsOpen}
+                <div class="filter-dropdown">
+                    <div class="filter-header">
+                        <input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} />
+                    </div>
+                    <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+                        {#if filterList.length === 0}
+                            <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                        {:else}
+                            {#each filterList as item (item.id)}
+                                <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
+                                    <input type="checkbox" checked={!hiddenIds.has(item.id)} />
+                                    <label>{item.label}</label>
+                                </div>
+                            {/each}
+                        {/if}
+                    </div>
+                    <div class="filter-actions">
+                        <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                        <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                    </div>
+                </div>
+            {/if}
+        </div>
     </div>
   </div>
 
-  {#each departmentOrder as deptName}
-    {#if groupedData[deptName]}
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="p-4 border-b {getHeaderClass(deptName)}">
-          <h4 class="text-lg font-bold uppercase">{deptName}</h4>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
-            <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20">
-              <tr>
-                <SortableTh key="hoTen" label="Nhân viên" className="min-w-[200px] sticky left-0 z-30" {sortKey} {sortDirection} on:sort={handleSort} />
-
-                {#each ALL_COLUMNS as col}
-                  {#if visibleColumnIds.includes(col.id)}
-                    <SortableTh 
-                        key={col.id} 
-                        label={col.label} 
-                        align="right" 
-                        className="whitespace-nowrap {col.headerClass || ''}"
-                        {sortKey} {sortDirection} 
-                        on:sort={handleSort} 
-                    />
-                  {/if}
-                {/each}
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-              {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item (item.maNV)}
-                <tr class="hover:bg-blue-50 transition">
-                  <td class="px-4 py-2 font-semibold text-blue-600 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200">
-                    {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
-                  </td>
-                  {#each ALL_COLUMNS as col}
-                     {#if visibleColumnIds.includes(col.id)}
-                      <td class="px-4 py-2 text-right border-l border-gray-100 {getCellClass(item, col)}">
-                         {#if col.isRate}
-                            {formatters.formatPercentage(item[col.id])}
-                         {:else}
-                            {formatters.formatRevenue(item[col.id])}
-                         {/if}
-                      </td>
+  <div class="luyke-widget-body custom-scrollbar p-0">
+    {#if visibleItems.length === 0}
+       <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+          <p class="text-sm">Đã ẩn hết dữ liệu.</p>
+       </div>
+    {:else}
+      <div class="flex flex-col gap-0">
+        {#each visibleItems as item (item.id)}
+          {@const targetVal = (item.target || 0) / 100}
+          {@const color = getProgressColor(item.value, item.target)}
+          {@const percent = Math.min((item.value * 100), 100)}
+          
+          <div class="eff-item-compact group relative hover:bg-gray-50 transition-colors px-4">
+            <div class="eff-icon-compact">
+                <i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i>
+            </div>
+            
+            <div class="eff-content-compact">
+                <div class="eff-row-top">
+                    <span class="eff-label-text">{item.label}</span>
+                    <span class="eff-value-text" style="color: {color}">
+                        {formatters.formatPercentage(item.value)}
+                    </span>
+                </div>
+                
+                <div class="eff-row-bottom">
+                    <div class="eff-bar-container">
+                         <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
+                    </div>
+                    {#if targetVal > 0}
+                        <span class="eff-target-text">MT: {item.target}%</span>
                     {/if}
-                  {/each}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+                </div>
+            </div>
+
+            {#if item.isDynamic}
+                <div class="absolute right-2 top-2 hidden group-hover:flex gap-1 bg-white shadow-sm border border-gray-200 rounded p-1 z-10">
+                    <button on:click|stopPropagation={() => dispatch('edit', item.rawConfig)} class="text-gray-500 hover:text-blue-600 p-1"><i data-feather="edit-2" class="w-3 h-3"></i></button>
+                    <button on:click|stopPropagation={() => handleDelete(item.id)} class="text-gray-500 hover:text-red-600 p-1"><i data-feather="trash-2" class="w-3 h-3"></i></button>
+                </div>
+            {/if}
+          </div>
+        {/each}
       </div>
     {/if}
-  {/each}
+  </div>
 </div>
 --- END FILE: ./src/components/realtime/efficiency/EfficiencyTable.svelte ---
 
@@ -21146,31 +21717,34 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/employee/EmployeeTab.svelte ---
 <script>
-  // Version 1.1 - Fix import paths (modules -> services)
-  import { realtimeYCXData } from '../../../stores.js';
+  // [FIX] Thêm import selectedWarehouse
+  import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../../services/settings.service.js';
   
   import EmployeeList from './EmployeeList.svelte';
   import EmployeeDetail from './EmployeeDetail.svelte';
 
-  export let selectedWarehouse = '';
+  // [FIX] Bỏ export let selectedWarehouse
   
   let selectedEmployeeId = null;
-  let masterReport = [];
   let filteredReport = [];
 
   $: {
-    const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
+    // [FIX] Dùng $selectedWarehouse
+    const currentWarehouse = $selectedWarehouse;
+    const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     const goals = settings.goals || {};
-    masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    if (selectedWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == selectedWarehouse);
+    const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
+    
+    if (currentWarehouse) {
+      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
       filteredReport = masterReport;
     }
+    
+    console.log(`[EmployeeTab] Report generated for ${filteredReport.length} employees (Warehouse: ${currentWarehouse}).`);
   }
 
   function handleViewDetail(event) {
@@ -21205,71 +21779,287 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/summary/CategoryTable.svelte ---
 <script>
+  import { afterUpdate, tick } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
-  // Import component mới
-  import SortableTh from '../../common/SortableTh.svelte';
+  import { cleanCategoryName, getRandomBrightColor } from '../../../utils.js';
 
-  export let items = [];
+  export let items = []; 
+  export let unexportedItems = []; 
+  export let rawSource = []; // [MỚI] Dữ liệu thô để tính biểu đồ hãng
 
-  let sortKey = 'revenue'; 
-  let sortDirection = 'desc';
+  // --- STATE ---
+  let showUnexported = false;
+  let viewMode = 'grid'; // 'grid' | 'chart'
+  let sortMode = 'revenue_desc';
+  let searchText = '';
+  
+  let chartInstancePie = null;
+  let chartInstanceBar = null;
 
-  // Hàm xử lý sự kiện sort từ component con
-  function handleSort(event) {
-    const key = event.detail;
-    if (sortKey === key) {
-      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    } else {
-      sortKey = key;
-      sortDirection = 'desc';
-    }
+  // --- LOGIC TITLE & THEME ---
+  $: titleText = showUnexported 
+      ? "CHI TIẾT CHƯA XUẤT (QĐ)" 
+      : "CHI TIẾT NGÀNH HÀNG";
+  
+  $: titleIcon = showUnexported ? "alert-circle" : "layers";
+  $: titleClass = showUnexported ? "text-red-700" : "text-blue-700";
+  $: iconClass = showUnexported ? "text-red-600" : "text-blue-600";
+
+  function getCategoryTheme(name) {
+      const n = name.toLowerCase();
+      if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
+      if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
+      if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
+      if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', theme: 'theme-blue' };
+      if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
+      if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', theme: 'theme-teal' };
+      if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
+      if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', theme: 'theme-orange' };
+      if (n.includes('phụ kiện')) return { icon: 'headphones', theme: 'theme-purple' };
+      if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
+      return { icon: 'tag', theme: 'theme-gray' };
   }
 
-  $: sortedItems = [...items].sort((a, b) => {
-    let valA = Number(a[sortKey]) || 0;
-    let valB = Number(b[sortKey]) || 0;
-    
-    if (sortKey === 'name') {
-        return sortDirection === 'asc' 
-          ? (a.name || '').localeCompare(b.name || '') 
-          : (b.name || '').localeCompare(a.name || '');
-    }
- 
-    return sortDirection === 'asc' ? valA - valB : valB - valA;
+  // --- DATA LOGIC ---
+  $: sourceData = showUnexported ? unexportedItems : items;
+
+  $: filteredItems = sourceData.filter(item => {
+      const name = item.name || item.nganhHang || '';
+      const matchSearch = !searchText || name.toLowerCase().includes(searchText.toLowerCase());
+      const hasValue = showUnexported ? (item.doanhThuQuyDoi > 0) : (item.revenue > 0 || item.quantity > 0);
+      return matchSearch && hasValue;
   });
+
+  $: sortedItems = [...filteredItems].sort((a, b) => {
+      const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
+      const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
+      
+      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
+      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
+      return 0;
+  });
+
+  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
+  $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
+
+  // --- CHART LOGIC ---
+  
+  // 1. Pie Chart Data (Top 13 + Others)
+  $: pieData = (() => {
+      const sorted = sortedItems.slice(); // Copy
+      if (sorted.length <= 14) return sorted;
+      const top13 = sorted.slice(0, 13);
+      const others = sorted.slice(13);
+      const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
+      return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
+  })();
+
+  // 2. Bar Chart Data (Top 15 Hãng)
+  $: barData = calculateBrandData(rawSource, filteredItems);
+
+  function calculateBrandData(source, visibleItems) {
+      if (!source || source.length === 0) return [];
+      const visibleCategoryNames = new Set(visibleItems.map(i => cleanCategoryName(i.name || i.nganhHang)));
+      const brands = {};
+
+      source.forEach(row => {
+          const rowCategoryName = cleanCategoryName(row.nganhHang);
+          if (!visibleCategoryNames.has(rowCategoryName)) return;
+
+          const brandName = row.nhaSanXuat || 'Khác';
+          const revenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+          if (!brands[brandName]) brands[brandName] = { name: brandName, revenue: 0 };
+          brands[brandName].revenue += revenue;
+      });
+      return Object.values(brands).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
+  }
+
+  async function renderCharts() {
+      if (typeof Chart === 'undefined') return;
+      await tick();
+
+      // --- PIE CHART ---
+      const ctxPie = document.getElementById('rt-cat-chart');
+      if (ctxPie) {
+          if (chartInstancePie) chartInstancePie.destroy();
+          const totalPieRev = pieData.reduce((sum, d) => sum + (showUnexported ? d.doanhThuQuyDoi : d.revenue), 0);
+
+          chartInstancePie = new Chart(ctxPie, {
+              type: 'doughnut',
+              data: {
+                  labels: pieData.map(d => d.name || d.nganhHang),
+                  datasets: [{
+                      data: pieData.map(d => showUnexported ? d.doanhThuQuyDoi : d.revenue),
+                      backgroundColor: pieData.map(() => getRandomBrightColor()),
+                      borderWidth: 1
+                  }]
+              },
+              options: { 
+                  responsive: true, 
+                  maintainAspectRatio: false,
+                  plugins: { 
+                      legend: { 
+                          position: 'right',
+                          labels: {
+                              boxWidth: 10,
+                              font: { size: 11 },
+                              generateLabels: (chart) => {
+                                  const data = chart.data;
+                                  if (data.labels.length && data.datasets.length) {
+                                      return data.labels.map((label, i) => {
+                                          const value = data.datasets[0].data[i];
+                                          const formattedValue = formatters.formatRevenue(value, 0);
+                                          const pct = totalPieRev > 0 ? (value / totalPieRev * 100).toFixed(1) + "%" : "0%";
+                                          return {
+                                              text: `${label} (${pct}) - ${formattedValue}`,
+                                              fillStyle: data.datasets[0].backgroundColor[i],
+                                              hidden: isNaN(data.datasets[0].data[i]),
+                                              index: i
+                                          };
+                                      });
+                                  }
+                                  return [];
+                              }
+                          }
+                      },
+                      datalabels: {
+                          formatter: (value) => {
+                              const pct = totalPieRev > 0 ? (value / totalPieRev * 100) : 0;
+                              return pct > 3 ? pct.toFixed(1) + "%" : "";
+                          },
+                          color: '#fff',
+                          font: { weight: 'bold', size: 10 }
+                      }
+                  } 
+              },
+              plugins: [ChartDataLabels]
+          });
+      }
+
+      // --- BAR CHART ---
+      const ctxBar = document.getElementById('rt-brand-chart');
+      if (ctxBar) {
+          if (chartInstanceBar) chartInstanceBar.destroy();
+          chartInstanceBar = new Chart(ctxBar, {
+              type: 'bar',
+              data: {
+                  labels: barData.map(d => d.name),
+                  datasets: [{
+                      label: 'Doanh thu (Tr)',
+                      data: barData.map(d => d.revenue / 1000000),
+                      backgroundColor: barData.map(() => getRandomBrightColor()),
+                      borderRadius: 4
+                  }]
+              },
+              options: {
+                  indexAxis: 'y',
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                      legend: { display: false },
+                      datalabels: {
+                          anchor: 'end', align: 'end',
+                          formatter: (val) => formatters.formatNumber(val, 0),
+                          color: '#4b5563',
+                          font: { weight: 'bold', size: 10 }
+                      },
+                      tooltip: {
+                          callbacks: { label: (ctx) => formatters.formatRevenue(ctx.raw * 1000000) }
+                      }
+                  },
+                  scales: { x: { beginAtZero: true } }
+              },
+              plugins: [ChartDataLabels]
+          });
+      }
+  }
+
+  $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
+
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<div class="bg-white rounded-xl shadow-md p-4 border border-gray-200 h-full">
-  <h3 class="text-lg font-bold text-gray-700 mb-4 uppercase border-b pb-2">Ngành hàng chi tiết</h3>
+<div class="luyke-widget h-full">
+    <div class="luyke-toolbar">
+        <div class="luyke-toolbar-left flex-grow min-w-0">
+            <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
+                <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
+                <span class="truncate">{titleText}</span>
+            </h3>
+        </div>
 
-  {#if items.length === 0}
-    <p class="text-gray-500 font-bold p-4 text-center">Vui lòng tải file realtime để xem chi tiết.</p>
-  {:else}
-    <div class="overflow-x-auto max-h-[400px]">
-      <table class="min-w-full text-sm table-bordered table-striped">
-        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-10">
-          <tr>
-            <SortableTh key="name" label="Ngành hàng" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="quantity" label="SL" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="revenue" label="Doanh thu Thực" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="revenueQuyDoi" label="DT QĐ" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="donGia" label="Đơn giá TB" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-          </tr>
-        </thead>
-        <tbody>
-          {#each sortedItems as item (item.name)}
-            <tr class="hover:bg-gray-50">
-              <td class="px-4 py-2 font-medium capitalize">{item.name}</td>
-              <td class="px-4 py-2 text-right font-bold">{formatters.formatNumber(item.quantity)}</td>
-              <td class="px-4 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(item.revenue)}</td>
-              <td class="px-4 py-2 text-right font-bold text-purple-600">{formatters.formatRevenue(item.revenueQuyDoi)}</td>
-              <td class="px-4 py-2 text-right font-bold text-green-600">{formatters.formatRevenue(item.donGia)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+        <div class="luyke-toolbar-right flex items-center gap-2">
+            <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ">
+                    <i data-feather="grid" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline text-xs ml-1">Thẻ</span>
+                </button>
+                <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ">
+                    <i data-feather="pie-chart" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline text-xs ml-1">Biểu đồ</span>
+                </button>
+            </div>
+
+            <div 
+                class="toggle-wrapper {showUnexported ? 'active' : ''}" 
+                on:click={() => showUnexported = !showUnexported}
+                title="Xem đơn hàng chưa xuất"
+                style="padding: 4px 8px;"
+            >
+                <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
+                <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
+            </div>
+
+            <div class="hidden sm:block">
+                <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
+            </div>
+        </div>
     </div>
-  {/if}
+
+    <div class="luyke-widget-body bg-white border-t border-gray-100 p-4">
+        {#if sortedItems.length === 0}
+            <div class="text-center py-10 text-gray-400 italic">Không có dữ liệu hiển thị.</div>
+        
+        {:else if viewMode === 'grid'}
+            <div class="luyke-cat-grid">
+                {#each sortedItems as item}
+                    {@const name = item.name || item.nganhHang}
+                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
+                    {@const style = getCategoryTheme(name)}
+                    {@const percent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
+                    {@const finalTheme = showUnexported ? 'theme-warning' : style.theme}
+
+                    <div class="cat-card-colorful {finalTheme}">
+                        <div class="cat-top-row">
+                            <div class="cat-icon-box"><i data-feather={style.icon} class="w-5 h-5"></i></div>
+                            {#if !showUnexported && totalRevenue > 0}
+                                <span class="cat-percent-text text-xs">{formatters.formatPercentage(revenue/totalRevenue)}</span>
+                            {/if}
+                        </div>
+                        <h4 class="cat-name-text" title={name}>{name}</h4>
+                        <div class="cat-value-text">{formatters.formatRevenue(revenue, 0)}</div>
+                        <div class="cat-footer-row">
+                            <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
+                        </div>
+                        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width: {percent}%"></div></div>
+                    </div>
+                {/each}
+            </div>
+
+        {:else}
+            <div class="luyke-charts-container p-0 border-0 rounded-none">
+                <div class="chart-box">
+                    <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Tỷ trọng Doanh Thu (Triệu)</h4>
+                    <div class="relative h-full w-full"><canvas id="rt-cat-chart"></canvas></div>
+                </div>
+                <div class="chart-box">
+                    <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Hãng (Triệu)</h4>
+                    <div class="relative h-full w-full"><canvas id="rt-brand-chart"></canvas></div>
+                </div>
+            </div>
+        {/if}
+    </div>
 </div>
 --- END FILE: ./src/components/realtime/summary/CategoryTable.svelte ---
 
@@ -21428,184 +22218,299 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/summary/QdcTable.svelte ---
 <script>
+  import { afterUpdate } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
-  import SortableTh from '../../common/SortableTh.svelte';
+  import { cleanCategoryName } from '../../../utils.js';
+  import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
+  import { adminService } from '../../../services/admin.service.js';
 
-  export let items = []; 
+  export let items = []; // Dữ liệu hiện tại (có số liệu)
+  export let activeConfig = []; // Config từ store
 
-  // State sắp xếp mặc định
-  let sortKey = 'dtqd';
-  let sortDirection = 'desc';
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let localFilter = [...activeConfig]; 
+  let saveTimer;
 
-  function handleSort(event) {
-    const key = event.detail;
-    if (sortKey === key) {
-      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    } else {
-      sortKey = key;
-      sortDirection = 'desc';
-    }
+  // [LOGIC MỚI] Lấy danh sách đầy đủ từ cấu trúc để làm bộ lọc
+  $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
+  $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
+  $: allPresentGroups = items.map(i => i.name).sort();
+  
+  // Gộp tất cả lại -> Danh sách cho bộ lọc
+  $: allGroups = [...new Set([...allGroupsFromStructure, ...allMacroGroups, ...allPresentGroups])].sort();
+
+  $: filterList = allGroups.filter(name => 
+      name.toLowerCase().includes(filterSearch.toLowerCase())
+  );
+
+  // Cập nhật filter khi store thay đổi
+  $: if (activeConfig && !isSettingsOpen) {
+      localFilter = [...activeConfig];
   }
 
-  $: sortedItems = [...items].sort((a, b) => {
-    let valA = Number(a[sortKey]) || 0;
-    let valB = Number(b[sortKey]) || 0;
-    
-    if (sortKey === 'name') {
-        return sortDirection === 'asc' 
-          ? (a.name || '').localeCompare(b.name || '') 
-          : (b.name || '').localeCompare(a.name || '');
-    }
- 
-    return sortDirection === 'asc' ? valA - valB : valB - valA;
-  });
+  // Danh sách hiển thị (Sort theo DTQĐ)
+  let sortedItems = [];
+  $: {
+      let candidates = [];
+      if (!localFilter || localFilter.length === 0) {
+          // Mặc định Top 10
+          candidates = [...items].sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0)).slice(0, 10);
+      } else {
+          // Lọc theo config
+          candidates = items.filter(item => localFilter.includes(item.name));
+      }
+      sortedItems = candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+  }
+
+  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
+
+  function toggleQdcSelection(name) {
+      if (localFilter.includes(name)) {
+          localFilter = localFilter.filter(n => n !== name);
+      } else {
+          localFilter = [...localFilter, name];
+      }
+      // Lưu lại thay đổi (Debounce)
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+          adminService.saveQdcConfig(localFilter);
+      }, 1000);
+  }
+
+  function toggleAllVisibility(show) {
+      if (show) {
+          localFilter = [...allGroups];
+      } else {
+          localFilter = [];
+      }
+      adminService.saveQdcConfig(localFilter);
+  }
+
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          isSettingsOpen = false;
+      }
+  }
+
+  afterUpdate(() => { if (window.feather) feather.replace(); });
 </script>
 
-<div class="bg-white rounded-xl shadow-md p-4 border border-gray-200 h-full flex flex-col">
-  <h3 class="text-lg font-bold text-gray-700 mb-4 uppercase border-b pb-2 flex items-center gap-2">
-    <span>NHÓM HÀNG QUY ĐỔI CAO</span>
-  </h3>
-  
-  {#if items.length === 0}
-    <div class="flex-grow flex items-center justify-center">
-      <p class="text-gray-500 font-bold p-4 text-center">Vui lòng tải file realtime để xem chi tiết.</p>
+<svelte:window on:click={handleWindowClick} />
+
+<div class="luyke-widget h-full">
+  <div class="luyke-widget-header">
+    <div class="luyke-widget-title">
+      <div class="p-1.5 bg-yellow-100 rounded text-yellow-600 mr-2">
+          <i data-feather="star" class="w-4 h-4"></i>
+      </div>
+      <span>TOP NHÓM HÀNG (REALTIME)</span>
     </div>
-  {:else}
-    <div class="overflow-x-auto flex-grow max-h-[400px]">
-      <table class="min-w-full text-sm table-bordered table-striped">
-        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-10 shadow-sm">
-          <tr>
-            <SortableTh key="name" label="Nhóm hàng" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="sl" label="SL" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="dtqd" label="DTQĐ (Tr)" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-            <SortableTh key="donGia" label="Đơn giá (Tr)" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
-          </tr>
-        </thead>
-        <tbody>
-          {#each sortedItems as item (item.name)}
-            <tr class="hover:bg-gray-50">
-              <td class="px-4 py-2 font-medium">{item.name}</td>
-              <td class="px-4 py-2 text-right font-bold">{formatters.formatNumber(item.sl)}</td>
-              <td class="px-4 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(item.dtqd)}</td>
-              <td class="px-4 py-2 text-right font-bold text-green-600">{formatters.formatRevenue(item.donGia)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+
+    <div class="relative filter-wrapper">
+        <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Chọn nhóm hàng hiển thị">
+            <i data-feather="filter" class="w-4 h-4"></i>
+        </button>
+        {#if isSettingsOpen}
+            <div class="filter-dropdown">
+                <div class="filter-header">
+                    <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
+                </div>
+                <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+                    {#if filterList.length === 0}
+                        <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                    {:else}
+                        {#each filterList as name}
+                            {@const isChecked = localFilter.includes(name)}
+                            <div class="filter-item" on:click={() => toggleQdcSelection(name)}>
+                                <input type="checkbox" checked={isChecked} />
+                                <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{name}</label>
+                            </div>
+                        {/each}
+                    {/if}
+                </div>
+                <div class="filter-actions">
+                    <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                    <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                </div>
+            </div>
+        {/if}
     </div>
-  {/if}
+  </div>
+
+  <div class="luyke-widget-body custom-scrollbar">
+    {#if sortedItems.length === 0}
+       <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+          <p class="text-sm">Chưa có dữ liệu.</p>
+       </div>
+    {:else}
+      <div class="flex flex-col gap-0">
+        {#each sortedItems as item, index (item.name)}
+          {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
+          <div class="py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50 transition-colors px-1">
+            <div class="flex items-center gap-3">
+               <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
+               <div class="flex-grow min-w-0">
+                   <div class="flex justify-between items-center mb-1">
+                       <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
+                       <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
+                   </div>
+                   <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
+                       <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
+                   </div>
+                   <div class="flex justify-between text-[10px] text-gray-500">
+                       <span>DT: <strong>{formatters.formatRevenue(item.dt || item.revenue)}</strong></span>
+                       <span>SL: <strong>{formatters.formatNumber(item.sl || item.quantity)}</strong></span>
+                   </div>
+               </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </div>
 --- END FILE: ./src/components/realtime/summary/QdcTable.svelte ---
 
 --- START FILE: ./src/components/realtime/summary/SummaryTab.svelte ---
 <script>
-  // Version 1.1 - Fix import paths (modules -> services)
-  import { realtimeYCXData, realtimeGoalSettings } from '../../../stores.js';
+  import { realtimeYCXData, selectedWarehouse, efficiencyConfig, qdcConfigStore } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng
   import { settingsService } from '../../../services/settings.service.js';
-  import { dataProcessing } from '../../../services/dataProcessing.js';
+  import { formatters } from '../../../utils/formatters.js';
   
-  import KpiCards from './KpiCards.svelte';
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
-  import EfficiencyTable from './EfficiencyTable.svelte';
-  import UnexportedTable from './UnexportedTable.svelte';
+  import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
 
-  export let selectedWarehouse = '';
-  
+  // Biến local
   let supermarketReport = {};
   let goals = {};
+  
+  // Data cho các bảng con
   let qdcItems = [];
   let categoryItems = [];
-  let efficiencyItems = [];
-  let unexportedItems = [];
+  let unexportedItems = []; 
+  
+  // [MỚI] Biến chứa raw data đã lọc để truyền cho CategoryTable vẽ biểu đồ Hãng
+  let rawSourceData = [];
 
+  // Reactive Calculation
   $: {
-    const settings = settingsService.getRealtimeGoalSettings(selectedWarehouse);
+    const currentWarehouse = $selectedWarehouse;
+    const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     goals = settings.goals || {};
+
+    // 1. Master Report
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
+    // 2. Filter theo kho
     let filteredReport = masterReport;
     let filteredRawData = $realtimeYCXData;
 
-    if (selectedWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == selectedWarehouse);
+    if (currentWarehouse) {
+      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
       const visibleEmployees = new Set(filteredReport.map(nv => String(nv.maNV)));
       filteredRawData = $realtimeYCXData.filter(row => {
           const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
           return msnvMatch && visibleEmployees.has(msnvMatch[1].trim());
       });
     }
+    
+    // Gán vào biến để truyền xuống dưới
+    rawSourceData = filteredRawData;
 
-    supermarketReport = reportService.aggregateReport(filteredReport, selectedWarehouse);
+    // 3. Aggregate
+    supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
 
-    // A. Bảng QĐC
-    if (supermarketReport.qdc) {
-      qdcItems = Object.values(supermarketReport.qdc)
-        .filter(item => item.sl > 0)
-        .sort((a, b) => b.dtqd - a.dtqd);
-    } else {
-      qdcItems = [];
-    }
+    // 4. Prepare Sub-tables
+    qdcItems = supermarketReport.qdc 
+        ? Object.values(supermarketReport.qdc).filter(i => i.sl > 0)
+        : [];
 
-    // B. Bảng Ngành hàng
-    if (supermarketReport.nganhHangChiTiet) {
-      categoryItems = Object.values(supermarketReport.nganhHangChiTiet)
-        .filter(item => item.quantity > 0 || item.revenue > 0)
-        .sort((a, b) => b.revenue - a.revenue);
-    } else {
-      categoryItems = [];
-    }
+    categoryItems = supermarketReport.nganhHangChiTiet 
+        ? Object.values(supermarketReport.nganhHangChiTiet).filter(i => i.revenue > 0 || i.quantity > 0)
+        : [];
 
-    // C. Bảng Hiệu quả
-    const allEfficiencyConfigs = settingsService.loadEfficiencyViewSettings();
-    const goalKeyMap = {
-            pctPhuKien: 'phanTramPhuKien', 
-            pctGiaDung: 'phanTramGiaDung', 
-            pctMLN: 'phanTramMLN', 
-            pctSim: 'phanTramSim', 
-            pctVAS: 'phanTramVAS', 
-            pctBaoHiem: 'phanTramBaoHiem' 
-    };
-    efficiencyItems = allEfficiencyConfigs
-        .filter(item => item.id.startsWith('pct'))
-        .map(config => ({
-            ...config,
-            value: supermarketReport[config.id] || 0,
-            target: goals[goalKeyMap[config.id]] || 0
-        }));
-
-    // D. Bảng Chưa Xuất
     unexportedItems = reportService.generateRealtimeChuaXuatReport(filteredRawData);
   }
+
+  // Helper tính % KPI
+  $: pctDTT = (parseFloat(goals?.doanhThuThuc) || 0) > 0 ? (supermarketReport.doanhThu / 1000000) / parseFloat(goals.doanhThuThuc) : 0;
+  $: pctDTQD = (parseFloat(goals?.doanhThuQD) || 0) > 0 ? (supermarketReport.doanhThuQuyDoi / 1000000) / parseFloat(goals.doanhThuQD) : 0;
 </script>
 
-<div class="space-y-8 animate-fade-in pb-10">
-  <h2 class="text-2xl font-bold text-center text-gray-700">
-    Báo cáo Realtime {selectedWarehouse ? `kho ${selectedWarehouse}` : 'toàn bộ'}
-    <span class="block text-sm font-normal text-gray-500 mt-1">
-      - {new Date().toLocaleTimeString()} {new Date().toLocaleDateString('vi-VN')}
+<div class="luyke-dashboard-container pb-10">
+  
+  <h2 id="realtime-supermarket-title" class="text-2xl font-bold text-gray-800 flex items-center justify-center gap-2">
+    <i data-feather="zap" class="text-yellow-500 fill-current"></i>
+    Báo cáo Realtime {$selectedWarehouse ? `- Kho ${$selectedWarehouse}` : '(Toàn bộ)'}
+    <span class="text-sm font-normal text-gray-500 ml-2 pt-1">
+      (Cập nhật: {new Date().toLocaleTimeString('vi-VN')})
     </span>
   </h2>
 
-  <KpiCards {supermarketReport} {goals} />
+  <div id="realtime-kpi-cards-container" class="kpi-grid-fixed">
+      <div class="kpi-card-solid bg-[#38bdf8]">
+          <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
+          <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThu || 0) / 1000000, 1)}</div>
+          <div class="kpi-solid-sub">
+              <span>% HT: {formatters.formatPercentage(pctDTT)}</span>
+              <span>MT: {formatters.formatNumber(goals?.doanhThuThuc || 0)}</span>
+          </div>
+          <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
+      </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-      <QdcTable items={qdcItems} />
-      <CategoryTable items={categoryItems} />
+      <div class="kpi-card-solid bg-[#34d399]">
+          <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
+          <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThuQuyDoi || 0) / 1000000, 1)}</div>
+          <div class="kpi-solid-sub">
+              <span>% HT: {formatters.formatPercentage(pctDTQD)}</span>
+              <span>MT: {formatters.formatNumber(goals?.doanhThuQD || 0)}</span>
+          </div>
+          <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
+      </div>
+
+      <div class="kpi-card-solid bg-[#fbbf24]">
+          <div class="kpi-solid-header">Tỷ lệ Quy Đổi <i data-feather="trending-up"></i></div>
+          <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.hieuQuaQuyDoi || 0)}</div>
+          <div class="kpi-solid-sub">
+              <span>Mục tiêu: {formatters.formatNumber(goals?.phanTramQD || 0)}%</span>
+          </div>
+          <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
+      </div>
+
+      <div class="kpi-card-solid bg-[#2dd4bf]">
+          <div class="kpi-solid-header">Trả Chậm <i data-feather="credit-card"></i></div>
+          <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.tyLeTraCham || 0)}</div>
+          <div class="kpi-solid-sub">
+              <span>Doanh số: {formatters.formatNumber((supermarketReport.doanhThuTraGop || 0) / 1000000, 1)}</span>
+          </div>
+          <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
+      </div>
   </div>
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-      <EfficiencyTable items={efficiencyItems} />
-      <UnexportedTable items={unexportedItems} />
+  <div class="luyke-tier-1-grid">
+      <EfficiencyTable 
+          supermarketData={supermarketReport} 
+          dynamicItems={$efficiencyConfig} 
+          goals={goals}
+      />
+      <QdcTable 
+          items={qdcItems} 
+          activeConfig={$qdcConfigStore} 
+      />
   </div>
+
+  <div>
+      <CategoryTable 
+          items={categoryItems} 
+          unexportedItems={unexportedItems}
+          rawSource={rawSourceData}
+      />
+  </div>
+
 </div>
-
-<style>
-  .animate-fade-in { animation: fadeIn 0.5s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-</style>
 --- END FILE: ./src/components/realtime/summary/SummaryTab.svelte ---
 
 --- START FILE: ./src/components/realtime/summary/UnexportedTable.svelte ---
