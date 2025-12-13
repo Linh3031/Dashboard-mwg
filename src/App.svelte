@@ -138,6 +138,7 @@
 <AddEfficiencyColumnModal 
     isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
     editItem={$modalState.payload}
+    isAdmin={$activeTab === 'declaration-section'}
     on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
     on:save={handleSaveEffConfig}
 />

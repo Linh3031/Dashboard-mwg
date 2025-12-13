@@ -5,6 +5,9 @@
 
     export let isOpen = false;
     export let editItem = null; // Nếu null là thêm mới, có data là sửa
+    
+    // [MỚI] Biến cờ để xác định đang mở từ Admin hay User
+    export let isAdmin = false;
 
     const dispatch = createEventDispatcher();
 
@@ -41,7 +44,16 @@
             modeA = editItem.modeA || 'group';
             modeB = editItem.modeB || 'category';
         } else {
-            // Reset logic nếu cần thiết
+            // Reset form khi thêm mới
+            label = '';
+            groupA = [];
+            groupB = [];
+            target = 80;
+            type = 'DTTL';
+            modeA = 'group';
+            modeB = 'category';
+            searchA = '';
+            searchB = '';
         }
     }
 
@@ -59,7 +71,7 @@
     }
 
     function handleSave() {
-        if (!label) {
+        if (!label.trim()) {
             alert("Vui lòng nhập Tên cột.");
             return;
         }
@@ -77,7 +89,8 @@
             label, 
             groupA, 
             groupB, 
-            target, 
+            // [LOGIC MỚI] Nếu là Admin, target = 0 (để cấu hình ở chỗ khác). Nếu User, lấy giá trị nhập.
+            target: isAdmin ? 0 : target, 
             type, 
             modeA, 
             modeB
@@ -87,10 +100,6 @@
 
     function close() {
         dispatch('close');
-        setTimeout(() => {
-            label = ''; groupA = []; groupB = []; searchA = ''; searchB = ''; 
-            target = 80; type = 'DTTL';
-        }, 300);
     }
 </script>
 
@@ -100,8 +109,11 @@
         
         <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
-                <h3 class="text-xl font-bold text-gray-800">
+                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                     {editItem ? 'Chỉnh sửa' : 'Thêm'} Cột Tỷ lệ Nhóm hàng
+                    {#if isAdmin}
+                        <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200 uppercase">System Config</span>
+                    {/if}
                 </h3>
                 <p class="text-sm text-gray-500 mt-1">Công thức tính: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
             </div>
@@ -118,10 +130,17 @@
                     </div>
                     
                     <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
-                            <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
-                        </div>
+                        {#if !isAdmin}
+                            <div>
+                                <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
+                                <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
+                            </div>
+                        {:else}
+                            <div class="col-span-1 flex items-center p-2 bg-gray-100 rounded text-xs text-gray-500 italic">
+                                Target được thiết lập riêng tại module "Thiết lập mục tiêu".
+                            </div>
+                        {/if}
+                        
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">Loại dữ liệu tính</label>
                             <div class="flex flex-col gap-2 mt-1">
@@ -132,9 +151,11 @@
                         </div>
                     </div>
                     
-                    <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
-                        <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
-                    </div>
+                    {#if !isAdmin}
+                        <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
+                            <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
+                        </div>
+                    {/if}
                 </div>
 
                 <div class="hidden lg:flex items-center justify-center bg-blue-50 rounded-lg border border-blue-100 p-6 text-center">
