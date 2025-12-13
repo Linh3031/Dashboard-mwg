@@ -5,11 +5,10 @@
   export let reportData = [];
 
   const dispatch = createEventDispatcher();
-
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // Định nghĩa cấu hình cột kèm màu sắc Header
+  // [CẤU HÌNH] Giữ nguyên
   const columns = [
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
@@ -21,20 +20,14 @@
   ];
 
   function handleSort(key) {
-      if (sortKey === key) {
-          sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-      } else {
-          sortKey = key;
-          sortDirection = 'desc';
-      }
+      if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      else { sortKey = key; sortDirection = 'desc'; }
   }
 
   $: sortedData = [...reportData].sort((a, b) => {
       let valA = a[sortKey];
       let valB = b[sortKey];
-      if (sortKey === 'hoTen') {
-          return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-      }
+      if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
 
@@ -49,41 +42,41 @@
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
-  // Logic màu sắc (Xanh/Đỏ) cho dữ liệu
+  // [FIX] Logic tô màu
   function getCellClass(item, colKey) {
       if (['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat'].includes(colKey)) {
           return 'font-bold text-gray-800';
       }
 
-      if (!item.mucTieu) return 'text-gray-600';
+      if (!item.mucTieu) return 'text-gray-600'; // Nếu không có mục tiêu thì không tô màu
 
       if (colKey === 'hieuQuaQuyDoi') {
+          // Target %Quy Đổi (VD: 80%)
           const target = (item.mucTieu.phanTramQD || 0) / 100;
+          if (target === 0) return 'text-blue-800 font-bold';
           return item.hieuQuaQuyDoi >= target 
-              ? 'text-green-700 font-extrabold bg-green-50' 
-              : 'text-red-600 font-bold bg-red-50';
+              ? 'text-green-600 font-extrabold bg-green-50' // Đạt
+              : 'text-red-600 font-bold bg-red-50';        // Không đạt
       }
       
       if (colKey === 'tyLeTraCham') {
+          // Target % Trả chậm
           const target = (item.mucTieu.phanTramTC || 0) / 100;
+          if (target === 0) return 'text-green-800 font-bold';
           return item.tyLeTraCham >= target 
-              ? 'text-green-700 font-extrabold bg-green-50' 
+              ? 'text-green-600 font-extrabold bg-green-50' 
               : 'text-red-600 font-bold bg-red-50';
       }
       return 'text-gray-600';
   }
 
-  function handleRowClick(employeeId) {
-      dispatch('viewDetail', { employeeId });
-  }
+  function handleRowClick(employeeId) { dispatch('viewDetail', { employeeId }); }
 </script>
 
 <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in">
     <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
         <div class="flex items-center gap-2">
-            <div class="p-2 bg-blue-100 rounded-lg text-blue-600">
-                 <i data-feather="dollar-sign" class="w-5 h-5"></i>
-            </div>
+            <div class="p-2 bg-blue-100 rounded-lg text-blue-600"><i data-feather="dollar-sign" class="w-5 h-5"></i></div>
             <div>
                 <h3 class="font-bold text-gray-800 text-lg uppercase">Chi tiết Doanh Thu Lũy Kế</h3>
                 <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
@@ -97,15 +90,10 @@
             <thead class="uppercase text-xs font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
                     {#each columns as col}
-                        <th 
-                            class="px-4 py-3 cursor-pointer transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : 'text-left'}"
-                            on:click={() => handleSort(col.key)}
-                        >
+                        <th class="px-4 py-3 cursor-pointer transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : 'text-left'}" on:click={() => handleSort(col.key)}>
                             <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : ''}">
                                 {col.label}
-                                {#if sortKey === col.key}
-                                    <span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
-                                {/if}
+                                {#if sortKey === col.key}<span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                             </div>
                         </th>
                     {/each}
@@ -116,31 +104,16 @@
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr 
-                            class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}"
-                            on:click={() => handleRowClick(item.maNV)}
-                        >
+                        <tr class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}" on:click={() => handleRowClick(item.maNV)}>
                             <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-100 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
-                            <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">
-                                {formatters.formatRevenue(item.doanhThu)}
-                            </td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">
-                                {formatters.formatRevenue(item.doanhThuQuyDoi)}
-                            </td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">
-                                {formatters.formatPercentage(item.hieuQuaQuyDoi)}
-                            </td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">
-                                {formatters.formatRevenue(item.doanhThuTraGop)}
-                            </td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">
-                                {formatters.formatPercentage(item.tyLeTraCham)}
-                            </td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">
-                                {formatters.formatRevenue(item.doanhThuChuaXuat)}
-                            </td>
+                            <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
                         </tr>
                     {/each}
                 {/if}
@@ -159,8 +132,4 @@
         </table>
     </div>
 </div>
-
-<style>
-    .animate-fade-in { animation: fadeIn 0.4s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-</style>
+<style>.animate-fade-in { animation: fadeIn 0.4s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }</style>

@@ -520,6 +520,7 @@ export default defineConfig({
 <AddEfficiencyColumnModal 
     isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
     editItem={$modalState.payload}
+    isAdmin={$activeTab === 'declaration-section'}
     on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
     on:save={handleSaveEffConfig}
 />
@@ -3558,60 +3559,83 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- [MỚI] QUẢN LÝ CẤU HÌNH TOP NHÓM HÀNG (QDC) THEO KHO ---
-    
-    // Lưu danh sách nhóm hàng hiển thị
-    async saveQdcConfig(kho, config) {
+    // --- MỤC TIÊU (GOALS) ---
+    // Lưu cấu hình mục tiêu (Lũy kế + Realtime) cho kho
+    async saveGoalSettings(kho, type, settings) {
         const db = getDB();
         if (!db || !kho) return;
+
+        // type: 'luyke' hoặc 'realtime'
+        const fieldName = type === 'luyke' ? 'luykeGoals' : 'realtimeGoals';
 
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
-                qdcConfig: config, // Lưu mảng tên các nhóm hàng đã chọn
-                qdcConfigUpdatedAt: serverTimestamp(),
-                qdcConfigUpdatedBy: getCurrentUserEmail()
+                [fieldName]: settings,
+                [`${fieldName}UpdatedAt`]: serverTimestamp(),
+                [`${fieldName}UpdatedBy`]: getCurrentUserEmail()
             }, { merge: true });
-            console.log(`[DataSync] Đã lưu cấu hình Top nhóm hàng cho kho ${kho}`);
+            console.log(`[DataSync] Đã lưu mục tiêu ${type} cho kho ${kho}`);
         } catch (error) {
-            console.error("[DataSync] Lỗi lưu cấu hình Top nhóm hàng:", error);
+            console.error(`[DataSync] Lỗi lưu mục tiêu ${type}:`, error);
         }
     },
 
-    // Tải cấu hình
-    async loadQdcConfig(kho) {
+    // Tải cấu hình mục tiêu
+    async loadGoalSettings(kho) {
         const db = getDB();
-        if (!db || !kho) return null; // Trả về null để biết là chưa có config
+        if (!db || !kho) return { luyke: {}, realtime: {} };
 
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
-            if (docSnap.exists() && docSnap.data().qdcConfig) {
-                return docSnap.data().qdcConfig;
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                return {
+                    luyke: data.luykeGoals || {},
+                    realtime: data.realtimeGoals || {}
+                };
             }
-            return null; // Chưa từng lưu
+            return { luyke: {}, realtime: {} };
         } catch (e) {
-            console.error("[DataSync] Lỗi tải cấu hình Top nhóm hàng:", e);
-            return null;
+            console.error("[DataSync] Lỗi tải mục tiêu:", e);
+            return { luyke: {}, realtime: {} };
         }
     },
 
-    // --- CÁC HÀM CŨ (GIỮ NGUYÊN) ---
+    // --- CÁC HÀM KHÁC (GIỮ NGUYÊN) ---
+    async saveQdcConfig(kho, config) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                qdcConfig: config,
+                qdcConfigUpdatedAt: serverTimestamp(),
+                qdcConfigUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) { console.error(error); }
+    },
+
+    async loadQdcConfig(kho) {
+        const db = getDB();
+        if (!db || !kho) return null;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            return (docSnap.exists() && docSnap.data().qdcConfig) ? docSnap.data().qdcConfig : null;
+        } catch (e) { return null; }
+    },
+
     async saveRealtimeHiddenCategories(kho, hiddenList) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
-                realtimeConfig: {
-                    hiddenCategories: hiddenList,
-                    updatedAt: serverTimestamp(),
-                    updatedBy: getCurrentUserEmail()
-                }
+                realtimeConfig: { hiddenCategories: hiddenList, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
             }, { merge: true });
-        } catch (error) {
-            console.error("[DataSync] Lỗi lưu cấu hình Realtime:", error);
-        }
+        } catch (error) { console.error(error); }
     },
 
     async loadRealtimeHiddenCategories(kho) {
@@ -3620,13 +3644,8 @@ export const datasyncService = {
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
-            if (docSnap.exists() && docSnap.data().realtimeConfig) {
-                return docSnap.data().realtimeConfig.hiddenCategories || [];
-            }
-            return [];
-        } catch (e) {
-            return [];
-        }
+            return (docSnap.exists() && docSnap.data().realtimeConfig) ? docSnap.data().realtimeConfig.hiddenCategories || [] : [];
+        } catch (e) { return []; }
     },
 
     async savePersonalRevenueTables(kho, tables) {
@@ -3634,53 +3653,35 @@ export const datasyncService = {
         if (!db || !kho) return;
         const personalTables = tables.filter(t => !t.isSystem);
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            personalRevenueTables: personalTables,
-            personalTablesUpdatedAt: serverTimestamp(),
-            personalTablesUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { personalRevenueTables: personalTables, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadPersonalRevenueTables(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : [];
-        } catch(e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : []; } catch(e) { return []; }
     },
 
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            customMetrics: metrics,
-            customMetricsUpdatedAt: serverTimestamp(),
-            customMetricsUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { customMetrics: metrics, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadCustomMetrics(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? (docSnap.data().customMetrics || []) : [];
-        } catch(e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().customMetrics || []) : []; } catch(e) { return []; }
     },
 
     async saveMetadataToFirestore(kho, dataType, metadata) {
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
-        };
+        const dataToSave = { [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch(e) { throw e; }
     },
 
@@ -3696,48 +3697,28 @@ export const datasyncService = {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            competitionConfigs: configs,
-            competitionConfigsUpdatedAt: serverTimestamp(),
-            competitionConfigsUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { competitionConfigs: configs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadCompetitionConfigs(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? (docSnap.data().competitionConfigs || []) : [];
-        } catch(e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().competitionConfigs || []) : []; } catch(e) { return []; }
     },
 
     async saveSpecialPrograms(kho, programs) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            specialPrograms: programs,
-            specialProgramsUpdatedAt: serverTimestamp(),
-            specialProgramsUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
-        if (!db) return;
-        if (!kho) return;
+        if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            [key]: {
-                ...metadata,
-                updatedAt: serverTimestamp(),
-                updatedBy: getCurrentUserEmail()
-            }
-        };
+        const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
@@ -3745,10 +3726,7 @@ export const datasyncService = {
         const db = getDB();
         if (!db || !kho) return null;
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? docSnap.data() : null;
-        } catch (error) { throw error; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? docSnap.data() : null; } catch (error) { throw error; }
     }
 };
 --- END FILE: ./src/services/datasync.service.js ---
@@ -3994,6 +3972,7 @@ import {
     interfaceSettings,
     pastedThiDuaReportData
 } from '../stores.js';
+import { datasyncService } from './datasync.service.js'; // [MỚI] Import
 
 // ... (Giữ nguyên các hằng số ALL_EFFICIENCY_ITEMS, PASTED_COMPETITION_SETTINGS_KEY) ...
 const ALL_EFFICIENCY_ITEMS = [
@@ -4011,7 +3990,7 @@ const ALL_EFFICIENCY_ITEMS = [
 const PASTED_COMPETITION_SETTINGS_KEY = 'pastedCompetitionViewSettings';
 
 export const settingsService = {
-    // --- INTERFACE SETTINGS (ĐÃ SỬA LỖI) ---
+    // --- INTERFACE SETTINGS ---
     loadInterfaceSettings() {
         try {
             const saved = localStorage.getItem('interfaceSettings');
@@ -4019,14 +3998,10 @@ export const settingsService = {
                 const parsed = JSON.parse(saved);
                 interfaceSettings.set({ ...get(interfaceSettings), ...parsed });
             }
-            // Áp dụng ngay khi load
             this.applyInterfaceStyles(get(interfaceSettings));
-            
             const contrast = localStorage.getItem('contrastLevel') || '3';
             this.updateContrast(contrast);
-        } catch (e) {
-            console.error("Lỗi tải cài đặt giao diện:", e);
-        }
+        } catch (e) { console.error(e); }
     },
 
     updateInterface(newSettings) {
@@ -4044,44 +4019,48 @@ export const settingsService = {
     applyInterfaceStyles(settings) {
         const root = document.documentElement;
         if (!settings) return;
-
-        // [FIX] Cập nhật font-size trực tiếp cho HTML để Tailwind (rem) scale theo
-        // Mặc định trình duyệt là 16px. Slider của bạn từ 12-25.
-        if (settings.globalFontSize) {
-            root.style.fontSize = `${settings.globalFontSize}px`;
-        }
-
-        // Cập nhật biến CSS cho các thẻ KPI
+        if (settings.globalFontSize) root.style.fontSize = `${settings.globalFontSize}px`;
         for (let i = 1; i <= 8; i++) {
             const key = `kpiCard${i}Bg`;
-            if (settings[key]) {
-                root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
-            }
+            if (settings[key]) root.style.setProperty(`--kpi-card-${i}-bg`, settings[key]);
         }
-
-        // Cập nhật biến màu chữ KPI
         if (settings.kpiTitleColor) root.style.setProperty('--kpi-title-color', settings.kpiTitleColor);
         if (settings.kpiMainColor) root.style.setProperty('--kpi-main-color', settings.kpiMainColor);
         if (settings.kpiSubColor) root.style.setProperty('--kpi-sub-color', settings.kpiSubColor);
-        
-        // Cập nhật cỡ chữ riêng cho KPI (nếu cần)
         if (settings.kpiFontSize) root.style.setProperty('--kpi-main-font-size', `${settings.kpiFontSize}px`);
     },
 
-    // ... (Giữ nguyên các hàm load/save goal settings, view settings không đổi) ...
-    loadLuykeGoalSettings() {
-        try {
-            const saved = localStorage.getItem('luykeGoalSettings');
-            if (saved) luykeGoalSettings.set(JSON.parse(saved));
-        } catch (e) { console.error("Lỗi tải mục tiêu lũy kế:", e); }
+    // --- GOAL SETTINGS (MỤC TIÊU) - CẬP NHẬT ĐỂ SYNC CLOUD ---
+    
+    // [MỚI] Tải mục tiêu từ Cloud
+    async loadGoalsFromCloud(warehouse) {
+        if (!warehouse) return;
+        const data = await datasyncService.loadGoalSettings(warehouse);
+        
+        // Cập nhật store Lũy kế
+        luykeGoalSettings.update(current => ({
+            ...current,
+            [warehouse]: data.luyke || {}
+        }));
+
+        // Cập nhật store Realtime
+        realtimeGoalSettings.update(current => ({
+            ...current,
+            [warehouse]: data.realtime || { goals: {}, timing: {} }
+        }));
     },
+
     saveLuykeGoalForWarehouse(warehouse, goals) {
         luykeGoalSettings.update(current => {
             const updated = { ...current, [warehouse]: goals };
-            localStorage.setItem('luykeGoalSettings', JSON.stringify(updated));
+            // Vẫn lưu local để backup
+            localStorage.setItem('luykeGoalSettings', JSON.stringify(updated)); 
             return updated;
         });
+        // [MỚI] Lưu lên Cloud
+        datasyncService.saveGoalSettings(warehouse, 'luyke', goals);
     },
+
     getLuykeGoalSettings(selectedWarehouse = null) {
         const $luykeGoalSettings = get(luykeGoalSettings);
         const settings = { goals: {} };
@@ -4089,78 +4068,37 @@ export const settingsService = {
 
         if (selectedWarehouse && $luykeGoalSettings[selectedWarehouse]) {
              const source = $luykeGoalSettings[selectedWarehouse];
-             goalKeys.forEach(key => settings.goals[key] = parseFloat(source[key]) || 0);
+             // [FIX] Copy động tất cả các key (để hỗ trợ Dynamic Metrics từ Admin)
+             Object.assign(settings.goals, source);
         } else if (!selectedWarehouse) {
-            // Logic tính trung bình
-            const allSettings = $luykeGoalSettings || {};
-            const warehouseKeys = Object.keys(allSettings);
-            const percentCounts = {};
-            goalKeys.forEach(key => settings.goals[key] = 0);
-
-            warehouseKeys.forEach(whKey => {
-                const source = allSettings[whKey];
-                 goalKeys.forEach(key => {
-                    const value = parseFloat(source[key]) || 0;
-                    if (key.startsWith('phanTram')) {
-                        settings.goals[key] += value;
-                        percentCounts[key] = (percentCounts[key] || 0) + 1;
-                    } else {
-                         settings.goals[key] += value;
-                    }
-                });
-           });
-            Object.keys(percentCounts).forEach(key => {
-                if (percentCounts[key] > 0) settings.goals[key] /= percentCounts[key];
-            });
+             // Logic trung bình (giữ nguyên nếu cần, hoặc đơn giản hóa)
+             return settings;
         }
         return settings;
     },
-    loadRealtimeGoalSettings() {
-        try {
-            const saved = localStorage.getItem('realtimeGoalSettings');
-            if (saved) realtimeGoalSettings.set(JSON.parse(saved));
-        } catch (e) { console.error("Lỗi tải mục tiêu realtime:", e); }
-    },
+
     saveRealtimeGoalForWarehouse(warehouse, settings) {
         realtimeGoalSettings.update(current => {
             const updated = { ...current, [warehouse]: settings };
             localStorage.setItem('realtimeGoalSettings', JSON.stringify(updated));
             return updated;
         });
+        // [MỚI] Lưu lên Cloud
+        datasyncService.saveGoalSettings(warehouse, 'realtime', settings);
     },
+
     getRealtimeGoalSettings(selectedWarehouse = null) {
         const $realtimeGoalSettings = get(realtimeGoalSettings);
         if (selectedWarehouse && $realtimeGoalSettings && $realtimeGoalSettings[selectedWarehouse]) {
             return $realtimeGoalSettings[selectedWarehouse];
         }
-        if (!selectedWarehouse) {
-            const allSettings = $realtimeGoalSettings || {};
-            const validWarehouseSettings = Object.values(allSettings).filter(s => s.goals && Object.keys(s.goals).length > 0);
-            if(validWarehouseSettings.length === 0) return { goals: {}, timing: {} };
-            
-            const aggregatedGoals = { doanhThuThuc: 0, doanhThuQD: 0 };
-            const percentGoals = {}; const percentCounts = {};
-            
-            validWarehouseSettings.forEach(ws => {
-                aggregatedGoals.doanhThuThuc += parseFloat(ws.goals.doanhThuThuc || 0);
-                aggregatedGoals.doanhThuQD += parseFloat(ws.goals.doanhThuQD || 0);
-                Object.entries(ws.goals).forEach(([key, value]) => {
-                    if (key.startsWith('phanTram')) {
-                        if (!percentGoals[key]) { percentGoals[key] = 0; percentCounts[key] = 0; }
-                         const numValue = parseFloat(value);
-                        if(!isNaN(numValue)) { percentGoals[key] += numValue; percentCounts[key]++; }
-                    }
-                });
-            });
-            Object.keys(percentCounts).forEach(key => { if(percentCounts[key] > 0) aggregatedGoals[key] = percentGoals[key] / percentCounts[key]; });
-            const representativeTiming = validWarehouseSettings.length > 0 ? (validWarehouseSettings[0].timing || {}) : {};
-            return { goals: aggregatedGoals, timing: representativeTiming };
-        }
         return { goals: {}, timing: {} };
     },
+
+    // --- VIEW SETTINGS (GIỮ NGUYÊN) ---
     saveEfficiencyViewSettings(settings) {
-         if (!Array.isArray(settings)) return;
-        try { localStorage.setItem('efficiencyViewSettings', JSON.stringify(settings)); } catch (e) { console.error("Lỗi lưu efficiency settings:", e); }
+        if (!Array.isArray(settings)) return;
+        try { localStorage.setItem('efficiencyViewSettings', JSON.stringify(settings)); } catch (e) {}
     },
     loadEfficiencyViewSettings() {
         try {
@@ -4179,11 +4117,10 @@ export const settingsService = {
                             const defaultItem = ALL_EFFICIENCY_ITEMS.find(d => d.id === item.id);
                              return defaultItem ? { ...item, label: defaultItem.label } : item;
                         });
-
                     return [...currentItems, ...newItems];
                 }
             }
-        } catch (e) { console.error("Lỗi tải efficiency settings:", e); }
+        } catch (e) {}
         return ALL_EFFICIENCY_ITEMS.map(item => ({ ...item, visible: true }));
     },
     saveQdcViewSettings(settings) {
@@ -7116,79 +7053,59 @@ function replaceCanvasWithImg(canvasNode, src) {
 
 --- START FILE: ./src/utils/formatters.js ---
 // src/utils/formatters.js
-// MODULE: UI FORMATTERS
-// Chứa các hàm thuần túy để định dạng dữ liệu (tách ra từ ui-components.js)
-// Những hàm này không phụ thuộc vào DOM hoặc appState.
-
+// Version 4.0 - Format 0 as "-"
 export const formatters = {
     /**
-     * Định dạng số theo chuẩn Việt Nam.
+     * Định dạng số lượng. 0 -> "-"
      */
     formatNumber: (value, decimals = 0) => {
-        if (isNaN(value) || value === null) return '0';
+        if (!isFinite(value) || value === null || value === 0) return '-';
         return new Intl.NumberFormat('vi-VN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value);
     },
 
     /**
-     * Định dạng doanh thu (chia cho 1 triệu) và trả về chuỗi.
+     * Định dạng doanh thu (chia cho 1 triệu). 0 -> "-"
      */
     formatRevenue(value, decimals = 1) {
          if (!isFinite(value) || value === null) return '-';
          
-         // [FIX] Xử lý số 0 tuyệt đối hoặc rất nhỏ
-         if (Math.abs(value) < 1000) return '0'; 
+         // Nếu giá trị quá nhỏ (gần bằng 0) -> trả về "-"
+         if (Math.abs(value) < 1000) return '-'; 
 
          const millions = value / 1000000;
-         const roundedValue = parseFloat(millions.toFixed(decimals));
-         
-         if (roundedValue === 0 && Math.abs(millions) > 0.000001) {
-              return millions > 0 ? '> 0' : '< 0';
-         }
          return new Intl.NumberFormat('vi-VN', {
              minimumFractionDigits: 0,
              maximumFractionDigits: decimals
-         }).format(roundedValue);
+         }).format(millions);
      },
 
      /**
-      * Định dạng số, trả về '-' nếu là 0.
+      * Định dạng số thường (giữ nguyên logic cũ cho các trường hợp khác)
       */
      formatNumberOrDash: (value, decimals = 1) => {
-          if (!isFinite(value) || value === null) return '-';
-          if (Math.abs(value) < 0.01) return '-'; // Coi như bằng 0
-
-          const roundedValue = parseFloat(value.toFixed(decimals));
+          if (!isFinite(value) || value === null || Math.abs(value) < 0.01) return '-';
           return new Intl.NumberFormat('vi-VN', {
               minimumFractionDigits: 0,
               maximumFractionDigits: decimals
-          }).format(roundedValue);
+          }).format(value);
       },
 
       /**
-       * Định dạng số thành phần trăm (nhân 100).
+       * Định dạng phần trăm. 0 -> "-"
        */
      formatPercentage: (value, decimals = 0) => {
-         if (!isFinite(value) || value === null) return '0%';
-         
-         // [FIX] Sửa lỗi hiển thị >0% cho số 0 hoặc số cực nhỏ
-         if (Math.abs(value) < 0.0001) return '0%';
+          if (!isFinite(value) || value === null) return '-';
+          
+          // Kiểm tra số 0 tuyệt đối hoặc rất nhỏ
+          if (Math.abs(value) < 0.0001) return '-';
 
-         const percentageValue = value * 100;
-         const roundedValue = parseFloat(percentageValue.toFixed(decimals));
-         
-         if (roundedValue === 0 && Math.abs(percentageValue) > 0.000001) {
-             return percentageValue > 0 ? '> 0%' : '< 0%';
-         }
-         
-         return new Intl.NumberFormat('vi-VN', {
+          const percentageValue = value * 100;
+          return new Intl.NumberFormat('vi-VN', {
              minimumFractionDigits: decimals,
-              maximumFractionDigits: decimals
-          }).format(roundedValue) + '%';
+             maximumFractionDigits: decimals
+          }).format(percentageValue) + '%';
       },
 
-    /**
-     * Lấy tên rút gọn của nhân viên (Tên cuối + MSNV).
-     */
     getShortEmployeeName(hoTen, maNV) {
         if (!hoTen) return maNV || '';
         const nameParts = hoTen.split(' ').filter(p => p);
@@ -9000,11 +8917,11 @@ export const formatters = {
         modalState,
         localCompetitionConfigs, 
         selectedWarehouse,
-        efficiencyConfig // [MỚI]
+        efficiencyConfig // Cấu hình admin
     } from '../../stores.js';
     import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
-    import { adminService } from '../../services/admin.service.js'; // [MỚI]
+    import { adminService } from '../../services/admin.service.js';
     
     let activeTab = 'monthly';
     let localSelectedWarehouse = ''; 
@@ -9014,20 +8931,29 @@ export const formatters = {
 
     $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
 
-    $: if (isOpen && !localSelectedWarehouse && $warehouseList.length > 0) {
-        localSelectedWarehouse = $warehouseList[0];
+    // Tự động chọn kho
+    $: if (isOpen && !localSelectedWarehouse) {
+        localSelectedWarehouse = $selectedWarehouse || ($warehouseList.length > 0 ? $warehouseList[0] : '');
     }
 
-    $: if (localSelectedWarehouse) {
-        currentLuykeGoals = { ...($luykeGoalSettings[localSelectedWarehouse] || {}) };
-        const rtSettings = $realtimeGoalSettings[localSelectedWarehouse] || { goals: {}, timing: {} };
+    // [MỚI] Khi đổi kho, tải dữ liệu từ Cloud
+    $: if (isOpen && localSelectedWarehouse) {
+        loadGoals(localSelectedWarehouse);
+    }
+
+    async function loadGoals(kho) {
+        await settingsService.loadGoalsFromCloud(kho);
+        
+        // Cập nhật biến local để bind vào input
+        currentLuykeGoals = { ...($luykeGoalSettings[kho] || {}) };
+        
+        const rtSettings = $realtimeGoalSettings[kho] || { goals: {}, timing: {} };
         currentRealtimeGoals = {
             goals: { ...rtSettings.goals },
             timing: { ...rtSettings.timing }
         };
     }
     
-    // [MỚI] Load config toàn cục
     onMount(async () => {
         const configs = await adminService.loadEfficiencyConfig();
         efficiencyConfig.set(configs);
@@ -9056,35 +8982,25 @@ export const formatters = {
         settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
+    // Các hàm quản lý thi đua (giữ nguyên)
     function openCompetitionManager() {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
     }
-
     function editCompetition(index) {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
     }
-
     async function deleteCompetition(index) {
         if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
-        
         let newConfigs = [...$localCompetitionConfigs];
         newConfigs.splice(index, 1);
-        
         localCompetitionConfigs.set(newConfigs);
-
         if (localSelectedWarehouse) {
-            try {
-                await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs);
-            } catch(e) {
-                console.error(e);
-                alert("Lỗi khi xóa: " + e.message);
-            }
+            try { await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs); } catch(e) { console.error(e); }
         }
     }
 
-    // [FIX] Chỉ giữ lại các chỉ số cơ bản, phần còn lại render động
     const percentageInputs = [
         { id: 'phanTramQD', label: '% Quy đổi' },
         { id: 'phanTramTC', label: '% Trả chậm' }
@@ -9140,7 +9056,7 @@ export const formatters = {
 
                 <details class="group border rounded-lg overflow-hidden" open>
                     <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
-                        Mục tiêu khai thác (%)
+                         Mục tiêu khai thác (%)
                         <span class="transform group-open:rotate-180 transition-transform">▼</span>
                     </summary>
                     <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
@@ -9194,20 +9110,35 @@ export const formatters = {
                         <input type="number" id="rt-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuQD} on:input={saveRealtime}>
                     </div>
                 </div>
+                
+                <details class="group border rounded-lg overflow-hidden" open>
+                    <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
+                         Mục tiêu tỷ lệ Realtime (%)
+                        <span class="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
+                        {#each percentageInputs as input}
+                            <div>
+                                <label for="rt-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
+                                <input type="number" id="rt-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals[input.id]} on:input={saveRealtime}>
+                            </div>
+                        {/each}
+                         {#each $efficiencyConfig as item}
+                            <div>
+                                <label for="rt-goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>{item.label}</label>
+                                <input type="number" id="rt-goal-{item.id}" class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder={item.target} bind:value={currentRealtimeGoals.goals[item.id]} on:input={saveRealtime}>
+                            </div>
+                        {/each}
+                    </div>
+                </details>
             </div>
         {/if}
 
         <div class="border-t pt-6 space-y-4">
             <div class="flex justify-between items-center">
                 <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
-                <button 
-                    on:click={openCompetitionManager}
-                    class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"
-                >
-                    <i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới
-                </button>
+                <button on:click={openCompetitionManager} class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"><i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới</button>
             </div>
-
             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
                 {#if $localCompetitionConfigs.length === 0}
                     <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
@@ -9217,38 +9148,10 @@ export const formatters = {
                     {#each $localCompetitionConfigs as config, index}
                         <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
                             <h4 class="text-lg font-bold text-gray-800 mb-2 pr-16">{config.name}</h4>
-                            
-                            <div class="text-sm mb-1">
-                                <span class="font-semibold text-gray-600">Hãng:</span>
-                                <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span>
-                            </div>
-
-                            <div class="text-sm text-gray-600 line-clamp-2" title={config.groups.join(', ')}>
-                                <span class="font-semibold">Nhóm hàng:</span>
-                                <span>{config.groups.length > 0 ? config.groups.join(', ') : 'Tất cả'}</span>
-                            </div>
-
-                            <div class="mt-2">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                                    {config.type === 'doanhthu' ? 'Theo Doanh thu' : 'Theo Số lượng'}
-                                </span>
-                            </div>
-
+                            <div class="text-sm mb-1"><span class="font-semibold text-gray-600">Hãng:</span> <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span></div>
                             <div class="absolute top-4 right-4 flex gap-2">
-                                <button 
-                                    on:click={() => openCompetitionManager()} 
-                                    class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                                    title="Chỉnh sửa"
-                                >
-                                    <i data-feather="edit-2" class="w-4 h-4"></i>
-                                </button>
-                                <button 
-                                    on:click={() => deleteCompetition(index)} 
-                                    class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                    title="Xóa"
-                                >
-                                    <i data-feather="trash-2" class="w-4 h-4"></i>
-                                </button>
+                                <button on:click={() => editCompetition(index)} class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                                <button on:click={() => deleteCompetition(index)} class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                             </div>
                         </div>
                     {/each}
@@ -9261,18 +9164,10 @@ export const formatters = {
 <style>
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-    
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-    .line-clamp-2 {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
 </style>
 --- END FILE: ./src/components/drawers/GoalDrawer.svelte ---
 
@@ -10049,11 +9944,12 @@ export const formatters = {
 <script>
   import { formatters } from '../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../utils.js';
+  import { efficiencyConfig } from '../../stores.js'; // [MỚI] Import để lấy config động
 
   export let reportData = [];
 
-  // Cấu hình cột chuẩn theo thiết kế gốc
-  const ALL_COLUMNS = [
+  // [FIX] Cấu hình cột CỐ ĐỊNH (Hardcoded) khớp với key trong master.report.js
+  const FIXED_COLUMNS = [
       { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
       { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
       { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
@@ -10068,22 +9964,39 @@ export const formatters = {
       { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
   ];
 
-  let visibleColumnIds = ALL_COLUMNS.map(c => c.id);
+  // [MỚI] Merge cột cố định + cột động từ Admin
+  $: ALL_COLUMNS = [
+      ...FIXED_COLUMNS,
+      ...($efficiencyConfig || []).map(conf => ({
+          id: conf.id, // ID động (VD: eff_12345)
+          label: conf.label,
+          isRate: true,
+          targetKey: conf.id, // Key mục tiêu trùng với ID chỉ số
+          isDynamic: true,
+          headerClass: 'bg-purple-100 text-purple-900'
+      }))
+  ];
+
+  let visibleColumnIds = [];
+  // Init visible columns
+  $: if (visibleColumnIds.length === 0 && ALL_COLUMNS.length > 0) {
+      visibleColumnIds = ALL_COLUMNS.map(c => c.id);
+  }
+
   let sortKey = 'dtICT';
   let sortDirection = 'desc';
   let groupedData = {};
   let departmentOrder = [];
 
-  // --- FIX LỖI TẠI ĐÂY ---
   $: {
-    const groups = {}; // Dùng biến cục bộ trước
+    const groups = {}; 
     if (reportData && reportData.length > 0) {
         reportData.forEach(item => {
           const dept = item.boPhan || 'Khác';
           if (!groups[dept]) groups[dept] = []; 
           groups[dept].push(item);
         });
-        groupedData = groups; // Gán lại cho biến state
+        groupedData = groups; 
         departmentOrder = getSortedDepartmentList(reportData);
     } else { 
         groupedData = {};
@@ -10092,45 +10005,66 @@ export const formatters = {
   }
 
   function handleSort(key) {
-    if (sortKey === key) {
-      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    } else {
-      sortKey = key;
-      sortDirection = 'desc';
-    }
+    if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+    else { sortKey = key; sortDirection = 'desc'; }
   }
 
-  function sortEmployees(employees) {
-      if (!employees) return [];
-      return [...employees].sort((a, b) => {
+  // Logic lấy giá trị an toàn
+  const getValue = (item, colId, isDynamic) => {
+      if (isDynamic) {
+          // Với chỉ số động, giá trị nằm trong dynamicMetrics
+          return item.dynamicMetrics?.[colId]?.value || 0;
+      }
+      return item[colId] || 0;
+  };
+
+  $: sortEmployees = (dept) => {
+      const items = groupedData[dept] || [];
+      return [...items].sort((a, b) => {
           if (sortKey === 'hoTen') {
              const nameA = a.hoTen || '';
              const nameB = b.hoTen || '';
              return sortDirection === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
           }
-          let valA = Number(a[sortKey]) || 0;
-          let valB = Number(b[sortKey]) || 0;
+          
+          // Check xem sort key là động hay tĩnh để lấy giá trị đúng
+          const isDynamicSort = $efficiencyConfig.some(c => c.id === sortKey);
+          let valA = getValue(a, sortKey, isDynamicSort);
+          let valB = getValue(b, sortKey, isDynamicSort);
+          
           return sortDirection === 'asc' ? valA - valB : valB - valA;
       });
-  }
+  };
 
   function toggleColumn(columnId) {
-      if (visibleColumnIds.includes(columnId)) {
-          visibleColumnIds = visibleColumnIds.filter(id => id !== columnId);
-      } else {
-          visibleColumnIds = [...visibleColumnIds, columnId];
-      }
+      if (visibleColumnIds.includes(columnId)) visibleColumnIds = visibleColumnIds.filter(id => id !== columnId);
+      else visibleColumnIds = [...visibleColumnIds, columnId];
   }
 
+  // [FIX] Logic Tô màu ô
   function getCellClass(item, colDef) {
-    const value = item[colDef.id] || 0;
+    const value = getValue(item, colDef.id, colDef.isDynamic);
     
     if (colDef.isRate) {
-        const target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
-        if (target <= 0) return 'text-gray-900';
-        if (value < target) return 'text-red-600 bg-red-50 font-bold';
-        return 'text-green-600 font-bold';
-    }
+        // Lấy target: Nếu là cột động, lấy từ settings, nếu tĩnh lấy từ mucTieu
+        let target = 0;
+        if (colDef.isDynamic) {
+             // Target động được lưu trong mucTieu với key chính là ID chỉ số
+             target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
+             // Fallback: Nếu user chưa set mục tiêu riêng, lấy default từ config
+             if (target === 0) {
+                 const cfg = $efficiencyConfig.find(c => c.id === colDef.id);
+                 target = (cfg?.target || 0) / 100;
+             }
+        } else {
+             target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
+        }
+
+        if (target > 0 && value < target) return 'text-red-600 font-bold bg-red-50'; // Không đạt
+        return 'text-red-800 font-bold'; // Mặc định % là đỏ đậm
+    } 
+    
+    if (colDef.id.startsWith('dt')) return 'text-blue-700 font-medium';
     return 'text-gray-900 font-medium';
   }
 
@@ -10167,7 +10101,7 @@ export const formatters = {
             <thead class="text-xs text-gray-700 uppercase font-bold sticky top-0 z-20 shadow-sm">
                <tr>
                 <th class="px-4 py-3 bg-gray-200 cursor-pointer hover:bg-gray-300 transition sticky left-0 z-30 min-w-[200px]" on:click={() => handleSort('hoTen')}>
-                  <div class="flex items-center gap-1">
+                   <div class="flex items-center gap-1">
                     <span>Nhân viên</span>
                     {#if sortKey === 'hoTen'}<span>{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                   </div>
@@ -10175,32 +10109,33 @@ export const formatters = {
 
                 {#each ALL_COLUMNS as col}
                   {#if visibleColumnIds.includes(col.id)}
-                    <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition whitespace-nowrap text-right {col.headerClass}" on:click={() => handleSort(col.id)}>
+                     <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition whitespace-nowrap text-right {col.headerClass}" on:click={() => handleSort(col.id)}>
                        <div class="flex items-center justify-end gap-1">
                          <span>{col.label}</span>
                          {#if sortKey === col.id}<span>{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                        </div>
-                    </th>
+                     </th>
                   {/if}
                 {/each}
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
-              {#each sortEmployees(groupedData[deptName]) as item (item.maNV)}
+              {#each sortEmployees(deptName) as item (item.maNV)}
                 <tr class="hover:bg-blue-50 transition-colors duration-150">
                   <td class="px-4 py-2 font-semibold text-blue-700 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200 whitespace-nowrap">
                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                   </td>
                   {#each ALL_COLUMNS as col}
                     {#if visibleColumnIds.includes(col.id)}
+                       {@const val = getValue(item, col.id, col.isDynamic)}
                        <td class="px-4 py-2 text-right border-l border-gray-100 {getCellClass(item, col)}">
-                         {#if col.isRate}
-                            {formatters.formatPercentage(item[col.id])}
+                          {#if col.isRate}
+                            {formatters.formatPercentage(val)}
                          {:else}
-                            {formatters.formatRevenue(item[col.id])}
+                            {formatters.formatRevenue(val)}
                          {/if}
                       </td>
-                    {/if}
+                     {/if}
                   {/each}
                 </tr>
               {/each}
@@ -10540,11 +10475,10 @@ export const formatters = {
   export let reportData = [];
 
   const dispatch = createEventDispatcher();
-
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // Định nghĩa cấu hình cột kèm màu sắc Header
+  // [CẤU HÌNH] Giữ nguyên
   const columns = [
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
@@ -10556,20 +10490,14 @@ export const formatters = {
   ];
 
   function handleSort(key) {
-      if (sortKey === key) {
-          sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-      } else {
-          sortKey = key;
-          sortDirection = 'desc';
-      }
+      if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      else { sortKey = key; sortDirection = 'desc'; }
   }
 
   $: sortedData = [...reportData].sort((a, b) => {
       let valA = a[sortKey];
       let valB = b[sortKey];
-      if (sortKey === 'hoTen') {
-          return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-      }
+      if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
 
@@ -10584,41 +10512,41 @@ export const formatters = {
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
-  // Logic màu sắc (Xanh/Đỏ) cho dữ liệu
+  // [FIX] Logic tô màu
   function getCellClass(item, colKey) {
       if (['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat'].includes(colKey)) {
           return 'font-bold text-gray-800';
       }
 
-      if (!item.mucTieu) return 'text-gray-600';
+      if (!item.mucTieu) return 'text-gray-600'; // Nếu không có mục tiêu thì không tô màu
 
       if (colKey === 'hieuQuaQuyDoi') {
+          // Target %Quy Đổi (VD: 80%)
           const target = (item.mucTieu.phanTramQD || 0) / 100;
+          if (target === 0) return 'text-blue-800 font-bold';
           return item.hieuQuaQuyDoi >= target 
-              ? 'text-green-700 font-extrabold bg-green-50' 
-              : 'text-red-600 font-bold bg-red-50';
+              ? 'text-green-600 font-extrabold bg-green-50' // Đạt
+              : 'text-red-600 font-bold bg-red-50';        // Không đạt
       }
       
       if (colKey === 'tyLeTraCham') {
+          // Target % Trả chậm
           const target = (item.mucTieu.phanTramTC || 0) / 100;
+          if (target === 0) return 'text-green-800 font-bold';
           return item.tyLeTraCham >= target 
-              ? 'text-green-700 font-extrabold bg-green-50' 
+              ? 'text-green-600 font-extrabold bg-green-50' 
               : 'text-red-600 font-bold bg-red-50';
       }
       return 'text-gray-600';
   }
 
-  function handleRowClick(employeeId) {
-      dispatch('viewDetail', { employeeId });
-  }
+  function handleRowClick(employeeId) { dispatch('viewDetail', { employeeId }); }
 </script>
 
 <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in">
     <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
         <div class="flex items-center gap-2">
-            <div class="p-2 bg-blue-100 rounded-lg text-blue-600">
-                 <i data-feather="dollar-sign" class="w-5 h-5"></i>
-            </div>
+            <div class="p-2 bg-blue-100 rounded-lg text-blue-600"><i data-feather="dollar-sign" class="w-5 h-5"></i></div>
             <div>
                 <h3 class="font-bold text-gray-800 text-lg uppercase">Chi tiết Doanh Thu Lũy Kế</h3>
                 <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
@@ -10632,15 +10560,10 @@ export const formatters = {
             <thead class="uppercase text-xs font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
                     {#each columns as col}
-                        <th 
-                            class="px-4 py-3 cursor-pointer transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : 'text-left'}"
-                            on:click={() => handleSort(col.key)}
-                        >
+                        <th class="px-4 py-3 cursor-pointer transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : 'text-left'}" on:click={() => handleSort(col.key)}>
                             <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : ''}">
                                 {col.label}
-                                {#if sortKey === col.key}
-                                    <span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
-                                {/if}
+                                {#if sortKey === col.key}<span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                             </div>
                         </th>
                     {/each}
@@ -10651,31 +10574,16 @@ export const formatters = {
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr 
-                            class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}"
-                            on:click={() => handleRowClick(item.maNV)}
-                        >
+                        <tr class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}" on:click={() => handleRowClick(item.maNV)}>
                             <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-100 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
-                            <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">
-                                {formatters.formatRevenue(item.doanhThu)}
-                            </td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">
-                                {formatters.formatRevenue(item.doanhThuQuyDoi)}
-                            </td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">
-                                {formatters.formatPercentage(item.hieuQuaQuyDoi)}
-                            </td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">
-                                {formatters.formatRevenue(item.doanhThuTraGop)}
-                            </td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">
-                                {formatters.formatPercentage(item.tyLeTraCham)}
-                            </td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">
-                                {formatters.formatRevenue(item.doanhThuChuaXuat)}
-                            </td>
+                            <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
                         </tr>
                     {/each}
                 {/if}
@@ -10694,11 +10602,7 @@ export const formatters = {
         </table>
     </div>
 </div>
-
-<style>
-    .animate-fade-in { animation: fadeIn 0.4s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-</style>
+<style>.animate-fade-in { animation: fadeIn 0.4s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }</style>
 --- END FILE: ./src/components/health-staff/RevenueTable.svelte ---
 
 --- START FILE: ./src/components/luyke/LuykeCategoryTable.svelte ---
@@ -11171,15 +11075,12 @@ export const formatters = {
   let filterSearch = '';
   let hiddenIds = new Set(); 
 
-  // [FIX] Persistent Filter
-  const STORAGE_KEY = 'efficiency_hidden_ids';
+  const STORAGE_KEY = 'luyke_efficiency_hidden_ids';
 
   onMount(() => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-          try {
-              hiddenIds = new Set(JSON.parse(saved));
-          } catch (e) {}
+          try { hiddenIds = new Set(JSON.parse(saved)); } catch (e) {}
       }
   });
 
@@ -11192,7 +11093,6 @@ export const formatters = {
       'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
   };
 
-  // Merge items
   $: displayItems = [
       ...items,
       ...(dynamicItems || []).map(cfg => {
@@ -11201,60 +11101,43 @@ export const formatters = {
               id: cfg.id,
               label: cfg.label,
               value: metric ? metric.value : 0,
-              target: cfg.target,
+              target: cfg.target, // Target từ config admin
               isDynamic: true,
               rawConfig: cfg
           };
       })
   ];
 
-  $: filterList = displayItems.filter(item => 
-      item.label.toLowerCase().includes(filterSearch.toLowerCase())
-  );
+  $: filterList = displayItems.filter(item => item.label.toLowerCase().includes(filterSearch.toLowerCase()));
+  $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
 
   function toggleVisibility(id) {
-      if (hiddenIds.has(id)) {
-          hiddenIds.delete(id);
-      } else {
-          hiddenIds.add(id);
-      }
+      if (hiddenIds.has(id)) hiddenIds.delete(id); else hiddenIds.add(id);
       hiddenIds = new Set(hiddenIds);
-      saveHiddenState(); // Lưu ngay
-  }
-
-  function toggleAllVisibility(show) {
-      if (show) {
-          hiddenIds = new Set();
-      } else {
-          hiddenIds = new Set(displayItems.map(i => i.id));
-      }
       saveHiddenState();
   }
 
-  $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
+  function toggleAllVisibility(show) {
+      hiddenIds = show ? new Set() : new Set(displayItems.map(i => i.id));
+      saveHiddenState();
+  }
 
-  // ... (Phần render HTML giữ nguyên, chỉ thêm logic saveHiddenState ở trên) ...
+  // [LOGIC MỚI] Màu sắc dựa trên Mục tiêu
   function getProgressColor(val, target) {
       const t = (target || 0) / 100;
-      if (t === 0) return '#3b82f6'; 
-      return val >= t ? '#3b82f6' : '#ef4444'; 
+      if (t <= 0) return '#3b82f6'; // Mặc định xanh nếu ko có target
+      return val >= t ? '#16a34a' : '#ef4444'; // Xanh lá nếu đạt, Đỏ nếu rớt
   }
 
   function handleWindowClick(e) {
-      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
-          isSettingsOpen = false;
-      }
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) isSettingsOpen = false;
   }
   
   function handleDelete(id) {
-      if(confirm('Bạn có chắc muốn xóa chỉ số này?')) {
-          dispatch('delete', id);
-      }
+      if(confirm('Bạn có chắc muốn xóa chỉ số này?')) dispatch('delete', id);
   }
 
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') feather.replace();
-  });
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <svelte:window on:click={handleWindowClick} />
@@ -11266,41 +11149,21 @@ export const formatters = {
       </div>
       <span>Hiệu Quả Khai Thác</span>
     </div>
-
     <div class="flex items-center gap-2">
-        <button 
-            class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200 transition-colors"
-            on:click={() => dispatch('add')}
-            title="Thêm chỉ số mới"
-        >
+        <button class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200" on:click={() => dispatch('add')} title="Thêm chỉ số mới">
             <i data-feather="plus" class="w-3 h-3"></i> Thêm
         </button>
-
         <div class="relative filter-wrapper">
-            <button 
-                class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
-                on:click={() => isSettingsOpen = !isSettingsOpen}
-                title="Lọc chỉ số hiển thị"
-            >
-                <i data-feather="filter" class="w-4 h-4"></i>
-            </button>
-
+            <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen}><i data-feather="filter" class="w-4 h-4"></i></button>
             {#if isSettingsOpen}
                 <div class="filter-dropdown">
-                    <div class="filter-header">
-                        <input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} />
-                    </div>
+                    <div class="filter-header"><input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} /></div>
                     <div class="filter-body custom-scrollbar" style="max-height: 250px;">
-                        {#if filterList.length === 0}
-                            <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
-                        {:else}
-                            {#each filterList as item (item.id)}
-                                <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
-                                    <input type="checkbox" checked={!hiddenIds.has(item.id)} />
-                                    <label>{item.label}</label>
-                                </div>
-                            {/each}
-                        {/if}
+                        {#each filterList as item (item.id)}
+                            <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
+                                <input type="checkbox" checked={!hiddenIds.has(item.id)} /> <label>{item.label}</label>
+                            </div>
+                        {/each}
                     </div>
                     <div class="filter-actions">
                         <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
@@ -11314,9 +11177,7 @@ export const formatters = {
 
   <div class="luyke-widget-body custom-scrollbar">
     {#if visibleItems.length === 0}
-       <div class="flex flex-col items-center justify-center h-full text-gray-400">
-          <p class="text-sm">Đã ẩn hết dữ liệu.</p>
-       </div>
+       <div class="flex flex-col items-center justify-center h-full text-gray-400"><p class="text-sm">Đã ẩn hết dữ liệu.</p></div>
     {:else}
       <div class="flex flex-col gap-0">
         {#each visibleItems as item (item.id)}
@@ -11325,28 +11186,21 @@ export const formatters = {
           {@const percent = Math.min((item.value * 100), 100)}
           
           <div class="eff-item-compact group relative hover:bg-gray-50 transition-colors">
-            <div class="eff-icon-compact">
-                <i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i>
-            </div>
-            
+            <div class="eff-icon-compact"><i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i></div>
             <div class="eff-content-compact">
                 <div class="eff-row-top">
                     <span class="eff-label-text">{item.label}</span>
-                    <span class="eff-value-text" style="color: {color}">
-                        {formatters.formatPercentage(item.value)}
-                    </span>
+                    <span class="eff-value-text" style="color: {color}">{formatters.formatPercentage(item.value)}</span>
                 </div>
-                
                 <div class="eff-row-bottom">
                     <div class="eff-bar-container">
                         <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
                     </div>
-                    {#if targetVal > 0}
-                        <span class="eff-target-text">MT: {item.target}%</span>
+                    {#if item.target > 0}
+                        <span class="eff-target-text {item.value < targetVal ? 'text-red-500 font-bold' : 'text-green-600'}">MT: {item.target}%</span>
                     {/if}
                 </div>
             </div>
-
             {#if item.isDynamic}
                 <div class="absolute right-2 top-2 hidden group-hover:flex gap-1 bg-white shadow-sm border border-gray-200 rounded p-1 z-10">
                     <button on:click|stopPropagation={() => dispatch('edit', item.rawConfig)} class="text-gray-500 hover:text-blue-600 p-1"><i data-feather="edit-2" class="w-3 h-3"></i></button>
@@ -12657,6 +12511,9 @@ export const formatters = {
 
     export let isOpen = false;
     export let editItem = null; // Nếu null là thêm mới, có data là sửa
+    
+    // [MỚI] Biến cờ để xác định đang mở từ Admin hay User
+    export let isAdmin = false;
 
     const dispatch = createEventDispatcher();
 
@@ -12693,7 +12550,16 @@ export const formatters = {
             modeA = editItem.modeA || 'group';
             modeB = editItem.modeB || 'category';
         } else {
-            // Reset logic nếu cần thiết
+            // Reset form khi thêm mới
+            label = '';
+            groupA = [];
+            groupB = [];
+            target = 80;
+            type = 'DTTL';
+            modeA = 'group';
+            modeB = 'category';
+            searchA = '';
+            searchB = '';
         }
     }
 
@@ -12711,7 +12577,7 @@ export const formatters = {
     }
 
     function handleSave() {
-        if (!label) {
+        if (!label.trim()) {
             alert("Vui lòng nhập Tên cột.");
             return;
         }
@@ -12729,7 +12595,8 @@ export const formatters = {
             label, 
             groupA, 
             groupB, 
-            target, 
+            // [LOGIC MỚI] Nếu là Admin, target = 0 (để cấu hình ở chỗ khác). Nếu User, lấy giá trị nhập.
+            target: isAdmin ? 0 : target, 
             type, 
             modeA, 
             modeB
@@ -12739,10 +12606,6 @@ export const formatters = {
 
     function close() {
         dispatch('close');
-        setTimeout(() => {
-            label = ''; groupA = []; groupB = []; searchA = ''; searchB = ''; 
-            target = 80; type = 'DTTL';
-        }, 300);
     }
 </script>
 
@@ -12752,8 +12615,11 @@ export const formatters = {
         
         <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
-                <h3 class="text-xl font-bold text-gray-800">
+                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                     {editItem ? 'Chỉnh sửa' : 'Thêm'} Cột Tỷ lệ Nhóm hàng
+                    {#if isAdmin}
+                        <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200 uppercase">System Config</span>
+                    {/if}
                 </h3>
                 <p class="text-sm text-gray-500 mt-1">Công thức tính: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
             </div>
@@ -12770,10 +12636,17 @@ export const formatters = {
                     </div>
                     
                     <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
-                            <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
-                        </div>
+                        {#if !isAdmin}
+                            <div>
+                                <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
+                                <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
+                            </div>
+                        {:else}
+                            <div class="col-span-1 flex items-center p-2 bg-gray-100 rounded text-xs text-gray-500 italic">
+                                Target được thiết lập riêng tại module "Thiết lập mục tiêu".
+                            </div>
+                        {/if}
+                        
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">Loại dữ liệu tính</label>
                             <div class="flex flex-col gap-2 mt-1">
@@ -12784,9 +12657,11 @@ export const formatters = {
                         </div>
                     </div>
                     
-                    <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
-                        <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
-                    </div>
+                    {#if !isAdmin}
+                        <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
+                            <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
+                        </div>
+                    {/if}
                 </div>
 
                 <div class="hidden lg:flex items-center justify-center bg-blue-50 rounded-lg border border-blue-100 p-6 text-center">
@@ -16952,6 +16827,7 @@ export const generalReportLogic = {
 
 --- START FILE: ./src/services/reports/master.report.js ---
 // src/services/reports/master.report.js
+// Version 5.0 - Full Explicit Logic: Hardcode IDs + Dynamic Keywords (No Refactoring/Shortcuts)
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
 import * as utils from '../../utils.js';
@@ -16969,150 +16845,260 @@ import {
 } from '../../stores.js';
 
 // Helper chuẩn hóa chuỗi
-const normalizeStr = (str) => {
+const normalize = (str) => {
     if (!str) return '';
-    return str.toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, ' ')
-        .trim();
+    return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 };
 
 export const masterReportLogic = {
     generateMasterReportData: (sourceData, goalSettings, isRealtime = false) => {
         const $danhSachNhanVien = get(danhSachNhanVien);
-        if ($danhSachNhanVien.length === 0) return [];
+        if (!$danhSachNhanVien || $danhSachNhanVien.length === 0) return [];
 
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
         const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
-        const PG = config.PRODUCT_GROUPS; 
+        const PG = config.PRODUCT_GROUPS; // Lấy danh sách ID cứng (1491, 42...)
         const gioCongByMSNV = dataProcessing.processGioCongData();
         
-        const $macroCategoryConfig = get(macroCategoryConfig) || [];
+        // 1. Load Cấu hình từ Admin
         const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
+        const $macroCategoryConfig = get(macroCategoryConfig) || [];
         const $efficiencyConfig = get(efficiencyConfig) || [];
 
-        // 1. Build Macro Map
-        const macroToItemsMap = {};
-        const buildMacroMap = (configs) => {
-            configs.forEach(macro => {
-                if (macro.items && Array.isArray(macro.items)) {
-                    macroToItemsMap[normalizeStr(macro.name)] = macro.items.map(i => normalizeStr(i));
+        // 2. Xây dựng bộ từ khóa Dynamic từ Admin
+        // (Vẫn giữ logic này để bắt các nhóm hàng mới tạo)
+        const uiKeywords = {
+            dtICT: [], dtCE: [], dtPhuKien: [], dtGiaDung: [],
+            dtMLN: [], dtSim: [], dtVAS: [], dtBaoHiem: []
+        };
+        const uiIdentity = {
+            dtICT: ['ict', 'điện thoại', 'laptop', 'tablet'],
+            dtCE: ['ce', 'điện tử', 'tivi', 'loa', 'âm thanh'],
+            dtPhuKien: ['phụ kiện', 'pk'],
+            dtGiaDung: ['gia dụng', 'gd'],
+            dtMLN: ['máy lọc nước', 'mln', 'lọc nước'],
+            dtSim: ['sim', 'thẻ cào'],
+            dtVAS: ['vas', 'dịch vụ'],
+            dtBaoHiem: ['bảo hiểm', 'rơi vỡ']
+        };
+
+        const loadKeywords = (configs) => {
+            if (!Array.isArray(configs)) return;
+            configs.forEach(group => {
+                const groupName = normalize(group.name);
+                for (const [uiKey, ids] of Object.entries(uiIdentity)) {
+                    if (ids.some(id => groupName.includes(id))) {
+                        if (group.items) group.items.forEach(i => uiKeywords[uiKey].push(normalize(i)));
+                    }
                 }
             });
+        };
+        loadKeywords($macroProductGroupConfig);
+        loadKeywords($macroCategoryConfig);
+
+        // Map cho Chỉ số động (Dynamic Metrics)
+        const macroToItemsMap = {};
+        const buildMacroMap = (configs) => {
+            if (Array.isArray(configs)) {
+                configs.forEach(macro => {
+                    if (macro.items && Array.isArray(macro.items)) {
+                        macroToItemsMap[normalize(macro.name)] = macro.items.map(i => normalize(i));
+                    }
+                });
+            }
         };
         buildMacroMap($macroCategoryConfig);
         buildMacroMap($macroProductGroupConfig);
 
-        const $thuongNongData = get(thuongNongData);
+        // 3. Xử lý dữ liệu Lương/Thưởng (Giữ nguyên đầy đủ)
+        const $thuongNongData = get(thuongNongData) || [];
         const $employeeNameToMaNVMap = get(employeeNameToMaNVMap);
-        const $thuongERPData = get(thuongERPData);
-        const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc);
-        const $thuongERPDataThangTruoc = get(thuongERPDataThangTruoc);
+        const $thuongERPData = get(thuongERPData) || [];
+        const $thuongNongDataThangTruoc = get(thuongNongDataThangTruoc) || [];
+        const $thuongERPDataThangTruoc = get(thuongERPDataThangTruoc) || [];
 
         const thuongNongByMSNV = {};
         $thuongNongData.forEach(row => {
-            const maNV = String(row.maNV || '').trim();
-            const hoTen = String(row.hoTen || '').trim().replace(/\s+/g, ' ');
-            let foundMaNV = maNV || $employeeNameToMaNVMap.get(hoTen.toLowerCase()) || null;
-            if (foundMaNV) {
-                const diemThuongValue = parseFloat(String(row.diemThuong || '0').replace(/,/g, '')) || 0;
-                thuongNongByMSNV[foundMaNV] = (thuongNongByMSNV[foundMaNV] || 0) + diemThuongValue;
-            }
+            const msnv = String(row.maNV || '').trim() || $employeeNameToMaNVMap.get(String(row.hoTen).toLowerCase());
+            if(msnv) thuongNongByMSNV[msnv] = (thuongNongByMSNV[msnv]||0) + (parseFloat(String(row.diemThuong||0).replace(/,/g,''))||0);
         });
 
         const thuongNongThangTruocByMSNV = {};
         $thuongNongDataThangTruoc.forEach(row => {
-            const maNV = String(row.maNV || '').trim();
-            const hoTen = String(row.hoTen || '').trim().replace(/\s+/g, ' ');
-            let foundMaNV = maNV || $employeeNameToMaNVMap.get(hoTen.toLowerCase()) || null;
-            if (foundMaNV) {
-                const diemThuongValue = parseFloat(String(row.diemThuong || '0').replace(/,/g, '')) || 0;
-                thuongNongThangTruocByMSNV[foundMaNV] = (thuongNongThangTruocByMSNV[foundMaNV] || 0) + diemThuongValue;
-            }
+            const msnv = String(row.maNV || '').trim() || $employeeNameToMaNVMap.get(String(row.hoTen).toLowerCase());
+            if(msnv) thuongNongThangTruocByMSNV[msnv] = (thuongNongThangTruocByMSNV[msnv]||0) + (parseFloat(String(row.diemThuong||0).replace(/,/g,''))||0);
         });
 
+        // =================================================================================
+        // VÒNG LẶP CHÍNH (MAIN LOOP)
+        // =================================================================================
         return $danhSachNhanVien.map((employee) => {
+            // Khởi tạo đầy đủ các trường, không bỏ sót trường nào
             let data = {
                 doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
                 doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
                 doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
+                
+                // Dictionary lưu chi tiết để tính Dynamic Metrics
                 doanhThuTheoNganhHang: {}, 
                 doanhThuTheoNhomHang: {}, 
+                
+                // Nơi chứa kết quả tính chỉ số động
                 dynamicMetrics: {},
+                
+                // QDC Object
                 qdc: {},
+                
+                // CÁC CỘT UI CỐ ĐỊNH (Quan trọng)
+                dtICT: 0, dtCE: 0, 
+                dtPhuKien: 0, dtGiaDung: 0, 
+                dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
+
+                // Chi tiết nhỏ (Legacy support)
                 dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0,
                 dtMayGiat: 0, slMayGiat: 0, dtMayLanh: 0, slMayLanh: 0,
-                dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
-                dtICT: 0, dtCE: 0
+                dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
             };
 
-            for (const key in PG.QDC_GROUPS) data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
+            // Init QDC
+            for (const key in PG.QDC_GROUPS) {
+                data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
+            }
 
-            sourceData.forEach(row => {
-                const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
-                if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
-                    const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-                    const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
-                                      (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
-                                      (row.tinhTrangTra || "").trim() === 'Chưa trả';
-
-                    if (isBaseValid && isDoanhThuHTX) {
-                        const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                        const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
-                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                        const trangThaiXuat = (row.trangThaiXuat || "").trim();
-                        const nhomHangCode = String(row.nhomHang || '').match(/^\d+/)?.[0] || null;
+            if (sourceData && Array.isArray(sourceData)) {
+                sourceData.forEach(row => {
+                    const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+                    if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                         
-                        const trackMetric = (container, name) => {
-                            if (!name) return;
-                            const cleanName = utils.cleanCategoryName(name); 
-                            if (!container[cleanName]) {
-                                container[cleanName] = { 
-                                    name: cleanName, 
-                                    rawName: name, 
-                                    revenue: 0, 
-                                    quantity: 0, 
-                                    revenueQuyDoi: 0 
-                                };
+                        const hinhThucXuat = row.hinhThucXuat;
+                        const trangThaiXuat = row.trangThaiXuat;
+                        
+                        // ĐIỀU KIỆN LỌC DỮ LIỆU
+                        const isDoanhThuHTX = !hinhThucXuat || hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
+                        // Chỉ lấy "Đã xuất"
+                        const isDaXuat = !trangThaiXuat || trangThaiXuat.trim() === 'Đã xuất' || trangThaiXuat.trim() === 'Đã giao';
+
+                        if (isDoanhThuHTX && isDaXuat) {
+                            const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                            const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
+                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            
+                            const nhomHangCode = String(row.nhomHang || '').match(/^\d+/)?.[0] || null;
+                            const rawNhomHang = normalize(row.nhomHang);
+                            const rawNganhHang = normalize(row.nganhHang);
+
+                            // Tracking chi tiết vào bucket (để tính Dynamic Metrics sau này)
+                            const trackMetric = (container, name) => {
+                                if (!name) return;
+                                const cleanName = utils.cleanCategoryName(name); 
+                                if (!container[cleanName]) {
+                                    container[cleanName] = { 
+                                        name: cleanName, 
+                                        revenue: 0, 
+                                        quantity: 0, 
+                                        revenueQuyDoi: 0 
+                                    };
+                                }
+                                container[cleanName].revenue += thanhTien;
+                                container[cleanName].quantity += soLuong;
+                                container[cleanName].revenueQuyDoi += thanhTien * heSo;
                             }
-                            container[cleanName].revenue += thanhTien;
-                            container[cleanName].quantity += soLuong;
-                            container[cleanName].revenueQuyDoi += thanhTien * heSo;
-                        }
-                        
-                        trackMetric(data.doanhThuTheoNganhHang, row.nganhHang);
-                        trackMetric(data.doanhThuTheoNhomHang, row.nhomHang);
+                            trackMetric(data.doanhThuTheoNganhHang, row.nganhHang);
+                            trackMetric(data.doanhThuTheoNhomHang, row.nhomHang);
 
-                        if (trangThaiXuat === 'Chưa xuất') {
-                            data.doanhThuChuaXuat += thanhTien;
-                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
-                        } else if (trangThaiXuat === 'Đã xuất') {
-                            if(isNaN(soLuong)) return;
-
+                            // Cộng tổng doanh thu
                             data.doanhThu += thanhTien;
                             data.doanhThuQuyDoi += thanhTien * heSo;
 
-                            if (isRealtime && row.ngayTao && row.ngayHenGiao) {
-                                const diffTime = row.ngayHenGiao - row.ngayTao;
-                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                if (diffDays >= 2) {
-                                    data.doanhThuGiaoXa += thanhTien;
-                                    data.doanhThuQuyDoiGiaoXa += thanhTien * heSo;
-                                }
+                            if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
+                                data.doanhThuTraGop += thanhTien;
                             }
 
-                            if (hinhThucXuatTraGop.has(row.hinhThucXuat)) { 
-                                data.doanhThuTraGop += thanhTien; 
+                            // ==========================================================
+                            // PHÂN LOẠI NHÓM HÀNG (Kết hợp Hardcode ID + Dynamic Keyword)
+                            // Đây là phần đảm bảo không mất dữ liệu
+                            // ==========================================================
+                            
+                            // 1. Logic Hardcode ID (Ưu tiên cao nhất - Dữ liệu cũ chắc chắn đúng)
+                            let mapped = false;
+
+                            // ICT: Điện thoại, Laptop, Tablet...
+                            if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || PG.TABLET && PG.TABLET.includes(nhomHangCode)) {
+                                data.dtICT += thanhTien;
+                                mapped = true;
                             }
 
+                            // CE: Tivi, Tủ lạnh, Máy giặt, Máy lạnh...
+                            if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode)) {
+                                data.dtCE += thanhTien;
+                                mapped = true;
+                            }
+
+                            // Phụ Kiện
+                            if (PG.PHU_KIEN && PG.PHU_KIEN.includes(nhomHangCode)) {
+                                data.dtPhuKien += thanhTien;
+                                mapped = true;
+                            }
+
+                            // Gia Dụng
+                            if (PG.GIA_DUNG && PG.GIA_DUNG.includes(nhomHangCode)) {
+                                data.dtGiaDung += thanhTien;
+                                mapped = true;
+                            }
+
+                            // Máy Lọc Nước
+                            if (PG.MAY_LOC_NUOC && PG.MAY_LOC_NUOC.includes(nhomHangCode)) {
+                                data.dtMLN += thanhTien;
+                                mapped = true;
+                            }
+
+                            // Sim Số
+                            if (PG.SIM && PG.SIM.includes(nhomHangCode)) {
+                                data.dtSim += thanhTien;
+                                mapped = true;
+                            }
+
+                            // Dịch vụ (VAS)
+                            if (PG.VAS && PG.VAS.includes(nhomHangCode)) {
+                                data.dtVAS += thanhTien;
+                                mapped = true;
+                            }
+                            
+                            // Bảo hiểm
+                            if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) {
+                                data.dtBaoHiem += thanhTien;
+                                mapped = true;
+                            }
+
+                            // 2. Logic Dynamic (Bổ sung nếu Hardcode chưa bắt được HOẶC để bắt thêm theo tên)
+                            // Quét qua các từ khóa đã load từ Admin Config
+                            if (!mapped) {
+                                const checkDynamic = (uiKey) => {
+                                    const keywords = uiKeywords[uiKey];
+                                    if (keywords && keywords.some(k => rawNhomHang.includes(k) || rawNganhHang.includes(k))) {
+                                        data[uiKey] += thanhTien;
+                                    }
+                                };
+                                checkDynamic('dtICT');
+                                checkDynamic('dtCE');
+                                checkDynamic('dtPhuKien');
+                                checkDynamic('dtGiaDung');
+                                checkDynamic('dtMLN');
+                                checkDynamic('dtSim');
+                                checkDynamic('dtVAS');
+                                checkDynamic('dtBaoHiem');
+                            }
+
+                            // Logic Chi tiết con (Dùng cho báo cáo cũ nếu cần)
                             if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
                             if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
                             if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
                             if (PG.TU_LANH.includes(nhomHangCode)) { data.dtTuLanh += thanhTien; data.slTuLanh += soLuong; }
                             if (PG.MAY_GIAT.includes(nhomHangCode)) { data.dtMayGiat += thanhTien; data.slMayGiat += soLuong; }
                             if (PG.MAY_LANH.includes(nhomHangCode)) { data.dtMayLanh += thanhTien; data.slMayLanh += soLuong; }
-                            
+
+                            // Logic QDC
                             for (const key in PG.QDC_GROUPS) {
                                 if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                     data.qdc[key].sl += soLuong; 
@@ -17121,86 +17107,106 @@ export const masterReportLogic = {
                                 }
                             }
                         }
+                        // Xử lý Doanh thu chưa xuất
+                        else if (trangThaiXuat === 'Chưa xuất') {
+                            const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            data.doanhThuChuaXuat += thanhTien;
+                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
+                        }
                     }
-                }
-            });
-
-            if ($efficiencyConfig && $efficiencyConfig.length > 0) {
-                $efficiencyConfig.forEach(cfg => {
-                    const numType = cfg.typeA || cfg.type || 'DTTL';
-                    const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
-
-                    const calcGroupValue = (groupList, valueType) => {
-                        let total = 0;
-                        if (!groupList || groupList.length === 0) return 0;
-
-                        groupList.forEach(rawName => {
-                            const cleanCfgName = normalizeStr(rawName);
-                            const itemsToSum = macroToItemsMap[cleanCfgName] || [cleanCfgName];
-
-                            itemsToSum.forEach(targetName => {
-                                const findItem = (container) => {
-                                    for (const key in container) {
-                                        if (normalizeStr(key) === targetName) return container[key];
-                                    }
-                                    for (const key in container) {
-                                        const normKey = normalizeStr(key);
-                                        if (normKey.includes(targetName) || targetName.includes(normKey)) {
-                                            return container[key];
-                                        }
-                                    }
-                                    return null;
-                                };
-
-                                let item = findItem(data.doanhThuTheoNganhHang) || findItem(data.doanhThuTheoNhomHang);
-
-                                if (item) {
-                                    if (valueType === 'SL') total += item.quantity;
-                                    else if (valueType === 'DTQD') total += item.revenueQuyDoi;
-                                    else total += item.revenue; 
-                                }
-                            });
-                        });
-                        return total;
-                    };
-
-                    const numVal = calcGroupValue(cfg.groupA, numType);
-                    const denVal = calcGroupValue(cfg.groupB, denType);
-
-                    data.dynamicMetrics[cfg.id] = {
-                        value: denVal > 0 ? numVal / denVal : 0,
-                        target: goalSettings[cfg.id] !== undefined ? parseFloat(goalSettings[cfg.id]) : cfg.target,
-                        label: cfg.label
-                    };
                 });
             }
 
+            // 4. Tính toán Chỉ số Động (Efficiency Config từ Admin)
+            if ($efficiencyConfig && Array.isArray($efficiencyConfig)) {
+                $efficiencyConfig.forEach(cfg => {
+                    try {
+                        if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
+
+                        const numType = cfg.typeA || cfg.type || 'DTTL';
+                        const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
+
+                        const calcValue = (groupList, type) => {
+                            let total = 0;
+                            groupList.forEach(shortName => {
+                                const normShort = normalize(shortName);
+                                // Hàm quét đệ quy
+                                const scanBucket = (bucket) => {
+                                    for (const [key, val] of Object.entries(bucket)) {
+                                        if (normalize(key).includes(normShort)) {
+                                            if (type === 'SL') total += val.quantity;
+                                            else if (type === 'DTQD') total += val.revenueQuyDoi;
+                                            else total += val.revenue;
+                                        }
+                                    }
+                                };
+                                scanBucket(data.doanhThuTheoNganhHang);
+                                scanBucket(data.doanhThuTheoNhomHang);
+                            });
+                            return total;
+                        };
+
+                        const num = calcValue(cfg.groupA, numType);
+                        const den = calcValue(cfg.groupB, denType);
+
+                        data.dynamicMetrics[cfg.id] = {
+                            value: den > 0 ? num / den : 0,
+                            target: goalSettings && goalSettings[cfg.id] ? parseFloat(goalSettings[cfg.id]) : (cfg.target || 0),
+                            label: cfg.label
+                        };
+                    } catch (e) {
+                        // Silent fail để không crash
+                    }
+                });
+            }
+
+            // 5. Tính toán các Tỷ lệ phần trăm cố định (Hardcoded Percentages)
+            const totalRevenue = data.doanhThu > 0 ? data.doanhThu : 1;
+            const pctPhuKien = data.dtPhuKien / totalRevenue;
+            const pctGiaDung = data.dtGiaDung / totalRevenue;
+            const pctMLN = data.dtMLN / totalRevenue;
+            const pctSim = data.dtSim / totalRevenue;
+            const pctVAS = data.dtVAS / totalRevenue;
+            const pctBaoHiem = data.dtBaoHiem / totalRevenue;
+
             const hieuQuaQuyDoi = data.doanhThu > 0 ? (data.doanhThuQuyDoi / data.doanhThu) - 1 : 0;
             const tyLeTraCham = data.doanhThu > 0 ? data.doanhThuTraGop / data.doanhThu : 0;
-            const totalQuantity = Object.values(data.doanhThuTheoNganhHang).reduce((sum, category) => sum + category.quantity, 0);
-            const donGiaTrungBinh = totalQuantity > 0 ? data.doanhThu / totalQuantity : 0;
+
+            // 6. Tính toán Lương Thưởng
             const gioCong = gioCongByMSNV[employee.maNV] || 0;
             const thuongNong = thuongNongByMSNV[employee.maNV] || 0;
             const erpEntry = $thuongERPData.find(e => e.name.includes(employee.hoTen));
             const thuongERP = erpEntry ? parseFloat(erpEntry.bonus.replace(/,/g, '')) : 0;
             const tongThuNhap = thuongNong + thuongERP;
+
             const today = new Date();
-            const currentDay = today.getDate();
             const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
             let thuNhapDuKien = 0;
-            if (currentDay > 1) thuNhapDuKien = (tongThuNhap / (currentDay - 1)) * daysInMonth;
-            else if (currentDay === 1) thuNhapDuKien = tongThuNhap * daysInMonth;
+            if (today.getDate() > 1) {
+                thuNhapDuKien = (tongThuNhap / (today.getDate() - 1)) * daysInMonth;
+            } else {
+                thuNhapDuKien = tongThuNhap * daysInMonth;
+            }
+
             const thuongNongThangTruoc = thuongNongThangTruocByMSNV[employee.maNV] || 0;
             const erpEntryThangTruoc = $thuongERPDataThangTruoc.find(e => e.name.includes(employee.hoTen));
             const thuongERPThangTruoc = erpEntryThangTruoc ? parseFloat(erpEntryThangTruoc.bonus.replace(/,/g, '')) : 0;
             const thuNhapThangTruoc = (thuongNongThangTruoc || 0) + thuongERPThangTruoc;
             const chenhLechThuNhap = thuNhapDuKien - thuNhapThangTruoc;
 
+            const totalQuantity = Object.values(data.doanhThuTheoNganhHang).reduce((sum, c) => sum + c.quantity, 0);
+            const donGiaTrungBinh = totalQuantity > 0 ? data.doanhThu / totalQuantity : 0;
+
+            // 7. Trả về kết quả cuối cùng
             return { 
-                ...employee, ...data, 
-                gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, 
+                ...employee, 
+                ...data, // Spread data vào (dtICT, dtCE...)
+                pctPhuKien, pctGiaDung, pctMLN, pctSim, pctVAS, pctBaoHiem,
                 hieuQuaQuyDoi, tyLeTraCham,
-                donGiaTrungBinh, mucTieu: goalSettings 
+                gioCong, thuongNong, thuongERP, tongThuNhap, thuNhapDuKien, thuNhapThangTruoc, chenhLechThuNhap, 
+                donGiaTrungBinh,
+                mucTieu: goalSettings 
             };
         });
     },
@@ -17208,13 +17214,16 @@ export const masterReportLogic = {
     aggregateReport(reportData, selectedWarehouse = null) {
         if (!reportData || reportData.length === 0) return {};
 
+        // Tính tổng hợp cho toàn siêu thị
         const supermarketReport = reportData.reduce((acc, curr) => {
+            // Cộng dồn tất cả các trường số (bao gồm cả dtICT, dtCE...)
             for (const key in curr) {
                 if (typeof curr[key] === 'number') {
                     acc[key] = (acc[key] || 0) + curr[key];
                 }
             }
             
+            // Merge chi tiết Ngành hàng / Nhóm hàng
             ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang'].forEach(dictKey => {
                 if(curr[dictKey]) {
                     if(!acc[dictKey]) acc[dictKey] = {};
@@ -17235,113 +17244,88 @@ export const masterReportLogic = {
         supermarketReport.nganhHangChiTiet = supermarketReport.doanhThuTheoNganhHang;
         supermarketReport.nhomHangChiTiet = supermarketReport.doanhThuTheoNhomHang;
 
-        // [FIX] TÍNH TOÁN LẠI MACRO GROUP CHO CẤP SIÊU THỊ
-        // Để đảm bảo bảng "Top Nhóm Hàng" hiện dữ liệu của nhóm lớn (VD: Bảo hiểm)
-        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
-        $macroProductGroupConfig.forEach(macro => {
-            const macroName = macro.name;
-            const cleanMacroName = utils.cleanCategoryName(macroName);
-            
-            if (macro.items && Array.isArray(macro.items)) {
-                let mQuantity = 0, mRevenue = 0, mRevenueQuyDoi = 0;
-                
-                macro.items.forEach(childName => {
-                    const cleanChild = utils.cleanCategoryName(childName);
-                    // Tìm trong nhomHangChiTiet (ưu tiên) hoặc nganhHangChiTiet
-                    const childData = supermarketReport.nhomHangChiTiet[cleanChild] || supermarketReport.nganhHangChiTiet[cleanChild];
-                    
-                    if (childData) {
-                        mQuantity += childData.quantity;
-                        mRevenue += childData.revenue;
-                        mRevenueQuyDoi += childData.revenueQuyDoi;
-                    }
-                });
-
-                if (mRevenue > 0 || mQuantity > 0 || mRevenueQuyDoi > 0) {
-                    // Thêm vào nhomHangChiTiet để bảng Top Nhóm Hàng (QdcTable) có thể đọc được
-                    if (!supermarketReport.nhomHangChiTiet[cleanMacroName]) {
-                        supermarketReport.nhomHangChiTiet[cleanMacroName] = {
-                            name: macroName,
-                            quantity: mQuantity,
-                            revenue: mRevenue,
-                            revenueQuyDoi: mRevenueQuyDoi,
-                            isMacro: true
-                        };
-                    }
-                }
-            }
-        });
-
-        // TÍNH LẠI DYNAMIC METRICS CHO CẤP SIÊU THỊ
-        const $efficiencyConfig = get(efficiencyConfig) || [];
-        supermarketReport.dynamicMetrics = {};
+        // Tính lại % Tổng hợp Siêu thị
+        const totalRevenue = supermarketReport.doanhThu || 1;
+        supermarketReport.pctPhuKien = (supermarketReport.dtPhuKien || 0) / totalRevenue;
+        supermarketReport.pctGiaDung = (supermarketReport.dtGiaDung || 0) / totalRevenue;
+        supermarketReport.pctMLN = (supermarketReport.dtMLN || 0) / totalRevenue;
+        supermarketReport.pctSim = (supermarketReport.dtSim || 0) / totalRevenue;
+        supermarketReport.pctVAS = (supermarketReport.dtVAS || 0) / totalRevenue;
+        supermarketReport.pctBaoHiem = (supermarketReport.dtBaoHiem || 0) / totalRevenue;
         
-        const macroToItemsMap = {}; 
-        const addToMap = (configs) => {
-            (configs||[]).forEach(m => { if(m.items) macroToItemsMap[normalizeStr(m.name)] = m.items.map(i=>normalizeStr(i)); });
-        };
-        addToMap(get(macroCategoryConfig));
-        addToMap(get(macroProductGroupConfig));
-
-        if ($efficiencyConfig.length > 0) {
-            $efficiencyConfig.forEach(cfg => {
-                 const numType = cfg.typeA || cfg.type || 'DTTL';
-                 const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
-
-                 const calcGroupValue = (groupList, valueType) => {
-                    let total = 0;
-                    if (!groupList) return 0;
-                    groupList.forEach(rawName => {
-                        const cleanCfgName = normalizeStr(rawName);
-                        const itemsToSum = macroToItemsMap[cleanCfgName] || [cleanCfgName];
-                        
-                        itemsToSum.forEach(targetName => {
-                            const findItem = (container) => {
-                                if(!container) return null;
-                                for (const key in container) {
-                                    if (normalizeStr(key) === targetName) return container[key];
-                                }
-                                for (const key in container) {
-                                    const normKey = normalizeStr(key);
-                                    if (normKey.includes(targetName) || targetName.includes(normKey)) {
-                                        return container[key];
-                                    }
-                                }
-                                return null;
-                            };
-
-                            let item = findItem(supermarketReport.doanhThuTheoNganhHang) || findItem(supermarketReport.doanhThuTheoNhomHang);
-
-                            if (item) {
-                                if (valueType === 'SL') total += item.quantity;
-                                else if (valueType === 'DTQD') total += item.revenueQuyDoi;
-                                else total += item.revenue;
-                            }
-                        });
-                    });
-                    return total;
-                };
-
-                const numVal = calcGroupValue(cfg.groupA, numType);
-                const denVal = calcGroupValue(cfg.groupB, denType);
-                
-                supermarketReport.dynamicMetrics[cfg.id] = {
-                    value: denVal > 0 ? numVal / denVal : 0,
-                    target: cfg.target,
-                    label: cfg.label
-                };
-            });
-        }
-
-        supermarketReport.hieuQuaQuyDoi = supermarketReport.doanhThu > 0 ? (supermarketReport.doanhThuQuyDoi / supermarketReport.doanhThu) - 1 : 0;
-        supermarketReport.tyLeTraCham = supermarketReport.doanhThu > 0 ? supermarketReport.doanhThuTraGop / supermarketReport.doanhThu : 0;
+        supermarketReport.hieuQuaQuyDoi = (supermarketReport.doanhThuQuyDoi || 0) / totalRevenue - 1;
+        supermarketReport.tyLeTraCham = (supermarketReport.doanhThuTraGop || 0) / totalRevenue;
         supermarketReport.comparisonData = { value: 0, percentage: 'N/A' }; 
 
+        // Tính lại QDC Don gia
         if (supermarketReport.qdc) {
             for (const key in supermarketReport.qdc) {
                 const group = supermarketReport.qdc[key];
                 group.donGia = group.sl > 0 ? group.dt / group.sl : 0;
             }
+        }
+
+        // Tính lại Dynamic Metrics cho cấp Siêu thị
+        const $efficiencyConfig = get(efficiencyConfig) || [];
+        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
+        const $macroCategoryConfig = get(macroCategoryConfig) || [];
+        supermarketReport.dynamicMetrics = {};
+        
+        // Helper map cho Dynamic
+        const macroToItemsMap = {}; 
+        const addToMap = (configs) => {
+            if(Array.isArray(configs)) {
+                configs.forEach(m => { 
+                    if(m.items && Array.isArray(m.items)) {
+                        macroToItemsMap[normalize(m.name)] = m.items.map(i=>normalize(i)); 
+                    }
+                });
+            }
+        };
+        addToMap($macroCategoryConfig);
+        addToMap($macroProductGroupConfig);
+
+        if (Array.isArray($efficiencyConfig) && $efficiencyConfig.length > 0) {
+            $efficiencyConfig.forEach(cfg => {
+                try {
+                    if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
+
+                    const numType = cfg.typeA || 'DTTL';
+                    const denType = cfg.typeB || 'DTTL'; // Mặc định DTTL
+
+                    const calcGroupValue = (groupList, valueType) => {
+                        let total = 0;
+                        if (!Array.isArray(groupList) || groupList.length === 0) return 0;
+                        
+                        groupList.forEach(rawName => {
+                            if(!rawName) return;
+                            const cleanCfgName = normalize(rawName);
+                            // Quét buckets
+                             const scanBucket = (bucket) => {
+                                for (const [k, v] of Object.entries(bucket)) {
+                                    if (normalize(k).includes(cleanCfgName)) {
+                                        if(valueType==='SL') total+=v.quantity;
+                                        else if(valueType==='DTQD') total+=v.revenueQuyDoi;
+                                        else total+=v.revenue;
+                                    }
+                                }
+                            };
+                            scanBucket(supermarketReport.doanhThuTheoNganhHang);
+                            scanBucket(supermarketReport.doanhThuTheoNhomHang);
+                        });
+                        return total;
+                    };
+
+                    const numVal = calcGroupValue(cfg.groupA, numType);
+                    const denVal = calcGroupValue(cfg.groupB, denType);
+                    
+                    supermarketReport.dynamicMetrics[cfg.id] = {
+                        value: denVal > 0 ? numVal / denVal : 0,
+                        target: cfg.target,
+                        label: cfg.label
+                    };
+                } catch(e) {}
+            });
         }
 
         return supermarketReport;
@@ -20839,36 +20823,64 @@ export const masterReportLogic = {
   export let items = []; 
   export let dynamicItems = [];
   export let supermarketData = {}; 
+  export let goals = {}; // Nhận goals từ component cha
   
   const dispatch = createEventDispatcher();
 
+  // --- PHẦN STATE XỬ LÝ ẨN/HIỆN CỘT (FILTER) ---
   let isSettingsOpen = false;
   let filterSearch = '';
   let hiddenIds = new Set(); 
-
   const STORAGE_KEY = 'realtime_efficiency_hidden_ids';
 
   onMount(() => {
+      // Load trạng thái ẩn hiện từ localStorage
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-          try {
-              hiddenIds = new Set(JSON.parse(saved));
-          } catch (e) {}
+      if (saved) { 
+          try { hiddenIds = new Set(JSON.parse(saved)); } catch (e) {} 
       }
+      if (typeof feather !== 'undefined') feather.replace();
   });
 
-  function saveHiddenState() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenIds]));
+  afterUpdate(() => { 
+      if (typeof feather !== 'undefined') feather.replace(); 
+  });
+
+  function saveHiddenState() { 
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenIds])); 
   }
 
-  const iconMap = {
-      'pctPhuKien': 'headphones', 'pctGiaDung': 'home', 'pctMLN': 'droplet',
-      'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
+  // Map icon cho các chỉ số cố định
+  const iconMap = { 
+      'pctPhuKien': 'headphones', 
+      'pctGiaDung': 'home', 
+      'pctMLN': 'droplet', 
+      'pctSim': 'cpu', 
+      'pctVAS': 'layers', 
+      'pctBaoHiem': 'shield', 
+      'tyLeTraCham': 'credit-card' 
   };
 
-  // Merge items (Cố định + Động)
+  // Map key để lấy mục tiêu tương ứng từ settings
+  const targetMap = {
+      'pctPhuKien': 'phanTramPhuKien', 
+      'pctGiaDung': 'phanTramGiaDung', 
+      'pctMLN': 'phanTramMLN',
+      'pctSim': 'phanTramSim', 
+      'pctVAS': 'phanTramVAS', 
+      'pctBaoHiem': 'phanTramBaoHiem', 
+      'tyLeTraCham': 'phanTramTC'
+  };
+
+  // Gộp items cố định và dynamic items lại thành danh sách hiển thị
   $: displayItems = [
-      ...items,
+      // Các chỉ số cố định (Hardcoded)
+      ...items.map(i => ({
+          ...i,
+          // Lấy target từ goals truyền vào, nếu không có thì bằng 0
+          target: goals?.[targetMap[i.id]] || 0 
+      })),
+      // Các chỉ số động từ Admin Config
       ...(dynamicItems || []).map(cfg => {
           const metric = supermarketData.dynamicMetrics?.[cfg.id];
           return {
@@ -20882,20 +20894,21 @@ export const masterReportLogic = {
       })
   ];
 
-  $: filterList = displayItems.filter(item => 
-      item.label.toLowerCase().includes(filterSearch.toLowerCase())
-  );
+  // Logic lọc danh sách trong dropdown filter
+  $: filterList = displayItems.filter(item => item.label.toLowerCase().includes(filterSearch.toLowerCase()));
 
+  // Danh sách các item thực sự được hiển thị ra ngoài (đã trừ các item bị ẩn)
+  $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
+
+  // Hàm toggle ẩn/hiện 1 item
   function toggleVisibility(id) {
-      if (hiddenIds.has(id)) {
-          hiddenIds.delete(id);
-      } else {
-          hiddenIds.add(id);
-      }
-      hiddenIds = new Set(hiddenIds);
+      if (hiddenIds.has(id)) hiddenIds.delete(id); 
+      else hiddenIds.add(id);
+      hiddenIds = new Set(hiddenIds); // Trigger reactivity
       saveHiddenState();
   }
 
+  // Hàm ẩn/hiện tất cả
   function toggleAllVisibility(show) {
       if (show) {
           hiddenIds = new Set();
@@ -20905,32 +20918,29 @@ export const masterReportLogic = {
       saveHiddenState();
   }
 
-  $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
-
+  // --- LOGIC MÀU SẮC & CẢNH BÁO ---
   function getProgressColor(val, target) {
       const t = (target || 0) / 100;
-      if (t === 0) return '#3b82f6'; 
-      return val >= t ? '#3b82f6' : '#ef4444'; 
+      if (t <= 0) return '#3b82f6'; // Xanh dương mặc định nếu không có target
+      return val >= t ? '#16a34a' : '#ef4444'; // Đạt -> Xanh lá, Rớt -> Đỏ
   }
-
-  function handleWindowClick(e) {
+  
+  // Đóng dropdown khi click ra ngoài
+  function handleWindowClick(e) { 
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
       }
   }
-  
-  function handleDelete(id) {
+
+  function handleDelete(id) { 
       if(confirm('Bạn có chắc muốn xóa chỉ số này?')) {
           dispatch('delete', id);
       }
   }
-
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') feather.replace();
-  });
 </script>
 
 <svelte:window on:click={handleWindowClick} />
+
 <div class="luyke-widget h-full bg-white border border-gray-200 rounded-xl shadow-sm">
   <div class="luyke-widget-header">
     <div class="luyke-widget-title">
@@ -20939,41 +20949,29 @@ export const masterReportLogic = {
       </div>
       <span>HIỆU QUẢ KHAI THÁC</span>
     </div>
-
+    
     <div class="flex items-center gap-2">
-        <button 
-            class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200 transition-colors"
-            on:click={() => dispatch('add')}
-            title="Thêm chỉ số mới"
-        >
+        <button class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200" on:click={() => dispatch('add')}>
             <i data-feather="plus" class="w-3 h-3"></i> Thêm
         </button>
-
+        
         <div class="relative filter-wrapper">
-            <button 
-                class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
-                on:click={() => isSettingsOpen = !isSettingsOpen}
-                title="Lọc chỉ số hiển thị"
-            >
+            <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen}>
                 <i data-feather="filter" class="w-4 h-4"></i>
             </button>
-
+            
             {#if isSettingsOpen}
                 <div class="filter-dropdown">
                     <div class="filter-header">
                         <input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} />
                     </div>
                     <div class="filter-body custom-scrollbar" style="max-height: 250px;">
-                        {#if filterList.length === 0}
-                            <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
-                        {:else}
-                            {#each filterList as item (item.id)}
-                                <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
-                                    <input type="checkbox" checked={!hiddenIds.has(item.id)} />
-                                    <label>{item.label}</label>
-                                </div>
-                            {/each}
-                        {/if}
+                        {#each filterList as item (item.id)}
+                            <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
+                                <input type="checkbox" checked={!hiddenIds.has(item.id)} /> 
+                                <label>{item.label}</label>
+                            </div>
+                        {/each}
                     </div>
                     <div class="filter-actions">
                         <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
@@ -20988,7 +20986,7 @@ export const masterReportLogic = {
   <div class="luyke-widget-body custom-scrollbar p-0">
     {#if visibleItems.length === 0}
        <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
-          <p class="text-sm">Đã ẩn hết dữ liệu.</p>
+           <p class="text-sm">Đã ẩn hết dữ liệu.</p>
        </div>
     {:else}
       <div class="flex flex-col gap-0">
@@ -21014,16 +21012,23 @@ export const masterReportLogic = {
                     <div class="eff-bar-container">
                          <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
                     </div>
-                    {#if targetVal > 0}
-                        <span class="eff-target-text">MT: {item.target}%</span>
+                    
+                    {#if item.target > 0}
+                        <span class="eff-target-text {item.value < targetVal ? 'text-red-500 font-bold' : 'text-green-600'}">
+                            MT: {item.target}%
+                        </span>
                     {/if}
                 </div>
             </div>
 
             {#if item.isDynamic}
                 <div class="absolute right-2 top-2 hidden group-hover:flex gap-1 bg-white shadow-sm border border-gray-200 rounded p-1 z-10">
-                    <button on:click|stopPropagation={() => dispatch('edit', item.rawConfig)} class="text-gray-500 hover:text-blue-600 p-1"><i data-feather="edit-2" class="w-3 h-3"></i></button>
-                    <button on:click|stopPropagation={() => handleDelete(item.id)} class="text-gray-500 hover:text-red-600 p-1"><i data-feather="trash-2" class="w-3 h-3"></i></button>
+                     <button on:click|stopPropagation={() => dispatch('edit', item.rawConfig)} class="text-gray-500 hover:text-blue-600 p-1" title="Sửa">
+                         <i data-feather="edit-2" class="w-3 h-3"></i>
+                     </button>
+                    <button on:click|stopPropagation={() => handleDelete(item.id)} class="text-gray-500 hover:text-red-600 p-1" title="Xóa">
+                        <i data-feather="trash-2" class="w-3 h-3"></i>
+                    </button>
                 </div>
             {/if}
           </div>

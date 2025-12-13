@@ -14,60 +14,83 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- [MỚI] QUẢN LÝ CẤU HÌNH TOP NHÓM HÀNG (QDC) THEO KHO ---
-    
-    // Lưu danh sách nhóm hàng hiển thị
-    async saveQdcConfig(kho, config) {
+    // --- MỤC TIÊU (GOALS) ---
+    // Lưu cấu hình mục tiêu (Lũy kế + Realtime) cho kho
+    async saveGoalSettings(kho, type, settings) {
         const db = getDB();
         if (!db || !kho) return;
+
+        // type: 'luyke' hoặc 'realtime'
+        const fieldName = type === 'luyke' ? 'luykeGoals' : 'realtimeGoals';
 
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
-                qdcConfig: config, // Lưu mảng tên các nhóm hàng đã chọn
-                qdcConfigUpdatedAt: serverTimestamp(),
-                qdcConfigUpdatedBy: getCurrentUserEmail()
+                [fieldName]: settings,
+                [`${fieldName}UpdatedAt`]: serverTimestamp(),
+                [`${fieldName}UpdatedBy`]: getCurrentUserEmail()
             }, { merge: true });
-            console.log(`[DataSync] Đã lưu cấu hình Top nhóm hàng cho kho ${kho}`);
+            console.log(`[DataSync] Đã lưu mục tiêu ${type} cho kho ${kho}`);
         } catch (error) {
-            console.error("[DataSync] Lỗi lưu cấu hình Top nhóm hàng:", error);
+            console.error(`[DataSync] Lỗi lưu mục tiêu ${type}:`, error);
         }
     },
 
-    // Tải cấu hình
-    async loadQdcConfig(kho) {
+    // Tải cấu hình mục tiêu
+    async loadGoalSettings(kho) {
         const db = getDB();
-        if (!db || !kho) return null; // Trả về null để biết là chưa có config
+        if (!db || !kho) return { luyke: {}, realtime: {} };
 
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
-            if (docSnap.exists() && docSnap.data().qdcConfig) {
-                return docSnap.data().qdcConfig;
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                return {
+                    luyke: data.luykeGoals || {},
+                    realtime: data.realtimeGoals || {}
+                };
             }
-            return null; // Chưa từng lưu
+            return { luyke: {}, realtime: {} };
         } catch (e) {
-            console.error("[DataSync] Lỗi tải cấu hình Top nhóm hàng:", e);
-            return null;
+            console.error("[DataSync] Lỗi tải mục tiêu:", e);
+            return { luyke: {}, realtime: {} };
         }
     },
 
-    // --- CÁC HÀM CŨ (GIỮ NGUYÊN) ---
+    // --- CÁC HÀM KHÁC (GIỮ NGUYÊN) ---
+    async saveQdcConfig(kho, config) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                qdcConfig: config,
+                qdcConfigUpdatedAt: serverTimestamp(),
+                qdcConfigUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) { console.error(error); }
+    },
+
+    async loadQdcConfig(kho) {
+        const db = getDB();
+        if (!db || !kho) return null;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            return (docSnap.exists() && docSnap.data().qdcConfig) ? docSnap.data().qdcConfig : null;
+        } catch (e) { return null; }
+    },
+
     async saveRealtimeHiddenCategories(kho, hiddenList) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
-                realtimeConfig: {
-                    hiddenCategories: hiddenList,
-                    updatedAt: serverTimestamp(),
-                    updatedBy: getCurrentUserEmail()
-                }
+                realtimeConfig: { hiddenCategories: hiddenList, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
             }, { merge: true });
-        } catch (error) {
-            console.error("[DataSync] Lỗi lưu cấu hình Realtime:", error);
-        }
+        } catch (error) { console.error(error); }
     },
 
     async loadRealtimeHiddenCategories(kho) {
@@ -76,13 +99,8 @@ export const datasyncService = {
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
-            if (docSnap.exists() && docSnap.data().realtimeConfig) {
-                return docSnap.data().realtimeConfig.hiddenCategories || [];
-            }
-            return [];
-        } catch (e) {
-            return [];
-        }
+            return (docSnap.exists() && docSnap.data().realtimeConfig) ? docSnap.data().realtimeConfig.hiddenCategories || [] : [];
+        } catch (e) { return []; }
     },
 
     async savePersonalRevenueTables(kho, tables) {
@@ -90,53 +108,35 @@ export const datasyncService = {
         if (!db || !kho) return;
         const personalTables = tables.filter(t => !t.isSystem);
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            personalRevenueTables: personalTables,
-            personalTablesUpdatedAt: serverTimestamp(),
-            personalTablesUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { personalRevenueTables: personalTables, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadPersonalRevenueTables(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : [];
-        } catch(e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : []; } catch(e) { return []; }
     },
 
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            customMetrics: metrics,
-            customMetricsUpdatedAt: serverTimestamp(),
-            customMetricsUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { customMetrics: metrics, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadCustomMetrics(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? (docSnap.data().customMetrics || []) : [];
-        } catch(e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().customMetrics || []) : []; } catch(e) { return []; }
     },
 
     async saveMetadataToFirestore(kho, dataType, metadata) {
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
-        };
+        const dataToSave = { [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch(e) { throw e; }
     },
 
@@ -152,48 +152,28 @@ export const datasyncService = {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            competitionConfigs: configs,
-            competitionConfigsUpdatedAt: serverTimestamp(),
-            competitionConfigsUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { competitionConfigs: configs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadCompetitionConfigs(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? (docSnap.data().competitionConfigs || []) : [];
-        } catch(e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().competitionConfigs || []) : []; } catch(e) { return []; }
     },
 
     async saveSpecialPrograms(kho, programs) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            specialPrograms: programs,
-            specialProgramsUpdatedAt: serverTimestamp(),
-            specialProgramsUpdatedBy: getCurrentUserEmail()
-        };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
-        if (!db) return;
-        if (!kho) return;
+        if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = {
-            [key]: {
-                ...metadata,
-                updatedAt: serverTimestamp(),
-                updatedBy: getCurrentUserEmail()
-            }
-        };
+        const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
     },
 
@@ -201,9 +181,6 @@ export const datasyncService = {
         const db = getDB();
         if (!db || !kho) return null;
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return docSnap.exists() ? docSnap.data() : null;
-        } catch (error) { throw error; }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? docSnap.data() : null; } catch (error) { throw error; }
     }
 };

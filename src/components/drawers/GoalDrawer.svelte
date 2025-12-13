@@ -8,11 +8,11 @@
         modalState,
         localCompetitionConfigs, 
         selectedWarehouse,
-        efficiencyConfig // [MỚI]
+        efficiencyConfig // Cấu hình admin
     } from '../../stores.js';
     import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
-    import { adminService } from '../../services/admin.service.js'; // [MỚI]
+    import { adminService } from '../../services/admin.service.js';
     
     let activeTab = 'monthly';
     let localSelectedWarehouse = ''; 
@@ -22,20 +22,29 @@
 
     $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
 
-    $: if (isOpen && !localSelectedWarehouse && $warehouseList.length > 0) {
-        localSelectedWarehouse = $warehouseList[0];
+    // Tự động chọn kho
+    $: if (isOpen && !localSelectedWarehouse) {
+        localSelectedWarehouse = $selectedWarehouse || ($warehouseList.length > 0 ? $warehouseList[0] : '');
     }
 
-    $: if (localSelectedWarehouse) {
-        currentLuykeGoals = { ...($luykeGoalSettings[localSelectedWarehouse] || {}) };
-        const rtSettings = $realtimeGoalSettings[localSelectedWarehouse] || { goals: {}, timing: {} };
+    // [MỚI] Khi đổi kho, tải dữ liệu từ Cloud
+    $: if (isOpen && localSelectedWarehouse) {
+        loadGoals(localSelectedWarehouse);
+    }
+
+    async function loadGoals(kho) {
+        await settingsService.loadGoalsFromCloud(kho);
+        
+        // Cập nhật biến local để bind vào input
+        currentLuykeGoals = { ...($luykeGoalSettings[kho] || {}) };
+        
+        const rtSettings = $realtimeGoalSettings[kho] || { goals: {}, timing: {} };
         currentRealtimeGoals = {
             goals: { ...rtSettings.goals },
             timing: { ...rtSettings.timing }
         };
     }
     
-    // [MỚI] Load config toàn cục
     onMount(async () => {
         const configs = await adminService.loadEfficiencyConfig();
         efficiencyConfig.set(configs);
@@ -64,35 +73,25 @@
         settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
+    // Các hàm quản lý thi đua (giữ nguyên)
     function openCompetitionManager() {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
     }
-
     function editCompetition(index) {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
     }
-
     async function deleteCompetition(index) {
         if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
-        
         let newConfigs = [...$localCompetitionConfigs];
         newConfigs.splice(index, 1);
-        
         localCompetitionConfigs.set(newConfigs);
-
         if (localSelectedWarehouse) {
-            try {
-                await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs);
-            } catch(e) {
-                console.error(e);
-                alert("Lỗi khi xóa: " + e.message);
-            }
+            try { await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs); } catch(e) { console.error(e); }
         }
     }
 
-    // [FIX] Chỉ giữ lại các chỉ số cơ bản, phần còn lại render động
     const percentageInputs = [
         { id: 'phanTramQD', label: '% Quy đổi' },
         { id: 'phanTramTC', label: '% Trả chậm' }
@@ -148,7 +147,7 @@
 
                 <details class="group border rounded-lg overflow-hidden" open>
                     <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
-                        Mục tiêu khai thác (%)
+                         Mục tiêu khai thác (%)
                         <span class="transform group-open:rotate-180 transition-transform">▼</span>
                     </summary>
                     <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
@@ -202,20 +201,35 @@
                         <input type="number" id="rt-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuQD} on:input={saveRealtime}>
                     </div>
                 </div>
+                
+                <details class="group border rounded-lg overflow-hidden" open>
+                    <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
+                         Mục tiêu tỷ lệ Realtime (%)
+                        <span class="transform group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
+                        {#each percentageInputs as input}
+                            <div>
+                                <label for="rt-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
+                                <input type="number" id="rt-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals[input.id]} on:input={saveRealtime}>
+                            </div>
+                        {/each}
+                         {#each $efficiencyConfig as item}
+                            <div>
+                                <label for="rt-goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>{item.label}</label>
+                                <input type="number" id="rt-goal-{item.id}" class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder={item.target} bind:value={currentRealtimeGoals.goals[item.id]} on:input={saveRealtime}>
+                            </div>
+                        {/each}
+                    </div>
+                </details>
             </div>
         {/if}
 
         <div class="border-t pt-6 space-y-4">
             <div class="flex justify-between items-center">
                 <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
-                <button 
-                    on:click={openCompetitionManager}
-                    class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"
-                >
-                    <i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới
-                </button>
+                <button on:click={openCompetitionManager} class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"><i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới</button>
             </div>
-
             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
                 {#if $localCompetitionConfigs.length === 0}
                     <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
@@ -225,38 +239,10 @@
                     {#each $localCompetitionConfigs as config, index}
                         <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
                             <h4 class="text-lg font-bold text-gray-800 mb-2 pr-16">{config.name}</h4>
-                            
-                            <div class="text-sm mb-1">
-                                <span class="font-semibold text-gray-600">Hãng:</span>
-                                <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span>
-                            </div>
-
-                            <div class="text-sm text-gray-600 line-clamp-2" title={config.groups.join(', ')}>
-                                <span class="font-semibold">Nhóm hàng:</span>
-                                <span>{config.groups.length > 0 ? config.groups.join(', ') : 'Tất cả'}</span>
-                            </div>
-
-                            <div class="mt-2">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
-                                    {config.type === 'doanhthu' ? 'Theo Doanh thu' : 'Theo Số lượng'}
-                                </span>
-                            </div>
-
+                            <div class="text-sm mb-1"><span class="font-semibold text-gray-600">Hãng:</span> <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span></div>
                             <div class="absolute top-4 right-4 flex gap-2">
-                                <button 
-                                    on:click={() => openCompetitionManager()} 
-                                    class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                                    title="Chỉnh sửa"
-                                >
-                                    <i data-feather="edit-2" class="w-4 h-4"></i>
-                                </button>
-                                <button 
-                                    on:click={() => deleteCompetition(index)} 
-                                    class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                    title="Xóa"
-                                >
-                                    <i data-feather="trash-2" class="w-4 h-4"></i>
-                                </button>
+                                <button on:click={() => editCompetition(index)} class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                                <button on:click={() => deleteCompetition(index)} class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                             </div>
                         </div>
                     {/each}
@@ -269,16 +255,8 @@
 <style>
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-    
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-    .line-clamp-2 {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
 </style>

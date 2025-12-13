@@ -1,25 +1,45 @@
 <script>
   import { formatters } from '../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../utils.js';
+  import { efficiencyConfig } from '../../stores.js'; // [MỚI] Import để lấy config động
 
   export let reportData = [];
 
-  const ALL_COLUMNS = [
-      { id: 'dtICT', label: 'DT ICT', type: 'dt', headerClass: 'bg-blue-100 text-blue-900' },
-      { id: 'dtPhuKien', label: 'DT Phụ kiện', type: 'dt', headerClass: 'bg-blue-100 text-blue-900' },
-      { id: 'pctPhuKien', label: '% Phụ kiện', type: 'pct', targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
+  // [FIX] Cấu hình cột CỐ ĐỊNH (Hardcoded) khớp với key trong master.report.js
+  const FIXED_COLUMNS = [
+      { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
+      { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
+      { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
       
-      { id: 'dtCE', label: 'DT CE', type: 'dt', headerClass: 'bg-green-100 text-green-900' },
-      { id: 'dtGiaDung', label: 'DT Gia dụng', type: 'dt', headerClass: 'bg-green-100 text-green-900' },
-      { id: 'pctGiaDung', label: '% Gia dụng', type: 'pct', targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
-      { id: 'pctMLN', label: '% MLN', type: 'pct', targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
+      { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900' },
+      { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900' },
+      { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
+      { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
       
-      { id: 'pctSim', label: '% Sim', type: 'pct', targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
-      { id: 'pctVAS', label: '% VAS', type: 'pct', targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
-      { id: 'pctBaoHiem', label: '% Bảo hiểm', type: 'pct', targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
+      { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
+      { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
+      { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
   ];
 
-  let visibleColumnIds = ALL_COLUMNS.map(c => c.id);
+  // [MỚI] Merge cột cố định + cột động từ Admin
+  $: ALL_COLUMNS = [
+      ...FIXED_COLUMNS,
+      ...($efficiencyConfig || []).map(conf => ({
+          id: conf.id, // ID động (VD: eff_12345)
+          label: conf.label,
+          isRate: true,
+          targetKey: conf.id, // Key mục tiêu trùng với ID chỉ số
+          isDynamic: true,
+          headerClass: 'bg-purple-100 text-purple-900'
+      }))
+  ];
+
+  let visibleColumnIds = [];
+  // Init visible columns
+  $: if (visibleColumnIds.length === 0 && ALL_COLUMNS.length > 0) {
+      visibleColumnIds = ALL_COLUMNS.map(c => c.id);
+  }
+
   let sortKey = 'dtICT';
   let sortDirection = 'desc';
   let groupedData = {};
@@ -42,15 +62,19 @@
   }
 
   function handleSort(key) {
-    if (sortKey === key) {
-      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    } else {
-      sortKey = key;
-      sortDirection = 'desc';
-    }
+    if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+    else { sortKey = key; sortDirection = 'desc'; }
   }
 
-  // Reactive Sort
+  // Logic lấy giá trị an toàn
+  const getValue = (item, colId, isDynamic) => {
+      if (isDynamic) {
+          // Với chỉ số động, giá trị nằm trong dynamicMetrics
+          return item.dynamicMetrics?.[colId]?.value || 0;
+      }
+      return item[colId] || 0;
+  };
+
   $: sortEmployees = (dept) => {
       const items = groupedData[dept] || [];
       return [...items].sort((a, b) => {
@@ -59,34 +83,46 @@
              const nameB = b.hoTen || '';
              return sortDirection === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
           }
-          let valA = Number(a[sortKey]) || 0;
-          let valB = Number(b[sortKey]) || 0;
+          
+          // Check xem sort key là động hay tĩnh để lấy giá trị đúng
+          const isDynamicSort = $efficiencyConfig.some(c => c.id === sortKey);
+          let valA = getValue(a, sortKey, isDynamicSort);
+          let valB = getValue(b, sortKey, isDynamicSort);
+          
           return sortDirection === 'asc' ? valA - valB : valB - valA;
       });
   };
 
   function toggleColumn(columnId) {
-      if (visibleColumnIds.includes(columnId)) {
-          visibleColumnIds = visibleColumnIds.filter(id => id !== columnId);
-      } else {
-          visibleColumnIds = [...visibleColumnIds, columnId];
-      }
+      if (visibleColumnIds.includes(columnId)) visibleColumnIds = visibleColumnIds.filter(id => id !== columnId);
+      else visibleColumnIds = [...visibleColumnIds, columnId];
   }
 
-  // [MỚI] Logic màu sắc chuẩn
+  // [FIX] Logic Tô màu ô
   function getCellClass(item, colDef) {
-    const value = item[colDef.id] || 0;
+    const value = getValue(item, colDef.id, colDef.isDynamic);
     
-    if (colDef.type === 'pct') {
-        // Màu đỏ đậm cho %
-        return 'text-red-800 font-bold'; 
-    } else if (colDef.type === 'dt') {
-        // Màu xanh dương cho doanh thu
-        return 'text-blue-700 font-medium';
-    } else {
-        // Màu đen cho số lượng (hoặc mặc định)
-        return 'text-gray-900 font-medium';
-    }
+    if (colDef.isRate) {
+        // Lấy target: Nếu là cột động, lấy từ settings, nếu tĩnh lấy từ mucTieu
+        let target = 0;
+        if (colDef.isDynamic) {
+             // Target động được lưu trong mucTieu với key chính là ID chỉ số
+             target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
+             // Fallback: Nếu user chưa set mục tiêu riêng, lấy default từ config
+             if (target === 0) {
+                 const cfg = $efficiencyConfig.find(c => c.id === colDef.id);
+                 target = (cfg?.target || 0) / 100;
+             }
+        } else {
+             target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
+        }
+
+        if (target > 0 && value < target) return 'text-red-600 font-bold bg-red-50'; // Không đạt
+        return 'text-red-800 font-bold'; // Mặc định % là đỏ đậm
+    } 
+    
+    if (colDef.id.startsWith('dt')) return 'text-blue-700 font-medium';
+    return 'text-gray-900 font-medium';
   }
 
   function getHeaderClass(deptName) {
@@ -148,11 +184,12 @@
                   </td>
                   {#each ALL_COLUMNS as col}
                     {#if visibleColumnIds.includes(col.id)}
+                       {@const val = getValue(item, col.id, col.isDynamic)}
                        <td class="px-4 py-2 text-right border-l border-gray-100 {getCellClass(item, col)}">
-                          {#if col.type === 'pct'}
-                            {formatters.formatPercentage(item[col.id])}
+                          {#if col.isRate}
+                            {formatters.formatPercentage(val)}
                          {:else}
-                            {formatters.formatRevenue(item[col.id])}
+                            {formatters.formatRevenue(val)}
                          {/if}
                       </td>
                      {/if}

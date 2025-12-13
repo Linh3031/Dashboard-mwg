@@ -64,9 +64,18 @@
       warehouseCustomMetrics.set(localData);
   }
 
+  // [CẬP NHẬT] Map target từ goals vào combined items
   $: combinedEfficiencyItems = [
-      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
-      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
+      ...($efficiencyConfig || []).map(i => ({ 
+          ...i, 
+          isSystem: true,
+          target: goals?.[i.id] || i.target // Ưu tiên target từ Goal Setting
+      })),
+      ...($warehouseCustomMetrics || []).map(i => ({ 
+          ...i, 
+          isSystem: false,
+          target: goals?.[i.id] || i.target // Ưu tiên target từ Goal Setting
+      }))
   ];
 
   const cleanValue = (str) => {
@@ -77,6 +86,8 @@
       return isNaN(val) ? 0 : val;
   };
 
+  // ... (Giữ nguyên phần logic tính toán $: ở giữa không thay đổi) ...
+  // Để tiết kiệm không gian, tôi chỉ paste lại phần thay đổi ở template bên dưới
   $: {
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
@@ -128,7 +139,7 @@
     if (hasPasteData && mainKpis['% HT Target Dự Kiến (QĐ)']) {
          phanTramTargetQd = cleanValue(mainKpis['% HT Target Dự Kiến (QĐ)']) / 100;
     } else {
-         phanTramTargetQd = targetQD > 0 ? ((dtqdDuKien * 1000000) / targetQD) : 0;
+          phanTramTargetQd = targetQD > 0 ? ((dtqdDuKien * 1000000) / targetQD) : 0;
     }
 
     const phanTramTargetThuc = targetThuc > 0 ? ((dtDuKien * 1000000) / targetThuc) : 0;
@@ -211,7 +222,8 @@
       const isSystem = $efficiencyConfig.some(i => i.id === id);
       
       if (isSystem) {
-          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+         
+  alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
           return;
       }
 
@@ -234,7 +246,8 @@
   <div>
       <h2 id="luyke-supermarket-title" class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
         <i data-feather="bar-chart" class="text-blue-600"></i>
-        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
+        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse 
+: '(Toàn bộ)'}
       </h2>
 
       <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
@@ -246,7 +259,8 @@
                 <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
                 <span>MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
             </div>
-            <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
+      
+       <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
         </div>
 
         <div class="kpi-card-solid card-2">
@@ -257,6 +271,7 @@
                 <span>MT: {formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
             </div>
             <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
+ 
         </div>
 
         <div class="kpi-card-solid card-3">
@@ -269,7 +284,8 @@
         </div>
 
         <div class="kpi-card-solid card-4">
-            <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
+            <div 
+ class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
             <div class="kpi-solid-sub">
                 <span>Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span>
@@ -280,7 +296,8 @@
         <div class="kpi-card-solid card-5">
             <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
-            <div class="kpi-solid-sub">
+            <div 
+ class="kpi-solid-sub">
                 <span>Doanh số: {formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</span>
             </div>
             <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
@@ -292,6 +309,7 @@
             <div class="kpi-solid-sub">
                 <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
             </div>
+ 
             <div class="kpi-bg-icon"><i data-feather="award"></i></div>
         </div>
 
@@ -305,20 +323,23 @@
         </div>
 
         <div class="kpi-card-solid card-8">
-            <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
+  
+           <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
             <div class="flex flex-col gap-1 mt-1">
                 <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
                     <span class="text-sm font-semibold opacity-90">ĐMX</span>
                     <div class="text-right">
                         <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.dxm.val, 0)}</span>
-                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
+                  
+       <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
                     </div>
                 </div>
                 <div class="flex justify-between items-baseline pt-1">
                     <span class="text-sm font-semibold opacity-90">TGDD</span>
                     <div class="text-right">
                         <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.tgdd.val, 0)}</span>
-                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
+     
+                    <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
                     </div>
                 </div>
             </div>
@@ -333,6 +354,7 @@
           items={[]} 
           dynamicItems={combinedEfficiencyItems} 
           supermarketData={localSupermarketReport}
+          goals={localGoals} 
           on:add={openAddEffModal}
           on:edit={handleEditEffConfig}
           on:delete={handleDeleteEffConfig}
