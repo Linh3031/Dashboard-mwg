@@ -2,10 +2,9 @@
 import { formatters } from '../../../utils/formatters.js';
 
 export const dynamicTableProcessor = {
-    // [LOGIC MỚI] Tìm kiếm dữ liệu trực tiếp bằng ID (O(1))
+    // Tìm dữ liệu theo ID (O(1))
     findItemData(employee, targetId) {
         if (!employee || !targetId) return null;
-
         // Ưu tiên 1: Tìm trong Nhóm Hàng
         if (employee.doanhThuTheoNhomHang && employee.doanhThuTheoNhomHang[targetId]) {
             return employee.doanhThuTheoNhomHang[targetId];
@@ -17,111 +16,127 @@ export const dynamicTableProcessor = {
         return null;
     },
 
-    // Hàm chính: Biến đổi dữ liệu thô thành dữ liệu hiển thị
+    // Hàm tính tổng giá trị từ danh sách ID
+    calculateGroupValue(employee, items, type = 'DT') {
+        if (!items || items.length === 0) return 0;
+        
+        return items.reduce((sum, itemId) => {
+            const data = this.findItemData(employee, itemId);
+            if (!data) return sum;
+
+            if (type === 'SL') return sum + (data.quantity || 0);
+            if (type === 'DTQD') return sum + (data.revenueQuyDoi || 0);
+            return sum + (data.revenue || 0); // Default DT
+        }, 0);
+    },
+
+    // Hàm chính: Xử lý dữ liệu bảng
     processTableData(reportData, config) {
         if (!reportData || !config) return { processedData: [], totals: {} };
+
+        // [DETECT TYPE] Xác định cấu trúc config mới hay cũ
+        const columnsConfig = config.columns || config.subColumns || [];
+        
+        // Khởi tạo dòng tổng
+        const totalRow = {
+            maNV: 'TOTAL',
+            hoTen: 'TỔNG CỘNG',
+            isTotal: true,
+            // Dynamic cells
+            cells: {} 
+        };
 
         const processedData = reportData.map(employee => {
             const row = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
-                mainValue: 0,      // Tổng DT
-                mainValue_dtqd: 0, // Tổng DTQĐ
-                mainValue_sl: 0,   // Tổng SL
-                columns: {}        // Data chi tiết từng cột phụ
+                mucTieu: employee.mucTieu || {}, // Lấy mục tiêu cá nhân
+                cells: {}
             };
 
-            // --- BƯỚC 1: TÍNH TOÁN CỘT TỔNG (MAIN COLUMN) ---
-            // Nếu người dùng CÓ chọn items cho cột tổng -> Tính theo items đó
-            if (config.mainColumn && config.mainColumn.items && config.mainColumn.items.length > 0) {
-                config.mainColumn.items.forEach(itemId => {
-                    const itemData = this.findItemData(employee, itemId);
-                    if (itemData) {
-                        row.mainValue_sl += (itemData.quantity || 0);
-                        row.mainValue += (itemData.revenue || 0);
-                        row.mainValue_dtqd += (itemData.revenueQuyDoi || 0);
-                    }
-                });
-            } 
-            // Nếu KHÔNG chọn items (để trống) -> Logic cũ: Sẽ cộng dồn từ cột phụ ở Bước 2
-            
-            // --- BƯỚC 2: TÍNH TOÁN CỘT PHỤ (SUB COLUMNS) ---
-            if (config.subColumns && Array.isArray(config.subColumns)) {
-                config.subColumns.forEach(col => {
-                    let sl = 0, dt = 0, dtqd = 0;
-                    let details = [];
+            let hasData = false;
 
-                    col.items.forEach(itemId => {
-                        const itemData = this.findItemData(employee, itemId);
-                        if (itemData) {
-                            const qty = itemData.quantity || 0;
-                            const rev = itemData.revenue || 0;
-                            const revQd = itemData.revenueQuyDoi || 0;
-
-                            sl += qty;
-                            dt += rev;
-                            dtqd += revQd;
-                            
-                            if (qty > 0 || rev > 0) {
-                                details.push(`${itemData.name}: ${formatters.formatNumber(qty)} / ${formatters.formatRevenue(rev)}`);
-                            }
-                        }
-                    });
-
-                    row.columns[col.header] = { sl, dt, dtqd, tooltip: details.join('\n') };
+            columnsConfig.forEach(col => {
+                const colId = col.id || col.header; // Fallback cho bảng cũ
+                let value = 0;
+                let displayValue = '';
+                let rawData = {};
+                
+                // --- LOGIC MỚI: BẢNG HIỆU QUẢ ---
+                if (col.type === 'PERCENT') {
+                    // 1. Tính Tử số
+                    const numVal = this.calculateGroupValue(employee, col.numerator, 'DT'); // Mặc định DT, có thể mở rộng sau
+                    // 2. Tính Mẫu số
+                    const denVal = this.calculateGroupValue(employee, col.denominator, 'DT');
                     
-                    // Fallback Logic: Nếu cột tổng chưa được tính (không có items), thì cộng dồn từ cột phụ
-                    if (!config.mainColumn || !config.mainColumn.items || config.mainColumn.items.length === 0) {
-                        const metrics = config.mainColumn?.metrics || { dt: true }; // Mặc định DT
-                        if (metrics.dt) row.mainValue += dt;
-                        if (metrics.dtqd) row.mainValue_dtqd += dtqd;
-                        if (metrics.sl) row.mainValue_sl += sl;
-                    }
-                });
-            }
-            
-            // Chỉ trả về nếu có dữ liệu ở cột tổng hoặc bất kỳ cột phụ nào
-            const hasData = row.mainValue > 0 || row.mainValue_sl > 0 || row.mainValue_dtqd > 0 || Object.values(row.columns).some(c => c.dt > 0 || c.sl > 0);
-            return hasData ? row : null;
+                    value = denVal > 0 ? numVal / denVal : 0;
+                    displayValue = formatters.formatPercentage(value);
+                    
+                    // Cộng dồn cho dòng tổng (Tử & Mẫu riêng)
+                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { num: 0, den: 0, type: 'PERCENT' };
+                    totalRow.cells[colId].num += numVal;
+                    totalRow.cells[colId].den += denVal;
 
+                } else {
+                    // --- LOGIC CŨ/THƯỜNG: SL, DT, DTQD ---
+                    // Map type config sang type tính toán
+                    const calcType = col.type === 'DTQD' ? 'DTQD' : (col.type === 'SL' ? 'SL' : 'DT');
+                    
+                    // Nếu là bảng cũ (subColumns), items nằm ở col.items
+                    // Nếu là bảng mới (columns), items cũng nằm ở col.items
+                    value = this.calculateGroupValue(employee, col.items, calcType);
+                    
+                    if (calcType === 'SL') displayValue = formatters.formatNumber(value);
+                    else displayValue = formatters.formatRevenue(value);
+
+                    // Cộng dồn dòng tổng
+                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { val: 0, type: col.type || 'DT' };
+                    totalRow.cells[colId].val += value;
+                }
+
+                if (value > 0) hasData = true;
+
+                // Lưu vào cell
+                row.cells[colId] = {
+                    value,
+                    display: displayValue,
+                    config: col
+                };
+            });
+
+            return hasData ? row : null;
         }).filter(Boolean);
 
-        // Tính tổng toàn bảng (Totals Row)
-        const totals = processedData.reduce((acc, row) => {
-            acc.mainValue += row.mainValue;
-            acc.mainValue_dtqd += row.mainValue_dtqd;
-            acc.mainValue_sl += row.mainValue_sl;
+        // Tính toán hiển thị cho dòng Tổng
+        Object.keys(totalRow.cells).forEach(key => {
+            const cell = totalRow.cells[key];
+            if (cell.type === 'PERCENT') {
+                const val = cell.den > 0 ? cell.num / cell.den : 0;
+                cell.value = val;
+                cell.display = formatters.formatPercentage(val);
+            } else {
+                if (cell.type === 'SL') cell.display = formatters.formatNumber(cell.val);
+                else cell.display = formatters.formatRevenue(cell.val);
+                cell.value = cell.val;
+            }
+        });
 
-            Object.keys(row.columns).forEach(key => {
-                if (!acc.columns[key]) acc.columns[key] = { sl: 0, dt: 0, dtqd: 0 };
-                acc.columns[key].sl += row.columns[key].sl;
-                acc.columns[key].dt += row.columns[key].dt;
-                acc.columns[key].dtqd += row.columns[key].dtqd;
-            });
-            return acc;
-        }, { mainValue: 0, mainValue_dtqd: 0, mainValue_sl: 0, columns: {} });
-
-        return { processedData, totals };
+        return { processedData, totals: totalRow };
     },
 
-    // Hàm sắp xếp (Giữ nguyên)
+    // Hàm sắp xếp
     sortTableData(data, key, direction) {
         return [...data].sort((a, b) => {
+            // Sort theo tên
             if (key === 'hoTen') {
                 return direction === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
             }
-            if (key === 'mainValue') return direction === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
-            if (key === 'totalSL') return direction === 'asc' ? a.mainValue_sl - b.mainValue_sl : b.mainValue_sl - a.mainValue_sl;
-            if (key === 'totalDTQD') return direction === 'asc' ? a.mainValue_dtqd - b.mainValue_dtqd : b.mainValue_dtqd - a.mainValue_dtqd;
-
-            if (key.includes('|')) {
-                const [colHeader, type] = key.split('|');
-                const valA = a.columns[colHeader]?.[type] || 0;
-                const valB = b.columns[colHeader]?.[type] || 0;
-                return direction === 'asc' ? valA - valB : valB - valA;
-            }
-     
-            return direction === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
+            
+            // Sort theo giá trị cột (truy cập vào cells)
+            const valA = a.cells[key]?.value || 0;
+            const valB = b.cells[key]?.value || 0;
+            
+            return direction === 'asc' ? valA - valB : valB - valA;
         });
     }
 };

@@ -98,6 +98,9 @@ export const warehouseCustomMetrics = writable([]);
 // [CẬP NHẬT] Reset về mảng rỗng để không hiện bảng mẫu khi khởi tạo
 export const customRevenueTables = writable([]);
 
+// [MỚI - PERFORMANCE TABLE] Store lưu trữ cấu hình bảng hiệu quả (Cả Admin & User)
+export const customPerformanceTables = writable([]);
+
 /**
  * Cài đặt & Trạng thái UI
  */

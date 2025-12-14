@@ -17,12 +17,10 @@
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
-  
-  // [MỚI] Import thêm RevenueDetailView
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
-
   import IncomeTable from './health-staff/IncomeTable.svelte';
-  import EfficiencyTable from './health-staff/EfficiencyTable.svelte';
+  // [NEW] Thay thế EfficiencyTable bằng PerformanceView
+  import PerformanceView from './health-staff/performance/PerformanceView.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
 
@@ -42,6 +40,8 @@
   ];
 
   let lastDataHash = ''; 
+  
+  // Logic tính toán Master Report khi dữ liệu thay đổi
   $: {
       if ($danhSachNhanVien.length > 0 && $ycxData.length > 0) {
           const currentHash = `${$danhSachNhanVien.length}-${$ycxData.length}-${$selectedWarehouse}`;
@@ -54,6 +54,7 @@
       }
   }
 
+  // Logic xử lý Processed Report (thêm đánh giá, trung bình bộ phận)
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -183,7 +184,7 @@
                 {:else if activeSubTab === 'hieuqua'}
                     <div id="subtab-hieuqua" class="sub-tab-content" data-capture-preset="landscape-table">
                         <div id="efficiency-report-container">
-                            <EfficiencyTable reportData={processedReport} />
+                            <PerformanceView reportData={processedReport} />
                         </div>
                     </div>
 

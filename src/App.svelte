@@ -6,6 +6,8 @@
       modalState, 
       efficiencyConfig, 
       customRevenueTables, 
+      // [NEW] Store cho bảng hiệu quả
+      customPerformanceTables,
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse
@@ -39,12 +41,22 @@
   import ComposerModal from './components/modals/ComposerModal.svelte';
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
+  // [NEW] Import Modal mới
+  import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
 
   onMount(async () => {
     try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
     const isLoggedIn = authService.initAuth();
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
+    
+    // [NEW] Load bảng hiệu quả khi khởi động (User bảng sẽ load khi chọn kho)
+    loadInitialTables();
   });
+
+  async function loadInitialTables() {
+     const sysTables = await adminService.loadSystemPerformanceTables();
+     customPerformanceTables.set(sysTables);
+  }
 
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
@@ -69,6 +81,7 @@
       } 
       // LOGIC USER (Tab Lũy kế / Realtime)
       else {
+      
           // User thì đánh dấu isSystem = false
           newItem.isSystem = false;
 
@@ -87,7 +100,7 @@
           
           const wh = get(selectedWarehouse);
           if(wh) {
-              datasyncService.saveCustomMetrics(wh, currentLocal);
+               datasyncService.saveCustomMetrics(wh, currentLocal);
           } else {
               alert("Vui lòng chọn Kho để lưu chỉ số này.");
           }
@@ -111,25 +124,50 @@
       
       // 2. Phân loại nơi lưu trữ
       if (newItem.isSystem) {
-          // A. Nếu là bảng HỆ THỐNG (Chỉ Admin tạo/sửa)
-          // Lấy toàn bộ bảng hệ thống từ store hiện tại để lưu đè lên Cloud
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
           console.log("Đã lưu bảng hệ thống lên Admin Cloud");
       } else {
-          // B. Nếu là bảng CÁ NHÂN (User tạo)
-          // Lấy bảng cá nhân để lưu
           const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
-          
-          // Lưu LocalStorage (Backup)
           localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
           
-          // Lưu Warehouse Cloud (Nếu đã chọn kho)
           const wh = get(selectedWarehouse);
           if (wh) {
               await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
           }
           console.log("Đã lưu bảng cá nhân");
+      }
+  }
+
+  // [NEW] Xử lý lưu Bảng Hiệu Quả (Performance Table)
+  async function handleSavePerformanceTable(event) {
+      const newItem = event.detail;
+      
+      // 1. Cập nhật Store hiển thị
+      customPerformanceTables.update(items => {
+          const idx = items.findIndex(i => i.id === newItem.id);
+          if (idx >= 0) {
+              items[idx] = { ...items[idx], ...newItem };
+              return [...items];
+          } else {
+              return [...items, newItem];
+          }
+      });
+
+      // 2. Phân luồng lưu trữ
+      if (newItem.isSystem) {
+          // Admin System Table
+          const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
+          await adminService.saveSystemPerformanceTables(systemTables);
+      } else {
+          // User Personal Table
+          const personalTables = get(customPerformanceTables).filter(t => !t.isSystem);
+          const wh = get(selectedWarehouse);
+          if (wh) {
+              await datasyncService.savePersonalPerformanceTables(wh, personalTables);
+          } else {
+              alert("Vui lòng chọn Kho để lưu bảng cá nhân.");
+          }
       }
   }
 </script>
@@ -149,6 +187,14 @@
     editItem={$modalState.payload}
     on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
     on:save={handleSaveCustomTable}
+/>
+
+<AddPerformanceTableModal
+    isOpen={$modalState.activeModal === 'add-performance-table-modal'}
+    editItem={$modalState.payload}
+    isSystem={$modalState.isSystem || false}
+    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:save={handleSavePerformanceTable}
 />
 
 <AddEfficiencyColumnModal 

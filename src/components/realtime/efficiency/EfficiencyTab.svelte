@@ -3,32 +3,31 @@
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   
-  // [THAY ĐỔI QUAN TRỌNG] Import bảng từ Health Staff để đồng bộ giao diện
-  import EfficiencyTable from '../../health-staff/EfficiencyTable.svelte';
+  // [NEW] Sử dụng View mới thay vì EfficiencyTable cũ
+  import PerformanceView from '../../health-staff/performance/PerformanceView.svelte';
 
-  // Biến dữ liệu
   let filteredReport = [];
 
   $: {
-    // 1. Lấy dữ liệu & Mục tiêu
     const currentWarehouse = $selectedWarehouse;
+    // Lấy mục tiêu Realtime
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     const goals = settings.goals || {};
 
-    // 2. Tính toán Master Report (Array danh sách nhân viên)
+    // Tính toán Master Report (isRealtime = true để xử lý đúng logic realtime)
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    // 3. Lọc theo kho
+    // Lọc theo kho
     if (currentWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
+       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
-      filteredReport = masterReport;
+       filteredReport = masterReport;
     }
   }
 </script>
 
 <div class="animate-fade-in pb-10">
-    <EfficiencyTable reportData={filteredReport} />
+    <PerformanceView reportData={filteredReport} />
 </div>
 
 <style>

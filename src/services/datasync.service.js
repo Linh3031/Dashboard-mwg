@@ -118,6 +118,34 @@ export const datasyncService = {
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : []; } catch(e) { return []; }
     },
 
+    // --- [NEW] BẢNG HIỆU QUẢ CÁ NHÂN ---
+    async savePersonalPerformanceTables(kho, tables) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const personalTables = tables.filter(t => !t.isSystem);
+        const khoRef = doc(db, "warehouseData", kho);
+        try { 
+            await setDoc(khoRef, { 
+                personalPerformanceTables: personalTables, 
+                updatedAt: serverTimestamp() 
+            }, { merge: true }); 
+        } catch (error) { throw error; }
+    },
+
+    async loadPersonalPerformanceTables(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+        const khoRef = doc(db, "warehouseData", kho);
+        try { 
+            const docSnap = await getDoc(khoRef); 
+            return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; 
+        } catch(e) { 
+            console.error("Lỗi tải bảng hiệu quả cá nhân:", e);
+            return []; 
+        }
+    },
+    // --- END NEW ---
+
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
         if (!db || !kho) return;

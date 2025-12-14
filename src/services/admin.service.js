@@ -1,5 +1,5 @@
 // src/services/admin.service.js
-// Version 3.2 - Fix Missing loadMacroCategoryConfig
+// Version 3.3 - Add System Performance Tables Support
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -15,7 +15,9 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    competitionNameMappings
+    competitionNameMappings,
+    // [NEW]
+    customPerformanceTables
 } from '../stores.js';
 
 const getDB = () => {
@@ -39,6 +41,7 @@ const sanitizeForFirestore = (obj) => {
 };
 
 export const adminService = {
+    // ... (Giữ nguyên code cũ từ mục 1 đến 3) ...
     // --- 1. HELP CONTENT ---
     async saveHelpContent(contents) {
         const db = getDB();
@@ -82,7 +85,6 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const raw = docSnap.data();
-                // Fallback đọc nhiều trường
                 const data = raw.data || raw.config || raw;
                 if (data) homeConfig.set(data);
             }
@@ -109,28 +111,20 @@ export const adminService = {
     async loadCategoryDataFromFirestore() {
         const db = getDB();
         if (!db) return { categories: [], brands: [] };
-        
         await this.loadMappingsGlobal();
-
         try {
             const catRef = doc(db, "declarations", "categoryStructure");
             const brandRef = doc(db, "declarations", "brandList");
-            
             const [catSnap, brandSnap] = await Promise.all([getDoc(catRef), getDoc(brandRef)]);
-            
-            // [FIX] Fallback đọc data
             const getArray = (snap) => {
                 if (!snap.exists()) return [];
                 const d = snap.data();
                 return d.data || d.items || d.list || [];
             };
-
             const categories = getArray(catSnap);
             const brands = getArray(brandSnap);
-
             categoryStructure.set(categories);
             brandList.set(brands);
-
             return { categories, brands };
         } catch (error) {
             console.error("Error loading category data:", error);
@@ -147,9 +141,8 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const d = docSnap.data();
-                // [FIX] Ưu tiên 'tables', nếu không có thì tìm 'data', 'items'
                 const tables = d.tables || d.data || d.items || [];
-                console.log(`[AdminService] Loaded ${tables.length} system tables.`);
+                console.log(`[AdminService] Loaded ${tables.length} system revenue tables.`);
                 return tables;
             }
             return [];
@@ -163,36 +156,72 @@ export const adminService = {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
         if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        
-        // Chỉ lưu bảng có cờ isSystem = true
         const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
-        
         try {
             const docRef = doc(db, "declarations", "systemRevenueTables");
-            // Lưu thống nhất vào field 'tables'
             await setDoc(docRef, { 
                 tables: systemTables,
                 updatedAt: serverTimestamp() 
             });
-            notify(`Đã lưu ${systemTables.length} bảng mẫu hệ thống lên Cloud!`, 'success');
+            notify(`Đã lưu ${systemTables.length} bảng doanh thu hệ thống lên Cloud!`, 'success');
         } catch (error) { 
             console.error("Firebase Error Full:", error); 
             notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
         }
     },
 
+    // --- [NEW] 4.5. SYSTEM PERFORMANCE TABLES (BẢNG HIỆU QUẢ) ---
+    async loadSystemPerformanceTables() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "systemPerformanceTables");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                // Ưu tiên 'tables', fallback 'data'
+                const tables = d.tables || d.data || [];
+                console.log(`[AdminService] Loaded ${tables.length} system performance tables.`);
+                return tables;
+            }
+            return [];
+        } catch (e) {
+            console.error("Lỗi tải bảng hiệu quả hệ thống:", e);
+            return [];
+        }
+    },
+
+    async saveSystemPerformanceTables(tables) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
+        
+        // Chỉ lưu bảng có cờ isSystem = true
+        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
+        
+        try {
+            const docRef = doc(db, "declarations", "systemPerformanceTables");
+            await setDoc(docRef, { 
+                tables: systemTables,
+                updatedAt: serverTimestamp() 
+            });
+            notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
+        } catch (error) { 
+            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error); 
+            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
+        }
+    },
+
+    // ... (Giữ nguyên các phần còn lại từ mục 5 đến 9) ...
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
     async loadMappingsGlobal() {
         const db = getDB();
         if (!db) return;
-        
         try {
             console.log("[admin.service] Đang tải cấu hình Mapping từ Cloud...");
-            // Helper để lấy dữ liệu array an toàn
             const safeGet = (docSnap, defaultVal = []) => {
                 if (!docSnap.exists()) return defaultVal;
                 const d = docSnap.data();
-                // Kiểm tra các trường phổ biến
                 return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
             };
 
@@ -207,7 +236,6 @@ export const adminService = {
                 "competitionNameMappings"
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
-            
             const results = await Promise.all(promises);
             
             macroCategoryConfig.set(safeGet(results[0]));
@@ -215,7 +243,7 @@ export const adminService = {
             categoryNameMapping.set(safeGet(results[2], {}));
             groupNameMapping.set(safeGet(results[3], {}));
             brandNameMapping.set(safeGet(results[4], {}));
-            efficiencyConfig.set(safeGet(results[5])); // Bảng hiệu quả
+            efficiencyConfig.set(safeGet(results[5])); 
             qdcConfigStore.set(safeGet(results[6]));
             competitionNameMappings.set(safeGet(results[7], {}));
 
@@ -236,10 +264,8 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
     },
 
-    // [MỚI] Hàm tải cấu hình nhóm ngành hàng lớn (Fix lỗi TypeError)
     async loadMacroCategoryConfig() {
         const db = getDB();
-        // Dữ liệu mặc định (Fallback) phòng trường hợp DB chưa có
         const defaultData = [
             { id: 'macro_dt', name: 'ĐIỆN TỬ', items: ['dt_tivi', 'dt_loa', 'Tivi', 'Loa', 'Dàn âm thanh', 'Tivi - Loa - Dàn máy'] },
             { id: 'macro_dl', name: 'ĐIỆN LẠNH', items: ['dl_maylanh', 'dl_tulanh', 'dl_maygiat', 'Tủ lạnh', 'Máy lạnh', 'Máy giặt', 'Tủ đông', 'Tủ mát'] },
@@ -399,7 +425,6 @@ export const adminService = {
     },
 
     // --- 9. EFFICIENCY & QDC CONFIGS ---
-    // (BẢNG HIỆU QUẢ)
     async saveEfficiencyConfig(config) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
@@ -427,7 +452,6 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const d = docSnap.data();
-                // [FIX] Đọc fallback 'data' hoặc 'items' hoặc 'config'
                 const data = d.data || d.items || d.config || [];
                 console.log(`[AdminService] Loaded efficiency config: ${data.length} items`);
                 return data;
@@ -439,7 +463,6 @@ export const adminService = {
         }
     },
     
-    // (TOP NHÓM HÀNG)
     async saveQdcConfig(selectedGroups) {
          const db = getDB();
         if (!db || !get(isAdmin)) return;
