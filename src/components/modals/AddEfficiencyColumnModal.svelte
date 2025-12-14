@@ -1,39 +1,91 @@
 <script>
     import { createEventDispatcher } from 'svelte';
     import { categoryStructure } from '../../stores.js';
-    import { cleanCategoryName } from '../../utils.js';
+    import { parseIdentity } from '../../utils.js';
 
     export let isOpen = false;
     export let editItem = null; // Nếu null là thêm mới, có data là sửa
-    
-    // [MỚI] Biến cờ để xác định đang mở từ Admin hay User
-    export let isAdmin = false;
+    export let isAdmin = false; // Biến cờ xác định Admin/User
 
     const dispatch = createEventDispatcher();
 
-    // Dữ liệu form
+    // --- FORM DATA ---
     let label = '';
-    let groupA = []; // Danh sách tên nhóm/ngành hàng tử số
-    let groupB = []; // Danh sách tên nhóm/ngành hàng mẫu số
+    let groupA = []; // Lưu danh sách ID
+    let groupB = []; // Lưu danh sách ID
     let target = 80;
-    let type = 'DTTL'; // 'SL', 'DTTL' (Doanh thu thực), 'DTQD'
+    let type = 'DTTL'; // 'SL', 'DTTL', 'DTQD'
     let searchA = '';
     let searchB = '';
-
-    // Lấy danh sách duy nhất từ categoryStructure
-    $: uniqueCategories = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nganhHang)).filter(Boolean))].sort();
-    $: uniqueGroups = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
-    
     let modeA = 'group'; // 'group' | 'category'
     let modeB = 'category'; // 'group' | 'category'
 
+    // --- DATA PREPARATION ---
+    // 1. Danh sách Ngành hàng (Unique by ID)
+    $: uniqueCategories = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nganhHang) return;
+            const parsed = parseIdentity(c.nganhHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
+
+    // 2. Danh sách Nhóm hàng (Unique by ID)
+    $: uniqueGroups = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nhomHang) return;
+            const parsed = parseIdentity(c.nhomHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
+    
+    // --- LIST SOURCE ---
     $: listSourceA = modeA === 'group' ? uniqueGroups : uniqueCategories;
     $: listSourceB = modeB === 'group' ? uniqueGroups : uniqueCategories;
 
-    $: filteredListA = listSourceA.filter(i => i.toLowerCase().includes(searchA.toLowerCase()));
-    $: filteredListB = listSourceB.filter(i => i.toLowerCase().includes(searchB.toLowerCase()));
+    // --- SORTING LOGIC: SELECTED FIRST ---
+    // Lọc theo search -> Sắp xếp (Đã chọn lên đầu -> Alpha)
+    $: visibleListA = listSourceA
+        .filter(i => i.display.toLowerCase().includes(searchA.toLowerCase()))
+        .sort((a, b) => {
+            const aSel = groupA.includes(a.id);
+            const bSel = groupA.includes(b.id);
+            if (aSel && !bSel) return -1;
+            if (!aSel && bSel) return 1;
+            return 0; // Giữ nguyên thứ tự alpha nếu cùng trạng thái
+        });
 
-    // Khởi tạo khi edit
+    $: visibleListB = listSourceB
+        .filter(i => i.display.toLowerCase().includes(searchB.toLowerCase()))
+        .sort((a, b) => {
+            const aSel = groupB.includes(b.id);
+            const bSel = groupB.includes(a.id);
+            if (aSel && !bSel) return -1; // Fix logic sort chiều B
+            if (!aSel && bSel) return 1;
+            
+            // Logic chuẩn: Selected A lên đầu
+            const isASel = groupB.includes(a.id);
+            const isBSel = groupB.includes(b.id);
+            if (isASel && !isBSel) return -1;
+            if (!isASel && isBSel) return 1;
+            return 0;
+        });
+
+    // --- INIT ---
     $: if (isOpen) {
         if (editItem) {
             label = editItem.label;
@@ -44,7 +96,6 @@
             modeA = editItem.modeA || 'group';
             modeB = editItem.modeB || 'category';
         } else {
-            // Reset form khi thêm mới
             label = '';
             groupA = [];
             groupB = [];
@@ -57,39 +108,49 @@
         }
     }
 
-    function toggleSelection(list, item) {
-        if (list.includes(item)) return list.filter(i => i !== item);
-        return [...list, item];
+    // --- HANDLERS ---
+    function toggleSelection(isA, id) {
+        if (isA) {
+            if (groupA.includes(id)) groupA = groupA.filter(i => i !== id);
+            else groupA = [...groupA, id];
+        } else {
+            if (groupB.includes(id)) groupB = groupB.filter(i => i !== id);
+            else groupB = [...groupB, id];
+        }
     }
 
     function toggleAll(isA, sourceList) {
+        // Chỉ toggle những item đang hiển thị (theo search)
+        const visibleIds = sourceList.map(i => i.id);
         if (isA) {
-            groupA = groupA.length === sourceList.length ? [] : [...sourceList];
+            const allSelected = visibleIds.every(id => groupA.includes(id));
+            if (allSelected) {
+                // Bỏ chọn tất cả visible
+                groupA = groupA.filter(id => !visibleIds.includes(id));
+            } else {
+                // Chọn tất cả visible (merge unique)
+                groupA = [...new Set([...groupA, ...visibleIds])];
+            }
         } else {
-            groupB = groupB.length === sourceList.length ? [] : [...sourceList];
+            const allSelected = visibleIds.every(id => groupB.includes(id));
+            if (allSelected) {
+                groupB = groupB.filter(id => !visibleIds.includes(id));
+            } else {
+                groupB = [...new Set([...groupB, ...visibleIds])];
+            }
         }
     }
 
     function handleSave() {
-        if (!label.trim()) {
-            alert("Vui lòng nhập Tên cột.");
-            return;
-        }
-        if (groupA.length === 0) {
-            alert("Vui lòng chọn ít nhất 1 mục cho Tử số (Nhóm A).");
-            return;
-        }
-        if (groupB.length === 0) {
-            alert("Vui lòng chọn ít nhất 1 mục cho Mẫu số (Nhóm B).");
-            return;
-        }
+        if (!label.trim()) return alert("Vui lòng nhập Tên cột.");
+        if (groupA.length === 0) return alert("Vui lòng chọn ít nhất 1 mục cho Tử số (Nhóm A).");
+        if (groupB.length === 0) return alert("Vui lòng chọn ít nhất 1 mục cho Mẫu số (Nhóm B).");
 
         dispatch('save', {
             id: editItem ? editItem.id : `eff_${Date.now()}`,
             label, 
             groupA, 
             groupB, 
-            // [LOGIC MỚI] Nếu là Admin, target = 0 (để cấu hình ở chỗ khác). Nếu User, lấy giá trị nhập.
             target: isAdmin ? 0 : target, 
             type, 
             modeA, 
@@ -105,145 +166,148 @@
 
 {#if isOpen}
 <div class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm" on:click={close} role="button" tabindex="0">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" on:click|stopPropagation>
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden" on:click|stopPropagation>
         
         <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
                 <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    {editItem ? 'Chỉnh sửa' : 'Thêm'} Cột Tỷ lệ Nhóm hàng
+                    {editItem ? 'Chỉnh sửa' : 'Thêm'} Chỉ số Hiệu quả
                     {#if isAdmin}
                         <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200 uppercase">System Config</span>
                     {/if}
                 </h3>
-                <p class="text-sm text-gray-500 mt-1">Công thức tính: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
+                <p class="text-sm text-gray-500 mt-1">Công thức: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
             </div>
             <button on:click={close} class="text-gray-400 hover:text-red-500 transition-colors text-3xl leading-none">&times;</button>
         </div>
 
         <div class="p-6 overflow-y-auto flex-1 custom-scrollbar bg-white">
             
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="space-y-4">
-                    <div>
-                        <label for="col-label" class="block text-sm font-bold text-gray-700 mb-1">Tên hiển thị (Label)</label>
-                        <input id="col-label" type="text" bind:value={label} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="VD: % Gia dụng, % Phụ kiện...">
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        {#if !isAdmin}
-                            <div>
-                                <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
-                                <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
-                            </div>
-                        {:else}
-                            <div class="col-span-1 flex items-center p-2 bg-gray-100 rounded text-xs text-gray-500 italic">
-                                Target được thiết lập riêng tại module "Thiết lập mục tiêu".
-                            </div>
-                        {/if}
-                        
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Loại dữ liệu tính</label>
-                            <div class="flex flex-col gap-2 mt-1">
-                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="DTTL" class="mr-2 accent-blue-600"> Doanh thu Thực</label>
-                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="DTQD" class="mr-2 accent-blue-600"> Doanh thu QĐ</label>
-                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="SL" class="mr-2 accent-blue-600"> Số lượng</label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    {#if !isAdmin}
-                        <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
-                            <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
-                        </div>
-                    {/if}
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-sm">
+                <div>
+                    <label for="col-label" class="block text-xs font-bold text-gray-500 uppercase mb-1">Tên hiển thị</label>
+                    <input id="col-label" type="text" bind:value={label} class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold" placeholder="VD: % Gia dụng...">
                 </div>
 
-                <div class="hidden lg:flex items-center justify-center bg-blue-50 rounded-lg border border-blue-100 p-6 text-center">
-                    <div>
-                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <h4 class="font-bold text-blue-800 mb-1">Hướng dẫn chọn nhóm</h4>
-                        <p class="text-sm text-blue-700">
-                            <strong>Nhóm A (Tử số):</strong> Các nhóm hàng con cần tính tỷ lệ (VD: Nồi cơm, Bếp ga...).<br>
-                            <strong>Nhóm B (Mẫu số):</strong> Ngành hàng mẹ để so sánh (VD: Gia dụng, CE...).
-                        </p>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Loại dữ liệu</label>
+                    <div class="flex gap-4 mt-2">
+                        <label class="flex items-center text-sm cursor-pointer"><input type="radio" bind:group={type} value="DTTL" class="mr-1.5 accent-blue-600"> DT Thực</label>
+                        <label class="flex items-center text-sm cursor-pointer"><input type="radio" bind:group={type} value="DTQD" class="mr-1.5 accent-purple-600"> DT QĐ</label>
+                        <label class="flex items-center text-sm cursor-pointer"><input type="radio" bind:group={type} value="SL" class="mr-1.5 accent-green-600"> Số lượng</label>
                     </div>
                 </div>
+
+                {#if !isAdmin}
+                    <div>
+                        <label for="col-target" class="block text-xs font-bold text-gray-500 uppercase mb-1">Mục tiêu (%)</label>
+                        <input id="col-target" type="number" bind:value={target} class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
+                    </div>
+                {/if}
             </div>
 
-            <hr class="my-6 border-gray-200">
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[450px]">
-                <div class="flex flex-col border rounded-xl overflow-hidden border-gray-300 shadow-sm">
-                    <div class="p-3 bg-blue-50 border-b border-blue-100">
-                        <h4 class="font-bold text-blue-800 text-sm uppercase">Tên Nhóm A (Tử số)</h4>
-                        <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
-                            <label class="flex items-center cursor-pointer hover:text-blue-700">
-                                <input type="radio" bind:group={modeA} value="group" class="mr-1 accent-blue-600"> Nhóm hàng
-                            </label>
-                            <label class="flex items-center cursor-pointer hover:text-blue-700">
-                                <input type="radio" bind:group={modeA} value="category" class="mr-1 accent-blue-600"> Ngành hàng
-                            </label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[500px]">
+                
+                <div class="flex flex-col border rounded-xl overflow-hidden border-blue-200 shadow-sm">
+                    <div class="p-3 bg-blue-50 border-b border-blue-200 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-bold text-blue-800 text-sm uppercase">Tử số (Nhóm A)</h4>
+                            <span class="text-xs text-blue-600 font-medium">{groupA.length} đã chọn</span>
                         </div>
-                    </div>
-                    
-                    <div class="p-2 border-b border-gray-200 bg-white">
-                        <input type="text" bind:value={searchA} class="w-full p-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" placeholder="Tìm kiếm...">
-                    </div>
-
-                    <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
-                        <div class="mb-2 px-2 flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-500">{groupA.length} đã chọn</span>
-                            <button class="text-xs text-blue-600 hover:underline font-medium" on:click={() => toggleAll(true, filteredListA)}>
-                                {groupA.length === filteredListA.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                            </button>
-                        </div>
-                        <div class="space-y-1">
-                            {#each filteredListA as item}
-                                <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-blue-200 group">
-                                    <input type="checkbox" checked={groupA.includes(item)} on:change={() => groupA = toggleSelection(groupA, item)} class="mr-3 w-4 h-4 accent-blue-600 rounded border-gray-300">
-                                    <span class="text-sm text-gray-700 group-hover:text-blue-700">{item}</span>
-                                </label>
-                            {/each}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="flex flex-col border rounded-xl overflow-hidden border-gray-300 shadow-sm">
-                    <div class="p-3 bg-green-50 border-b border-green-100">
-                        <h4 class="font-bold text-green-800 text-sm uppercase">Tên Nhóm B (Mẫu số)</h4>
-                        <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
-                            <label class="flex items-center cursor-pointer hover:text-green-700">
-                                <input type="radio" bind:group={modeB} value="group" class="mr-1 accent-green-600"> Nhóm hàng
+                        <div class="flex bg-white rounded p-0.5 border border-blue-100">
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeA === 'group' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeA} value="group" class="hidden"> Nhóm
                             </label>
-                            <label class="flex items-center cursor-pointer hover:text-green-700">
-                                <input type="radio" bind:group={modeB} value="category" class="mr-1 accent-green-600"> Ngành hàng
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeA === 'category' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeA} value="category" class="hidden"> Ngành
                             </label>
                         </div>
                     </div>
                     
-                    <div class="p-2 border-b border-gray-200 bg-white">
-                        <input type="text" bind:value={searchB} class="w-full p-2 border border-gray-300 rounded text-sm focus:border-green-500 outline-none" placeholder="Tìm kiếm...">
+                    <div class="p-2 border-b border-blue-100 bg-white relative">
+                        <input type="text" bind:value={searchA} class="w-full pl-8 p-2 border border-gray-200 rounded text-sm focus:border-blue-500 outline-none" placeholder="Tìm kiếm...">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-4 top-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     </div>
 
                     <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
-                        <div class="mb-2 px-2 flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-500">{groupB.length} đã chọn</span>
-                            <button class="text-xs text-green-600 hover:underline font-medium" on:click={() => toggleAll(false, filteredListB)}>
-                                {groupB.length === filteredListB.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                        <div class="flex justify-end mb-2 px-1">
+                            <button class="text-xs text-blue-600 hover:underline font-bold" on:click={() => toggleAll(true, visibleListA)}>
+                                {groupA.length > 0 && visibleListA.every(i => groupA.includes(i.id)) ? 'Bỏ chọn hiển thị' : 'Chọn hiển thị'}
                             </button>
                         </div>
                         <div class="space-y-1">
-                            {#each filteredListB as item}
-                                <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-green-200 group">
-                                    <input type="checkbox" checked={groupB.includes(item)} on:change={() => groupB = toggleSelection(groupB, item)} class="mr-3 w-4 h-4 accent-green-600 rounded border-gray-300">
-                                    <span class="text-sm text-gray-700 group-hover:text-green-700">{item}</span>
+                            {#each visibleListA as item (item.id)}
+                                {@const isChecked = groupA.includes(item.id)}
+                                <label 
+                                    class="flex items-center p-2 rounded cursor-pointer transition-all select-none border
+                                    {isChecked ? 'bg-blue-100 border-blue-300 shadow-sm' : 'bg-white border-transparent hover:bg-white hover:border-gray-200'}"
+                                >
+                                    <input type="checkbox" checked={isChecked} on:change={() => toggleSelection(true, item.id)} class="mr-3 w-4 h-4 accent-blue-600 rounded border-gray-300">
+                                    <span class="text-sm {isChecked ? 'font-bold text-blue-800' : 'text-gray-700'} truncate" title={item.display}>
+                                        {item.display}
+                                    </span>
+                                    {#if isChecked}
+                                        <span class="ml-auto text-xs bg-blue-200 text-blue-800 px-1.5 rounded">✔</span>
+                                    {/if}
                                 </label>
                             {/each}
+                            {#if visibleListA.length === 0}
+                                <p class="text-center text-gray-400 text-xs py-4">Không tìm thấy dữ liệu.</p>
+                            {/if}
                         </div>
                     </div>
                 </div>
+
+                <div class="flex flex-col border rounded-xl overflow-hidden border-green-200 shadow-sm">
+                    <div class="p-3 bg-green-50 border-b border-green-200 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-bold text-green-800 text-sm uppercase">Mẫu số (Nhóm B)</h4>
+                            <span class="text-xs text-green-600 font-medium">{groupB.length} đã chọn</span>
+                        </div>
+                        <div class="flex bg-white rounded p-0.5 border border-green-100">
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeB === 'group' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeB} value="group" class="hidden"> Nhóm
+                            </label>
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeB === 'category' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeB} value="category" class="hidden"> Ngành
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="p-2 border-b border-green-100 bg-white relative">
+                        <input type="text" bind:value={searchB} class="w-full pl-8 p-2 border border-gray-200 rounded text-sm focus:border-green-500 outline-none" placeholder="Tìm kiếm...">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-4 top-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
+                        <div class="flex justify-end mb-2 px-1">
+                            <button class="text-xs text-green-600 hover:underline font-bold" on:click={() => toggleAll(false, visibleListB)}>
+                                {groupB.length > 0 && visibleListB.every(i => groupB.includes(i.id)) ? 'Bỏ chọn hiển thị' : 'Chọn hiển thị'}
+                            </button>
+                        </div>
+                        <div class="space-y-1">
+                            {#each visibleListB as item (item.id)}
+                                {@const isChecked = groupB.includes(item.id)}
+                                <label 
+                                    class="flex items-center p-2 rounded cursor-pointer transition-all select-none border
+                                    {isChecked ? 'bg-green-100 border-green-300 shadow-sm' : 'bg-white border-transparent hover:bg-white hover:border-gray-200'}"
+                                >
+                                    <input type="checkbox" checked={isChecked} on:change={() => toggleSelection(false, item.id)} class="mr-3 w-4 h-4 accent-green-600 rounded border-gray-300">
+                                    <span class="text-sm {isChecked ? 'font-bold text-green-800' : 'text-gray-700'} truncate" title={item.display}>
+                                        {item.display}
+                                    </span>
+                                    {#if isChecked}
+                                        <span class="ml-auto text-xs bg-green-200 text-green-800 px-1.5 rounded">✔</span>
+                                    {/if}
+                                </label>
+                            {/each}
+                            {#if visibleListB.length === 0}
+                                <p class="text-center text-gray-400 text-xs py-4">Không tìm thấy dữ liệu.</p>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 

@@ -25,9 +25,6 @@
         efficiencyConfig.set(newConfig);
         await adminService.saveEfficiencyConfig(newConfig);
     }
-
-    // Hàm này được gọi khi Modal lưu thành công (thông qua sự kiện dispatch hoặc store update)
-    // Ở đây ta lắng nghe sự kiện từ App.svelte (nơi đặt modal) hoặc update trực tiếp store trong modal
 </script>
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
@@ -38,7 +35,7 @@
             </div>
             <div>
                 <div class="flex items-center gap-3">
-                    <h3 class="font-bold text-slate-800 text-lg">Cấu hình Bảng Hiệu quả (Hệ thống)</h3>
+                    <h3 class="font-bold text-slate-800 text-lg">Khai báo chỉ số hiệu quả</h3>
                     <span class="bg-orange-100 text-orange-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-orange-200">Global</span>
                 </div>
                 <p class="text-sm text-slate-500 mt-0.5">Các chỉ số này sẽ hiển thị mặc định cho toàn bộ nhân viên/siêu thị</p>
@@ -74,8 +71,8 @@
                         <div class="text-xs text-slate-500 space-y-1 mt-auto">
                             <p><strong>Loại:</strong> {item.type === 'SL' ? 'Số lượng' : (item.type === 'DTQD' ? 'Doanh thu QĐ' : 'Doanh thu Thực')}</p>
                             <p><strong>Mục tiêu:</strong> {item.target}%</p>
-                            <p class="truncate" title={item.groupA.join(', ')}><strong>Tử số:</strong> {item.groupA.join(', ')}</p>
-                            <p class="truncate" title={item.groupB.join(', ')}><strong>Mẫu số:</strong> {item.groupB.join(', ')}</p>
+                            <p class="truncate" title={item.groupA.join(', ')}><strong>Tử số:</strong> {item.groupA.length} mục đã chọn</p>
+                            <p class="truncate" title={item.groupB.join(', ')}><strong>Mẫu số:</strong> {item.groupB.length} mục đã chọn</p>
                         </div>
                     </div>
                 {/each}

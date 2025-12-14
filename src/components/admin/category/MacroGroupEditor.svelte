@@ -2,15 +2,28 @@
     import { onMount } from 'svelte';
     import { categoryStructure, macroCategoryConfig } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
+    import { parseIdentity } from '../../../utils.js'; // [MỚI]
 
     let localConfigs = []; 
     let isSaving = false;
     let editingId = null; 
     let itemSearch = '';
 
-    // [CẬP NHẬT] Lấy danh sách Ngành Hàng (Category) thay vì Nhóm Hàng (Group)
-    // Để hiển thị danh sách tick chọn ngắn gọn hơn
-    $: rawCategories = [...new Set(($categoryStructure || []).map(c => c.nganhHang).filter(Boolean))].sort();
+    // [CẬP NHẬT] Lấy danh sách Ngành Hàng (Category) kèm ID
+    $: rawCategoriesWithId = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nganhHang) return;
+            const parsed = parseIdentity(c.nganhHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
     
     $: if ($macroCategoryConfig) {
         localConfigs = JSON.parse(JSON.stringify($macroCategoryConfig));
@@ -30,15 +43,15 @@
         localConfigs = localConfigs.filter(g => g.id !== id);
     }
 
-    function toggleItem(groupId, itemName) {
+    function toggleItem(groupId, itemId) {
         const groupIndex = localConfigs.findIndex(g => g.id === groupId);
         if (groupIndex === -1) return;
 
         const currentItems = new Set(localConfigs[groupIndex].items || []);
-        if (currentItems.has(itemName)) {
-            currentItems.delete(itemName);
+        if (currentItems.has(itemId)) {
+            currentItems.delete(itemId);
         } else {
-            currentItems.add(itemName);
+            currentItems.add(itemId);
         }
         localConfigs[groupIndex].items = [...currentItems];
     }
@@ -56,14 +69,14 @@
     }
 
     // Filter items cho việc chọn
-    $: filteredRawCategories = rawCategories.filter(g => g.toLowerCase().includes(itemSearch.toLowerCase()));
+    $: filteredRawCategories = rawCategoriesWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
 </script>
 
 <div class="space-y-4">
     <div class="flex justify-between items-center mb-4">
         <p class="text-sm text-gray-500">
             Định nghĩa các nhóm lớn (VD: Gom "Điện thoại", "Laptop" vào nhóm "ICT").
-            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Danh sách dưới đây là các Ngành Hàng (Category).</span>
+            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
         </p>
         <div class="flex gap-2">
             <button 
@@ -122,17 +135,17 @@
                             </div>
                             
                             <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
-                                {#each filteredRawCategories as rawItem}
-                                    {@const isChecked = group.items.includes(rawItem)}
+                                {#each filteredRawCategories as item}
+                                    {@const isChecked = group.items.includes(item.id)}
                                     <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
                                         <input 
                                             type="checkbox" 
                                             checked={isChecked} 
-                                            on:change={() => toggleItem(group.id, rawItem)}
+                                            on:change={() => toggleItem(group.id, item.id)}
                                             class="rounded text-blue-600 focus:ring-blue-500"
                                         />
-                                        <span class="text-xs text-gray-700 truncate" title={rawItem}>
-                                            {rawItem}
+                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
+                                            {item.display}
                                         </span>
                                     </label>
                                 {/each}

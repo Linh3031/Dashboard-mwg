@@ -2,15 +2,28 @@
     import { onMount } from 'svelte';
     import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
-    import { cleanCategoryName } from '../../../utils.js';
+    import { parseIdentity } from '../../../utils.js'; // [MỚI]
 
     let localConfigs = []; 
     let isSaving = false;
     let editingId = null; 
     let itemSearch = '';
 
-    // [MỚI] Lấy danh sách Nhóm Hàng (Product Group) để tick chọn
-    $: rawProductGroups = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
+    // [MỚI] Lấy danh sách Nhóm Hàng (Product Group) kèm ID để tick chọn
+    $: rawProductGroupsWithId = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nhomHang) return;
+            const parsed = parseIdentity(c.nhomHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
     
     $: if ($macroProductGroupConfig) {
         localConfigs = JSON.parse(JSON.stringify($macroProductGroupConfig));
@@ -30,15 +43,15 @@
         localConfigs = localConfigs.filter(g => g.id !== id);
     }
 
-    function toggleItem(groupId, itemName) {
+    function toggleItem(groupId, itemId) {
         const groupIndex = localConfigs.findIndex(g => g.id === groupId);
         if (groupIndex === -1) return;
 
         const currentItems = new Set(localConfigs[groupIndex].items || []);
-        if (currentItems.has(itemName)) {
-            currentItems.delete(itemName);
+        if (currentItems.has(itemId)) {
+            currentItems.delete(itemId);
         } else {
-            currentItems.add(itemName);
+            currentItems.add(itemId);
         }
         localConfigs[groupIndex].items = [...currentItems];
     }
@@ -56,14 +69,14 @@
     }
 
     // Filter items cho việc chọn
-    $: filteredRawGroups = rawProductGroups.filter(g => g.toLowerCase().includes(itemSearch.toLowerCase()));
+    $: filteredRawGroups = rawProductGroupsWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
 </script>
 
 <div class="space-y-4">
     <div class="flex justify-between items-center mb-4">
         <p class="text-sm text-gray-500">
             Định nghĩa các nhóm hàng lớn (VD: Gom "Nồi cơm", "Bếp ga" vào nhóm "Gia dụng nhà bếp").
-            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Danh sách dưới đây là các Nhóm Hàng (Product Group).</span>
+            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
         </p>
         <div class="flex gap-2">
             <button 
@@ -122,17 +135,17 @@
                             </div>
                             
                             <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
-                                {#each filteredRawGroups as rawItem}
-                                    {@const isChecked = group.items.includes(rawItem)}
+                                {#each filteredRawGroups as item}
+                                    {@const isChecked = group.items.includes(item.id)}
                                     <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-teal-50 border-teal-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
                                         <input 
                                             type="checkbox" 
                                             checked={isChecked} 
-                                            on:change={() => toggleItem(group.id, rawItem)}
+                                            on:change={() => toggleItem(group.id, item.id)}
                                             class="rounded text-teal-600 focus:ring-teal-500"
                                         />
-                                        <span class="text-xs text-gray-700 truncate" title={rawItem}>
-                                            {rawItem}
+                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
+                                            {item.display}
                                         </span>
                                     </label>
                                 {/each}
