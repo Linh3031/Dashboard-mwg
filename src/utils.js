@@ -1,5 +1,5 @@
 // src/utils.js
-// Version 2.4 - Export cleanNameRaw for UI usage
+// Version 2.5 - Added parseIdentity to fix configLoader error
 import { get } from 'svelte/store';
 import { categoryNameMapping, groupNameMapping, brandNameMapping } from './stores.js';
 
@@ -12,7 +12,7 @@ export function getRandomBrightColor() {
 }
 
 /**
- * [ĐÃ EXPORT] Hàm làm sạch cơ bản (Aggressive Mode).
+ * Hàm làm sạch cơ bản (Aggressive Mode).
  * Dùng để gợi ý tên hiển thị sạch sẽ.
  */
 export function cleanNameRaw(name) {
@@ -78,4 +78,28 @@ export function getSortedDepartmentList(reportData) {
         return a.localeCompare(b);
     });
     return allDepts;
+}
+
+/**
+ * [MỚI] Phân tích chuỗi định danh dạng "ID - Name" hoặc "ID-Name"
+ * Trả về object { id, name }. Nếu không tìm thấy ID, id sẽ là 'unknown'
+ */
+export function parseIdentity(value) {
+    if (!value || typeof value !== 'string') {
+        return { id: 'unknown', name: '' };
+    }
+    
+    // Regex bắt chuỗi dạng: "Số - Chữ" (VD: "1491 - Smartphone")
+    // Hỗ trợ dấu gạch ngang (-) và gạch dài (–)
+    const match = value.match(/^(\d+)\s*[-–]\s*(.+)$/);
+    
+    if (match) {
+        return { 
+            id: match[1].trim(), 
+            name: match[2].trim() 
+        };
+    }
+    
+    // Trường hợp không có ID ở đầu
+    return { id: 'unknown', name: value.trim() };
 }

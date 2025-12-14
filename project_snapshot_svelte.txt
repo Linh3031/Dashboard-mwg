@@ -476,26 +476,42 @@ export default defineConfig({
       }
   }
 
-  // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Local + Cloud)
+  // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Phân quyền Admin vs User)
   async function handleSaveCustomTable(event) {
       const newItem = event.detail;
-      let currentTables = [];
       
+      // 1. Cập nhật Store hiển thị tức thì
       customRevenueTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
-          else { return [...items, newItem]; }
+          if (idx >= 0) { 
+              items[idx] = { ...items[idx], ...newItem }; // Merge để giữ các props khác
+              return [...items]; 
+          } else { 
+              return [...items, newItem]; 
+          }
       });
       
-      // Lấy giá trị mới nhất để lưu
-      customRevenueTables.subscribe(val => currentTables = val)();
-
-      // Lưu LocalStorage (cho User)
-      localStorage.setItem('customRevenueTables', JSON.stringify(currentTables));
-
-      // [QUAN TRỌNG] Nếu là bảng hệ thống (isSystem) và có quyền Admin -> Lưu lên Cloud
+      // 2. Phân loại nơi lưu trữ
       if (newItem.isSystem) {
-          await adminService.saveSystemRevenueTables(currentTables);
+          // A. Nếu là bảng HỆ THỐNG (Chỉ Admin tạo/sửa)
+          // Lấy toàn bộ bảng hệ thống từ store hiện tại để lưu đè lên Cloud
+          const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
+          await adminService.saveSystemRevenueTables(currentSystemTables);
+          console.log("Đã lưu bảng hệ thống lên Admin Cloud");
+      } else {
+          // B. Nếu là bảng CÁ NHÂN (User tạo)
+          // Lấy bảng cá nhân để lưu
+          const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
+          
+          // Lưu LocalStorage (Backup)
+          localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
+          
+          // Lưu Warehouse Cloud (Nếu đã chọn kho)
+          const wh = get(selectedWarehouse);
+          if (wh) {
+              await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
+          }
+          console.log("Đã lưu bảng cá nhân");
       }
   }
 </script>
@@ -9621,10 +9637,14 @@ export const formatters = {
 <script>
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
-  import SortableTh from '../common/SortableTh.svelte';
   import { isAdmin } from '../../stores.js';
+  import { dynamicTableProcessor } from '../../services/processing/logic/dynamicTable.processor.js';
   
-  export let config; 
+  // Import components con
+  import DynamicTableHeader from './revenue/DynamicTableHeader.svelte';
+  import DynamicTableRow from './revenue/DynamicTableRow.svelte';
+  
+  export let config;
   export let reportData = []; 
   export let colorTheme = 'blue'; 
 
@@ -9633,109 +9653,20 @@ export const formatters = {
   let sortKey = 'mainValue'; 
   let sortDirection = 'desc';
 
-  // Đảm bảo object tableMetrics luôn tồn tại và có giá trị mặc định
-  $: tableMetrics = {
-      sl: config.tableMetrics?.sl ?? false,
-      dt: config.tableMetrics?.dt ?? true, // Mặc định hiện DT nếu k có config
-      dtqd: config.tableMetrics?.dtqd ?? false
+  // [FIX] Metrics tổng phải đọc từ mainColumn.metrics, fallback về tableMetrics cũ nếu không có
+  $: tableMetrics = config.mainColumn?.metrics || config.tableMetrics || {
+      sl: false,
+      dt: true,
+      dtqd: false
   };
 
-  // Helper: Màu sắc header phụ
-  const getSubHeaderColor = (index) => {
-      const colors = [
-          'bg-indigo-100 text-indigo-900 border-indigo-200', 
-          'bg-emerald-100 text-emerald-900 border-emerald-200', 
-          'bg-amber-100 text-amber-900 border-amber-200', 
-          'bg-rose-100 text-rose-900 border-rose-200', 
-          'bg-cyan-100 text-cyan-900 border-cyan-200'
-      ];
-      return colors[index % colors.length];
-  };
+  // 1. Xử lý dữ liệu
+  $: processedResult = dynamicTableProcessor.processTableData(reportData, config);
+  $: processedData = processedResult.processedData;
+  $: totals = processedResult.totals;
 
-  const normalizeStr = (str) => {
-      if (!str) return '';
-      return str.toLowerCase()
-          .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
-          .replace(/\s+/g, '') 
-          .replace(/[^\w\d]/g, '');
-  };
-
-  const findItemData = (employee, rawName) => {
-      const target = normalizeStr(rawName);
-      const scanObject = (obj) => {
-          if (!obj) return null;
-          const foundKey = Object.keys(obj).find(key => {
-              const current = normalizeStr(key);
-              return current.includes(target) || target.includes(current);
-          });
-          return foundKey ? obj[foundKey] : null;
-      };
-      let result = scanObject(employee.doanhThuTheoNhomHang);
-      if (result) return result;
-      result = scanObject(employee.doanhThuTheoNganhHang);
-      return result;
-  };
-
-  $: processedData = reportData.map(employee => {
-      const row = {
-          maNV: employee.maNV,
-          hoTen: employee.hoTen,
-          mainValue: 0,
-          mainValue_dtqd: 0,
-          mainValue_sl: 0,
-          columns: {} 
-      };
-
-      if (config.subColumns && Array.isArray(config.subColumns)) {
-          config.subColumns.forEach(col => {
-              const metrics = col.metrics || { sl: false, dt: true, dtqd: false };
-              let sl = 0, dt = 0, dtqd = 0;
-              let details = [];
-
-              col.items.forEach(rawItemName => {
-                  const itemData = findItemData(employee, rawItemName);
-                  if (itemData) {
-                      const qty = itemData.quantity || 0;
-                      const rev = itemData.revenue || 0;
-                      const revQd = itemData.revenueQuyDoi || 0;
-
-                      sl += qty;
-                      dt += rev;
-                      dtqd += revQd;
-                      
-                      if (qty > 0 || rev > 0) {
-                          details.push(`${rawItemName}: ${formatters.formatNumber(qty)} / ${formatters.formatRevenue(rev)}`);
-                      }
-                  }
-              });
-
-              row.columns[col.header] = { sl, dt, dtqd, tooltip: details.join('\n') };
-              
-              if (metrics.dt) row.mainValue += dt;
-              if (metrics.dtqd) row.mainValue_dtqd += dtqd;
-              if (metrics.sl) row.mainValue_sl += sl;
-              
-              // Fallback: Nếu không chọn metric nào thì cộng SL vào mainValue (để sort)
-              if (!metrics.dt && !metrics.dtqd && !metrics.sl) row.mainValue += sl;
-          });
-      }
-      // Chỉ hiện nhân viên có số liệu (SL > 0 hoặc DT > 0)
-      return (row.mainValue > 0 || row.mainValue_sl > 0 || row.mainValue_dtqd > 0) ? row : null;
-  }).filter(Boolean);
-
-  $: totals = processedData.reduce((acc, row) => {
-      acc.mainValue += row.mainValue;
-      acc.mainValue_dtqd += row.mainValue_dtqd;
-      acc.mainValue_sl += row.mainValue_sl;
-
-      Object.keys(row.columns).forEach(key => {
-          if (!acc.columns[key]) acc.columns[key] = { sl: 0, dt: 0, dtqd: 0 };
-          acc.columns[key].sl += row.columns[key].sl;
-          acc.columns[key].dt += row.columns[key].dt;
-          acc.columns[key].dtqd += row.columns[key].dtqd;
-      });
-      return acc;
-  }, { mainValue: 0, mainValue_dtqd: 0, mainValue_sl: 0, columns: {} });
+  // 2. Sắp xếp dữ liệu
+  $: sortedData = dynamicTableProcessor.sortTableData(processedData, sortKey, sortDirection);
 
   function handleSort(event) {
       const key = event.detail;
@@ -9743,26 +9674,11 @@ export const formatters = {
       else { sortKey = key; sortDirection = 'desc'; }
   }
   
-  // Hàm sort thủ công cho cột Tên (vì không dùng SortableTh)
-  function handleManualSort(key) {
+  function handleManualSort(event) {
+      const key = event.detail;
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-      else { sortKey = key; sortDirection = 'asc'; } // Default asc cho tên
+      else { sortKey = key; sortDirection = 'asc'; }
   }
-
-  $: sortedData = [...processedData].sort((a, b) => {
-      if (sortKey === 'hoTen') return sortDirection === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
-      if (sortKey === 'mainValue') return sortDirection === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
-      if (sortKey === 'totalSL') return sortDirection === 'asc' ? a.mainValue_sl - b.mainValue_sl : b.mainValue_sl - a.mainValue_sl;
-      if (sortKey === 'totalDTQD') return sortDirection === 'asc' ? a.mainValue_dtqd - b.mainValue_dtqd : b.mainValue_dtqd - a.mainValue_dtqd;
-
-      if (sortKey.includes('|')) {
-          const [colHeader, type] = sortKey.split('|');
-          const valA = a.columns[colHeader]?.[type] || 0;
-          const valB = b.columns[colHeader]?.[type] || 0;
-          return sortDirection === 'asc' ? valA - valB : valB - valA;
-      }
-      return sortDirection === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
-  });
 
   const themeMap = {
       blue: { header: 'bg-blue-50 border-blue-200', title: 'text-blue-800' },
@@ -9780,7 +9696,7 @@ export const formatters = {
 
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col transition-all hover:shadow-md relative group/card">
     
-    {#if !config.isSystem || $isAdmin}
+    {#if $isAdmin || !config.isSystem}
         <div class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity flex gap-1 z-10 bg-white/80 backdrop-blur rounded-lg p-1 shadow-sm border border-gray-100">
             {#if !config.isSystem}<button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Chỉnh sửa" on:click|stopPropagation={() => dispatch('edit')}><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>{/if}
             <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title={config.isSystem ? "Xóa bảng hệ thống" : "Xóa bảng"} on:click|stopPropagation={() => dispatch('delete')}><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
@@ -9800,101 +9716,16 @@ export const formatters = {
     {:else}
         <div class="overflow-x-auto flex-grow custom-scrollbar relative">
             <table class="min-w-full text-sm border-collapse border-0">
-                <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
-                    <tr>
-                        <th 
-                            class="px-4 py-2 pl-5 min-w-[180px] sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer hover:bg-gray-200 transition select-none text-left"
-                            rowspan="2"
-                            on:click={() => handleManualSort('hoTen')}
-                        >
-                            <div class="flex items-center gap-1 justify-start">
-                                <span class="font-bold uppercase text-xs {sortKey === 'hoTen' ? 'text-blue-800' : 'text-slate-700'}">Nhân viên</span>
-                                <span class="flex flex-col items-center justify-center w-4 h-4">
-                                    {#if sortKey !== 'hoTen'}
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-gray-400 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
-                                    {:else if sortDirection === 'asc'}
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
-                                    {:else}
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                                    {/if}
-                                </span>
-                            </div>
-                        </th>
-                        
-                        {#if totalColSpan > 0}
-                            <th colspan={totalColSpan} class="px-2 py-2 text-center border-b border-r border-gray-300 text-gray-900 bg-gray-200">
-                                TỔNG HỢP
-                            </th>
-                        {/if}
-
-                        {#each config.subColumns as col, index}
-                            {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
-                            {@const colSpan = (metrics.sl ? 1 : 0) + (metrics.dt ? 1 : 0) + (metrics.dtqd ? 1 : 0)}
-                            {#if colSpan > 0}
-                                <th colspan={colSpan} class="px-2 py-2 text-center border-b border-r border-gray-200 {getSubHeaderColor(index)}">
-                                    {col.header}
-                                </th>
-                            {/if}
-                        {/each}
-                    </tr>
-
-                    <tr>
-                        {#if tableMetrics.sl}
-                            <SortableTh key="totalSL" label="SL" align="right" className="min-w-[60px] text-gray-700 bg-gray-100 border-r border-gray-300 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
-                        {/if}
-                        {#if tableMetrics.dt}
-                             <SortableTh key="mainValue" label="DT" align="right" className="min-w-[80px] text-blue-800 bg-gray-100 border-r border-gray-300 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
-                        {/if}
-                        {#if tableMetrics.dtqd}
-                              <SortableTh key="totalDTQD" label="QĐ" align="right" className="min-w-[80px] text-purple-800 bg-gray-100 border-r border-gray-300 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
-                        {/if}
-
-                        {#each config.subColumns as col}
-                            {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
-                            {#if metrics.sl}
-                                <SortableTh key={`${col.header}|sl`} label="SL" align="right" className="min-w-[60px] text-gray-500 bg-white border-r border-gray-200 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
-                            {/if}
-                            {#if metrics.dt}
-                                <SortableTh key={`${col.header}|dt`} label="DT" align="right" className="min-w-[80px] text-blue-600 bg-white border-r border-gray-200 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
-                            {/if}
-                            {#if metrics.dtqd}
-                                <SortableTh key={`${col.header}|dtqd`} label="QĐ" align="right" className="min-w-[80px] text-purple-600 bg-white border-r border-gray-200 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
-                            {/if}
-                        {/each}
-                    </tr>
-                </thead>
+                
+                <DynamicTableHeader 
+                    {config} {tableMetrics} {totalColSpan} {sortKey} {sortDirection}
+                    on:sort={handleSort}
+                    on:manualSort={handleManualSort}
+                />
 
                 <tbody class="divide-y divide-gray-100">
                     {#each sortedData as item (item.maNV)}
-                        <tr class="hover:bg-blue-50/50 transition-colors group">
-                            <td class="px-5 py-2 font-semibold text-gray-700 border-r border-b border-gray-300 bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                <span class="text-blue-700">{formatters.getShortEmployeeName(item.hoTen, item.maNV)}</span>
-                            </td>
-                            
-                            {#if tableMetrics.sl}
-                                <td class="px-2 py-2 text-right font-bold text-gray-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatNumber(item.mainValue_sl)}</td>
-                            {/if}
-                            {#if tableMetrics.dt}
-                                <td class="px-2 py-2 text-right font-bold text-blue-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatRevenue(item.mainValue)}</td>
-                            {/if}
-                            {#if tableMetrics.dtqd}
-                                <td class="px-2 py-2 text-right font-bold text-purple-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatRevenue(item.mainValue_dtqd)}</td>
-                            {/if}
-
-                            {#each config.subColumns as col}
-                                {@const cell = item.columns[col.header]}
-                                {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
-                                {#if metrics.sl}
-                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b text-gray-600">{formatters.formatNumber(cell?.sl)}</td>
-                                {/if}
-                                {#if metrics.dt}
-                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b font-medium text-gray-800">{formatters.formatRevenue(cell?.dt)}</td>
-                                {/if}
-                                {#if metrics.dtqd}
-                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b font-medium text-purple-600">{formatters.formatRevenue(cell?.dtqd)}</td>
-                                {/if}
-                            {/each}
-                        </tr>
+                        <DynamicTableRow {item} {config} {tableMetrics} />
                     {/each}
                 </tbody>
 
@@ -9909,7 +9740,7 @@ export const formatters = {
                              <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-blue-800">{formatters.formatRevenue(totals.mainValue)}</td>
                         {/if}
                         {#if tableMetrics.dtqd}
-                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.mainValue_dtqd)}</td>
+                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.mainValue_dtqd)}</td>
                         {/if}
 
                         {#each config.subColumns as col}
@@ -9942,214 +9773,228 @@ export const formatters = {
 
 --- START FILE: ./src/components/health-staff/EfficiencyTable.svelte ---
 <script>
-  import { formatters } from '../../utils/formatters.js';
-  import { getSortedDepartmentList } from '../../utils.js';
-  import { efficiencyConfig } from '../../stores.js'; // [MỚI] Import để lấy config động
-
-  export let reportData = [];
-
-  // [FIX] Cấu hình cột CỐ ĐỊNH (Hardcoded) khớp với key trong master.report.js
-  const FIXED_COLUMNS = [
-      { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
-      { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900' },
-      { id: 'pctPhuKien', label: '% Phụ kiện', isRate: true, targetKey: 'phanTramPhuKien', headerClass: 'bg-blue-100 text-blue-900' },
-      
-      { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900' },
-      { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900' },
-      { id: 'pctGiaDung', label: '% Gia dụng', isRate: true, targetKey: 'phanTramGiaDung', headerClass: 'bg-green-100 text-green-900' },
-      { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900' },
-      
-      { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900' },
-      { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900' },
-      { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900' }
-  ];
-
-  // [MỚI] Merge cột cố định + cột động từ Admin
-  $: ALL_COLUMNS = [
-      ...FIXED_COLUMNS,
-      ...($efficiencyConfig || []).map(conf => ({
-          id: conf.id, // ID động (VD: eff_12345)
-          label: conf.label,
-          isRate: true,
-          targetKey: conf.id, // Key mục tiêu trùng với ID chỉ số
-          isDynamic: true,
-          headerClass: 'bg-purple-100 text-purple-900'
-      }))
-  ];
-
-  let visibleColumnIds = [];
-  // Init visible columns
-  $: if (visibleColumnIds.length === 0 && ALL_COLUMNS.length > 0) {
-      visibleColumnIds = ALL_COLUMNS.map(c => c.id);
-  }
-
-  let sortKey = 'dtICT';
-  let sortDirection = 'desc';
-  let groupedData = {};
-  let departmentOrder = [];
-
-  $: {
-    const groups = {}; 
-    if (reportData && reportData.length > 0) {
-        reportData.forEach(item => {
-          const dept = item.boPhan || 'Khác';
-          if (!groups[dept]) groups[dept] = []; 
-          groups[dept].push(item);
-        });
-        groupedData = groups; 
-        departmentOrder = getSortedDepartmentList(reportData);
-    } else { 
-        groupedData = {};
-        departmentOrder = [];
-    }
-  }
-
-  function handleSort(key) {
-    if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    else { sortKey = key; sortDirection = 'desc'; }
-  }
-
-  // Logic lấy giá trị an toàn
-  const getValue = (item, colId, isDynamic) => {
-      if (isDynamic) {
-          // Với chỉ số động, giá trị nằm trong dynamicMetrics
-          return item.dynamicMetrics?.[colId]?.value || 0;
-      }
-      return item[colId] || 0;
-  };
-
-  $: sortEmployees = (dept) => {
-      const items = groupedData[dept] || [];
-      return [...items].sort((a, b) => {
-          if (sortKey === 'hoTen') {
-             const nameA = a.hoTen || '';
-             const nameB = b.hoTen || '';
-             return sortDirection === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-          }
-          
-          // Check xem sort key là động hay tĩnh để lấy giá trị đúng
-          const isDynamicSort = $efficiencyConfig.some(c => c.id === sortKey);
-          let valA = getValue(a, sortKey, isDynamicSort);
-          let valB = getValue(b, sortKey, isDynamicSort);
-          
-          return sortDirection === 'asc' ? valA - valB : valB - valA;
-      });
-  };
-
-  function toggleColumn(columnId) {
-      if (visibleColumnIds.includes(columnId)) visibleColumnIds = visibleColumnIds.filter(id => id !== columnId);
-      else visibleColumnIds = [...visibleColumnIds, columnId];
-  }
-
-  // [FIX] Logic Tô màu ô
-  function getCellClass(item, colDef) {
-    const value = getValue(item, colDef.id, colDef.isDynamic);
+    import { createEventDispatcher } from 'svelte';
+    import { fly } from 'svelte/transition';
+    import { formatters } from '../../utils/formatters.js';
+    import { efficiencyConfig } from '../../stores.js';
     
-    if (colDef.isRate) {
-        // Lấy target: Nếu là cột động, lấy từ settings, nếu tĩnh lấy từ mucTieu
-        let target = 0;
-        if (colDef.isDynamic) {
-             // Target động được lưu trong mucTieu với key chính là ID chỉ số
-             target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
-             // Fallback: Nếu user chưa set mục tiêu riêng, lấy default từ config
-             if (target === 0) {
-                 const cfg = $efficiencyConfig.find(c => c.id === colDef.id);
-                 target = (cfg?.target || 0) / 100;
-             }
+    export let data = [];
+    export let isLoading = false;
+    
+    const dispatch = createEventDispatcher();
+    
+    // --- STATE ---
+    let sortKey = 'doanhThu';
+    let sortDirection = 'desc';
+    let currentPage = 1;
+    let itemsPerPage = 10;
+    
+    // --- CONFIG COLUMNS ---
+    // [FIX] Đã xóa { id: 'pctPhuKien', ... } khỏi danh sách cứng để tránh trùng lặp
+    const FIXED_COLUMNS = [
+        { id: 'dtICT', label: 'DT ICT', isRate: false, headerClass: 'bg-blue-100 text-blue-900', format: 'revenue' },
+        { id: 'dtPhuKien', label: 'DT Phụ kiện', isRate: false, headerClass: 'bg-blue-100 text-blue-900', format: 'revenue' },
+        
+        { id: 'dtCE', label: 'DT CE', isRate: false, headerClass: 'bg-green-100 text-green-900', format: 'revenue' },
+        { id: 'dtGiaDung', label: 'DT Gia dụng', isRate: false, headerClass: 'bg-green-100 text-green-900', format: 'revenue' },
+        
+        { id: 'pctMLN', label: '% MLN', isRate: true, targetKey: 'phanTramMLN', headerClass: 'bg-green-100 text-green-900', format: 'percent' },
+        { id: 'pctSim', label: '% Sim', isRate: true, targetKey: 'phanTramSim', headerClass: 'bg-yellow-100 text-yellow-900', format: 'percent' },
+        { id: 'pctVAS', label: '% VAS', isRate: true, targetKey: 'phanTramVAS', headerClass: 'bg-yellow-100 text-yellow-900', format: 'percent' },
+        { id: 'pctBaoHiem', label: '% Bảo hiểm', isRate: true, targetKey: 'phanTramBaoHiem', headerClass: 'bg-yellow-100 text-yellow-900', format: 'percent' }
+    ];
+
+    // Kết hợp cột cứng và cột động từ cấu hình Admin ($efficiencyConfig)
+    $: columns = [
+        ...FIXED_COLUMNS,
+        ...($efficiencyConfig || []).map(conf => ({
+            id: conf.id,
+            label: conf.name,
+            isRate: conf.type === 'percent',
+            targetKey: conf.targetKey, // Key chứa mục tiêu (nếu có) để so sánh màu sắc
+            headerClass: 'bg-indigo-50 text-indigo-900',
+            format: conf.type === 'percent' ? 'percent' : 'revenue',
+            isDynamic: true
+        }))
+    ];
+
+    // --- SORTING ---
+    function handleSort(key) {
+        if (sortKey === key) {
+            sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
         } else {
-             target = (item.mucTieu?.[colDef.targetKey] || 0) / 100;
+            sortKey = key;
+            sortDirection = 'desc';
         }
+    }
 
-        if (target > 0 && value < target) return 'text-red-600 font-bold bg-red-50'; // Không đạt
-        return 'text-red-800 font-bold'; // Mặc định % là đỏ đậm
-    } 
+    $: sortedData = [...data].sort((a, b) => {
+        let valA = a[sortKey] || 0;
+        let valB = b[sortKey] || 0;
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+    });
+
+    // --- PAGINATION ---
+    $: totalPages = Math.ceil(sortedData.length / itemsPerPage);
+    $: paginatedData = sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    function goToPage(page) {
+        if (page >= 1 && page <= totalPages) {
+            currentPage = page;
+        }
+    }
     
-    if (colDef.id.startsWith('dt')) return 'text-blue-700 font-medium';
-    return 'text-gray-900 font-medium';
-  }
+    // --- HELPER: COLOR LOGIC ---
+    function getCellColor(value, target, isRate) {
+        if (!isRate || target === undefined || target === null) return 'text-gray-700';
+        return value >= target ? 'text-green-600 font-bold' : 'text-red-500';
+    }
 
-  function getHeaderClass(deptName) {
-    if (deptName.includes('Tư Vấn')) return 'bg-blue-100 text-blue-800 border-blue-200';
-    if (deptName.includes('Kho')) return 'bg-green-100 text-green-800 border-green-200';
-    return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
+    // --- HELPER: FORMAT ---
+    function formatValue(value, type) {
+        if (type === 'percent') return formatters.formatPercent(value);
+        if (type === 'revenue') return formatters.formatRevenue(value);
+        return value;
+    }
 </script>
 
-<div class="space-y-8 mt-4 animate-fade-in">
-  <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex flex-wrap gap-2 items-center">
-     <span class="text-xs font-bold text-gray-500 uppercase mr-2">Hiển thị cột:</span>
-     {#each ALL_COLUMNS as col}
-        <button 
-          class="px-3 py-1 rounded-full text-xs font-medium border transition-colors select-none
-                 {visibleColumnIds.includes(col.id) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}"
-          on:click={() => toggleColumn(col.id)}
-        >
-            {col.label}
-        </button>
-     {/each}
-  </div>
-
-  {#each departmentOrder as deptName}
-    {#if groupedData[deptName]}
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="p-4 border-b {getHeaderClass(deptName)}">
-          <h4 class="text-lg font-bold uppercase">{deptName}</h4>
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-full">
+    <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+        <h3 class="font-bold text-gray-800 uppercase text-sm">Bảng Hiệu Quả Chi Tiết</h3>
+        <div class="flex gap-2 text-xs">
+            <span class="px-2 py-1 bg-green-100 text-green-700 rounded">Đạt chỉ tiêu</span>
+            <span class="px-2 py-1 bg-red-100 text-red-700 rounded">Chưa đạt</span>
         </div>
+    </div>
 
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-sm text-left border-collapse">
-            <thead class="text-xs text-gray-700 uppercase font-bold sticky top-0 z-20 shadow-sm">
-               <tr>
-                <th class="px-4 py-3 bg-gray-200 cursor-pointer hover:bg-gray-300 transition sticky left-0 z-30 min-w-[200px]" on:click={() => handleSort('hoTen')}>
-                   <div class="flex items-center gap-1">
-                    <span>Nhân viên</span>
-                    {#if sortKey === 'hoTen'}<span>{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
-                  </div>
-                </th>
+    <div class="overflow-x-auto flex-1 custom-scrollbar relative">
+        {#if isLoading}
+            <div class="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        {/if}
 
-                {#each ALL_COLUMNS as col}
-                  {#if visibleColumnIds.includes(col.id)}
-                     <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition whitespace-nowrap text-right {col.headerClass}" on:click={() => handleSort(col.id)}>
-                       <div class="flex items-center justify-end gap-1">
-                         <span>{col.label}</span>
-                         {#if sortKey === col.id}<span>{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
-                       </div>
-                     </th>
-                  {/if}
-                {/each}
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-              {#each sortEmployees(deptName) as item (item.maNV)}
-                <tr class="hover:bg-blue-50 transition-colors duration-150">
-                  <td class="px-4 py-2 font-semibold text-blue-700 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200 whitespace-nowrap">
-                    {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
-                  </td>
-                  {#each ALL_COLUMNS as col}
-                    {#if visibleColumnIds.includes(col.id)}
-                       {@const val = getValue(item, col.id, col.isDynamic)}
-                       <td class="px-4 py-2 text-right border-l border-gray-100 {getCellClass(item, col)}">
-                          {#if col.isRate}
-                            {formatters.formatPercentage(val)}
-                         {:else}
-                            {formatters.formatRevenue(val)}
-                         {/if}
-                      </td>
-                     {/if}
-                  {/each}
+        <table class="min-w-full text-xs text-left border-collapse">
+            <thead class="bg-gray-100 text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
+                <tr>
+                    <th class="p-3 border-b border-r border-gray-200 min-w-[50px] text-center sticky left-0 bg-gray-100 z-30">#</th>
+                    <th 
+                        class="p-3 border-b border-r border-gray-200 min-w-[180px] cursor-pointer hover:bg-gray-200 sticky left-[50px] bg-gray-100 z-30 transition-colors"
+                        on:click={() => handleSort('hoTen')}
+                    >
+                        <div class="flex items-center justify-between">
+                            NHÂN VIÊN
+                            {#if sortKey === 'hoTen'}
+                                <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                            {/if}
+                        </div>
+                    </th>
+                    <th 
+                        class="p-3 border-b border-r border-gray-200 min-w-[120px] cursor-pointer hover:bg-gray-200 text-right"
+                        on:click={() => handleSort('doanhThu')}
+                    >
+                         <div class="flex items-center justify-end gap-1">
+                            TỔNG DT
+                            {#if sortKey === 'doanhThu'}
+                                <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                            {/if}
+                        </div>
+                    </th>
+                    
+                    {#each columns as col}
+                        <th 
+                            class="p-3 border-b border-r border-gray-200 min-w-[100px] cursor-pointer hover:brightness-95 transition-colors text-right whitespace-nowrap {col.headerClass}"
+                            on:click={() => handleSort(col.id)}
+                            title={col.label}
+                        >
+                            <div class="flex items-center justify-end gap-1">
+                                {col.label}
+                                {#if sortKey === col.id}
+                                    <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                                {/if}
+                            </div>
+                        </th>
+                    {/each}
                 </tr>
-              {/each}
+            </thead>
+            
+            <tbody class="divide-y divide-gray-100">
+                {#each paginatedData as row, index (row.maNV)}
+                    <tr class="hover:bg-blue-50 transition-colors group">
+                        <td class="p-3 border-r border-gray-200 text-center text-gray-500 sticky left-0 bg-white group-hover:bg-blue-50 z-10">
+                            {(currentPage - 1) * itemsPerPage + index + 1}
+                        </td>
+                        <td class="p-3 border-r border-gray-200 font-medium text-gray-800 sticky left-[50px] bg-white group-hover:bg-blue-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                            <div class="flex flex-col">
+                                <span class="truncate max-w-[160px]" title={row.hoTen}>{row.hoTen}</span>
+                                <span class="text-[10px] text-gray-400 font-mono">{row.maNV}</span>
+                            </div>
+                        </td>
+                        <td class="p-3 border-r border-gray-200 text-right font-bold text-gray-800">
+                            {formatters.formatRevenue(row.doanhThu)}
+                        </td>
+
+                        {#each columns as col}
+                            {@const val = row[col.id]}
+                            {@const target = col.isRate && col.targetKey ? row.targets?.[col.targetKey] : undefined}
+                            <td class="p-3 border-r border-gray-200 text-right {getCellColor(val, target, col.isRate)}">
+                                {formatValue(val, col.format)}
+                            </td>
+                        {/each}
+                    </tr>
+                {:else}
+                    <tr>
+                        <td colspan={columns.length + 3} class="p-8 text-center text-gray-400 italic">
+                            Không có dữ liệu hiển thị.
+                        </td>
+                    </tr>
+                {/each}
             </tbody>
-          </table>
+        </table>
+    </div>
+
+    {#if totalPages > 1}
+    <div class="p-3 border-t border-gray-200 flex justify-between items-center bg-gray-50">
+        <span class="text-xs text-gray-500">
+            Hiển thị {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, sortedData.length)} / {sortedData.length}
+        </span>
+        <div class="flex gap-1">
+            <button 
+                class="px-3 py-1 border rounded bg-white hover:bg-gray-100 disabled:opacity-50 text-xs font-medium"
+                disabled={currentPage === 1}
+                on:click={() => goToPage(currentPage - 1)}
+            >
+                Trước
+            </button>
+            {#each Array(totalPages) as _, i}
+                {#if i + 1 === currentPage || i + 1 === 1 || i + 1 === totalPages || (i + 1 >= currentPage - 1 && i + 1 <= currentPage + 1)}
+                    <button 
+                        class="px-3 py-1 border rounded text-xs font-medium {currentPage === i + 1 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-100'}"
+                        on:click={() => goToPage(i + 1)}
+                    >
+                        {i + 1}
+                    </button>
+                {:else if i + 1 === currentPage - 2 || i + 1 === currentPage + 2}
+                    <span class="px-2 py-1 text-gray-400">...</span>
+                {/if}
+            {/each}
+            <button 
+                class="px-3 py-1 border rounded bg-white hover:bg-gray-100 disabled:opacity-50 text-xs font-medium"
+                disabled={currentPage === totalPages}
+                on:click={() => goToPage(currentPage + 1)}
+            >
+                Sau
+            </button>
         </div>
-      </div>
+    </div>
     {/if}
-  {/each}
 </div>
 
 <style>
-    .animate-fade-in { animation: fadeIn 0.4s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 </style>
 --- END FILE: ./src/components/health-staff/EfficiencyTable.svelte ---
 
@@ -10607,11 +10452,15 @@ export const formatters = {
 
 --- START FILE: ./src/components/luyke/LuykeCategoryTable.svelte ---
 <script>
-  import { onMount, afterUpdate, tick } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
-  import { cleanCategoryName, getRandomBrightColor } from '../../utils.js';
+  import { cleanCategoryName } from '../../utils.js';
+  
+  // Import components con
+  import LuykeCategoryCharts from './sub/LuykeCategoryCharts.svelte';
+  import LuykeCategoryToolbar from './sub/LuykeCategoryToolbar.svelte';
 
-  export let items = []; // Dữ liệu Ngành hàng (bao gồm Macro Categories)
+  export let items = []; 
   export let unexportedItems = []; 
   export let rawSource = []; 
   export let numDays = 1;
@@ -10625,9 +10474,6 @@ export const formatters = {
   let isSettingsOpen = false;
   let filterSearch = '';
   let hiddenCategories = new Set(); 
-
-  let chartInstancePie = null;
-  let chartInstanceBar = null;
 
   // --- PERSISTENT FILTER ---
   const STORAGE_KEY = 'luyke_category_hidden_items';
@@ -10676,36 +10522,26 @@ export const formatters = {
       return { icon: 'tag', theme: 'theme-gray' };
   }
 
-  // --- FILTER ---
+  // --- FILTER & DATA LOGIC ---
   $: allCategoryNames = items.map(i => i.name || i.nganhHang).sort();
-  
-  $: filterList = allCategoryNames.filter(name => 
-      name.toLowerCase().includes(filterSearch.toLowerCase())
-  );
+  $: filterList = allCategoryNames.filter(name => name.toLowerCase().includes(filterSearch.toLowerCase()));
 
-  function toggleCategoryVisibility(name) {
-      if (hiddenCategories.has(name)) {
-          hiddenCategories.delete(name);
-      } else {
-          hiddenCategories.add(name);
-      }
+  function toggleCategoryVisibility(event) {
+      const name = event.detail;
+      if (hiddenCategories.has(name)) hiddenCategories.delete(name);
+      else hiddenCategories.add(name);
       hiddenCategories = new Set(hiddenCategories);
       saveHiddenState();
   }
 
-  function toggleAllVisibility(show) {
-      if (show) {
-          hiddenCategories = new Set();
-      } else {
-          hiddenCategories = new Set(allCategoryNames);
-      }
+  function toggleAllVisibility(event) {
+      const show = event.detail;
+      hiddenCategories = show ? new Set() : new Set(allCategoryNames);
       saveHiddenState();
   }
 
-  // --- DATA LOGIC ---
   $: sourceData = showUnexported ? unexportedItems : items;
 
-  // [QUAN TRỌNG] Logic Lọc dùng chung cho cả Grid và Chart
   $: filteredItems = sourceData.filter(item => {
       const name = item.name || item.nganhHang || '';
       const visibilityMatch = !hiddenCategories.has(name);
@@ -10713,7 +10549,6 @@ export const formatters = {
       return visibilityMatch && valueMatch;
   });
 
-  // Grid có thêm filter search text (nhưng không ảnh hưởng chart)
   $: gridDisplayItems = filteredItems.filter(item => {
       const name = item.name || item.nganhHang || '';
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
@@ -10733,165 +10568,33 @@ export const formatters = {
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
   $: maxVal = Math.max(...sourceData.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
-  // --- CHART LOGIC ---
-  
-  // 1. Pie Chart Data (Top 13 + Others)
+  // --- CHART DATA PREP ---
   $: pieData = (() => {
-      // Lấy danh sách đã lọc, sắp xếp giảm dần
       const sorted = filteredItems
           .filter(i => (i.revenue || 0) > 0)
           .sort((a, b) => b.revenue - a.revenue);
-      
-      // Nếu ít hơn hoặc bằng 14 mục, hiển thị hết
       if (sorted.length <= 14) return sorted;
-
-      // Nếu nhiều hơn, lấy Top 13
       const top13 = sorted.slice(0, 13);
-      // Gom phần còn lại vào "Khác"
       const others = sorted.slice(13);
       const otherRevenue = others.reduce((sum, item) => sum + item.revenue, 0);
-
-      return [
-          ...top13,
-          { name: 'Khác', revenue: otherRevenue }
-      ];
+      return [...top13, { name: 'Khác', revenue: otherRevenue }];
   })();
 
-  // 2. Bar Chart Data (Top 15 Hãng)
   $: barData = calculateBrandData(rawSource, filteredItems);
 
   function calculateBrandData(source, visibleItems) {
       if (!source || source.length === 0) return [];
-      
-      // Tạo whitelist các ngành hàng ĐANG HIỂN THỊ (đã chuẩn hóa tên)
       const visibleCategoryNames = new Set(visibleItems.map(i => cleanCategoryName(i.name || i.nganhHang)));
-      
       const brands = {};
-
       source.forEach(row => {
-          // Chuẩn hóa tên ngành hàng của dòng dữ liệu
           const rowCategoryName = cleanCategoryName(row.nganhHang);
-          
-          // [FIX] Chỉ tính nếu ngành hàng này nằm trong danh sách hiển thị
           if (!visibleCategoryNames.has(rowCategoryName)) return;
-
           const brandName = row.nhaSanXuat || 'Khác';
           const revenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-          
           if (!brands[brandName]) brands[brandName] = { name: brandName, revenue: 0 };
           brands[brandName].revenue += revenue;
       });
       return Object.values(brands).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
-  }
-
-  async function renderCharts() {
-      if (typeof Chart === 'undefined') return;
-      await tick();
-
-      const ctxPie = document.getElementById('luyke-cat-pie-chart');
-      if (ctxPie) {
-          if (chartInstancePie) chartInstancePie.destroy();
-          
-          // Tính tổng doanh thu của Pie để tính % chính xác
-          const totalPieRevenue = pieData.reduce((sum, item) => sum + item.revenue, 0);
-
-          chartInstancePie = new Chart(ctxPie, {
-              type: 'doughnut',
-              data: {
-                  labels: pieData.map(d => d.name),
-                  datasets: [{
-                      data: pieData.map(d => d.revenue),
-                      backgroundColor: pieData.map(() => getRandomBrightColor()),
-                      borderWidth: 1
-                  }]
-              },
-              options: { 
-                  responsive: true, 
-                  maintainAspectRatio: false, 
-                  plugins: { 
-                      legend: { 
-                          position: 'right', 
-                          labels: { 
-                              boxWidth: 10,
-                              font: { size: 11 },
-                              generateLabels: (chart) => {
-                                  const data = chart.data;
-                                  if (data.labels.length && data.datasets.length) {
-                                      return data.labels.map((label, i) => {
-                                          const value = data.datasets[0].data[i];
-                                          const formattedValue = formatters.formatRevenue(value,0);
-                                          const pct = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
-                                          return {
-                                              text: `${label} (${pct}) - ${formattedValue}`,
-                                              fillStyle: data.datasets[0].backgroundColor[i],
-                                              hidden: isNaN(data.datasets[0].data[i]),
-                                              index: i
-                                          };
-                                      });
-                                  }
-                                  return [];
-                              }
-                          } 
-                      },
-                      datalabels: {
-                          formatter: (value, ctx) => {
-                              const percentage = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
-                              // Chỉ hiện nếu > 3% để đỡ rối
-                              if ((value / totalPieRevenue) < 0.03) return "";
-                              return percentage;
-                          },
-                          color: '#fff',
-                          font: { weight: 'bold', size: 10 }
-                      }
-                  } 
-              },
-              plugins: [ChartDataLabels]
-          });
-      }
-
-      const ctxBar = document.getElementById('luyke-brand-bar-chart');
-      if (ctxBar) {
-          if (chartInstanceBar) chartInstanceBar.destroy();
-          chartInstanceBar = new Chart(ctxBar, {
-              type: 'bar',
-              data: {
-                  labels: barData.map(d => d.name),
-                  datasets: [{
-                      label: 'Doanh thu',
-                      data: barData.map(d => d.revenue / 1000000), // Chia cho 1 triệu để hiện số nhỏ
-                      backgroundColor: barData.map(() => getRandomBrightColor()),
-                      borderRadius: 4
-                  }]
-              },
-              options: {
-                  indexAxis: 'y',
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: { 
-                      legend: { display: false },
-                      datalabels: {
-                          anchor: 'end',
-                          align: 'end',
-                          formatter: (value) => formatters.formatNumber(value, 0),
-                          color: '#4b5563',
-                          font: { weight: 'bold', size: 10 }
-                      },
-                      tooltip: {
-                          callbacks: {
-                              label: (ctx) => formatters.formatRevenue(ctx.raw * 1000000)
-                          }
-                      }
-                  },
-                  scales: { x: { beginAtZero: true } }
-              },
-              plugins: [ChartDataLabels]
-          });
-      }
-  }
-
-  // Reactive: Gọi renderCharts khi switch sang chart view hoặc data thay đổi
-  $: if (viewMode === 'chart') { 
-      setTimeout(renderCharts, 0); 
   }
 
   function handleWindowClick(e) {
@@ -10899,102 +10602,27 @@ export const formatters = {
           isSettingsOpen = false;
       }
   }
-
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') feather.replace();
-  });
+  
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <svelte:window on:click={handleWindowClick} />
 
 <div class="luyke-tier-2-container">
     
-    <div class="luyke-toolbar" style="flex-wrap: nowrap; gap: 8px;">
-        <div class="luyke-toolbar-left" style="flex-grow: 1; min-width: 0;">
-            <h3 class="text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
-                <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
-                <span class="truncate">{titleText}</span>
-            </h3>
-        </div>
-
-        <div class="luyke-toolbar-right" style="flex-shrink: 0; display: flex; align-items: center; gap: 8px;">
-            
-            <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-                <button 
-                    class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" 
-                    on:click={() => viewMode = 'grid'}
-                    title="Xem dạng thẻ"
-                >
-                    <i data-feather="grid" class="w-4 h-4"></i>
-                    <span class="hidden sm:inline text-xs ml-1">Thẻ</span>
-                </button>
-                <button 
-                    class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" 
-                    on:click={() => viewMode = 'chart'}
-                    title="Xem biểu đồ"
-                >
-                    <i data-feather="pie-chart" class="w-4 h-4"></i>
-                    <span class="hidden sm:inline text-xs ml-1">Biểu đồ</span>
-                </button>
-            </div>
-
-            {#if viewMode === 'grid'}
-                <div 
-                    class="toggle-wrapper {showUnexported ? 'active' : ''}" 
-                    on:click={() => showUnexported = !showUnexported}
-                    title="Xem doanh thu chưa xuất"
-                    style="padding: 4px 8px;"
-                >
-                    <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
-                    <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
-                </div>
-            {/if}
-
-            <div class="relative filter-wrapper">
-                <button 
-                    class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
-                    on:click={() => isSettingsOpen = !isSettingsOpen}
-                    title="Lọc hiển thị ngành hàng"
-                >
-                    <i data-feather="filter" class="w-4 h-4"></i>
-                </button>
-
-                {#if isSettingsOpen}
-                    <div class="filter-dropdown">
-                        <div class="filter-header">
-                            <input type="text" class="filter-search" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
-                        </div>
-                        <div class="filter-body custom-scrollbar">
-                            {#if filterList.length === 0}
-                                <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
-                            {:else}
-                                {#each filterList as name}
-                                    <div class="filter-item" on:click={() => toggleCategoryVisibility(name)}>
-                                        <input type="checkbox" checked={!hiddenCategories.has(name)} />
-                                        <label>{name}</label>
-                                    </div>
-                                {/each}
-                            {/if}
-                        </div>
-                        <div class="filter-actions">
-                            <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
-                            <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
-                        </div>
-                    </div>
-                {/if}
-            </div>
-
-            {#if viewMode === 'grid'}
-                <div class="relative hidden lg:block">
-                    <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 140px;" bind:value={searchText} />
-                </div>
-                <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
-                    <option value="revenue_desc">DT ↓</option>
-                    <option value="quantity_desc">SL ↓</option>
-                </select>
-            {/if}
-        </div>
-    </div>
+    <LuykeCategoryToolbar
+        {titleText} {titleIcon} {titleClass} {iconClass}
+        bind:viewMode
+        bind:showUnexported
+        bind:sortMode
+        bind:searchText
+        bind:isSettingsOpen
+        bind:filterSearch
+        {filterList}
+        {hiddenCategories}
+        on:toggleCategory={toggleCategoryVisibility}
+        on:toggleAll={toggleAllVisibility}
+    />
 
     {#if viewMode === 'grid'}
         {#if sortedItems.length === 0}
@@ -11008,7 +10636,6 @@ export const formatters = {
                     {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
                     {@const quantity = showUnexported ? item.soLuong : item.quantity}
                     {@const style = getCategoryTheme(name)}
-                    
                     {@const marketSharePercent = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0}
                     {@const barPercent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
                     {@const finalTheme = showUnexported ? 'theme-warning' : style.theme}
@@ -11024,20 +10651,14 @@ export const formatters = {
                                 </span>
                             {/if}
                         </div>
-                        
                         <h4 class="cat-name-text" title={name}>{name}</h4>
-                        
-                        <div class="cat-value-text">
-                            {formatters.formatRevenue(revenue,0)}
-                        </div>
-                        
+                        <div class="cat-value-text">{formatters.formatRevenue(revenue,0)}</div>
                         <div class="cat-footer-row">
                             <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
                             {#if !showUnexported}
                                 <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 0)}</strong>/ngày</span>
                             {/if}
                         </div>
-
                         <div class="cat-bar-bg">
                             <div class="cat-bar-fill" style="width: {barPercent}%"></div>
                         </div>
@@ -11046,16 +10667,11 @@ export const formatters = {
             </div>
         {/if}
     {:else}
-        <div class="luyke-charts-container p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl">
-            <div class="chart-box">
-                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Tỷ trọng Doanh Thu (ĐVT: Triệu)</h4>
-                <div class="relative h-full w-full"><canvas id="luyke-cat-pie-chart"></canvas></div>
-            </div>
-            <div class="chart-box">
-                <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Hãng (ĐVT: Triệu)</h4>
-                <div class="relative h-full w-full"><canvas id="luyke-brand-bar-chart"></canvas></div>
-            </div>
-        </div>
+        <LuykeCategoryCharts 
+            {pieData} 
+            {barData} 
+            {showUnexported} 
+        />
     {/if}
 </div>
 --- END FILE: ./src/components/luyke/LuykeCategoryTable.svelte ---
@@ -12974,372 +12590,426 @@ export const formatters = {
 --- START FILE: ./src/components/modals/AddRevenueTableModal.svelte ---
 <script>
     import { createEventDispatcher } from 'svelte';
-    import { categoryStructure, isAdmin } from '../../stores.js';
-    import { cleanCategoryName } from '../../utils.js';
+    import { categoryStructure } from '../../stores.js';
+    import { parseIdentity } from '../../utils.js';
 
     export let isOpen = false;
-    export let editItem = null; 
+    export let editItem = null;
 
     const dispatch = createEventDispatcher();
-    let isBackdropMouseDown = false; 
 
-    // --- FORM DATA ---
-    let title = '';
-    let selectedMainCategories = [];
-    let isSystemTemplate = false;
+    // --- DỮ LIỆU ---
+    let tableName = '';
+    let tableId = '';
+    let isSystem = false; // [FIX] Biến cờ xác định bảng hệ thống
+    
+    // Cấu hình Cột Tổng (Main Column)
+    let mainColumn = {
+        header: 'Tổng cộng',
+        type: 'group', // 'group' | 'category'
+        items: [],     // Danh sách ID đã chọn
+        metrics: { sl: false, dt: true, dtqd: false }
+    };
+
+    // Danh sách Cột Phụ
     let subColumns = [];
     
-    // Metric tổng cho toàn bảng
-    let tableMetrics = { sl: false, dt: true, dtqd: false };
+    // --- UI STATE ---
+    let activeContext = 'main'; // 'main' | 'sub'
+    let activeSubIndex = 0;     // Index nếu đang sửa sub column
+    let searchText = '';
+    let showSelectedOnly = false;
 
-    let searchMainCat = '';
-    
-    // State tìm kiếm cho từng dropdown cột con (Object: { index: searchText })
-    let subSearchMap = {};
+    // --- HELPER: Lấy cột đang Active ---
+    $: activeColumn = activeContext === 'main' ? mainColumn : subColumns[activeSubIndex];
 
-    // --- DATA SOURCES ---
-    $: uniqueMainCategories = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nganhHang)).filter(Boolean))].sort();
-    $: filteredMainCategories = uniqueMainCategories.filter(c => c.toLowerCase().includes(searchMainCat.toLowerCase()));
+    // 1. Chuẩn hóa Ngành hàng (Lấy ID)
+    $: uniqueCategories = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nganhHang) return;
+            const parsed = parseIdentity(c.nganhHang);
+            map.set(parsed.id, { 
+                id: parsed.id, 
+                name: parsed.name, 
+                display: parsed.name.includes(parsed.id) ? parsed.name : `${parsed.id} - ${parsed.name}`
+            });
+        });
+        return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
+    })();
 
-    $: availableSubGroups = [...new Set(
-        ($categoryStructure || [])
-            .filter(c => selectedMainCategories.includes(cleanCategoryName(c.nganhHang)))
-            .map(c => cleanCategoryName(c.nhomHang))
-            .filter(Boolean)
-    )].sort();
+    // 2. Chuẩn hóa Nhóm hàng (Lấy ID)
+    $: uniqueGroups = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nhomHang) return;
+            const id = c.maNhomHang || parseIdentity(c.nhomHang).id;
+            const name = c.nhomHang;
+            map.set(id, { 
+                id: id, 
+                name: name, 
+                display: name.includes(id) ? name : `${id} - ${name}`
+            });
+        });
+        return Array.from(map.values()).sort((a,b) => a.name.localeCompare(b.name));
+    })();
 
     // --- INIT ---
     $: if (isOpen) {
         if (editItem) {
-            title = editItem.title || '';
-            selectedMainCategories = [...(editItem.mainCategories || [])];
-            isSystemTemplate = !!editItem.isSystem;
-            // Load metrics tổng
-            tableMetrics = { sl: false, dt: true, dtqd: false, ...(editItem.tableMetrics || {}) };
+            tableId = editItem.id;
+            tableName = editItem.title;
+            // [FIX] Lấy trạng thái isSystem từ item sửa hoặc payload
+            isSystem = !!editItem.isSystem; 
             
-            subColumns = (editItem.subColumns || []).map(col => ({ 
-                ...col, 
-                id: col.id || Math.random().toString(36).substr(2, 9),
-                header: col.header || '',
-                items: [...(col.items || [])],
-                metrics: { sl: false, dt: true, dtqd: false, ...(col.metrics || {}) },
-                isDropdownOpen: false
-            }));
+            mainColumn = editItem.mainColumn ? JSON.parse(JSON.stringify(editItem.mainColumn)) : { 
+                header: 'Tổng cộng', type: 'group', items: [], metrics: { sl: false, dt: true, dtqd: false } 
+            };
+            subColumns = JSON.parse(JSON.stringify(editItem.subColumns || []));
         } else {
-            resetForm();
+            // [FIX] Reset form và kiểm tra payload (Admin truyền { isSystem: true })
+            isSystem = editItem?.isSystem || false;
+
+            tableId = `tbl_${Date.now()}`;
+            tableName = '';
+            mainColumn = { 
+                header: 'Tổng cộng', type: 'group', items: [], metrics: { sl: false, dt: true, dtqd: false } 
+            };
+            subColumns = [];
+            addSubColumn();
         }
+        selectMain();
     }
 
-    function resetForm() {
-        title = '';
-        selectedMainCategories = [];
-        searchMainCat = '';
-        subColumns = [];
-        isSystemTemplate = false;
-        tableMetrics = { sl: false, dt: true, dtqd: false };
-        subSearchMap = {};
-        addColumn(); 
+    // --- NAVIGATION ---
+    function selectMain() {
+        activeContext = 'main';
+        resetFilter();
     }
 
-    // --- LOGIC ---
-    function toggleMainCategory(cat) {
-        if (selectedMainCategories.includes(cat)) {
-            selectedMainCategories = selectedMainCategories.filter(c => c !== cat);
-        } else {
-            selectedMainCategories = [...selectedMainCategories, cat];
-        }
+    function selectSub(index) {
+        activeContext = 'sub';
+        activeSubIndex = index;
+        resetFilter();
     }
 
-    function addColumn() {
-        subColumns = [...subColumns, {
-            id: Math.random().toString(36).substr(2, 9),
-            header: '',
-            items: [],
-            metrics: { sl: false, dt: true, dtqd: false },
-            isDropdownOpen: false 
-        }];
+    function resetFilter() {
+        searchText = '';
+        showSelectedOnly = false;
     }
 
-    function removeColumn(index) {
-        subColumns = subColumns.filter((_, i) => i !== index);
-    }
-
-    function toggleColumnDropdown(index) {
-        subColumns = subColumns.map((col, i) => {
-            if (i === index) {
-                // Reset search text khi mở
-                if (!col.isDropdownOpen) subSearchMap[index] = ''; 
-                return { ...col, isDropdownOpen: !col.isDropdownOpen };
+    // --- COLUMN ACTIONS ---
+    function addSubColumn() {
+        subColumns = [
+            ...subColumns, 
+            { 
+                header: `Cột ${subColumns.length + 1}`, 
+                type: 'group', 
+                items: [], 
+                metrics: { sl: false, dt: true, dtqd: false } 
             }
-            return { ...col, isDropdownOpen: false };
-        });
+        ];
+        selectSub(subColumns.length - 1);
     }
 
-    function toggleSubItem(colIndex, item) {
-        const col = subColumns[colIndex];
-        if (col.items.includes(item)) {
-            col.items = col.items.filter(i => i !== item);
-        } else {
-            col.items = [...col.items, item];
-        }
-        subColumns[colIndex] = col;
-    }
-
-    function handleSave() {
-        if (!title.trim()) return alert("Vui lòng nhập Tên bảng.");
-        if (selectedMainCategories.length === 0) return alert("Vui lòng chọn ít nhất 1 Ngành hàng chính.");
-        if (subColumns.length === 0) return alert("Vui lòng thêm ít nhất 1 nhóm hàng.");
+    function removeSubColumn(index) {
+        if(subColumns.length <= 1) return alert("Cần ít nhất 1 cột phụ.");
+        if(!confirm("Xóa cột này?")) return;
         
-        // Validate metrics tổng
-        if (!tableMetrics.sl && !tableMetrics.dt && !tableMetrics.dtqd) {
-             tableMetrics.dt = true; // Default fallback
+        subColumns = subColumns.filter((_, i) => i !== index);
+        if (activeSubIndex >= subColumns.length) {
+            activeSubIndex = subColumns.length - 1;
+        }
+    }
+
+    // --- ITEM SELECTION LOGIC ---
+    function toggleItem(itemId) {
+        const currentItems = new Set(activeColumn.items || []);
+        if (currentItems.has(itemId)) currentItems.delete(itemId);
+        else currentItems.add(itemId);
+        activeColumn.items = [...currentItems];
+    }
+
+    function toggleAll(listSource) {
+        const allIds = listSource.map(i => i.id);
+        const currentLen = activeColumn.items.length;
+        
+        if (currentLen > 0 && currentLen >= allIds.length) {
+            activeColumn.items = [];
+        } else {
+            activeColumn.items = [...allIds];
+        }
+    }
+
+    function clearSelection() {
+        if(!confirm("Xóa sạch danh sách đã chọn của cột này?")) return;
+        activeColumn.items = [];
+    }
+
+    function handleTypeChange(newType) {
+        activeColumn.type = newType;
+    }
+
+    // --- SAVE ---
+    function handleSave() {
+        if (!tableName.trim()) return alert("Vui lòng nhập Tên bảng.");
+        if (!mainColumn.header.trim()) return alert("Vui lòng nhập tên Cột Tổng.");
+        
+        if (subColumns.length === 0) return alert("Vui lòng thêm ít nhất 1 cột phụ.");
+        
+        for (let i = 0; i < subColumns.length; i++) {
+            const col = subColumns[i];
+            if (!col.header.trim()) return alert(`Cột phụ số ${i+1} chưa có tên.`);
+            if (!col.items || col.items.length === 0) return alert(`Cột "${col.header}" chưa chọn dữ liệu.`);
         }
 
-        for (const col of subColumns) {
-            if (!col.header.trim()) return alert("Vui lòng đặt tên cho tất cả các nhóm hàng.");
-            if (col.items.length === 0) return alert(`Nhóm "${col.header}" chưa chọn thành phần con nào.`);
-            if (!col.metrics.sl && !col.metrics.dt && !col.metrics.dtqd) {
-                return alert(`Nhóm "${col.header}" chưa chọn chỉ số hiển thị (SL/DT/QĐ).`);
-            }
-        }
-
-        const payload = {
-            id: editItem ? editItem.id : `table_${Date.now()}`,
-            title,
-            mainCategories: selectedMainCategories,
-            tableMetrics,
-            subColumns: subColumns.map(c => ({ 
-                header: c.header, 
-                items: c.items,
-                metrics: {
-                    sl: !!c.metrics.sl,
-                    dt: !!c.metrics.dt,
-                    dtqd: !!c.metrics.dtqd
-                }
-            })),
-            isSystem: isSystemTemplate === true,
-            isVisible: true
-        };
-
-        dispatch('save', payload);
+        dispatch('save', {
+            id: tableId,
+            title: tableName,
+            isSystem: isSystem, // [FIX] Quan trọng: Gửi cờ hệ thống về App
+            mainColumn: mainColumn, 
+            subColumns: subColumns
+        });
         close();
     }
 
-    function close() {
-        dispatch('close');
-    }
+    function close() { dispatch('close'); }
 
-    function handleContentClick(e) {
-        if (!e.target.closest('.sub-item-dropdown') && !e.target.closest('.sub-item-trigger')) {
-            subColumns = subColumns.map(c => ({ ...c, isDropdownOpen: false }));
-        }
-    }
+    // --- FILTER LOGIC ---
+    $: currentListSource = (activeColumn.type === 'category') ? uniqueCategories : uniqueGroups;
+    
+    $: filteredList = currentListSource.filter(item => {
+        const matchesSearch = item.display.toLowerCase().includes(searchText.toLowerCase());
+        const isSelected = activeColumn.items?.includes(item.id);
+        if (showSelectedOnly) return matchesSearch && isSelected;
+        return matchesSearch;
+    });
 
-    function handleBackdropMouseDown(e) {
-        if (e.target === e.currentTarget) isBackdropMouseDown = true;
-    }
-    function handleBackdropClick(e) {
-        if (e.target === e.currentTarget && isBackdropMouseDown) close();
-        isBackdropMouseDown = false;
-    }
 </script>
 
-<svelte:window on:click={handleContentClick} />
-
 {#if isOpen}
-<div 
-    class="fixed inset-0 bg-gray-900/60 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" 
-    role="button" 
-    tabindex="0" 
-    on:mousedown={handleBackdropMouseDown}
-    on:click={handleBackdropClick}
->
-    <div 
-        class="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden border border-gray-200" 
-        role="button" 
-        tabindex="0" 
-        on:click|stopPropagation={handleContentClick}
-        on:mousedown|stopPropagation={() => isBackdropMouseDown = false}
-    >
+<div class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm" on:click={close} role="button" tabindex="0">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden" on:click|stopPropagation role="document" tabindex="0">
         
-        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
-                <h3 class="text-xl font-bold text-gray-800">
-                    {editItem ? 'Chỉnh sửa Bảng theo dõi' : 'Tạo Bảng theo dõi mới'}
+                <h3 class="text-lg font-bold text-gray-800">
+                    {editItem ? 'Chỉnh sửa' : 'Thêm mới'} Bảng Doanh Thu 
+                    {#if isSystem}
+                        <span class="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded border border-indigo-200 uppercase">Hệ thống</span>
+                    {/if}
                 </h3>
-                <p class="text-xs text-gray-500 mt-1">Thiết kế bảng báo cáo theo phong cách Excel đa tầng.</p>
+                <p class="text-xs text-gray-500">Cấu hình nguồn dữ liệu theo ID cho từng cột.</p>
             </div>
-            <button on:click={close} class="text-gray-400 hover:text-red-500 transition-colors text-2xl leading-none p-2 rounded-full hover:bg-gray-200">&times;</button>
+            <button on:click={close} class="text-gray-400 hover:text-red-500 text-2xl leading-none">&times;</button>
         </div>
 
-        <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
+        <div class="flex-1 overflow-hidden flex flex-col lg:flex-row bg-gray-50">
             
-            <div class="w-full md:w-1/3 border-r border-gray-200 p-6 bg-white overflow-y-auto custom-scrollbar flex flex-col gap-6">
-                <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-2">1. Tên Bảng <span class="text-red-500">*</span></label>
-                    <input type="text" bind:value={title} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold" placeholder="VD: Gia dụng Mùa hè...">
-                </div>
-                
-                <div class="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <label class="block text-sm font-bold text-blue-800 mb-2">2. Chỉ số TỔNG (Header Bảng)</label>
-                    <div class="flex gap-4">
-                        <label class="flex items-center gap-1.5 cursor-pointer hover:bg-blue-100/50 p-1 rounded transition-colors" on:click|stopPropagation>
-                            <input type="checkbox" bind:checked={tableMetrics.sl} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
-                            <span class="text-sm text-gray-700">Tổng Số lượng</span>
-                        </label>
-                        <label class="flex items-center gap-1.5 cursor-pointer hover:bg-blue-100/50 p-1 rounded transition-colors" on:click|stopPropagation>
-                            <input type="checkbox" bind:checked={tableMetrics.dt} class="w-4 h-4 rounded text-green-600 focus:ring-green-500">
-                            <span class="text-sm text-gray-700">Tổng Doanh thu</span>
-                        </label>
-                        <label class="flex items-center gap-1.5 cursor-pointer hover:bg-blue-100/50 p-1 rounded transition-colors" on:click|stopPropagation>
-                            <input type="checkbox" bind:checked={tableMetrics.dtqd} class="w-4 h-4 rounded text-purple-600 focus:ring-purple-500">
-                            <span class="text-sm text-gray-700">Tổng DT Quy đổi</span>
-                        </label>
-                    </div>
+            <div class="w-full lg:w-1/3 border-r border-gray-200 bg-white flex flex-col">
+                <div class="p-4 border-b border-gray-100 bg-slate-50">
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Tên Bảng</label>
+                    <input 
+                        type="text" 
+                        bind:value={tableName} 
+                        class="w-full p-2 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none font-bold text-gray-800"
+                        placeholder="VD: Báo cáo Apple..."
+                    >
                 </div>
 
-                <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-2">3. Lọc nguồn (Ngành hàng chính)</label>
-                    <div class="mb-2 relative">
-                        <input type="text" bind:value={searchMainCat} placeholder="Tìm kiếm..." class="w-full p-2 pl-8 border border-gray-300 rounded text-xs focus:border-blue-500 outline-none" />
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-2.5 top-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                    </div>
-                    <div class="h-48 border border-gray-300 rounded-lg overflow-y-auto custom-scrollbar p-2 bg-gray-50">
-                        {#if filteredMainCategories.length === 0}
-                            <p class="text-xs text-gray-400 italic text-center mt-4">Không tìm thấy.</p>
-                        {:else}
-                            {#each filteredMainCategories as cat}
-                                <label class="flex items-center gap-2 p-1.5 hover:bg-white rounded cursor-pointer transition-colors border-b border-gray-100 last:border-0" on:click|stopPropagation>
-                                    <input type="checkbox" checked={selectedMainCategories.includes(cat)} on:change={() => toggleMainCategory(cat)} class="rounded text-blue-600 focus:ring-blue-500 border-gray-300">
-                                    <span class="text-sm text-gray-600">{cat}</span>
-                                </label>
-                            {/each}
-                        {/if}
-                    </div>
-                    <p class="text-xs text-gray-500 mt-1 italic">* Chọn để lọc danh sách nhóm hàng con.</p>
-                </div>
-
-                {#if $isAdmin}
-                    <div class="p-3 bg-purple-50 border border-purple-200 rounded-lg mt-auto">
-                        <label class="flex items-center gap-2 cursor-pointer" on:click|stopPropagation>
-                            <input type="checkbox" bind:checked={isSystemTemplate} class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300">
-                            <span class="text-sm font-bold text-purple-800">Lưu làm Mẫu hệ thống</span>
-                        </label>
-                        <p class="text-xs text-purple-600 mt-1 pl-6">Bảng này sẽ hiển thị cho tất cả người dùng.</p>
-                    </div>
-                {/if}
-            </div>
-
-            <div class="w-full md:w-2/3 p-6 bg-slate-50 overflow-y-auto custom-scrollbar flex flex-col">
-                <div class="flex justify-between items-center mb-4">
-                    <label class="text-sm font-bold text-gray-700">4. Cấu hình Cột hiển thị & Gom nhóm</label>
-                    <button class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm" on:click={addColumn}>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                        Thêm nhóm hàng
-                    </button>
-                </div>
-
-                {#if selectedMainCategories.length === 0}
-                    <div class="flex-grow flex items-center justify-center border-2 border-dashed border-gray-300 rounded-xl bg-white/50">
-                        <div class="text-center p-6">
-                            <span class="text-4xl">👈</span>
-                            <p class="text-gray-500 font-medium mt-2">Vui lòng chọn "Lọc nguồn" bên trái trước.</p>
+                <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+                    
+                    <div 
+                        class="border-2 rounded-lg p-3 cursor-pointer transition-all relative
+                        {activeContext === 'main' ? 'border-orange-400 bg-orange-50 shadow-md ring-1 ring-orange-300' : 'border-gray-200 bg-white hover:border-orange-200'}"
+                        on:click={selectMain}
+                        role="button" tabindex="0"
+                    >
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">Main</span>
+                                <span class="text-xs font-bold text-gray-700 uppercase">Cột Tổng</span>
+                            </div>
+                            <span class="text-[10px] bg-white border border-gray-200 text-gray-500 px-1.5 py-0.5 rounded">
+                                {mainColumn.items.length} mục
+                            </span>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <input 
+                                type="text" 
+                                bind:value={mainColumn.header} 
+                                class="w-full bg-transparent border-b border-gray-300 focus:border-orange-500 outline-none text-sm font-bold text-gray-800 pb-1"
+                                placeholder="Tên cột tổng..."
+                            >
+                            <div class="flex gap-2">
+                                <label class="flex items-center text-[10px] text-gray-600 cursor-pointer"><input type="checkbox" bind:checked={mainColumn.metrics.sl} class="mr-1 accent-orange-600"> SL</label>
+                                <label class="flex items-center text-[10px] text-gray-600 cursor-pointer"><input type="checkbox" bind:checked={mainColumn.metrics.dt} class="mr-1 accent-orange-600"> DT</label>
+                                <label class="flex items-center text-[10px] text-gray-600 cursor-pointer"><input type="checkbox" bind:checked={mainColumn.metrics.dtqd} class="mr-1 accent-orange-600"> DTQĐ</label>
+                            </div>
                         </div>
                     </div>
-                {:else}
-                    <div class="space-y-3 pb-4">
-                        {#each subColumns as col, index (col.id)}
-                            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3 relative group animate-fade-in-up">
-                                <button class="absolute top-2 right-2 text-gray-300 hover:text-red-500 p-1 transition-colors" on:click={() => removeColumn(index)} title="Xóa cột này">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-                                </button>
 
-                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                                    <div class="md:col-span-4">
-                                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tên nhóm hiển thị</label>
-                                        <input type="text" bind:value={col.header} class="w-full p-2 border border-gray-300 rounded text-sm font-semibold focus:border-blue-500 outline-none" placeholder="VD: Camera Tổng">
-                                    </div>
+                    <div class="flex items-center gap-2 text-[10px] text-gray-400 uppercase font-bold px-1">
+                        <div class="flex-1 h-px bg-gray-200"></div>
+                        Các cột phụ
+                        <div class="flex-1 h-px bg-gray-200"></div>
+                    </div>
 
-                                    <div class="md:col-span-8 relative">
-                                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Thành phần (Gom nhóm)</label>
-                                        
-                                        <div 
-                                            class="w-full min-h-[38px] p-1.5 border border-gray-300 rounded bg-white cursor-pointer flex flex-wrap gap-1 items-center sub-item-trigger focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all"
-                                            on:click|stopPropagation={() => toggleColumnDropdown(index)}
-                                            role="button" tabindex="0"
-                                        >
-                                            {#if col.items.length === 0}
-                                                <span class="text-gray-400 text-sm ml-1 select-none">-- Chọn nhóm hàng con --</span>
-                                            {:else}
-                                                {#each col.items as item}
-                                                    <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 border border-blue-100">
-                                                        {item} <span class="cursor-pointer hover:text-blue-900 font-bold" on:click|stopPropagation={() => toggleSubItem(index, item)}>&times;</span>
-                                                    </span>
-                                                {/each}
-                                            {/if}
-                                            <div class="ml-auto pr-1 text-gray-400"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></div>
-                                        </div>
+                    {#each subColumns as col, index}
+                        <div 
+                            class="border rounded p-3 cursor-pointer transition-all relative group
+                            {activeContext === 'sub' && activeSubIndex === index ? 'border-blue-500 bg-blue-50 shadow-sm ring-1 ring-blue-500' : 'border-gray-200 bg-white hover:border-blue-300'}"
+                            on:click={() => selectSub(index)}
+                            role="button" tabindex="0"
+                        >
+                            <button 
+                                class="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                on:click|stopPropagation={() => removeSubColumn(index)}
+                                title="Xóa cột này"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
 
-                                        {#if col.isDropdownOpen}
-                                            <div class="absolute top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto custom-scrollbar sub-item-dropdown animate-fade-in-fast" on:click|stopPropagation>
-                                                <div class="p-2 sticky top-0 bg-white border-b border-gray-100">
-                                                    <input 
-                                                        type="text" 
-                                                        class="w-full p-1.5 text-xs border border-gray-300 rounded focus:border-blue-500 outline-none" 
-                                                        placeholder="Lọc danh sách..."
-                                                        bind:value={subSearchMap[index]}
-                                                        on:click|stopPropagation
-                                                        on:keydown|stopPropagation
-                                                    />
-                                                </div>
-                                                <div class="p-1">
-                                                    {#if true}
-                                                        {@const currentSubSearch = subSearchMap[index] || ''}
-                                                        {@const filteredSubGroups = availableSubGroups.filter(s => s.toLowerCase().includes(currentSubSearch.toLowerCase()))}
-                                                        
-                                                        {#if filteredSubGroups.length === 0}
-                                                            <p class="text-center text-sm text-gray-400 py-4">Không tìm thấy.</p>
-                                                        {:else}
-                                                            {#each filteredSubGroups as subGroup}
-                                                                <label class="flex items-center px-3 py-2 hover:bg-blue-50 cursor-pointer rounded transition-colors border-b border-gray-50 last:border-0" on:click|stopPropagation>
-                                                                    <input type="checkbox" checked={col.items.includes(subGroup)} on:change={() => toggleSubItem(index, subGroup)} class="mr-3 w-4 h-4 accent-blue-600">
-                                                                    <span class="text-sm text-gray-700">{subGroup}</span>
-                                                                </label>
-                                                            {/each}
-                                                        {/if}
-                                                    {/if}
-                                                </div>
-                                            </div>
-                                        {/if}
-                                    </div>
+                            <div class="space-y-2 pr-4">
+                                <div class="flex justify-between items-center">
+                                    <label class="text-[10px] text-gray-400 font-bold uppercase">Cột {index + 1}</label>
+                                    <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
+                                        {col.items.length} mục
+                                    </span>
                                 </div>
-
-                                <div class="bg-gray-50 p-2 rounded-lg border border-gray-100 flex items-center gap-4">
-                                    <span class="text-xs font-bold text-gray-500 uppercase">Hiển thị:</span>
-                                    <label class="flex items-center gap-1.5 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors" on:click|stopPropagation>
-                                        <input type="checkbox" bind:checked={col.metrics.sl} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500">
-                                        <span class="text-xs font-semibold text-gray-700">Số lượng</span>
-                                    </label>
-                                    <label class="flex items-center gap-1.5 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors" on:click|stopPropagation>
-                                        <input type="checkbox" bind:checked={col.metrics.dt} class="w-4 h-4 rounded text-green-600 focus:ring-green-500">
-                                        <span class="text-xs font-semibold text-gray-700">Doanh thu</span>
-                                    </label>
-                                    <label class="flex items-center gap-1.5 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors" on:click|stopPropagation>
-                                        <input type="checkbox" bind:checked={col.metrics.dtqd} class="w-4 h-4 rounded text-purple-600 focus:ring-purple-500">
-                                        <span class="text-xs font-semibold text-gray-700">DT Quy đổi</span>
-                                    </label>
+                                <input 
+                                    type="text" 
+                                    bind:value={col.header} 
+                                    class="w-full bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none text-sm font-semibold text-gray-700 pb-1"
+                                    placeholder="Nhập tên cột..."
+                                >
+                                <div class="flex gap-2">
+                                    <label class="flex items-center text-[10px] text-gray-600 cursor-pointer"><input type="checkbox" bind:checked={col.metrics.sl} class="mr-1 rounded text-blue-600"> SL</label>
+                                    <label class="flex items-center text-[10px] text-gray-600 cursor-pointer"><input type="checkbox" bind:checked={col.metrics.dt} class="mr-1 rounded text-blue-600"> DT</label>
+                                    <label class="flex items-center text-[10px] text-gray-600 cursor-pointer"><input type="checkbox" bind:checked={col.metrics.dtqd} class="mr-1 rounded text-blue-600"> DTQĐ</label>
                                 </div>
+                            </div>
+                        </div>
+                    {/each}
+                </div>
+
+                <div class="p-3 border-t border-gray-200">
+                    <button 
+                        class="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded hover:border-blue-500 hover:text-blue-500 transition font-bold text-sm flex items-center justify-center gap-2"
+                        on:click={addSubColumn}
+                    >
+                        + Thêm cột phụ
+                    </button>
+                </div>
+            </div>
+
+            <div class="w-full lg:w-2/3 flex flex-col bg-slate-50">
+                <div class="p-3 border-b border-gray-200 bg-white shadow-sm z-10 space-y-3">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="font-bold text-slate-800 text-sm">
+                                Cấu hình: <span class="{activeContext === 'main' ? 'text-orange-600' : 'text-blue-600'}">"{activeColumn.header}"</span>
+                            </h4>
+                            <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
+                                <label class="flex items-center cursor-pointer hover:text-black">
+                                    <input 
+                                        type="radio" 
+                                        name="colType"
+                                        checked={activeColumn.type === 'group'} 
+                                        on:change={() => handleTypeChange('group')}
+                                        class="mr-1.5 w-4 h-4 {activeContext === 'main' ? 'accent-orange-600' : 'accent-blue-600'}"
+                                    > 
+                                    Nhóm Hàng
+                                </label>
+                                <label class="flex items-center cursor-pointer hover:text-black">
+                                    <input 
+                                        type="radio" 
+                                        name="colType"
+                                        checked={activeColumn.type === 'category'} 
+                                        on:change={() => handleTypeChange('category')}
+                                        class="mr-1.5 w-4 h-4 {activeContext === 'main' ? 'accent-orange-600' : 'accent-blue-600'}"
+                                    > 
+                                    Ngành Hàng
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <button 
+                                class="px-2 py-1 text-xs font-medium rounded border transition-colors {showSelectedOnly ? (activeContext === 'main' ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-blue-100 text-blue-700 border-blue-200') : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}"
+                                on:click={() => showSelectedOnly = !showSelectedOnly}
+                            >
+                                {showSelectedOnly ? 'Hiện tất cả' : `Đã chọn (${activeColumn.items.length})`}
+                            </button>
+                            
+                            <button 
+                                class="px-2 py-1 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition flex items-center gap-1"
+                                on:click={clearSelection}
+                                title="Xóa sạch dữ liệu đã chọn"
+                            >
+                                Xóa chọn 🧹
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="relative">
+                        <input 
+                            type="text" 
+                            bind:value={searchText}
+                            class="w-full pl-9 pr-4 py-2 border border-gray-300 rounded focus:ring-1 {activeContext === 'main' ? 'focus:ring-orange-500' : 'focus:ring-blue-500'} outline-none text-sm"
+                            placeholder="Tìm kiếm tên hoặc mã..."
+                        >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-3 top-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                     <div class="mb-3 flex justify-between items-center px-1">
+                        <span class="text-xs text-gray-500 italic">Tìm thấy {filteredList.length} mục</span>
+                        <button 
+                            class="text-xs font-bold hover:underline {activeContext === 'main' ? 'text-orange-600' : 'text-blue-600'}"
+                            on:click={() => toggleAll(filteredList)}
+                        >
+                            {activeColumn.items.length >= filteredList.length && filteredList.length > 0 ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {#each filteredList as item (item.id)}
+                            {@const isChecked = activeColumn.items.includes(item.id)}
+                            <label 
+                                class="flex items-start p-2 rounded border cursor-pointer transition-all select-none
+                                {isChecked 
+                                    ? (activeContext === 'main' ? 'bg-orange-50 border-orange-300 ring-1 ring-orange-300' : 'bg-blue-50 border-blue-300 ring-1 ring-blue-300') 
+                                    : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'}"
+                            >
+                                <input 
+                                    type="checkbox" 
+                                    checked={isChecked} 
+                                    on:change={() => toggleItem(item.id)}
+                                    class="mt-1 mr-3 w-4 h-4 rounded border-gray-300 {activeContext === 'main' ? 'accent-orange-600' : 'accent-blue-600'}"
+                                >
+                                <div class="flex flex-col overflow-hidden">
+                                    <span class="text-sm font-medium text-gray-800 truncate" title={item.display}>{item.display}</span>
+                                    <span class="text-[10px] text-gray-500 font-mono mt-0.5">ID: {item.id}</span>
+                                </div>
+                            </label>
+                        {:else}
+                            <div class="col-span-full py-10 text-center">
+                                <div class="text-gray-300 mb-2 text-4xl">📭</div>
+                                <p class="text-gray-500 text-sm">Không tìm thấy dữ liệu.</p>
                             </div>
                         {/each}
                     </div>
-                {/if}
+                </div>
             </div>
         </div>
 
-        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-            <button on:click={close} class="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-medium text-sm transition-colors shadow-sm">Hủy</button>
-            <button on:click={handleSave} class="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-colors flex items-center gap-2 text-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+        <div class="p-4 border-t border-gray-200 bg-white flex justify-end gap-3 z-20">
+            <button on:click={close} class="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-100 font-medium transition-colors shadow-sm">Hủy</button>
+            <button on:click={handleSave} class="px-8 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow-md transition-colors flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
                 Lưu Bảng
             </button>
         </div>
@@ -13349,16 +13019,9 @@ export const formatters = {
 
 <style>
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    
-    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-    .animate-fade-in-up { animation: fadeInUp 0.3s ease-out; }
-    .animate-fade-in-fast { animation: fadeIn 0.15s ease-out; }
-
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 --- END FILE: ./src/components/modals/AddRevenueTableModal.svelte ---
 
@@ -15827,413 +15490,41 @@ export const normalizers = {
 --- END FILE: ./src/services/processing/normalizers.js ---
 
 --- START FILE: ./src/services/processing/parsers.js ---
-import { competitionData, debugInfo } from '../../stores.js';
-import { helpers } from './helpers.js';
+// src/services/processing/parsers.js
+import { erpParser } from './parsers/erp.parser.js';
+import { luykeParser } from './parsers/luyke.parser.js';
+import { thiduaParser } from './parsers/thidua.parser.js';
 
 export const parsers = {
-    processThuongERP: (pastedText) => {
-        if (!pastedText || !pastedText.trim()) return [];
-        const lines = pastedText.trim().split('\n');
-        const results = [];
-        const regex = /(ĐML_|TGD|ĐMM|ĐMS).*?(BP .*?)(?:Nhân Viên|Trưởng Ca)(.*?)([\d,]+)$/;
-        lines.forEach(line => {
-            const match = line.replace(/\s+/g, ' ').match(regex);
-            if (match) results.push({ name: match[3].trim(), bonus: match[4].trim() });
-        });
-        return results;
-    },
+    // --- ERP Logic ---
+    processThuongERP: erpParser.processThuongERP,
 
-    parseLuyKePastedData: (text) => {
-        const defaults = {
-            mainKpis: {},
-            comparisonData: { value: 0, percentage: 'N/A' },
-            luotKhachData: { value: 0, percentage: 'N/A' },
-            dtDuKien: 0, dtqdDuKien: 0, dtTraCham: 0, tyLeTraCham: 0 
-        };
-        if (!text) return defaults;
+    // --- Luy Ke Logic ---
+    parseLuyKePastedData: luykeParser.parseLuyKePastedData,
+    parseCompetitionDataFromLuyKe: luykeParser.parseCompetitionDataFromLuyKe,
 
-        const allLines = text.split('\n').map(line => line.trim());
-        const textContent = allLines.join(' ');
-
-        const patterns = {
-            'Thực hiện DT thực': /DTLK\s+([\d,.]+)/,
-            'Thực hiện DTQĐ': /DTQĐ\s+([\d,.]+)/,
-            '% HT Target Dự Kiến (QĐ)': /% HT Target Dự Kiến \(QĐ\)\s+([\d.]+%?)/,
-        };
-
-        for (const [key, regex] of Object.entries(patterns)) {
-            const match = textContent.match(regex);
-            if (match && match[1]) {
-                defaults.mainKpis[key] = match[1];
-            }
-        }
-
-        const findValueAfterKeyword = (lines, keyword, isQd = false) => {
-            let keywordRegex;
-            if (isQd) {
-                keywordRegex = new RegExp(keyword.replace('(', '\\(').replace(')', '\\)'));
-            } else {
-                keywordRegex = new RegExp(`^${keyword}$`);
-            }
-
-            const index = lines.findIndex(line => keywordRegex.test(line) && !/lượt khách/i.test(line));
-            if (index !== -1 && index + 1 < lines.length) {
-                return parseFloat(lines[index + 1].replace(/,/g, '').replace(/%/g, '')) || 0;
-            }
-            return 0;
-        };
-
-        defaults.dtDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến");
-        defaults.dtqdDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến (QĐ)", true);
-        defaults.dtTraCham = findValueAfterKeyword(allLines, "DT Siêu thị");
-        defaults.tyLeTraCham = findValueAfterKeyword(allLines, "Tỷ Trọng Trả Góp");
-
-        const dtckIndex = allLines.findIndex(line => line.includes('DTCK Tháng'));
-        if (dtckIndex !== -1 && dtckIndex + 1 < allLines.length) {
-            const valueLine = allLines[dtckIndex + 1];
-            const values = valueLine.split(/\s+/);
-            if (values.length >= 2) {
-                defaults.comparisonData = {
-                    value: parseFloat(values[0].replace(/,/g, '')) || 0,
-                    percentage: values[1] || 'N/A'
-                };
-            }
-        }
-
-        const luotKhachIndex = allLines.findIndex(line => line.includes('Lượt Khách CK Tháng'));
-        if (luotKhachIndex !== -1 && luotKhachIndex + 1 < allLines.length) {
-            const valueLine = allLines[luotKhachIndex + 1];
-            const values = valueLine.split(/\s+/);
-            if (values.length >= 2) {
-                defaults.luotKhachData = {
-                    value: parseFloat(values[0].replace(/,/g, '')) || 0,
-                    percentage: values[1] || 'N/A'
-                };
-            }
-        }
-
-        return defaults;
-    },
-
-    parseCompetitionDataFromLuyKe: (text) => {
-        if (!text || !text.trim()) return [];
-        const lines = text.split('\n').map(l => l.trim());
-        const results = [];
-        let currentCompetition = null;
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.toLowerCase().startsWith('thi đua')) {
-                if (currentCompetition) results.push(currentCompetition);
-                currentCompetition = {
-                    name: line.replace("Thi đua doanh thu", "DT").replace("Thi đua số lượng", "SL"),
-                    type: line.toLowerCase().includes('doanh thu') ? 'doanhThu' : 'soLuong',
-                    luyKe: 0, target: 0, hoanThanh: '0%'
-                };
-            } else if (currentCompetition) {
-                if (line.startsWith('DTLK') || line.startsWith('SLLK') || line.startsWith('DTQĐ')) {
-                     if (i + 1 < lines.length) {
-                         currentCompetition.luyKe = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
-                    }
-                } else if (line.startsWith('Target')) {
-                    if (i + 1 < lines.length) {
-                        currentCompetition.target = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
-                    }
-                } else if (line.startsWith('% HT Dự Kiến')) {
-                    if (i + 1 < lines.length) {
-                         currentCompetition.hoanThanh = lines[i + 1] || '0%';
-                    }
-                }
-            }
-        }
-        if (currentCompetition) results.push(currentCompetition);
-
-        competitionData.set(results);
-        return results;
-    },
-
-    parsePastedThiDuaTableData(rawText) {
-        const newDebugInfo = { required: [], found: [], status: 'Bắt đầu phân tích...' };
-
-        if (!rawText || !rawText.trim()) {
-            newDebugInfo.status = 'Lỗi: Dữ liệu dán vào rỗng.';
-            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-            return { success: false, error: newDebugInfo.status, mainHeaders: [], subHeaders: [], dataRows: [] };
-        }
-
-        const lines = rawText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-        const splitRegex = /\s{2,}|\t/; 
-        const numberCheckRegex = /^-?[\d,.]+$/;
-
-        const mainHeaderStartIndex = lines.findIndex(line => line.includes('Phòng ban'));
-        const subHeaderStartIndex = lines.findIndex(line => line.startsWith('DTLK') || line.startsWith('SLLK') || line.startsWith('DTQĐ'));
-        
-        let dataEndIndex = lines.findIndex(line => line.includes('Hỗ trợ BI'));
-        if (dataEndIndex === -1) {
-            dataEndIndex = lines.length;
-        }
-
-        const dataRowsStartIndex = lines.findIndex((line, index) => {
-            if (index <= subHeaderStartIndex) return false;
-            const parts = line.split(splitRegex).map(p => p.trim());
-            const firstPart = parts[0] || "";
-
-            if (firstPart.startsWith('Tổng') || firstPart.startsWith('BP ') || firstPart.startsWith('DTLK') || firstPart.startsWith('SLLK') || firstPart.startsWith('DTQĐ')) {
-               return false;
-            }
-            return parts.length > 1 && numberCheckRegex.test(parts[1]);
-        });
-
-        if (mainHeaderStartIndex === -1 || subHeaderStartIndex === -1 || dataRowsStartIndex === -1) {
-            let error = "Dữ liệu không hợp lệ thi đua ngành hàng theo nhân viên, vui lòng kiểm tra lại";
-            newDebugInfo.status = error;
-            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-            return { success: false, error: error, mainHeaders: [], subHeaders: [], dataRows: [] };
-        }
-        
-        const mainHeaderLines = lines.slice(mainHeaderStartIndex + 1, subHeaderStartIndex);
-        const mainHeaderString = mainHeaderLines.join('\t');
-        const mainHeaders = mainHeaderString.split(splitRegex).filter(Boolean);
-        newDebugInfo.found.push({ name: 'Tiêu đề chính (Ngành hàng)', value: `${mainHeaders.length} mục`, status: mainHeaders.length > 0 });
-
-        const subHeaderLines = lines.slice(subHeaderStartIndex, dataRowsStartIndex);
-        const subHeaderString = subHeaderLines.join('\t');
-        const subHeaders = subHeaderString.split(/\s+/).filter(Boolean);
-        newDebugInfo.found.push({ name: 'Tiêu đề phụ (SLLK/DTQĐ)', value: `${subHeaders.length} mục`, status: subHeaders.length > 0 });
-
-        const potentialDataLines = lines.slice(dataRowsStartIndex, dataEndIndex);
-        const dataRows = [];
-        
-        for (const line of potentialDataLines) {
-            const parts = line.split(splitRegex).map(p => p.trim());
-            const firstPart = parts[0] || "";
-
-            if (firstPart.startsWith('Tổng') || firstPart.startsWith('BP ')) {
-                continue;
-            }
-
-            if (parts.length > 1 && numberCheckRegex.test(parts[1])) {
-                dataRows.push({
-                    name: firstPart,
-                    values: parts.slice(1)
-                });
-            }
-        }
-        newDebugInfo.found.push({ name: 'Dòng dữ liệu nhân viên', value: `${dataRows.length} dòng`, status: dataRows.length > 0 });
-
-        if (mainHeaders.length === 0 || subHeaders.length === 0 || dataRows.length === 0) {
-            newDebugInfo.status = 'Lỗi: Không thể phân tích dữ liệu. Thiếu Tiêu đề chính, Tiêu đề phụ, hoặc Dòng dữ liệu (sau khi lọc).';
-            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-            return { success: false, error: newDebugInfo.status, mainHeaders, subHeaders, dataRows };
-        }
-        
-        const expectedDataCols = subHeaders.length;
-        if (dataRows.length > 0 && dataRows[0].values.length !== expectedDataCols) {
-             newDebugInfo.status = `Cảnh báo: Số cột không khớp! Tiêu đề phụ (${expectedDataCols}) vs Dữ liệu (${dataRows[0].values.length}).`;
-        } else {
-           newDebugInfo.status = `Phân tích thành công.`;
-        }
-        
-        debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-        return { success: true, mainHeaders, subHeaders, dataRows };
-    }
+    // --- Thi Dua Nhan Vien Logic ---
+    parsePastedThiDuaTableData: thiduaParser.parsePastedThiDuaTableData
 };
 --- END FILE: ./src/services/processing/parsers.js ---
 
 --- START FILE: ./src/services/processing/processors.js ---
 // src/services/processing/processors.js
-import { get } from 'svelte/store';
-import { 
-    danhSachNhanVien, employeeMaNVMap, competitionNameMappings, 
-    debugInfo, rawGioCongData, employeeNameToMaNVMap 
-} from '../../stores.js';
-import { helpers } from './helpers.js';
-import { normalizers } from './normalizers.js';
+import { competitionProcessor } from './logic/competition.processor.js';
+import { timekeepingProcessor } from './logic/timekeeping.processor.js';
+import { regionalProcessor } from './logic/regional.processor.js';
 
 export const processors = {
-    debugCompetitionFiltering(rawTestData) {
-        if (!rawTestData || rawTestData.length === 0) return [];
+    // --- COMPETITION LOGIC ---
+    debugCompetitionFiltering: competitionProcessor.debugCompetitionFiltering,
+    updateCompetitionNameMappings: competitionProcessor.updateCompetitionNameMappings,
+    processThiDuaNhanVienData: competitionProcessor.processThiDuaNhanVienData,
 
-        const { normalizedData } = normalizers.normalizeData(rawTestData, 'ycx');
-        if (normalizedData.length === 0) return [];
+    // --- TIMEKEEPING LOGIC ---
+    processGioCongData: timekeepingProcessor.processGioCongData,
 
-        const hinhThucXuatTinhDoanhThu = helpers.getHinhThucXuatTinhDoanhThu();
-        const debugResults = normalizedData.map(row => {
-            const checks = {
-                isDoanhThuHTX: hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat),
-                isThuTien: (row.trangThaiThuTien || "").trim() === 'Đã thu',
-                isChuaHuy: (row.trangThaiHuy || "").trim() === 'Chưa hủy',
-                isChuaTra: (row.tinhTrangTra || "").trim() === 'Chưa trả',
-                isDaXuat: (row.trangThaiXuat || "").trim() === 'Đã xuất'
-            };
-            const isOverallValid = checks.isDoanhThuHTX && checks.isThuTien && checks.isChuaHuy && checks.isChuaTra && checks.isDaXuat;
-            return { rowData: row, checks: checks, isOverallValid: isOverallValid };
-        });
-        return debugResults;
-    },
-
-    // [MỚI] Hàm cập nhật store Mapping khi có dữ liệu paste mới
-    updateCompetitionNameMappings(mainHeaders) {
-        if (!mainHeaders || mainHeaders.length === 0) return;
-        
-        const oldMappings = get(competitionNameMappings) || {};
-        const newMappings = { ...oldMappings };
-        let hasChanges = false;
-
-        mainHeaders.forEach(originalName => {
-            // Chỉ thêm nếu tên này chưa tồn tại trong mapping
-            if (!newMappings.hasOwnProperty(originalName)) {
-                // [YÊU CẦU] Mặc định điền tên rút gọn = tên gốc
-                newMappings[originalName] = originalName; 
-                hasChanges = true;
-            }
-        });
-
-        if (hasChanges) {
-            console.log("[Processors] Phát hiện tên thi đua mới, cập nhật store mapping.");
-            competitionNameMappings.set(newMappings);
-            // Lưu ý: Chúng ta chỉ cập nhật store ở client. 
-            // Admin sẽ cần vào tab Khai báo để review và bấm Lưu để đẩy lên Cloud.
-        }
-    },
-
-    processThiDuaNhanVienData(parsedData, luykeCompetitionData) {
-        const { mainHeaders, subHeaders, dataRows } = parsedData;
-        const newDebugInfo = { required: [], found: [], status: 'Đang xử lý...' };
-        
-        const $danhSachNhanVien = get(danhSachNhanVien);
-        if ($danhSachNhanVien.length === 0) {
-            newDebugInfo.status = 'Lỗi: Danh sách nhân viên (DSNV) chưa được tải lên.';
-            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-            return [];
-        }
-        if (mainHeaders.length === 0 || dataRows.length === 0 || subHeaders.length === 0) {
-            newDebugInfo.status = 'Lỗi: Dữ liệu dán vào không hợp lệ.';
-            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-            return [];
-        }
-
-        // [QUAN TRỌNG] Gọi hàm cập nhật mapping ngay khi xử lý dữ liệu
-        this.updateCompetitionNameMappings(mainHeaders);
-
-        const nameMappings = get(competitionNameMappings) || {};
-        const competitionTargets = (luykeCompetitionData || []).map(comp => ({
-            ...comp,
-            cleanedName: helpers.cleanCompetitionName(comp.name)
-        }));
-        
-        const finalReport = [];
-        const totalEmployeesInDSNV = $danhSachNhanVien.length;
-        const $employeeMaNVMap = get(employeeMaNVMap);
-
-        dataRows.forEach(row => {
-            const nameParts = row.name.split(' - ');
-            const msnv = nameParts.length > 1 ? nameParts[nameParts.length - 1].trim() : null;
-
-            let employee;
-            if (msnv) {
-                employee = $employeeMaNVMap.get(msnv);
-            }
-
-            if (!employee) {
-                employee = { hoTen: row.name, maNV: msnv || 'N/A', boPhan: 'Nhân viên không tìm thấy' };
-            }
-
-            const employeeResult = {
-                maNV: employee.maNV,
-                hoTen: employee.hoTen,
-                boPhan: employee.boPhan,
-                completedCount: 0,
-                totalCompetitions: mainHeaders.length,
-                competitions: []
-            };
-
-            for (let i = 0; i < mainHeaders.length; i++) {
-                const originalName = mainHeaders[i];
-                const loaiSoLieu = subHeaders[i];
-                
-                // [YÊU CẦU] Lấy tên rút gọn từ mapping, fallback về tên gốc
-                const shortName = nameMappings[originalName] || originalName;
-                
-                const cleanedName = helpers.cleanCompetitionName(originalName);
-                const matchedTarget = competitionTargets.find(t => t.cleanedName === cleanedName);
-                const groupTarget = matchedTarget ? matchedTarget.target : 0;
-                const individualTarget = totalEmployeesInDSNV > 0 ? groupTarget / totalEmployeesInDSNV : 0;
-
-                const giaTri = parseFloat(String(row.values[i] || '0').replace(/,/g, '')) || 0;
-                const actualSales = giaTri;
-                const percentExpected = individualTarget > 0 ? actualSales / individualTarget : (actualSales > 0 ? Infinity : 0);
-                
-                if (percentExpected >= 1) employeeResult.completedCount++;
-
-                employeeResult.competitions.push({
-                    tenNganhHang: shortName, // Dùng tên rút gọn cho hiển thị
-                    tenGoc: originalName,    // Giữ tên gốc để đối chiếu
-                    loaiSoLieu: loaiSoLieu,
-                    giaTri: giaTri,
-                    thucHien: actualSales,
-                    mucTieu: individualTarget,
-                    percentExpected: percentExpected,
-                });
-            }
-
-            employeeResult.completionRate = employeeResult.totalCompetitions > 0 ? employeeResult.completedCount / employeeResult.totalCompetitions : 0;
-            finalReport.push(employeeResult);
-        });
-
-        newDebugInfo.status = `Thành công: Đã xử lý báo cáo cho ${finalReport.length} nhân viên.`;
-        debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
-        return finalReport;
-    },
-
-    processGioCongData: () => {
-        const gioCongByMSNV = {};
-        let currentMaNV = null;
-        if (!get(rawGioCongData) || get(rawGioCongData).length === 0) return gioCongByMSNV;
-
-        for (const row of get(rawGioCongData)) {
-            const maNV = String(row.maNV || '').trim();
-            const hoTen = String(row.hoTen || '').trim().replace(/\s+/g, ' ');
-            let foundMaNV = maNV || get(employeeNameToMaNVMap).get(hoTen.toLowerCase()) || null;
-            if (foundMaNV) currentMaNV = foundMaNV;
-
-            if (currentMaNV && gioCongByMSNV[currentMaNV] === undefined) {
-                gioCongByMSNV[currentMaNV] = 0;
-            }
-
-            const gioCongValue = parseFloat(String(row.tongGioCong || '0').replace(/,/g, '')) || 0;
-            if (currentMaNV && gioCongValue > 0) {
-                gioCongByMSNV[currentMaNV] += gioCongValue;
-            }
-        }
-        return gioCongByMSNV;
-    },
-
-    processThiDuaVungFile(workbook) {
-        const sheetNames = workbook.SheetNames;
-        
-        const chiTietSheetName = sheetNames.find(name => {
-            const upperName = name.toUpperCase();
-            return upperName.includes('CHITIET') || upperName.includes('CHI TIẾT');
-        });
-        
-        const tongSheetName = sheetNames.find(name => {
-            const upperName = name.toUpperCase();
-            return upperName.includes('TONG') || upperName.includes('SIEU THI');
-        });
-
-        const chiTietSheet = chiTietSheetName ? workbook.Sheets[chiTietSheetName] : null;
-        const tongSheet = tongSheetName ? workbook.Sheets[tongSheetName] : null;
-
-        if (!chiTietSheet || !tongSheet) {
-            throw new Error('File Excel phải chứa sheet (CHITIET/CHI TIẾT) và (TONG/SIEU THI).');
-        }
-        
-        const chiTietData = helpers.findHeaderAndProcess(chiTietSheet, ['siêu thị', 'ngành hàng', 'kênh']);
-        const tongData = helpers.findHeaderAndProcess(tongSheet, ['siêu thị', 'tổng thưởng']);
-
-        return { chiTietData, tongData };
-    }
+    // --- REGIONAL LOGIC ---
+    processThiDuaVungFile: regionalProcessor.processThiDuaVungFile
 };
 --- END FILE: ./src/services/processing/processors.js ---
 
@@ -19267,6 +18558,149 @@ export const masterReportLogic = {
 </div>
 --- END FILE: ./src/components/health-staff/revenue/DailyPerfChart.svelte ---
 
+--- START FILE: ./src/components/health-staff/revenue/DynamicTableHeader.svelte ---
+<script>
+    import { createEventDispatcher } from 'svelte';
+    import SortableTh from '../../common/SortableTh.svelte';
+
+    export let config = {};
+    export let tableMetrics = {};
+    export let totalColSpan = 0;
+    export let sortKey = '';
+    export let sortDirection = 'desc';
+
+    const dispatch = createEventDispatcher();
+
+    // Helper màu sắc header phụ
+    const getSubHeaderColor = (index) => {
+        const colors = [
+            'bg-indigo-100 text-indigo-900 border-indigo-200', 
+            'bg-emerald-100 text-emerald-900 border-emerald-200', 
+            'bg-amber-100 text-amber-900 border-amber-200', 
+            'bg-rose-100 text-rose-900 border-rose-200', 
+            'bg-cyan-100 text-cyan-900 border-cyan-200'
+        ];
+        return colors[index % colors.length];
+    };
+
+    function handleSort(event) {
+        dispatch('sort', event.detail);
+    }
+
+    function handleManualSort(key) {
+        dispatch('manualSort', key);
+    }
+</script>
+
+<thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
+    <tr>
+        <th 
+            class="px-4 py-2 pl-5 min-w-[180px] sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer hover:bg-gray-200 transition select-none text-left"
+            rowspan="2"
+            on:click={() => handleManualSort('hoTen')}
+        >
+            <div class="flex items-center gap-1 justify-start">
+                <span class="font-bold uppercase text-xs {sortKey === 'hoTen' ? 'text-blue-800' : 'text-slate-700'}">Nhân viên</span>
+                <span class="flex flex-col items-center justify-center w-4 h-4">
+                    {#if sortKey !== 'hoTen'}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-gray-400 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>
+                    {:else if sortDirection === 'asc'}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
+                    {:else}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    {/if}
+                </span>
+            </div>
+        </th>
+        
+        {#if totalColSpan > 0}
+            <th colspan={totalColSpan} class="px-2 py-2 text-center border-b border-r border-gray-300 text-gray-900 bg-gray-200">
+                TỔNG HỢP
+            </th>
+        {/if}
+
+        {#each config.subColumns as col, index}
+            {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
+            {@const colSpan = (metrics.sl ? 1 : 0) + (metrics.dt ? 1 : 0) + (metrics.dtqd ? 1 : 0)}
+            {#if colSpan > 0}
+                <th colspan={colSpan} class="px-2 py-2 text-center border-b border-r border-gray-200 {getSubHeaderColor(index)}">
+                    {col.header}
+                </th>
+            {/if}
+        {/each}
+    </tr>
+
+    <tr>
+        {#if tableMetrics.sl}
+            <SortableTh key="totalSL" label="SL" align="right" className="min-w-[60px] text-gray-700 bg-gray-100 border-r border-gray-300 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
+        {/if}
+        {#if tableMetrics.dt}
+                <SortableTh key="mainValue" label="DT" align="right" className="min-w-[80px] text-blue-800 bg-gray-100 border-r border-gray-300 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
+        {/if}
+        {#if tableMetrics.dtqd}
+                <SortableTh key="totalDTQD" label="QĐ" align="right" className="min-w-[80px] text-purple-800 bg-gray-100 border-r border-gray-300 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
+        {/if}
+
+        {#each config.subColumns as col}
+            {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
+            {#if metrics.sl}
+                <SortableTh key={`${col.header}|sl`} label="SL" align="right" className="min-w-[60px] text-gray-500 bg-white border-r border-gray-200 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
+            {/if}
+            {#if metrics.dt}
+                <SortableTh key={`${col.header}|dt`} label="DT" align="right" className="min-w-[80px] text-blue-600 bg-white border-r border-gray-200 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
+            {/if}
+            {#if metrics.dtqd}
+                <SortableTh key={`${col.header}|dtqd`} label="QĐ" align="right" className="min-w-[80px] text-purple-600 bg-white border-r border-gray-200 border-b" {sortKey} {sortDirection} on:sort={handleSort} />
+            {/if}
+        {/each}
+    </tr>
+</thead>
+--- END FILE: ./src/components/health-staff/revenue/DynamicTableHeader.svelte ---
+
+--- START FILE: ./src/components/health-staff/revenue/DynamicTableRow.svelte ---
+<script>
+    import { formatters } from '../../../utils/formatters.js';
+
+    export let item = {}; // Dữ liệu 1 dòng (đã processed)
+    export let config = {};
+    export let tableMetrics = {}; // { sl, dt, dtqd }
+
+    // Tính toán trước để tránh logic trong template
+    $: columns = config.subColumns || [];
+</script>
+
+<tr class="hover:bg-blue-50/50 transition-colors group">
+    <td class="px-5 py-2 font-semibold text-gray-700 border-r border-b border-gray-300 bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+        <span class="text-blue-700">{formatters.getShortEmployeeName(item.hoTen, item.maNV)}</span>
+    </td>
+    
+    {#if tableMetrics.sl}
+        <td class="px-2 py-2 text-right font-bold text-gray-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatNumber(item.mainValue_sl)}</td>
+    {/if}
+    {#if tableMetrics.dt}
+        <td class="px-2 py-2 text-right font-bold text-blue-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatRevenue(item.mainValue)}</td>
+    {/if}
+    {#if tableMetrics.dtqd}
+        <td class="px-2 py-2 text-right font-bold text-purple-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatRevenue(item.mainValue_dtqd)}</td>
+    {/if}
+
+    {#each columns as col}
+        {@const cell = item.columns[col.header]}
+        {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
+        
+        {#if metrics.sl}
+            <td class="px-2 py-2 text-right border-r border-gray-200 border-b text-gray-600" title={cell?.tooltip}>{formatters.formatNumber(cell?.sl)}</td>
+        {/if}
+        {#if metrics.dt}
+            <td class="px-2 py-2 text-right border-r border-gray-200 border-b font-medium text-gray-800" title={cell?.tooltip}>{formatters.formatRevenue(cell?.dt)}</td>
+        {/if}
+        {#if metrics.dtqd}
+            <td class="px-2 py-2 text-right border-r border-gray-200 border-b font-medium text-purple-600" title={cell?.tooltip}>{formatters.formatRevenue(cell?.dtqd)}</td>
+        {/if}
+    {/each}
+</tr>
+--- END FILE: ./src/components/health-staff/revenue/DynamicTableRow.svelte ---
+
 --- START FILE: ./src/components/health-staff/revenue/RevenueDetailView.svelte ---
 <script>
   import { createEventDispatcher } from 'svelte';
@@ -19699,6 +19133,270 @@ export const masterReportLogic = {
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 --- END FILE: ./src/components/health-staff/summary/SummaryView.svelte ---
+
+--- START FILE: ./src/components/luyke/sub/LuykeCategoryCharts.svelte ---
+<script>
+    import { tick, afterUpdate } from 'svelte';
+    import { formatters } from '../../../utils/formatters.js';
+    import { getRandomBrightColor } from '../../../utils.js';
+
+    export let pieData = [];
+    export let barData = [];
+    export let showUnexported = false;
+
+    let chartInstancePie = null;
+    let chartInstanceBar = null;
+
+    async function renderCharts() {
+        if (typeof Chart === 'undefined') return;
+        await tick();
+
+        // 1. Pie Chart
+        const ctxPie = document.getElementById('luyke-cat-pie-chart');
+        if (ctxPie) {
+            if (chartInstancePie) chartInstancePie.destroy();
+            const totalPieRevenue = pieData.reduce((sum, item) => sum + item.revenue, 0);
+
+            chartInstancePie = new Chart(ctxPie, {
+                type: 'doughnut',
+                data: {
+                    labels: pieData.map(d => d.name),
+                    datasets: [{
+                        data: pieData.map(d => d.revenue),
+                        backgroundColor: pieData.map(() => getRandomBrightColor()),
+                        borderWidth: 1
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { 
+                            position: 'right', 
+                            labels: { 
+                                boxWidth: 10,
+                                font: { size: 11 },
+                                generateLabels: (chart) => {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        return data.labels.map((label, i) => {
+                                            const value = data.datasets[0].data[i];
+                                            const formattedValue = formatters.formatRevenue(value, 0);
+                                            const pct = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
+                                            return {
+                                                text: `${label} (${pct}) - ${formattedValue}`,
+                                                fillStyle: data.datasets[0].backgroundColor[i],
+                                                hidden: isNaN(data.datasets[0].data[i]),
+                                                index: i
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
+                            } 
+                        },
+                        datalabels: {
+                            formatter: (value, ctx) => {
+                                const percentage = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
+                                if ((value / totalPieRevenue) < 0.03) return "";
+                                return percentage;
+                            },
+                            color: '#fff',
+                            font: { weight: 'bold', size: 10 }
+                        }
+                    } 
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+
+        // 2. Bar Chart
+        const ctxBar = document.getElementById('luyke-brand-bar-chart');
+        if (ctxBar) {
+            if (chartInstanceBar) chartInstanceBar.destroy();
+            chartInstanceBar = new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: barData.map(d => d.name),
+                    datasets: [{
+                        label: 'Doanh thu',
+                        data: barData.map(d => d.revenue / 1000000),
+                        backgroundColor: barData.map(() => getRandomBrightColor()),
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            formatter: (value) => formatters.formatNumber(value, 0),
+                            color: '#4b5563',
+                            font: { weight: 'bold', size: 10 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => formatters.formatRevenue(ctx.raw * 1000000)
+                            }
+                        }
+                    },
+                    scales: { x: { beginAtZero: true } }
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+    }
+
+    // Tự động render khi data thay đổi
+    $: if (pieData.length > 0 || barData.length > 0) {
+        setTimeout(renderCharts, 0);
+    }
+
+    afterUpdate(() => {
+        // Đảm bảo render lại khi chuyển tab hoặc resize
+        setTimeout(renderCharts, 0);
+    });
+</script>
+
+<div class="luyke-charts-container p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl">
+    <div class="chart-box">
+        <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Tỷ trọng Doanh Thu (ĐVT: Triệu)</h4>
+        <div class="relative h-full w-full"><canvas id="luyke-cat-pie-chart"></canvas></div>
+    </div>
+    <div class="chart-box">
+        <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Hãng (ĐVT: Triệu)</h4>
+        <div class="relative h-full w-full"><canvas id="luyke-brand-bar-chart"></canvas></div>
+    </div>
+</div>
+--- END FILE: ./src/components/luyke/sub/LuykeCategoryCharts.svelte ---
+
+--- START FILE: ./src/components/luyke/sub/LuykeCategoryToolbar.svelte ---
+<script>
+    import { createEventDispatcher } from 'svelte';
+    export let titleText = '';
+    export let titleIcon = '';
+    export let titleClass = '';
+    export let iconClass = '';
+    
+    // Binding props
+    export let viewMode = 'grid';
+    export let showUnexported = false;
+    export let sortMode = 'revenue_desc';
+    export let searchText = '';
+    
+    // Filter props
+    export let isSettingsOpen = false;
+    export let filterSearch = '';
+    export let filterList = [];
+    export let hiddenCategories = new Set();
+    export let isLoadingConfig = false;
+
+    const dispatch = createEventDispatcher();
+
+    function toggleCategory(name) {
+        dispatch('toggleCategory', name);
+    }
+
+    function toggleAll(show) {
+        dispatch('toggleAll', show);
+    }
+</script>
+
+<div class="luyke-toolbar" style="flex-wrap: nowrap; gap: 8px;">
+    <div class="luyke-toolbar-left" style="flex-grow: 1; min-width: 0;">
+        <h3 class="text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
+            <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
+            <span class="truncate">{titleText}</span>
+        </h3>
+    </div>
+
+    <div class="luyke-toolbar-right" style="flex-shrink: 0; display: flex; align-items: center; gap: 8px;">
+        
+        <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+            <button 
+                class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" 
+                on:click={() => viewMode = 'grid'}
+                title="Xem dạng thẻ"
+            >
+                <i data-feather="grid" class="w-4 h-4"></i>
+                <span class="hidden sm:inline text-xs ml-1">Thẻ</span>
+            </button>
+            <button 
+                class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" 
+                on:click={() => viewMode = 'chart'}
+                title="Xem biểu đồ"
+            >
+                <i data-feather="pie-chart" class="w-4 h-4"></i>
+                <span class="hidden sm:inline text-xs ml-1">Biểu đồ</span>
+            </button>
+        </div>
+
+        {#if viewMode === 'grid'}
+            <div 
+                class="toggle-wrapper {showUnexported ? 'active' : ''}" 
+                on:click={() => showUnexported = !showUnexported}
+                title="Xem doanh thu chưa xuất"
+                style="padding: 4px 8px;"
+            >
+                <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
+                <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
+            </div>
+        {/if}
+
+        <div class="relative filter-wrapper">
+            <button 
+                class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" 
+                on:click={() => isSettingsOpen = !isSettingsOpen}
+                title="Lọc hiển thị ngành hàng"
+            >
+                {#if isLoadingConfig}
+                    <div class="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                {:else}
+                    <i data-feather="filter" class="w-4 h-4"></i>
+                {/if}
+            </button>
+
+            {#if isSettingsOpen}
+                <div class="filter-dropdown">
+                    <div class="filter-header">
+                        <input type="text" class="filter-search" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
+                    </div>
+                    <div class="filter-body custom-scrollbar">
+                        {#if filterList.length === 0}
+                            <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                        {:else}
+                            {#each filterList as name}
+                                <div class="filter-item" on:click={() => toggleCategory(name)}>
+                                    <input type="checkbox" checked={!hiddenCategories.has(name)} />
+                                    <label>{name}</label>
+                                </div>
+                            {/each}
+                        {/if}
+                    </div>
+                    <div class="filter-actions">
+                        <button class="filter-btn-link" on:click={() => toggleAll(true)}>Hiện tất cả</button>
+                        <button class="filter-btn-link text-red-600" on:click={() => toggleAll(false)}>Ẩn tất cả</button>
+                    </div>
+                </div>
+            {/if}
+        </div>
+
+        {#if viewMode === 'grid'}
+            <div class="relative hidden lg:block">
+                <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 140px;" bind:value={searchText} />
+            </div>
+            <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
+                <option value="revenue_desc">DT ↓</option>
+                <option value="quantity_desc">SL ↓</option>
+            </select>
+        {/if}
+    </div>
+</div>
+--- END FILE: ./src/components/luyke/sub/LuykeCategoryToolbar.svelte ---
 
 --- START FILE: ./src/components/realtime/brand/BrandTab.svelte ---
 <script>
@@ -21941,6 +21639,592 @@ export const masterReportLogic = {
 </div>
 --- END FILE: ./src/components/realtime/summary/UnexportedTable.svelte ---
 
+--- START FILE: ./src/services/processing/logic/competition.processor.js ---
+// src/services/processing/logic/competition.processor.js
+import { get } from 'svelte/store';
+import { 
+    danhSachNhanVien, 
+    employeeMaNVMap, 
+    competitionNameMappings, 
+    debugInfo 
+} from '../../../stores.js';
+import { helpers } from '../helpers.js';
+import { normalizers } from '../normalizers.js';
+
+export const competitionProcessor = {
+    // 1. Kiểm tra logic lọc (Debug)
+    debugCompetitionFiltering(rawTestData) {
+        if (!rawTestData || rawTestData.length === 0) return [];
+
+        const { normalizedData } = normalizers.normalizeData(rawTestData, 'ycx');
+        if (normalizedData.length === 0) return [];
+
+        const hinhThucXuatTinhDoanhThu = helpers.getHinhThucXuatTinhDoanhThu();
+        const debugResults = normalizedData.map(row => {
+            const checks = {
+                isDoanhThuHTX: hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat),
+                isThuTien: (row.trangThaiThuTien || "").trim() === 'Đã thu',
+                isChuaHuy: (row.trangThaiHuy || "").trim() === 'Chưa hủy',
+                isChuaTra: (row.tinhTrangTra || "").trim() === 'Chưa trả',
+                isDaXuat: (row.trangThaiXuat || "").trim() === 'Đã xuất'
+            };
+            const isOverallValid = checks.isDoanhThuHTX && checks.isThuTien && checks.isChuaHuy && checks.isChuaTra && checks.isDaXuat;
+            return { rowData: row, checks: checks, isOverallValid: isOverallValid };
+        });
+        return debugResults;
+    },
+
+    // 2. Cập nhật mapping tên thi đua
+    updateCompetitionNameMappings(mainHeaders) {
+        if (!mainHeaders || mainHeaders.length === 0) return;
+        
+        const oldMappings = get(competitionNameMappings) || {};
+        const newMappings = { ...oldMappings };
+        let hasChanges = false;
+
+        mainHeaders.forEach(originalName => {
+            // Chỉ thêm nếu tên này chưa tồn tại trong mapping
+            if (!newMappings.hasOwnProperty(originalName)) {
+                // [YÊU CẦU] Mặc định điền tên rút gọn = tên gốc
+                newMappings[originalName] = originalName; 
+                hasChanges = true;
+            }
+        });
+
+        if (hasChanges) {
+            console.log("[Processors] Phát hiện tên thi đua mới, cập nhật store mapping.");
+            competitionNameMappings.set(newMappings);
+        }
+    },
+
+    // 3. Xử lý dữ liệu thi đua nhân viên (Core Logic)
+    processThiDuaNhanVienData(parsedData, luykeCompetitionData) {
+        const { mainHeaders, subHeaders, dataRows } = parsedData;
+        const newDebugInfo = { required: [], found: [], status: 'Đang xử lý...' };
+        
+        const $danhSachNhanVien = get(danhSachNhanVien);
+        if ($danhSachNhanVien.length === 0) {
+            newDebugInfo.status = 'Lỗi: Danh sách nhân viên (DSNV) chưa được tải lên.';
+            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+            return [];
+        }
+        if (mainHeaders.length === 0 || dataRows.length === 0 || subHeaders.length === 0) {
+            newDebugInfo.status = 'Lỗi: Dữ liệu dán vào không hợp lệ.';
+            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+            return [];
+        }
+
+        // [QUAN TRỌNG] Gọi hàm cập nhật mapping ngay khi xử lý dữ liệu
+        this.updateCompetitionNameMappings(mainHeaders);
+
+        const nameMappings = get(competitionNameMappings) || {};
+        const competitionTargets = (luykeCompetitionData || []).map(comp => ({
+            ...comp,
+            cleanedName: helpers.cleanCompetitionName(comp.name)
+        }));
+        
+        const finalReport = [];
+        const totalEmployeesInDSNV = $danhSachNhanVien.length;
+        const $employeeMaNVMap = get(employeeMaNVMap);
+
+        dataRows.forEach(row => {
+            const nameParts = row.name.split(' - ');
+            const msnv = nameParts.length > 1 ? nameParts[nameParts.length - 1].trim() : null;
+
+            let employee;
+            if (msnv) {
+                employee = $employeeMaNVMap.get(msnv);
+            }
+
+            if (!employee) {
+                employee = { hoTen: row.name, maNV: msnv || 'N/A', boPhan: 'Nhân viên không tìm thấy' };
+            }
+
+            const employeeResult = {
+                maNV: employee.maNV,
+                hoTen: employee.hoTen,
+                boPhan: employee.boPhan,
+                completedCount: 0,
+                totalCompetitions: mainHeaders.length,
+                competitions: []
+            };
+
+            for (let i = 0; i < mainHeaders.length; i++) {
+                const originalName = mainHeaders[i];
+                const loaiSoLieu = subHeaders[i];
+                
+                // [YÊU CẦU] Lấy tên rút gọn từ mapping, fallback về tên gốc
+                const shortName = nameMappings[originalName] || originalName;
+                
+                const cleanedName = helpers.cleanCompetitionName(originalName);
+                const matchedTarget = competitionTargets.find(t => t.cleanedName === cleanedName);
+                const groupTarget = matchedTarget ? matchedTarget.target : 0;
+                const individualTarget = totalEmployeesInDSNV > 0 ? groupTarget / totalEmployeesInDSNV : 0;
+
+                const giaTri = parseFloat(String(row.values[i] || '0').replace(/,/g, '')) || 0;
+                const actualSales = giaTri;
+                const percentExpected = individualTarget > 0 ? actualSales / individualTarget : (actualSales > 0 ? Infinity : 0);
+                
+                if (percentExpected >= 1) employeeResult.completedCount++;
+
+                employeeResult.competitions.push({
+                    tenNganhHang: shortName, // Dùng tên rút gọn cho hiển thị
+                    tenGoc: originalName,    // Giữ tên gốc để đối chiếu
+                    loaiSoLieu: loaiSoLieu,
+                    giaTri: giaTri,
+                    thucHien: actualSales,
+                    mucTieu: individualTarget,
+                    percentExpected: percentExpected,
+                });
+            }
+
+            employeeResult.completionRate = employeeResult.totalCompetitions > 0 ? employeeResult.completedCount / employeeResult.totalCompetitions : 0;
+            finalReport.push(employeeResult);
+        });
+
+        newDebugInfo.status = `Thành công: Đã xử lý báo cáo cho ${finalReport.length} nhân viên.`;
+        debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+        return finalReport;
+    }
+};
+--- END FILE: ./src/services/processing/logic/competition.processor.js ---
+
+--- START FILE: ./src/services/processing/logic/dynamicTable.processor.js ---
+/* src/services/processing/logic/dynamicTable.processor.js */
+import { formatters } from '../../../utils/formatters.js';
+
+export const dynamicTableProcessor = {
+    // [LOGIC MỚI] Tìm kiếm dữ liệu trực tiếp bằng ID (O(1))
+    findItemData(employee, targetId) {
+        if (!employee || !targetId) return null;
+
+        // Ưu tiên 1: Tìm trong Nhóm Hàng
+        if (employee.doanhThuTheoNhomHang && employee.doanhThuTheoNhomHang[targetId]) {
+            return employee.doanhThuTheoNhomHang[targetId];
+        }
+        // Ưu tiên 2: Tìm trong Ngành Hàng
+        if (employee.doanhThuTheoNganhHang && employee.doanhThuTheoNganhHang[targetId]) {
+            return employee.doanhThuTheoNganhHang[targetId];
+        }
+        return null;
+    },
+
+    // Hàm chính: Biến đổi dữ liệu thô thành dữ liệu hiển thị
+    processTableData(reportData, config) {
+        if (!reportData || !config) return { processedData: [], totals: {} };
+
+        const processedData = reportData.map(employee => {
+            const row = {
+                maNV: employee.maNV,
+                hoTen: employee.hoTen,
+                mainValue: 0,      // Tổng DT
+                mainValue_dtqd: 0, // Tổng DTQĐ
+                mainValue_sl: 0,   // Tổng SL
+                columns: {}        // Data chi tiết từng cột phụ
+            };
+
+            // --- BƯỚC 1: TÍNH TOÁN CỘT TỔNG (MAIN COLUMN) ---
+            // Nếu người dùng CÓ chọn items cho cột tổng -> Tính theo items đó
+            if (config.mainColumn && config.mainColumn.items && config.mainColumn.items.length > 0) {
+                config.mainColumn.items.forEach(itemId => {
+                    const itemData = this.findItemData(employee, itemId);
+                    if (itemData) {
+                        row.mainValue_sl += (itemData.quantity || 0);
+                        row.mainValue += (itemData.revenue || 0);
+                        row.mainValue_dtqd += (itemData.revenueQuyDoi || 0);
+                    }
+                });
+            } 
+            // Nếu KHÔNG chọn items (để trống) -> Logic cũ: Sẽ cộng dồn từ cột phụ ở Bước 2
+            
+            // --- BƯỚC 2: TÍNH TOÁN CỘT PHỤ (SUB COLUMNS) ---
+            if (config.subColumns && Array.isArray(config.subColumns)) {
+                config.subColumns.forEach(col => {
+                    let sl = 0, dt = 0, dtqd = 0;
+                    let details = [];
+
+                    col.items.forEach(itemId => {
+                        const itemData = this.findItemData(employee, itemId);
+                        if (itemData) {
+                            const qty = itemData.quantity || 0;
+                            const rev = itemData.revenue || 0;
+                            const revQd = itemData.revenueQuyDoi || 0;
+
+                            sl += qty;
+                            dt += rev;
+                            dtqd += revQd;
+                            
+                            if (qty > 0 || rev > 0) {
+                                details.push(`${itemData.name}: ${formatters.formatNumber(qty)} / ${formatters.formatRevenue(rev)}`);
+                            }
+                        }
+                    });
+
+                    row.columns[col.header] = { sl, dt, dtqd, tooltip: details.join('\n') };
+                    
+                    // Fallback Logic: Nếu cột tổng chưa được tính (không có items), thì cộng dồn từ cột phụ
+                    if (!config.mainColumn || !config.mainColumn.items || config.mainColumn.items.length === 0) {
+                        const metrics = config.mainColumn?.metrics || { dt: true }; // Mặc định DT
+                        if (metrics.dt) row.mainValue += dt;
+                        if (metrics.dtqd) row.mainValue_dtqd += dtqd;
+                        if (metrics.sl) row.mainValue_sl += sl;
+                    }
+                });
+            }
+            
+            // Chỉ trả về nếu có dữ liệu ở cột tổng hoặc bất kỳ cột phụ nào
+            const hasData = row.mainValue > 0 || row.mainValue_sl > 0 || row.mainValue_dtqd > 0 || Object.values(row.columns).some(c => c.dt > 0 || c.sl > 0);
+            return hasData ? row : null;
+
+        }).filter(Boolean);
+
+        // Tính tổng toàn bảng (Totals Row)
+        const totals = processedData.reduce((acc, row) => {
+            acc.mainValue += row.mainValue;
+            acc.mainValue_dtqd += row.mainValue_dtqd;
+            acc.mainValue_sl += row.mainValue_sl;
+
+            Object.keys(row.columns).forEach(key => {
+                if (!acc.columns[key]) acc.columns[key] = { sl: 0, dt: 0, dtqd: 0 };
+                acc.columns[key].sl += row.columns[key].sl;
+                acc.columns[key].dt += row.columns[key].dt;
+                acc.columns[key].dtqd += row.columns[key].dtqd;
+            });
+            return acc;
+        }, { mainValue: 0, mainValue_dtqd: 0, mainValue_sl: 0, columns: {} });
+
+        return { processedData, totals };
+    },
+
+    // Hàm sắp xếp (Giữ nguyên)
+    sortTableData(data, key, direction) {
+        return [...data].sort((a, b) => {
+            if (key === 'hoTen') {
+                return direction === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
+            }
+            if (key === 'mainValue') return direction === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
+            if (key === 'totalSL') return direction === 'asc' ? a.mainValue_sl - b.mainValue_sl : b.mainValue_sl - a.mainValue_sl;
+            if (key === 'totalDTQD') return direction === 'asc' ? a.mainValue_dtqd - b.mainValue_dtqd : b.mainValue_dtqd - a.mainValue_dtqd;
+
+            if (key.includes('|')) {
+                const [colHeader, type] = key.split('|');
+                const valA = a.columns[colHeader]?.[type] || 0;
+                const valB = b.columns[colHeader]?.[type] || 0;
+                return direction === 'asc' ? valA - valB : valB - valA;
+            }
+     
+            return direction === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
+        });
+    }
+};
+--- END FILE: ./src/services/processing/logic/dynamicTable.processor.js ---
+
+--- START FILE: ./src/services/processing/logic/regional.processor.js ---
+// src/services/processing/logic/regional.processor.js
+import { helpers } from '../helpers.js';
+
+export const regionalProcessor = {
+    // Xử lý file Excel Thi Đua Vùng
+    processThiDuaVungFile(workbook) {
+        const sheetNames = workbook.SheetNames;
+        
+        const chiTietSheetName = sheetNames.find(name => {
+            const upperName = name.toUpperCase();
+            return upperName.includes('CHITIET') || upperName.includes('CHI TIẾT');
+        });
+        
+        const tongSheetName = sheetNames.find(name => {
+            const upperName = name.toUpperCase();
+            return upperName.includes('TONG') || upperName.includes('SIEU THI');
+        });
+
+        const chiTietSheet = chiTietSheetName ? workbook.Sheets[chiTietSheetName] : null;
+        const tongSheet = tongSheetName ? workbook.Sheets[tongSheetName] : null;
+
+        if (!chiTietSheet || !tongSheet) {
+            throw new Error('File Excel phải chứa sheet (CHITIET/CHI TIẾT) và (TONG/SIEU THI).');
+        }
+        
+        const chiTietData = helpers.findHeaderAndProcess(chiTietSheet, ['siêu thị', 'ngành hàng', 'kênh']);
+        const tongData = helpers.findHeaderAndProcess(tongSheet, ['siêu thị', 'tổng thưởng']);
+
+        return { chiTietData, tongData };
+    }
+};
+--- END FILE: ./src/services/processing/logic/regional.processor.js ---
+
+--- START FILE: ./src/services/processing/logic/timekeeping.processor.js ---
+// src/services/processing/logic/timekeeping.processor.js
+import { get } from 'svelte/store';
+import { rawGioCongData, employeeNameToMaNVMap } from '../../../stores.js';
+
+export const timekeepingProcessor = {
+    // Xử lý dữ liệu giờ công
+    processGioCongData() {
+        const gioCongByMSNV = {};
+        let currentMaNV = null;
+        if (!get(rawGioCongData) || get(rawGioCongData).length === 0) return gioCongByMSNV;
+
+        for (const row of get(rawGioCongData)) {
+            const maNV = String(row.maNV || '').trim();
+            const hoTen = String(row.hoTen || '').trim().replace(/\s+/g, ' ');
+            
+            // Tìm MSNV nếu file giờ công không có cột MSNV (dùng tên để map)
+            let foundMaNV = maNV || get(employeeNameToMaNVMap).get(hoTen.toLowerCase()) || null;
+            
+            if (foundMaNV) currentMaNV = foundMaNV;
+
+            if (currentMaNV && gioCongByMSNV[currentMaNV] === undefined) {
+                gioCongByMSNV[currentMaNV] = 0;
+            }
+
+            const gioCongValue = parseFloat(String(row.tongGioCong || '0').replace(/,/g, '')) || 0;
+            if (currentMaNV && gioCongValue > 0) {
+                gioCongByMSNV[currentMaNV] += gioCongValue;
+            }
+        }
+        return gioCongByMSNV;
+    }
+};
+--- END FILE: ./src/services/processing/logic/timekeeping.processor.js ---
+
+--- START FILE: ./src/services/processing/parsers/erp.parser.js ---
+// src/services/processing/parsers/erp.parser.js
+export const erpParser = {
+    processThuongERP: (pastedText) => {
+        if (!pastedText || !pastedText.trim()) return [];
+        const lines = pastedText.trim().split('\n');
+        const results = [];
+        // Regex để bắt dòng: "ĐML_... BP Tư Vấn... Nguyễn Văn A... 1,000,000"
+        const regex = /(ĐML_|TGD|ĐMM|ĐMS).*?(BP .*?)(?:Nhân Viên|Trưởng Ca)(.*?)([\d,]+)$/;
+        
+        lines.forEach(line => {
+            const match = line.replace(/\s+/g, ' ').match(regex);
+            if (match) {
+                results.push({ 
+                    name: match[3].trim(), 
+                    bonus: match[4].trim() 
+                });
+            }
+        });
+        return results;
+    }
+};
+--- END FILE: ./src/services/processing/parsers/erp.parser.js ---
+
+--- START FILE: ./src/services/processing/parsers/luyke.parser.js ---
+// src/services/processing/parsers/luyke.parser.js
+import { competitionData } from '../../../stores.js';
+
+export const luykeParser = {
+    // 1. Phân tích các chỉ số KPI chính (DT, DTQĐ, %HT)
+    parseLuyKePastedData: (text) => {
+        const defaults = {
+            mainKpis: {},
+            comparisonData: { value: 0, percentage: 'N/A' },
+            luotKhachData: { value: 0, percentage: 'N/A' },
+            dtDuKien: 0, dtqdDuKien: 0, dtTraCham: 0, tyLeTraCham: 0 
+        };
+        if (!text) return defaults;
+
+        const allLines = text.split('\n').map(line => line.trim());
+        const textContent = allLines.join(' ');
+
+        const patterns = {
+            'Thực hiện DT thực': /DTLK\s+([\d,.]+)/,
+            'Thực hiện DTQĐ': /DTQĐ\s+([\d,.]+)/,
+            '% HT Target Dự Kiến (QĐ)': /% HT Target Dự Kiến \(QĐ\)\s+([\d.]+%?)/,
+        };
+
+        for (const [key, regex] of Object.entries(patterns)) {
+            const match = textContent.match(regex);
+            if (match && match[1]) {
+                defaults.mainKpis[key] = match[1];
+            }
+        }
+
+        const findValueAfterKeyword = (lines, keyword, isQd = false) => {
+            let keywordRegex;
+            if (isQd) {
+                keywordRegex = new RegExp(keyword.replace('(', '\\(').replace(')', '\\)'));
+            } else {
+                keywordRegex = new RegExp(`^${keyword}$`);
+            }
+
+            const index = lines.findIndex(line => keywordRegex.test(line) && !/lượt khách/i.test(line));
+            if (index !== -1 && index + 1 < lines.length) {
+                return parseFloat(lines[index + 1].replace(/,/g, '').replace(/%/g, '')) || 0;
+            }
+            return 0;
+        };
+
+        defaults.dtDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến");
+        defaults.dtqdDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến (QĐ)", true);
+        defaults.dtTraCham = findValueAfterKeyword(allLines, "DT Siêu thị");
+        defaults.tyLeTraCham = findValueAfterKeyword(allLines, "Tỷ Trọng Trả Góp");
+
+        // Tìm tăng trưởng cùng kỳ
+        const dtckIndex = allLines.findIndex(line => line.includes('DTCK Tháng'));
+        if (dtckIndex !== -1 && dtckIndex + 1 < allLines.length) {
+            const valueLine = allLines[dtckIndex + 1];
+            const values = valueLine.split(/\s+/);
+            if (values.length >= 2) {
+                defaults.comparisonData = {
+                    value: parseFloat(values[0].replace(/,/g, '')) || 0,
+                    percentage: values[1] || 'N/A'
+                };
+            }
+        }
+
+        // Tìm lượt khách
+        const luotKhachIndex = allLines.findIndex(line => line.includes('Lượt Khách CK Tháng'));
+        if (luotKhachIndex !== -1 && luotKhachIndex + 1 < allLines.length) {
+            const valueLine = allLines[luotKhachIndex + 1];
+            const values = valueLine.split(/\s+/);
+            if (values.length >= 2) {
+                defaults.luotKhachData = {
+                    value: parseFloat(values[0].replace(/,/g, '')) || 0,
+                    percentage: values[1] || 'N/A'
+                };
+            }
+        }
+
+        return defaults;
+    },
+
+    // 2. Phân tích danh sách các chương trình thi đua (Tổng hợp)
+    parseCompetitionDataFromLuyKe: (text) => {
+        if (!text || !text.trim()) return [];
+        const lines = text.split('\n').map(l => l.trim());
+        const results = [];
+        let currentCompetition = null;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.toLowerCase().startsWith('thi đua')) {
+                if (currentCompetition) results.push(currentCompetition);
+                currentCompetition = {
+                    name: line.replace("Thi đua doanh thu", "DT").replace("Thi đua số lượng", "SL"),
+                    type: line.toLowerCase().includes('doanh thu') ? 'doanhThu' : 'soLuong',
+                    luyKe: 0, target: 0, hoanThanh: '0%'
+                };
+            } else if (currentCompetition) {
+                if (line.startsWith('DTLK') || line.startsWith('SLLK') || line.startsWith('DTQĐ')) {
+                     if (i + 1 < lines.length) {
+                         currentCompetition.luyKe = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
+                    }
+                } else if (line.startsWith('Target')) {
+                    if (i + 1 < lines.length) {
+                        currentCompetition.target = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
+                    }
+                } else if (line.startsWith('% HT Dự Kiến')) {
+                    if (i + 1 < lines.length) {
+                         currentCompetition.hoanThanh = lines[i + 1] || '0%';
+                    }
+                }
+            }
+        }
+        if (currentCompetition) results.push(currentCompetition);
+
+        competitionData.set(results);
+        return results;
+    }
+};
+--- END FILE: ./src/services/processing/parsers/luyke.parser.js ---
+
+--- START FILE: ./src/services/processing/parsers/thidua.parser.js ---
+// src/services/processing/parsers/thidua.parser.js
+import { debugInfo } from '../../../stores.js';
+
+export const thiduaParser = {
+    parsePastedThiDuaTableData(rawText) {
+        const newDebugInfo = { required: [], found: [], status: 'Bắt đầu phân tích...' };
+
+        if (!rawText || !rawText.trim()) {
+            newDebugInfo.status = 'Lỗi: Dữ liệu dán vào rỗng.';
+            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+            return { success: false, error: newDebugInfo.status, mainHeaders: [], subHeaders: [], dataRows: [] };
+        }
+
+        const lines = rawText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        const splitRegex = /\s{2,}|\t/; 
+        const numberCheckRegex = /^-?[\d,.]+$/;
+
+        const mainHeaderStartIndex = lines.findIndex(line => line.includes('Phòng ban'));
+        const subHeaderStartIndex = lines.findIndex(line => line.startsWith('DTLK') || line.startsWith('SLLK') || line.startsWith('DTQĐ'));
+        
+        let dataEndIndex = lines.findIndex(line => line.includes('Hỗ trợ BI'));
+        if (dataEndIndex === -1) {
+            dataEndIndex = lines.length;
+        }
+
+        const dataRowsStartIndex = lines.findIndex((line, index) => {
+            if (index <= subHeaderStartIndex) return false;
+            const parts = line.split(splitRegex).map(p => p.trim());
+            const firstPart = parts[0] || "";
+
+            if (firstPart.startsWith('Tổng') || firstPart.startsWith('BP ') || firstPart.startsWith('DTLK') || firstPart.startsWith('SLLK') || firstPart.startsWith('DTQĐ')) {
+               return false;
+            }
+            return parts.length > 1 && numberCheckRegex.test(parts[1]);
+        });
+
+        if (mainHeaderStartIndex === -1 || subHeaderStartIndex === -1 || dataRowsStartIndex === -1) {
+            let error = "Dữ liệu không hợp lệ thi đua ngành hàng theo nhân viên, vui lòng kiểm tra lại";
+            newDebugInfo.status = error;
+            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+            return { success: false, error: error, mainHeaders: [], subHeaders: [], dataRows: [] };
+        }
+        
+        const mainHeaderLines = lines.slice(mainHeaderStartIndex + 1, subHeaderStartIndex);
+        const mainHeaderString = mainHeaderLines.join('\t');
+        const mainHeaders = mainHeaderString.split(splitRegex).filter(Boolean);
+        newDebugInfo.found.push({ name: 'Tiêu đề chính (Ngành hàng)', value: `${mainHeaders.length} mục`, status: mainHeaders.length > 0 });
+
+        const subHeaderLines = lines.slice(subHeaderStartIndex, dataRowsStartIndex);
+        const subHeaderString = subHeaderLines.join('\t');
+        const subHeaders = subHeaderString.split(/\s+/).filter(Boolean);
+        newDebugInfo.found.push({ name: 'Tiêu đề phụ (SLLK/DTQĐ)', value: `${subHeaders.length} mục`, status: subHeaders.length > 0 });
+
+        const potentialDataLines = lines.slice(dataRowsStartIndex, dataEndIndex);
+        const dataRows = [];
+        
+        for (const line of potentialDataLines) {
+            const parts = line.split(splitRegex).map(p => p.trim());
+            const firstPart = parts[0] || "";
+
+            if (firstPart.startsWith('Tổng') || firstPart.startsWith('BP ')) {
+                continue;
+            }
+
+            if (parts.length > 1 && numberCheckRegex.test(parts[1])) {
+                dataRows.push({
+                    name: firstPart,
+                    values: parts.slice(1)
+                });
+            }
+        }
+        newDebugInfo.found.push({ name: 'Dòng dữ liệu nhân viên', value: `${dataRows.length} dòng`, status: dataRows.length > 0 });
+
+        if (mainHeaders.length === 0 || subHeaders.length === 0 || dataRows.length === 0) {
+            newDebugInfo.status = 'Lỗi: Không thể phân tích dữ liệu. Thiếu Tiêu đề chính, Tiêu đề phụ, hoặc Dòng dữ liệu (sau khi lọc).';
+            debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+            return { success: false, error: newDebugInfo.status, mainHeaders, subHeaders, dataRows };
+        }
+        
+        const expectedDataCols = subHeaders.length;
+        if (dataRows.length > 0 && dataRows[0].values.length !== expectedDataCols) {
+             newDebugInfo.status = `Cảnh báo: Số cột không khớp! Tiêu đề phụ (${expectedDataCols}) vs Dữ liệu (${dataRows[0].values.length}).`;
+        } else {
+           newDebugInfo.status = `Phân tích thành công.`;
+        }
+        
+        debugInfo.update(current => ({ ...current, 'thiduanv-pasted': newDebugInfo }));
+        return { success: true, mainHeaders, subHeaders, dataRows };
+    }
+};
+--- END FILE: ./src/services/processing/parsers/thidua.parser.js ---
+
 --- START FILE: ./src/services/reports/master/aggregator.js ---
 // src/services/reports/master/aggregator.js
 import { get } from 'svelte/store';
@@ -22055,47 +22339,69 @@ export const aggregator = {
 --- END FILE: ./src/services/reports/master/aggregator.js ---
 
 --- START FILE: ./src/services/reports/master/configLoader.js ---
-// src/services/reports/master/configLoader.js
 import { get } from 'svelte/store';
 import { 
     macroCategoryConfig, 
     macroProductGroupConfig 
 } from '../../../stores.js';
 import { normalize } from './utils.js';
+import { parseIdentity } from '../../../utils.js';
 
 export const configLoader = {
     loadUiKeywords() {
+        // Lấy config từ Store Svelte
         const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
         const $macroCategoryConfig = get(macroCategoryConfig) || [];
 
+        // Khởi tạo bộ chứa keywords cho các nhóm UI cố định
         const uiKeywords = {
             dtICT: [], dtCE: [], dtPhuKien: [], dtGiaDung: [],
             dtMLN: [], dtSim: [], dtVAS: [], dtBaoHiem: []
         };
 
+        // Mapping định danh: Nhóm UI nào ứng với từ khóa cấu hình nào
+        // Ví dụ: Nếu admin đặt tên nhóm là "Nhóm Phụ Kiện Đặc Biệt", nó sẽ match vào 'dtPhuKien'
         const uiIdentity = {
-            dtICT: ['ict', 'điện thoại', 'laptop', 'tablet'],
-            dtCE: ['ce', 'điện tử', 'tivi', 'loa', 'âm thanh'],
-            dtPhuKien: ['phụ kiện', 'pk'],
-            dtGiaDung: ['gia dụng', 'gd'],
+            dtICT: ['ict', 'điện thoại', 'laptop', 'tablet', 'mobile'],
+            dtCE: ['ce', 'điện tử', 'tivi', 'loa', 'âm thanh', 'tv'],
+            dtPhuKien: ['phụ kiện', 'pk', 'accessories'],
+            dtGiaDung: ['gia dụng', 'gd', 'household'],
             dtMLN: ['máy lọc nước', 'mln', 'lọc nước'],
-            dtSim: ['sim', 'thẻ cào'],
+            dtSim: ['sim', 'thẻ cào', 'card'],
             dtVAS: ['vas', 'dịch vụ'],
-            dtBaoHiem: ['bảo hiểm', 'rơi vỡ']
+            dtBaoHiem: ['bảo hiểm', 'rơi vỡ', 'insurance']
         };
 
         const loadKeywords = (configs) => {
             if (!Array.isArray(configs)) return;
+            
             configs.forEach(group => {
                 const groupName = normalize(group.name);
-                for (const [uiKey, ids] of Object.entries(uiIdentity)) {
-                    if (ids.some(id => groupName.includes(id))) {
-                        if (group.items) group.items.forEach(i => uiKeywords[uiKey].push(normalize(i)));
+                
+                // Duyệt qua các nhóm UI định sẵn
+                for (const [uiKey, identityTags] of Object.entries(uiIdentity)) {
+                    // Nếu tên nhóm trong config (VD: "Phụ kiện 2024") chứa identity (VD: "phụ kiện")
+                    if (identityTags.some(tag => groupName.includes(tag))) {
+                         
+                         // Thì lấy tất cả items bên trong nhóm đó đưa vào keywords của UI Key tương ứng
+                         if (group.items && Array.isArray(group.items)) {
+                             group.items.forEach(i => {
+                                 // 1. Push tên gốc đã chuẩn hóa
+                                 uiKeywords[uiKey].push(normalize(i)); 
+                                 
+                                 // 2. Push ID nếu có (Quan trọng: Xử lý chuỗi "1394 - Cáp sạc")
+                                 const parsed = parseIdentity(i);
+                                 if (parsed.id && parsed.id !== 'unknown') {
+                                     uiKeywords[uiKey].push(normalize(parsed.id));
+                                 }
+                             });
+                         }
                     }
                 }
             });
         };
 
+        // Load từ cả 2 nguồn config
         loadKeywords($macroProductGroupConfig);
         loadKeywords($macroCategoryConfig);
 
@@ -22247,56 +22553,73 @@ export const salaryProcessor = {
 --- END FILE: ./src/services/reports/master/salaryProcessor.js ---
 
 --- START FILE: ./src/services/reports/master/salesProcessor.js ---
-// src/services/reports/master/salesProcessor.js
 import { config } from '../../../config.js';
 import * as utils from '../../../utils.js';
 import { normalize } from './utils.js';
 import { dataProcessing } from '../../dataProcessing.js';
+import { parseIdentity } from '../../../utils.js';
 
 export const salesProcessor = {
-    // Khởi tạo object data rỗng cho 1 nhân viên
+    // --- KHỞI TẠO DỮ LIỆU RỖNG ---
     createEmptySalesData() {
         const PG = config.PRODUCT_GROUPS;
         let data = {
-            doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
-            doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
-            doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
+            // Tổng hợp chung
+            doanhThu: 0, 
+            doanhThuQuyDoi: 0, 
+            doanhThuTraGop: 0,
+            doanhThuChuaXuat: 0, 
+            doanhThuQuyDoiChuaXuat: 0,
+            doanhThuGiaoXa: 0, 
+            doanhThuQuyDoiGiaoXa: 0,
             
+            // Map chi tiết để tra cứu nhanh (O(1))
             doanhThuTheoNganhHang: {}, 
             doanhThuTheoNhomHang: {}, 
             
+            // Quy đổi chuẩn (QDC)
             qdc: {},
+
+            // [HARDCODED METRICS] - Các chỉ số cơ bản luôn phải có
             dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, 
             dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
-
-            dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0,
-            dtMayGiat: 0, slMayGiat: 0, dtMayLanh: 0, slMayLanh: 0,
-            dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
+            
+            // Chi tiết sản phẩm
+            dtTivi: 0, slTivi: 0, 
+            dtTuLanh: 0, slTuLanh: 0,
+            dtMayGiat: 0, slMayGiat: 0, 
+            dtMayLanh: 0, slMayLanh: 0,
+            dtDienThoai: 0, slDienThoai: 0, 
+            dtLaptop: 0, slLaptop: 0
         };
 
+        // Init QDC Groups
         for (const key in PG.QDC_GROUPS) {
             data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
         }
         return data;
     },
 
-    // Hàm core xử lý dữ liệu bán hàng cho 1 nhân viên
+    // --- XỬ LÝ DOANH THU NHÂN VIÊN ---
     processEmployeeSales(employee, sourceData, uiKeywords) {
         const data = this.createEmptySalesData();
         const PG = config.PRODUCT_GROUPS;
         
+        // Lấy config hệ thống
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
         const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
 
         if (sourceData && Array.isArray(sourceData)) {
             sourceData.forEach(row => {
+                // Kiểm tra User ID
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
                 if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                     
                     const hinhThucXuat = row.hinhThucXuat;
                     const trangThaiXuat = row.trangThaiXuat;
                     
+                    // Logic điều kiện hợp lệ
                     const isDoanhThuHTX = !hinhThucXuat || hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
                     const isDaXuat = !trangThaiXuat || trangThaiXuat.trim() === 'Đã xuất' || trangThaiXuat.trim() === 'Đã giao';
 
@@ -22305,25 +22628,33 @@ export const salesProcessor = {
                         const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         
-                        const nhomHangCode = String(row.nhomHang || '').match(/^\d+/)?.[0] || null;
-                        const rawNhomHang = normalize(row.nhomHang);
-                        const rawNganhHang = normalize(row.nganhHang);
+                        // Parse ID Nhóm/Ngành
+                        const nhomIdObj = row.maNhomHang 
+                            ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } 
+                            : parseIdentity(row.nhomHang);
+                        const nganhIdObj = row.maNganhHang 
+                            ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } 
+                            : parseIdentity(row.nganhHang);
 
-                        // Tracking chi tiết
-                        const trackMetric = (container, name) => {
-                            if (!name) return;
-                            const cleanName = utils.cleanCategoryName(name); 
-                            if (!container[cleanName]) {
-                                container[cleanName] = { name: cleanName, revenue: 0, quantity: 0, revenueQuyDoi: 0 };
+                        // A. CỘNG DỒN VÀO MAP CHI TIẾT (Để dùng cho Dynamic Table / Modal)
+                        const trackMetric = (container, idObj, rawString) => {
+                            if (!idObj.id || idObj.id === 'unknown') return;
+                            if (!container[idObj.id]) {
+                                container[idObj.id] = { 
+                                    id: idObj.id, 
+                                    name: idObj.name || rawString, 
+                                    revenue: 0, quantity: 0, revenueQuyDoi: 0 
+                                };
                             }
-                            container[cleanName].revenue += thanhTien;
-                            container[cleanName].quantity += soLuong;
-                            container[cleanName].revenueQuyDoi += thanhTien * heSo;
+                            container[idObj.id].revenue += thanhTien;
+                            container[idObj.id].quantity += soLuong;
+                            container[idObj.id].revenueQuyDoi += thanhTien * heSo;
                         }
-                        trackMetric(data.doanhThuTheoNganhHang, row.nganhHang);
-                        trackMetric(data.doanhThuTheoNhomHang, row.nhomHang);
 
-                        // Cộng tổng
+                        trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
+                        trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
+
+                        // B. CỘNG TỔNG DOANH THU CHUNG
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += thanhTien * heSo;
 
@@ -22331,32 +22662,74 @@ export const salesProcessor = {
                             data.doanhThuTraGop += thanhTien;
                         }
 
-                        // Phân loại nhóm hàng
-                        let mapped = false;
-                        // Hardcode ID Check
-                        if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || PG.TABLET && PG.TABLET.includes(nhomHangCode)) { data.dtICT += thanhTien; mapped = true; }
-                        if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode)) { data.dtCE += thanhTien; mapped = true; }
-                        if (PG.PHU_KIEN && PG.PHU_KIEN.includes(nhomHangCode)) { data.dtPhuKien += thanhTien; mapped = true; }
-                        if (PG.GIA_DUNG && PG.GIA_DUNG.includes(nhomHangCode)) { data.dtGiaDung += thanhTien; mapped = true; }
-                        if (PG.MAY_LOC_NUOC && PG.MAY_LOC_NUOC.includes(nhomHangCode)) { data.dtMLN += thanhTien; mapped = true; }
-                        if (PG.SIM && PG.SIM.includes(nhomHangCode)) { data.dtSim += thanhTien; mapped = true; }
-                        if (PG.VAS && PG.VAS.includes(nhomHangCode)) { data.dtVAS += thanhTien; mapped = true; }
-                        if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) { data.dtBaoHiem += thanhTien; mapped = true; }
+                        // C. PHÂN LOẠI NHÓM (FIX LOGIC MỚI: Độc lập hoàn toàn, không dùng if/else if)
+                        const nhomHangCode = nhomIdObj.id;
+                        
+                        // --- 1. Hardcode ID Logic (Mặc định MWG) ---
+                        // Nhóm ICT
+                        if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { 
+                            data.dtICT += thanhTien; 
+                        }
+                        
+                        // Nhóm CE
+                        if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || (PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode))) { 
+                            data.dtCE += thanhTien; 
+                        }
+                        
+                        // Nhóm Phụ Kiện
+                        if (PG.PHU_KIEN && PG.PHU_KIEN.includes(nhomHangCode)) { 
+                            data.dtPhuKien += thanhTien; 
+                        }
+                        
+                        // Nhóm Gia Dụng (Tách riêng, không phụ thuộc CE hay ICT)
+                        if (PG.GIA_DUNG && PG.GIA_DUNG.includes(nhomHangCode)) { 
+                            data.dtGiaDung += thanhTien; 
+                        }
+                        
+                        // Các nhóm khác
+                        if (PG.MAY_LOC_NUOC && PG.MAY_LOC_NUOC.includes(nhomHangCode)) { data.dtMLN += thanhTien; }
+                        if (PG.SIM && PG.SIM.includes(nhomHangCode)) { data.dtSim += thanhTien; }
+                        if (PG.VAS && PG.VAS.includes(nhomHangCode)) { data.dtVAS += thanhTien; }
+                        if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) { data.dtBaoHiem += thanhTien; }
 
-                        // Dynamic Keyword Check
-                        if (!mapped) {
-                            const checkDynamic = (uiKey) => {
-                                const keywords = uiKeywords[uiKey];
-                                if (keywords && keywords.some(k => rawNhomHang.includes(k) || rawNganhHang.includes(k))) {
+                        // --- 2. Dynamic Keyword Logic (Bổ sung từ Admin Config) ---
+                        // Logic: Nếu Admin định nghĩa thêm keywords (hoặc ID) cho các nhóm này, thì cộng thêm vào.
+                        // Lưu ý: Cần kiểm tra để tránh cộng trùng nếu ID đó đã nằm trong list Hardcode phía trên.
+                        
+                        const rawNhomHang = normalize(row.nhomHang);
+                        const rawNganhHang = normalize(row.nganhHang);
+                        const cleanNhomId = normalize(nhomHangCode);
+                        const cleanNganhId = normalize(nganhIdObj.id);
+
+                        const checkDynamic = (uiKey, hardcodeList = []) => {
+                            const keywords = uiKeywords[uiKey];
+                            if (!keywords || keywords.length === 0) return;
+
+                            // Check xem sản phẩm này có khớp với bất kỳ keyword nào không
+                            const isMatch = keywords.some(k => 
+                                rawNhomHang.includes(k) || rawNganhHang.includes(k) || 
+                                cleanNhomId === k || cleanNganhId === k
+                            );
+
+                            if (isMatch) {
+                                // Kiểm tra xem đã được cộng ở bước Hardcode chưa
+                                const alreadyCounted = hardcodeList.includes(nhomHangCode);
+                                if (!alreadyCounted) {
                                     data[uiKey] += thanhTien;
                                 }
-                            };
-                            checkDynamic('dtICT'); checkDynamic('dtCE'); checkDynamic('dtPhuKien');
-                            checkDynamic('dtGiaDung'); checkDynamic('dtMLN'); checkDynamic('dtSim');
-                            checkDynamic('dtVAS'); checkDynamic('dtBaoHiem');
-                        }
+                            }
+                        };
+                        
+                        checkDynamic('dtICT', [...PG.DIEN_THOAI, ...PG.LAPTOP, ...(PG.TABLET || [])]); 
+                        checkDynamic('dtCE', [...PG.TIVI, ...PG.TU_LANH, ...PG.MAY_GIAT, ...PG.MAY_LANH, ...(PG.DONG_HO || [])]); 
+                        checkDynamic('dtPhuKien', PG.PHU_KIEN || []);
+                        checkDynamic('dtGiaDung', PG.GIA_DUNG || []);
+                        checkDynamic('dtMLN', PG.MAY_LOC_NUOC || []); 
+                        checkDynamic('dtSim', PG.SIM || []);
+                        checkDynamic('dtVAS', PG.VAS || []); 
+                        checkDynamic('dtBaoHiem', PG.BAO_HIEM_VAS || []);
 
-                        // Detailed Stats
+                        // --- 3. Detailed Stats (Cho Popup chi tiết) ---
                         if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
                         if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
                         if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
@@ -22364,7 +22737,7 @@ export const salesProcessor = {
                         if (PG.MAY_GIAT.includes(nhomHangCode)) { data.dtMayGiat += thanhTien; data.slMayGiat += soLuong; }
                         if (PG.MAY_LANH.includes(nhomHangCode)) { data.dtMayLanh += thanhTien; data.slMayLanh += soLuong; }
 
-                        // QDC Check
+                        // QDC Groups (Quy đổi chuẩn)
                         for (const key in PG.QDC_GROUPS) {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
@@ -22373,6 +22746,7 @@ export const salesProcessor = {
                             }
                         }
                     } 
+                    // Logic chưa xuất (Giữ nguyên)
                     else if (trangThaiXuat === 'Chưa xuất') {
                         const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
@@ -22385,8 +22759,11 @@ export const salesProcessor = {
         return data;
     },
 
+    // --- TÍNH TỶ LỆ PHẦN TRĂM ---
     calculateStaticRatios(data) {
         const totalRevenue = data.doanhThu > 0 ? data.doanhThu : 1;
+        // Các trường này để hiển thị ở bảng Fixed Column nếu người dùng vẫn dùng logic cũ
+        // Nhưng tốt nhất nên dựa vào Dynamic Columns
         return {
             pctPhuKien: data.dtPhuKien / totalRevenue,
             pctGiaDung: data.dtGiaDung / totalRevenue,

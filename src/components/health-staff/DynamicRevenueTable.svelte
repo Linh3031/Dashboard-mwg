@@ -17,19 +17,19 @@
   let sortKey = 'mainValue'; 
   let sortDirection = 'desc';
 
-  // Metrics tổng
-  $: tableMetrics = {
-      sl: config.tableMetrics?.sl ?? false,
-      dt: config.tableMetrics?.dt ?? true,
-      dtqd: config.tableMetrics?.dtqd ?? false
+  // [FIX] Metrics tổng phải đọc từ mainColumn.metrics, fallback về tableMetrics cũ nếu không có
+  $: tableMetrics = config.mainColumn?.metrics || config.tableMetrics || {
+      sl: false,
+      dt: true,
+      dtqd: false
   };
 
-  // 1. Xử lý dữ liệu (dùng Processor mới)
+  // 1. Xử lý dữ liệu
   $: processedResult = dynamicTableProcessor.processTableData(reportData, config);
   $: processedData = processedResult.processedData;
   $: totals = processedResult.totals;
 
-  // 2. Sắp xếp dữ liệu (dùng Processor mới)
+  // 2. Sắp xếp dữ liệu
   $: sortedData = dynamicTableProcessor.sortTableData(processedData, sortKey, sortDirection);
 
   function handleSort(event) {
@@ -60,7 +60,7 @@
 
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col transition-all hover:shadow-md relative group/card">
     
-    {#if !config.isSystem || $isAdmin}
+    {#if $isAdmin || !config.isSystem}
         <div class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity flex gap-1 z-10 bg-white/80 backdrop-blur rounded-lg p-1 shadow-sm border border-gray-100">
             {#if !config.isSystem}<button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Chỉnh sửa" on:click|stopPropagation={() => dispatch('edit')}><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>{/if}
             <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title={config.isSystem ? "Xóa bảng hệ thống" : "Xóa bảng"} on:click|stopPropagation={() => dispatch('delete')}><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
@@ -104,7 +104,7 @@
                              <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-blue-800">{formatters.formatRevenue(totals.mainValue)}</td>
                         {/if}
                         {#if tableMetrics.dtqd}
-                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.mainValue_dtqd)}</td>
+                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.mainValue_dtqd)}</td>
                         {/if}
 
                         {#each config.subColumns as col}

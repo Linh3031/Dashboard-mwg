@@ -94,26 +94,42 @@
       }
   }
 
-  // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Local + Cloud)
+  // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Phân quyền Admin vs User)
   async function handleSaveCustomTable(event) {
       const newItem = event.detail;
-      let currentTables = [];
       
+      // 1. Cập nhật Store hiển thị tức thì
       customRevenueTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) { items[idx] = newItem; return [...items]; } 
-          else { return [...items, newItem]; }
+          if (idx >= 0) { 
+              items[idx] = { ...items[idx], ...newItem }; // Merge để giữ các props khác
+              return [...items]; 
+          } else { 
+              return [...items, newItem]; 
+          }
       });
       
-      // Lấy giá trị mới nhất để lưu
-      customRevenueTables.subscribe(val => currentTables = val)();
-
-      // Lưu LocalStorage (cho User)
-      localStorage.setItem('customRevenueTables', JSON.stringify(currentTables));
-
-      // [QUAN TRỌNG] Nếu là bảng hệ thống (isSystem) và có quyền Admin -> Lưu lên Cloud
+      // 2. Phân loại nơi lưu trữ
       if (newItem.isSystem) {
-          await adminService.saveSystemRevenueTables(currentTables);
+          // A. Nếu là bảng HỆ THỐNG (Chỉ Admin tạo/sửa)
+          // Lấy toàn bộ bảng hệ thống từ store hiện tại để lưu đè lên Cloud
+          const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
+          await adminService.saveSystemRevenueTables(currentSystemTables);
+          console.log("Đã lưu bảng hệ thống lên Admin Cloud");
+      } else {
+          // B. Nếu là bảng CÁ NHÂN (User tạo)
+          // Lấy bảng cá nhân để lưu
+          const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
+          
+          // Lưu LocalStorage (Backup)
+          localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
+          
+          // Lưu Warehouse Cloud (Nếu đã chọn kho)
+          const wh = get(selectedWarehouse);
+          if (wh) {
+              await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
+          }
+          console.log("Đã lưu bảng cá nhân");
       }
   }
 </script>
