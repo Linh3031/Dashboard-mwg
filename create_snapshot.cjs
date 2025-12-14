@@ -1,75 +1,89 @@
-// Version 3.0 - Chiến lược "Clean & Lean"
-// 1. Whitelist: Chỉ lấy file code (.svelte, .js, .css...), bỏ qua mọi thứ khác.
-// 2. Blacklist: Chặn cứng .DS_Store, node_modules, thư mục ẩn.
-// 3. Size Limit: Tự động bỏ qua file text quá lớn (> 500KB) như file log hoặc file tham khảo.
+// Version 4.1 - Switch Mode: "Logic Only" vs "Full Context"
+// Cách dùng: Sửa biến 'CURRENT_MODE' ở dòng 10 để chọn chế độ mong muốn.
 
 const fs = require('fs');
 const path = require('path');
 
 // --- CẤU HÌNH ---
+// 1. CHỌN CHẾ ĐỘ QUÉT (Sửa dòng này khi cần):
+// 'LOGIC': File siêu nhẹ (~100-200KB). Chỉ lấy code .svelte, .js. Bỏ qua data cứng, style, config rác. (Dùng hàng ngày)
+// 'FULL' : File đầy đủ (~1-2MB). Lấy cả config, css, html. (Dùng khi debug lỗi lạ hoặc sửa giao diện)
+const CURRENT_MODE = 'LOGIC'; 
+
 const config = {
-    rootDirectory: '.', 
+    rootDirectory: '.',
     outputFile: 'project_snapshot_svelte.txt',
-    
-    // 1. Chỉ chấp nhận những đuôi file này (Quan trọng để lọc rác binary)
-    allowedExtensions: [
-        '.svelte', 
-        '.js', '.ts', '.cjs', '.mjs', 
-        '.css', '.scss', '.postcss',
-        '.html', 
-        '.json', 
-        '.md',
-        '.txt' // Cẩn thận với file này, sẽ lọc bằng size limit bên dưới
+
+    // Định nghĩa các đuôi file cho từng chế độ
+    extensions: {
+        LOGIC: ['.svelte', '.js', '.ts'], 
+        FULL:  ['.svelte', '.js', '.ts', '.css', '.html', '.json', '.md']
+    },
+
+    // Những file/thư mục Luôn Luôn Bỏ Qua (Rác hệ thống)
+    alwaysIgnore: [
+        'node_modules', '.git', '.vscode', '.svelte-kit', 'dist', 'build', 'public', 'assets', '.firebase',
+        'package-lock.json', 'bun.lockb', 'yarn.lock', '.DS_Store', 
+        'project_snapshot_svelte.txt', 'create_snapshot.cjs'
     ],
 
-    // 2. Thư mục BẮT BUỘC bỏ qua
-    ignoredDirectories: [
-        'node_modules',
-        '.git',
-        '.vscode',
-        '.svelte-kit', // Build output
-        'dist',
-        'build',
-        'public', // Thường chứa ảnh, không chứa logic code
-        'assets'
+    // Những file "Nặng" sẽ bị bỏ qua ở chế độ LOGIC (để giảm tải)
+    // Nếu bạn cần sửa những file này, hãy chuyển sang chế độ FULL hoặc paste riêng vào chat.
+    heavyFilesData: [
+        'src/config.js',       // Data cứng rất dài -> Bỏ qua khi code logic
+        'src/styles',          // CSS dài -> Bỏ qua khi code logic
+        'README.md',
+        'jsconfig.json',
+        'vite.config.js',
+        'tailwind.config.js',
+        'postcss.config.js',
+        'svelte.config.js'
     ],
 
-    // 3. File BẮT BUỘC bỏ qua (tên cụ thể)
-    ignoredFiles: [
-        'package-lock.json', // Quá dài và không cần thiết để AI đọc logic
-        'bun.lockb',
-        'yarn.lock',
-        '.DS_Store', // Rác macOS
-        'project_snapshot_svelte.txt' // Tránh đệ quy (đọc chính file output)
-    ],
-
-    // 4. Giới hạn dung lượng: 500KB (File code hiếm khi nặng hơn mức này)
-    // Giúp loại bỏ các file "Dự án gốc..." nặng hàng MB.
-    maxFileSize: 500 * 1024 
+    maxFileSize: 500 * 1024 // 500KB limit
 };
 
 // --- LOGIC XỬ LÝ ---
 
-function shouldScanDirectory(dirName) {
-    // Bỏ qua thư mục bắt đầu bằng dấu chấm (ẩn) trừ khi cần thiết (ở đây chặn hết cho an toàn)
+function shouldScanDirectory(dirName, fullPath) {
     if (dirName.startsWith('.') && dirName !== '.') return false;
-    return !config.ignoredDirectories.includes(dirName);
+    if (config.alwaysIgnore.includes(dirName)) return false;
+
+    // Ở chế độ LOGIC, bỏ qua các thư mục nặng (như src/styles)
+    if (CURRENT_MODE === 'LOGIC') {
+        const relativePath = path.relative(config.rootDirectory, fullPath).replace(/\\/g, '/');
+        if (config.heavyFilesData.some(pattern => relativePath.includes(pattern))) {
+            return false;
+        }
+    }
+    return true;
 }
 
-function shouldIncludeFile(filename, size) {
-    // 1. Kiểm tra danh sách đen tên file
-    if (config.ignoredFiles.includes(filename)) return false;
-    if (filename.startsWith('.DS_Store')) return false; // Chặn biến thể
+function shouldIncludeFile(filename, size, fullPath) {
+    // 1. Kiểm tra danh sách đen cứng
+    if (config.alwaysIgnore.includes(filename)) return false;
+    if (filename.startsWith('.DS_Store')) return false;
 
     // 2. Kiểm tra dung lượng
-    if (size > config.maxFileSize) {
-        console.warn(`⚠️  Bỏ qua file lớn (>500KB): ${filename}`);
-        return false;
+    if (size > config.maxFileSize) return false;
+
+    // 3. Logic lọc theo chế độ
+    const relativePath = path.relative(config.rootDirectory, fullPath).replace(/\\/g, '/');
+
+    if (CURRENT_MODE === 'LOGIC') {
+        // Bỏ qua các file nặng/không cần thiết
+        if (config.heavyFilesData.some(pattern => relativePath.includes(pattern))) {
+            return false;
+        }
+        // Chỉ lấy file trong src/ (ngoại trừ package.json để biết dependency)
+        if (!relativePath.startsWith('src/') && filename !== 'package.json') {
+             return false; 
+        }
     }
 
-    // 3. Kiểm tra đuôi file (Whitelist)
+    // 4. Kiểm tra đuôi file
     const ext = path.extname(filename).toLowerCase();
-    return config.allowedExtensions.includes(ext);
+    return config.extensions[CURRENT_MODE].includes(ext);
 }
 
 function scanDirectory(directory, fileList = []) {
@@ -80,11 +94,11 @@ function scanDirectory(directory, fileList = []) {
         const stats = fs.statSync(itemPath);
 
         if (stats.isDirectory()) {
-            if (shouldScanDirectory(item)) {
+            if (shouldScanDirectory(item, itemPath)) {
                 scanDirectory(itemPath, fileList);
             }
         } else {
-            if (shouldIncludeFile(item, stats.size)) {
+            if (shouldIncludeFile(item, stats.size, itemPath)) {
                 fileList.push(itemPath);
             }
         }
@@ -94,20 +108,26 @@ function scanDirectory(directory, fileList = []) {
 }
 
 function createSnapshot() {
-    console.log("🚀 Đang bắt đầu quét dự án...");
+    console.log(`🚀 Đang tạo Snapshot...`);
+    console.log(`👉 Chế độ: ${CURRENT_MODE} (Sửa dòng 10 trong file này để đổi chế độ)`);
+    
+    if (CURRENT_MODE === 'LOGIC') {
+        console.log(`ℹ️  Đang ẩn: config.js, styles/*, và các file cấu hình để tối ưu dung lượng.`);
+    }
 
-    // Xóa file cũ nếu tồn tại
     if (fs.existsSync(config.outputFile)) {
         fs.unlinkSync(config.outputFile);
     }
 
     const allFiles = scanDirectory(config.rootDirectory);
     
-    // Sắp xếp file để dễ đọc (ưu tiên file cấu hình ở root trước, sau đó tới src)
+    // Sắp xếp ưu tiên file quan trọng lên đầu
     allFiles.sort((a, b) => {
-        const aDepth = a.split(path.sep).length;
-        const bDepth = b.split(path.sep).length;
-        if (aDepth !== bDepth) return aDepth - bDepth;
+        const priority = ['App.svelte', 'main.js', 'stores.js'];
+        const nameA = path.basename(a);
+        const nameB = path.basename(b);
+        if (priority.includes(nameA) && !priority.includes(nameB)) return -1;
+        if (!priority.includes(nameA) && priority.includes(nameB)) return 1;
         return a.localeCompare(b);
     });
 
@@ -117,11 +137,7 @@ function createSnapshot() {
     allFiles.forEach(filepath => {
         try {
             const content = fs.readFileSync(filepath, 'utf8');
-            
-            // Chuẩn hóa đường dẫn
             const normalizedPath = filepath.replace(/\\/g, '/');
-            
-            // Nếu root là '.' thì bỏ './' ở đầu cho đẹp (tùy chọn)
             const displayPath = normalizedPath.startsWith('./') ? normalizedPath : `./${normalizedPath}`;
 
             const fileHeader = `--- START FILE: ${displayPath} ---\n`;
@@ -133,16 +149,16 @@ function createSnapshot() {
 
             fileCount++;
             totalSize += content.length;
-            console.log(`+ Đã thêm: ${displayPath}`);
+            console.log(`+ ${displayPath}`);
         } catch (err) {
-            console.error(`❌ Lỗi đọc file ${filepath}: ${err.message}`);
+            console.error(`❌ Lỗi: ${filepath}`);
         }
     });
 
     console.log(`\n✅ HOÀN TẤT!`);
-    console.log(`📄 Tổng số file: ${fileCount}`);
-    console.log(`💾 Dung lượng snapshot: ${(totalSize / 1024).toFixed(2)} KB`);
-    console.log(`📂 Output: ${config.outputFile}`);
+    console.log(`📄 Số file: ${fileCount}`);
+    console.log(`💾 Dung lượng: ${(totalSize / 1024).toFixed(2)} KB`);
+    console.log(`📂 File kết quả: ${config.outputFile}`);
 }
 
 createSnapshot();
