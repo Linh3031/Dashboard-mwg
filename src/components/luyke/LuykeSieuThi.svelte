@@ -64,17 +64,16 @@
       warehouseCustomMetrics.set(localData);
   }
 
-  // [CẬP NHẬT] Map target từ goals vào combined items
   $: combinedEfficiencyItems = [
       ...($efficiencyConfig || []).map(i => ({ 
           ...i, 
           isSystem: true,
-          target: goals?.[i.id] || i.target // Ưu tiên target từ Goal Setting
+          target: goals?.[i.id] || i.target 
       })),
       ...($warehouseCustomMetrics || []).map(i => ({ 
           ...i, 
           isSystem: false,
-          target: goals?.[i.id] || i.target // Ưu tiên target từ Goal Setting
+          target: goals?.[i.id] || i.target 
       }))
   ];
 
@@ -86,8 +85,6 @@
       return isNaN(val) ? 0 : val;
   };
 
-  // ... (Giữ nguyên phần logic tính toán $: ở giữa không thay đổi) ...
-  // Để tiết kiệm không gian, tôi chỉ paste lại phần thay đổi ở template bên dưới
   $: {
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
@@ -163,7 +160,9 @@
       tyLeThiDuaDat: tyLeThiDuaDat
     };
 
+    // [FIX] Cập nhật logic tính Tỷ trọng kênh theo ID
     const calcChannelStat = (keywords) => {
+        // Tìm nhóm cấu hình (Macro Group) dựa trên tên (VD: ĐMX, TGDD)
         const groupConfig = ($macroCategoryConfig || []).find(g => {
             if (!g.name) return false;
             const normName = g.name.trim().toLowerCase().normalize("NFC");
@@ -175,10 +174,12 @@
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
 
-        groupConfig.items.forEach(rawName => {
-            const cleanKey = utils.cleanCategoryName(rawName);
-            if (details[cleanKey]) {
-                totalVal += (details[cleanKey].revenueQuyDoi || 0);
+        // groupConfig.items bây giờ chứa ID (ví dụ '1491', '42'...)
+        groupConfig.items.forEach(itemId => {
+            // Tra cứu trực tiếp trong details bằng ID
+            // (Vì data đã được xử lý trong salesProcessor.js với key là ID)
+            if (details[itemId]) {
+                totalVal += (details[itemId].revenueQuyDoi || 0);
             }
         });
         return totalVal;
@@ -196,9 +197,9 @@
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
-      .map(([name, values]) => ({ 
-          id: name,
-          name, 
+      .map(([id, values]) => ({ 
+          id: id,
+          name: values.name, // Lấy tên từ object value
           dtqd: values.revenueQuyDoi, 
           sl: values.quantity, 
           dt: values.revenue, 
@@ -206,7 +207,12 @@
       }));
 
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
-      .map(([name, values]) => ({ name, dtqd: values.revenueQuyDoi, ...values }));
+      .map(([id, values]) => ({ 
+          id: id,
+          name: values.name, // Lấy tên từ object value
+          dtqd: values.revenueQuyDoi, 
+          ...values 
+      }));
   }
 
   function openAddEffModal() {
@@ -222,8 +228,7 @@
       const isSystem = $efficiencyConfig.some(i => i.id === id);
       
       if (isSystem) {
-         
-  alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
           return;
       }
 
@@ -246,12 +251,11 @@
   <div>
       <h2 id="luyke-supermarket-title" class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
         <i data-feather="bar-chart" class="text-blue-600"></i>
-        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse 
-: '(Toàn bộ)'}
+        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
       </h2>
 
       <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
-        
+      
         <div class="kpi-card-solid card-1">
             <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
             <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
@@ -259,8 +263,7 @@
                 <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
                 <span>MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
             </div>
-      
-       <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
+            <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
         </div>
 
         <div class="kpi-card-solid card-2">
@@ -271,7 +274,6 @@
                 <span>MT: {formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
             </div>
             <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
- 
         </div>
 
         <div class="kpi-card-solid card-3">
@@ -284,8 +286,7 @@
         </div>
 
         <div class="kpi-card-solid card-4">
-            <div 
- class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
+            <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
             <div class="kpi-solid-sub">
                 <span>Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span>
@@ -296,8 +297,7 @@
         <div class="kpi-card-solid card-5">
             <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
-            <div 
- class="kpi-solid-sub">
+            <div class="kpi-solid-sub">
                 <span>Doanh số: {formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</span>
             </div>
             <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
@@ -309,7 +309,6 @@
             <div class="kpi-solid-sub">
                 <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
             </div>
- 
             <div class="kpi-bg-icon"><i data-feather="award"></i></div>
         </div>
 
@@ -323,23 +322,20 @@
         </div>
 
         <div class="kpi-card-solid card-8">
-  
            <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
             <div class="flex flex-col gap-1 mt-1">
                 <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
                     <span class="text-sm font-semibold opacity-90">ĐMX</span>
                     <div class="text-right">
                         <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.dxm.val, 0)}</span>
-                  
-       <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
                     </div>
                 </div>
                 <div class="flex justify-between items-baseline pt-1">
                     <span class="text-sm font-semibold opacity-90">TGDD</span>
                     <div class="text-right">
                         <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.tgdd.val, 0)}</span>
-     
-                    <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
                     </div>
                 </div>
             </div>

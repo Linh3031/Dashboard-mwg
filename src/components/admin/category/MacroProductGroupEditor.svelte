@@ -2,14 +2,14 @@
     import { onMount } from 'svelte';
     import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
-    import { parseIdentity } from '../../../utils.js'; // [MỚI]
+    import { parseIdentity } from '../../../utils.js';
 
     let localConfigs = []; 
     let isSaving = false;
     let editingId = null; 
     let itemSearch = '';
 
-    // [MỚI] Lấy danh sách Nhóm Hàng (Product Group) kèm ID để tick chọn
+    // Lấy danh sách Nhóm Hàng (Product Group) kèm ID để tick chọn
     $: rawProductGroupsWithId = (() => {
         const map = new Map();
         ($categoryStructure || []).forEach(c => {
@@ -54,6 +54,16 @@
             currentItems.add(itemId);
         }
         localConfigs[groupIndex].items = [...currentItems];
+    }
+
+    // [MỚI] Hàm xóa sạch lựa chọn
+    function clearSelection(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        
+        if (confirm(`Bạn muốn xóa sạch danh sách chọn của nhóm "${localConfigs[groupIndex].name}" để chọn lại từ đầu?`)) {
+            localConfigs[groupIndex].items = [];
+        }
     }
 
     async function handleSave() {
@@ -125,13 +135,21 @@
 
                     {#if editingId === group.id}
                         <div class="p-4 border-t border-gray-200 bg-white animate-fade-in">
-                            <div class="mb-2">
+                            <div class="mb-2 flex gap-2">
                                 <input 
                                     type="text" 
-                                    class="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" 
+                                    class="flex-1 p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" 
                                     placeholder="🔍 Tìm kiếm nhóm hàng..." 
                                     bind:value={itemSearch}
                                 />
+                                <button 
+                                    class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1"
+                                    on:click={() => clearSelection(group.id)}
+                                    title="Xóa sạch mục đã chọn để chọn lại"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Làm sạch ({group.items?.length || 0})
+                                </button>
                             </div>
                             
                             <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
