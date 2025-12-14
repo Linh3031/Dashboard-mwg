@@ -1,5 +1,5 @@
 // src/services/admin.service.js
-// Version 3.1 - Fix Data Compatibility (Restore Old Data)
+// Version 3.2 - Fix Missing loadMacroCategoryConfig
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -234,6 +234,33 @@ export const adminService = {
             await setDoc(docRef, { data: sanitizeForFirestore(data) });
             notify('Đã lưu Cấu hình Nhóm Ngành Hàng lớn!', 'success');
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
+    },
+
+    // [MỚI] Hàm tải cấu hình nhóm ngành hàng lớn (Fix lỗi TypeError)
+    async loadMacroCategoryConfig() {
+        const db = getDB();
+        // Dữ liệu mặc định (Fallback) phòng trường hợp DB chưa có
+        const defaultData = [
+            { id: 'macro_dt', name: 'ĐIỆN TỬ', items: ['dt_tivi', 'dt_loa', 'Tivi', 'Loa', 'Dàn âm thanh', 'Tivi - Loa - Dàn máy'] },
+            { id: 'macro_dl', name: 'ĐIỆN LẠNH', items: ['dl_maylanh', 'dl_tulanh', 'dl_maygiat', 'Tủ lạnh', 'Máy lạnh', 'Máy giặt', 'Tủ đông', 'Tủ mát'] },
+            { id: 'macro_gd', name: 'GIA DỤNG', items: ['gd_quat', 'gd_noi', 'Gia dụng', 'Quạt', 'Nồi cơm', 'Bếp', 'Máy xay', 'Máy ép'] },
+            { id: 'macro_ict', name: 'ICT', items: ['ict_laptop', 'ict_phone', 'Laptop', 'Điện thoại', 'Tablet', 'Phụ kiện', 'Máy tính bảng'] }
+        ];
+
+        if (!db) return defaultData;
+        try {
+            const docRef = doc(db, "declarations", "macroCategoryConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const data = d.data || d.items || d.config || [];
+                if (data.length > 0) return data;
+            }
+            return defaultData;
+        } catch (e) {
+            console.error("Lỗi tải macroCategoryConfig:", e);
+            return defaultData;
+        }
     },
 
     async saveMacroProductGroupConfig(data) {

@@ -976,7 +976,7 @@ export const fileSyncState = writable({});
 
 --- START FILE: ./src/utils.js ---
 // src/utils.js
-// Version 2.4 - Export cleanNameRaw for UI usage
+// Version 2.5 - Added parseIdentity to fix configLoader error
 import { get } from 'svelte/store';
 import { categoryNameMapping, groupNameMapping, brandNameMapping } from './stores.js';
 
@@ -989,7 +989,7 @@ export function getRandomBrightColor() {
 }
 
 /**
- * [ĐÃ EXPORT] Hàm làm sạch cơ bản (Aggressive Mode).
+ * Hàm làm sạch cơ bản (Aggressive Mode).
  * Dùng để gợi ý tên hiển thị sạch sẽ.
  */
 export function cleanNameRaw(name) {
@@ -1055,6 +1055,30 @@ export function getSortedDepartmentList(reportData) {
         return a.localeCompare(b);
     });
     return allDepts;
+}
+
+/**
+ * [MỚI] Phân tích chuỗi định danh dạng "ID - Name" hoặc "ID-Name"
+ * Trả về object { id, name }. Nếu không tìm thấy ID, id sẽ là 'unknown'
+ */
+export function parseIdentity(value) {
+    if (!value || typeof value !== 'string') {
+        return { id: 'unknown', name: '' };
+    }
+    
+    // Regex bắt chuỗi dạng: "Số - Chữ" (VD: "1491 - Smartphone")
+    // Hỗ trợ dấu gạch ngang (-) và gạch dài (–)
+    const match = value.match(/^(\d+)\s*[-–]\s*(.+)$/);
+    
+    if (match) {
+        return { 
+            id: match[1].trim(), 
+            name: match[2].trim() 
+        };
+    }
+    
+    // Trường hợp không có ID ở đầu
+    return { id: 'unknown', name: value.trim() };
 }
 --- END FILE: ./src/utils.js ---
 
@@ -7626,9 +7650,6 @@ export const formatters = {
         efficiencyConfig.set(newConfig);
         await adminService.saveEfficiencyConfig(newConfig);
     }
-
-    // Hàm này được gọi khi Modal lưu thành công (thông qua sự kiện dispatch hoặc store update)
-    // Ở đây ta lắng nghe sự kiện từ App.svelte (nơi đặt modal) hoặc update trực tiếp store trong modal
 </script>
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
@@ -7639,7 +7660,7 @@ export const formatters = {
             </div>
             <div>
                 <div class="flex items-center gap-3">
-                    <h3 class="font-bold text-slate-800 text-lg">Cấu hình Bảng Hiệu quả (Hệ thống)</h3>
+                    <h3 class="font-bold text-slate-800 text-lg">Khai báo chỉ số hiệu quả</h3>
                     <span class="bg-orange-100 text-orange-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-orange-200">Global</span>
                 </div>
                 <p class="text-sm text-slate-500 mt-0.5">Các chỉ số này sẽ hiển thị mặc định cho toàn bộ nhân viên/siêu thị</p>
@@ -7675,8 +7696,8 @@ export const formatters = {
                         <div class="text-xs text-slate-500 space-y-1 mt-auto">
                             <p><strong>Loại:</strong> {item.type === 'SL' ? 'Số lượng' : (item.type === 'DTQD' ? 'Doanh thu QĐ' : 'Doanh thu Thực')}</p>
                             <p><strong>Mục tiêu:</strong> {item.target}%</p>
-                            <p class="truncate" title={item.groupA.join(', ')}><strong>Tử số:</strong> {item.groupA.join(', ')}</p>
-                            <p class="truncate" title={item.groupB.join(', ')}><strong>Mẫu số:</strong> {item.groupB.join(', ')}</p>
+                            <p class="truncate" title={item.groupA.join(', ')}><strong>Tử số:</strong> {item.groupA.length} mục đã chọn</p>
+                            <p class="truncate" title={item.groupB.join(', ')}><strong>Mẫu số:</strong> {item.groupB.length} mục đã chọn</p>
                         </div>
                     </div>
                 {/each}
@@ -10846,11 +10867,16 @@ export const formatters = {
 
 --- START FILE: ./src/components/luyke/LuykeQdcTable.svelte ---
 <script>
-  import { afterUpdate } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
   import { cleanCategoryName } from '../../utils.js';
-  import { categoryStructure, macroProductGroupConfig, selectedWarehouse } from '../../stores.js';
+  import { 
+      categoryStructure, 
+      macroProductGroupConfig, 
+      selectedWarehouse 
+  } from '../../stores.js';
   import { datasyncService } from '../../services/datasync.service.js';
+  import { adminService } from '../../services/admin.service.js';
 
   export let items = []; 
   export let numDays = 1;
@@ -10858,43 +10884,84 @@ export const formatters = {
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
-  let localConfig = []; // Danh sách các nhóm ĐƯỢC CHỌN
+  let localConfig = []; 
 
-  // 1. Data Sources: Tạo danh sách tất cả nhóm hàng có thể có
-  $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
-  $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
-  $: allPresentGroups = items.map(i => i.name).sort();
-  $: allGroups = [...new Set([...allGroupsFromStructure, ...allMacroGroups, ...allPresentGroups])].sort();
+  // [MỚI] Bảng màu rực rỡ cho thanh tiến trình
+  const BAR_COLORS = [
+      'bg-red-500',       // Đỏ
+      'bg-orange-500',    // Cam
+      'bg-amber-500',     // Vàng hổ phách
+      'bg-yellow-400',    // Vàng chanh
+      'bg-lime-500',      // Xanh chanh
+      'bg-green-500',     // Xanh lá
+      'bg-emerald-500',   // Xanh ngọc
+      'bg-teal-500',      // Xanh cổ vịt
+      'bg-cyan-500',      // Xanh da trời nhạt
+      'bg-sky-500',       // Xanh bầu trời
+      'bg-blue-500',      // Xanh dương
+      'bg-indigo-500',    // Chàm
+      'bg-violet-500',    // Tím
+      'bg-fuchsia-500',   // Hồng tím
+      'bg-pink-500',      // Hồng
+      'bg-rose-500'       // Hồng đỏ
+  ];
 
-  $: filterList = allGroups.filter(name => 
-      name.toLowerCase().includes(filterSearch.toLowerCase())
+  // 1. Load config
+  onMount(async () => {
+      if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
+          try {
+              const configs = await adminService.loadMacroProductGroupConfig();
+              macroProductGroupConfig.set(configs);
+          } catch (e) {
+              console.error("Lỗi load Macro Product Groups:", e);
+          }
+      }
+  });
+
+  // 2. Tạo danh sách Filter
+  $: allGroups = (() => {
+      const macroNames = ($macroProductGroupConfig || []).map(m => ({
+          name: m.name,
+          type: 'macro'
+      })).sort((a, b) => a.name.localeCompare(b.name));
+
+      const structureNames = new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean));
+      const presentNames = new Set(items.map(i => i.name).filter(Boolean));
+      
+      const simpleNames = [...new Set([...structureNames, ...presentNames])]
+          .sort()
+          .map(name => ({
+              name: name,
+              type: 'simple'
+          }));
+
+      return [...macroNames, ...simpleNames];
+  })();
+
+  $: filterList = allGroups.filter(g => 
+      g.name.toLowerCase().includes(filterSearch.toLowerCase())
   );
 
-  // 2. Logic Load Config theo Kho
+  // 3. Logic Load/Save Config
   $: if ($selectedWarehouse) {
       loadConfigForWarehouse($selectedWarehouse);
   } else {
-      // Nếu không có kho (view toàn bộ), mặc định hiện tất cả
-      localConfig = [...allGroups];
+      localConfig = allGroups.map(g => g.name);
   }
 
   async function loadConfigForWarehouse(kho) {
-      console.log(`[LuykeQdc] Loading config for warehouse: ${kho}`);
       try {
           const savedConfig = await datasyncService.loadQdcConfig(kho);
           if (savedConfig && Array.isArray(savedConfig)) {
               localConfig = savedConfig;
           } else {
-              // [QUAN TRỌNG] Nếu chưa có config (null), mặc định chọn TẤT CẢ
-              localConfig = [...allGroups];
+              localConfig = allGroups.map(g => g.name);
           }
       } catch (e) {
-          console.error("Error loading config:", e);
-          localConfig = [...allGroups];
+          localConfig = allGroups.map(g => g.name);
       }
   }
 
-  // 3. Logic Lưu Config theo Kho
   function toggleQdcSelection(name) {
       if (localConfig.includes(name)) {
           localConfig = localConfig.filter(n => n !== name);
@@ -10902,11 +10969,9 @@ export const formatters = {
           localConfig = [...localConfig, name];
       }
       
-      // Debounce lưu cloud để tránh spam request
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
           if ($selectedWarehouse) {
-              console.log(`[LuykeQdc] Saving config for ${$selectedWarehouse}...`);
               datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
           }
       }, 500); 
@@ -10914,21 +10979,54 @@ export const formatters = {
 
   function toggleAllVisibility(show) {
       if (show) {
-          localConfig = [...allGroups];
+          localConfig = allGroups.map(g => g.name);
       } else {
           localConfig = [];
       }
-      
       if ($selectedWarehouse) {
-          datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
+         datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
       }
   }
 
-  // 4. Logic Hiển thị
+  // 4. Aggregation Logic
   $: sortedItems = (() => {
-      // Lọc danh sách items dựa trên localConfig
-      let candidates = items.filter(item => localConfig.includes(item.name));
-      return candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+      if (localConfig.length === 0) return [];
+
+      let finalResults = [];
+      const macroConfigs = $macroProductGroupConfig || [];
+      
+      const selectedMacros = localConfig.filter(name => macroConfigs.some(m => m.name === name));
+      const selectedSimples = localConfig.filter(name => !macroConfigs.some(m => m.name === name));
+
+      selectedMacros.forEach(macroName => {
+          const config = macroConfigs.find(m => m.name === macroName);
+          if (!config) return;
+
+          const childIds = new Set(config.items || []);
+          const childItems = items.filter(i => childIds.has(i.id));
+
+          if (childItems.length > 0) {
+              const aggregatedItem = {
+                  id: config.id, 
+                  name: config.name,
+                  isMacro: true, 
+                  dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || 0), 0),
+                  dt: childItems.reduce((sum, i) => sum + (i.dt || 0), 0),
+                  quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.sl || 0), 0),
+                  _children: childItems 
+              };
+              finalResults.push(aggregatedItem);
+          } 
+      });
+
+      selectedSimples.forEach(simpleName => {
+          const item = items.find(i => i.name === simpleName);
+          if (item) {
+              finalResults.push({ ...item, isMacro: false });
+          }
+      });
+
+      return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
@@ -10968,11 +11066,18 @@ export const formatters = {
                     {#if filterList.length === 0}
                          <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
-                        {#each filterList as name}
-                            {@const isChecked = localConfig.includes(name)}
-                            <div class="filter-item" on:click={() => toggleQdcSelection(name)}>
+                        {#each filterList as group}
+                            {@const isChecked = localConfig.includes(group.name)}
+                            <div class="filter-item" on:click={() => toggleQdcSelection(group.name)}>
                                  <input type="checkbox" checked={isChecked} />
-                                <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{name}</label>
+                                 {#if group.type === 'macro'}
+                                    <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
+                                        <i data-feather="layers" class="w-3 h-3"></i>
+                                        {group.name}
+                                    </label>
+                                 {:else}
+                                    <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{group.name}</label>
+                                 {/if}
                             </div>
                         {/each}
                     {/if}
@@ -10991,28 +11096,42 @@ export const formatters = {
         <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
           <p class="text-sm">Không có dữ liệu hiển thị.</p>
           {#if items.length > 0}
-             <p class="text-xs mt-1">Bạn đã ẩn tất cả nhóm hàng.</p>
+             <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
           {/if}
        </div>
     {:else}
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
           {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
-          <div class="py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50 transition-colors px-1">
+          
+          {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
+          
+          <div class="py-2 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1 
+                      {item.isMacro ? 'bg-teal-50/30 hover:bg-teal-50/50' : 'hover:bg-gray-50'}">
+            
             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                 <div class="flex-grow min-w-0">
                    <div class="flex justify-between items-center mb-1">
-                       <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
-                       <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
+                       <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1 {item.isMacro ? 'text-teal-800' : 'text-gray-700'}" title={item.name}>
+                           {#if item.isMacro}
+                                <i data-feather="layers" class="w-3 h-3 text-teal-600"></i>
+                           {/if}
+                           {item.name}
+                       </span>
+                       <span class="text-sm font-bold whitespace-nowrap text-gray-800">
+                           {formatters.formatRevenue(item.dtqd)}
+                       </span>
                    </div>
-                   <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
-                        <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
+                   
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner">
+                        <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
                    </div>
+                   
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
                        <div class="flex gap-2">
                            <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
-                           <span class="text-blue-600">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
                        </div>
                        <div class="flex gap-2">
                            <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
@@ -11096,17 +11215,16 @@ export const formatters = {
       warehouseCustomMetrics.set(localData);
   }
 
-  // [CẬP NHẬT] Map target từ goals vào combined items
   $: combinedEfficiencyItems = [
       ...($efficiencyConfig || []).map(i => ({ 
           ...i, 
           isSystem: true,
-          target: goals?.[i.id] || i.target // Ưu tiên target từ Goal Setting
+          target: goals?.[i.id] || i.target 
       })),
       ...($warehouseCustomMetrics || []).map(i => ({ 
           ...i, 
           isSystem: false,
-          target: goals?.[i.id] || i.target // Ưu tiên target từ Goal Setting
+          target: goals?.[i.id] || i.target 
       }))
   ];
 
@@ -11118,8 +11236,6 @@ export const formatters = {
       return isNaN(val) ? 0 : val;
   };
 
-  // ... (Giữ nguyên phần logic tính toán $: ở giữa không thay đổi) ...
-  // Để tiết kiệm không gian, tôi chỉ paste lại phần thay đổi ở template bên dưới
   $: {
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
@@ -11195,7 +11311,9 @@ export const formatters = {
       tyLeThiDuaDat: tyLeThiDuaDat
     };
 
+    // [FIX] Cập nhật logic tính Tỷ trọng kênh theo ID
     const calcChannelStat = (keywords) => {
+        // Tìm nhóm cấu hình (Macro Group) dựa trên tên (VD: ĐMX, TGDD)
         const groupConfig = ($macroCategoryConfig || []).find(g => {
             if (!g.name) return false;
             const normName = g.name.trim().toLowerCase().normalize("NFC");
@@ -11207,10 +11325,12 @@ export const formatters = {
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
 
-        groupConfig.items.forEach(rawName => {
-            const cleanKey = utils.cleanCategoryName(rawName);
-            if (details[cleanKey]) {
-                totalVal += (details[cleanKey].revenueQuyDoi || 0);
+        // groupConfig.items bây giờ chứa ID (ví dụ '1491', '42'...)
+        groupConfig.items.forEach(itemId => {
+            // Tra cứu trực tiếp trong details bằng ID
+            // (Vì data đã được xử lý trong salesProcessor.js với key là ID)
+            if (details[itemId]) {
+                totalVal += (details[itemId].revenueQuyDoi || 0);
             }
         });
         return totalVal;
@@ -11228,9 +11348,9 @@ export const formatters = {
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
-      .map(([name, values]) => ({ 
-          id: name,
-          name, 
+      .map(([id, values]) => ({ 
+          id: id,
+          name: values.name, // Lấy tên từ object value
           dtqd: values.revenueQuyDoi, 
           sl: values.quantity, 
           dt: values.revenue, 
@@ -11238,7 +11358,12 @@ export const formatters = {
       }));
 
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
-      .map(([name, values]) => ({ name, dtqd: values.revenueQuyDoi, ...values }));
+      .map(([id, values]) => ({ 
+          id: id,
+          name: values.name, // Lấy tên từ object value
+          dtqd: values.revenueQuyDoi, 
+          ...values 
+      }));
   }
 
   function openAddEffModal() {
@@ -11254,8 +11379,7 @@ export const formatters = {
       const isSystem = $efficiencyConfig.some(i => i.id === id);
       
       if (isSystem) {
-         
-  alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
           return;
       }
 
@@ -11278,12 +11402,11 @@ export const formatters = {
   <div>
       <h2 id="luyke-supermarket-title" class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
         <i data-feather="bar-chart" class="text-blue-600"></i>
-        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse 
-: '(Toàn bộ)'}
+        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
       </h2>
 
       <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
-        
+      
         <div class="kpi-card-solid card-1">
             <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
             <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
@@ -11291,8 +11414,7 @@ export const formatters = {
                 <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
                 <span>MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
             </div>
-      
-       <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
+            <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
         </div>
 
         <div class="kpi-card-solid card-2">
@@ -11303,7 +11425,6 @@ export const formatters = {
                 <span>MT: {formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
             </div>
             <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
- 
         </div>
 
         <div class="kpi-card-solid card-3">
@@ -11316,8 +11437,7 @@ export const formatters = {
         </div>
 
         <div class="kpi-card-solid card-4">
-            <div 
- class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
+            <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
             <div class="kpi-solid-sub">
                 <span>Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span>
@@ -11328,8 +11448,7 @@ export const formatters = {
         <div class="kpi-card-solid card-5">
             <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
             <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
-            <div 
- class="kpi-solid-sub">
+            <div class="kpi-solid-sub">
                 <span>Doanh số: {formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</span>
             </div>
             <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
@@ -11341,7 +11460,6 @@ export const formatters = {
             <div class="kpi-solid-sub">
                 <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
             </div>
- 
             <div class="kpi-bg-icon"><i data-feather="award"></i></div>
         </div>
 
@@ -11355,23 +11473,20 @@ export const formatters = {
         </div>
 
         <div class="kpi-card-solid card-8">
-  
            <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
             <div class="flex flex-col gap-1 mt-1">
                 <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
                     <span class="text-sm font-semibold opacity-90">ĐMX</span>
                     <div class="text-right">
                         <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.dxm.val, 0)}</span>
-                  
-       <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
                     </div>
                 </div>
                 <div class="flex justify-between items-baseline pt-1">
                     <span class="text-sm font-semibold opacity-90">TGDD</span>
                     <div class="text-right">
                         <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.tgdd.val, 0)}</span>
-     
-                    <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
                     </div>
                 </div>
             </div>
@@ -12158,39 +12273,91 @@ export const formatters = {
 <script>
     import { createEventDispatcher } from 'svelte';
     import { categoryStructure } from '../../stores.js';
-    import { cleanCategoryName } from '../../utils.js';
+    import { parseIdentity } from '../../utils.js';
 
     export let isOpen = false;
     export let editItem = null; // Nếu null là thêm mới, có data là sửa
-    
-    // [MỚI] Biến cờ để xác định đang mở từ Admin hay User
-    export let isAdmin = false;
+    export let isAdmin = false; // Biến cờ xác định Admin/User
 
     const dispatch = createEventDispatcher();
 
-    // Dữ liệu form
+    // --- FORM DATA ---
     let label = '';
-    let groupA = []; // Danh sách tên nhóm/ngành hàng tử số
-    let groupB = []; // Danh sách tên nhóm/ngành hàng mẫu số
+    let groupA = []; // Lưu danh sách ID
+    let groupB = []; // Lưu danh sách ID
     let target = 80;
-    let type = 'DTTL'; // 'SL', 'DTTL' (Doanh thu thực), 'DTQD'
+    let type = 'DTTL'; // 'SL', 'DTTL', 'DTQD'
     let searchA = '';
     let searchB = '';
-
-    // Lấy danh sách duy nhất từ categoryStructure
-    $: uniqueCategories = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nganhHang)).filter(Boolean))].sort();
-    $: uniqueGroups = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
-    
     let modeA = 'group'; // 'group' | 'category'
     let modeB = 'category'; // 'group' | 'category'
 
+    // --- DATA PREPARATION ---
+    // 1. Danh sách Ngành hàng (Unique by ID)
+    $: uniqueCategories = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nganhHang) return;
+            const parsed = parseIdentity(c.nganhHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
+
+    // 2. Danh sách Nhóm hàng (Unique by ID)
+    $: uniqueGroups = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nhomHang) return;
+            const parsed = parseIdentity(c.nhomHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
+    
+    // --- LIST SOURCE ---
     $: listSourceA = modeA === 'group' ? uniqueGroups : uniqueCategories;
     $: listSourceB = modeB === 'group' ? uniqueGroups : uniqueCategories;
 
-    $: filteredListA = listSourceA.filter(i => i.toLowerCase().includes(searchA.toLowerCase()));
-    $: filteredListB = listSourceB.filter(i => i.toLowerCase().includes(searchB.toLowerCase()));
+    // --- SORTING LOGIC: SELECTED FIRST ---
+    // Lọc theo search -> Sắp xếp (Đã chọn lên đầu -> Alpha)
+    $: visibleListA = listSourceA
+        .filter(i => i.display.toLowerCase().includes(searchA.toLowerCase()))
+        .sort((a, b) => {
+            const aSel = groupA.includes(a.id);
+            const bSel = groupA.includes(b.id);
+            if (aSel && !bSel) return -1;
+            if (!aSel && bSel) return 1;
+            return 0; // Giữ nguyên thứ tự alpha nếu cùng trạng thái
+        });
 
-    // Khởi tạo khi edit
+    $: visibleListB = listSourceB
+        .filter(i => i.display.toLowerCase().includes(searchB.toLowerCase()))
+        .sort((a, b) => {
+            const aSel = groupB.includes(b.id);
+            const bSel = groupB.includes(a.id);
+            if (aSel && !bSel) return -1; // Fix logic sort chiều B
+            if (!aSel && bSel) return 1;
+            
+            // Logic chuẩn: Selected A lên đầu
+            const isASel = groupB.includes(a.id);
+            const isBSel = groupB.includes(b.id);
+            if (isASel && !isBSel) return -1;
+            if (!isASel && isBSel) return 1;
+            return 0;
+        });
+
+    // --- INIT ---
     $: if (isOpen) {
         if (editItem) {
             label = editItem.label;
@@ -12201,7 +12368,6 @@ export const formatters = {
             modeA = editItem.modeA || 'group';
             modeB = editItem.modeB || 'category';
         } else {
-            // Reset form khi thêm mới
             label = '';
             groupA = [];
             groupB = [];
@@ -12214,39 +12380,49 @@ export const formatters = {
         }
     }
 
-    function toggleSelection(list, item) {
-        if (list.includes(item)) return list.filter(i => i !== item);
-        return [...list, item];
+    // --- HANDLERS ---
+    function toggleSelection(isA, id) {
+        if (isA) {
+            if (groupA.includes(id)) groupA = groupA.filter(i => i !== id);
+            else groupA = [...groupA, id];
+        } else {
+            if (groupB.includes(id)) groupB = groupB.filter(i => i !== id);
+            else groupB = [...groupB, id];
+        }
     }
 
     function toggleAll(isA, sourceList) {
+        // Chỉ toggle những item đang hiển thị (theo search)
+        const visibleIds = sourceList.map(i => i.id);
         if (isA) {
-            groupA = groupA.length === sourceList.length ? [] : [...sourceList];
+            const allSelected = visibleIds.every(id => groupA.includes(id));
+            if (allSelected) {
+                // Bỏ chọn tất cả visible
+                groupA = groupA.filter(id => !visibleIds.includes(id));
+            } else {
+                // Chọn tất cả visible (merge unique)
+                groupA = [...new Set([...groupA, ...visibleIds])];
+            }
         } else {
-            groupB = groupB.length === sourceList.length ? [] : [...sourceList];
+            const allSelected = visibleIds.every(id => groupB.includes(id));
+            if (allSelected) {
+                groupB = groupB.filter(id => !visibleIds.includes(id));
+            } else {
+                groupB = [...new Set([...groupB, ...visibleIds])];
+            }
         }
     }
 
     function handleSave() {
-        if (!label.trim()) {
-            alert("Vui lòng nhập Tên cột.");
-            return;
-        }
-        if (groupA.length === 0) {
-            alert("Vui lòng chọn ít nhất 1 mục cho Tử số (Nhóm A).");
-            return;
-        }
-        if (groupB.length === 0) {
-            alert("Vui lòng chọn ít nhất 1 mục cho Mẫu số (Nhóm B).");
-            return;
-        }
+        if (!label.trim()) return alert("Vui lòng nhập Tên cột.");
+        if (groupA.length === 0) return alert("Vui lòng chọn ít nhất 1 mục cho Tử số (Nhóm A).");
+        if (groupB.length === 0) return alert("Vui lòng chọn ít nhất 1 mục cho Mẫu số (Nhóm B).");
 
         dispatch('save', {
             id: editItem ? editItem.id : `eff_${Date.now()}`,
             label, 
             groupA, 
             groupB, 
-            // [LOGIC MỚI] Nếu là Admin, target = 0 (để cấu hình ở chỗ khác). Nếu User, lấy giá trị nhập.
             target: isAdmin ? 0 : target, 
             type, 
             modeA, 
@@ -12262,145 +12438,148 @@ export const formatters = {
 
 {#if isOpen}
 <div class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm" on:click={close} role="button" tabindex="0">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" on:click|stopPropagation>
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden" on:click|stopPropagation>
         
         <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
                 <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    {editItem ? 'Chỉnh sửa' : 'Thêm'} Cột Tỷ lệ Nhóm hàng
+                    {editItem ? 'Chỉnh sửa' : 'Thêm'} Chỉ số Hiệu quả
                     {#if isAdmin}
                         <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200 uppercase">System Config</span>
                     {/if}
                 </h3>
-                <p class="text-sm text-gray-500 mt-1">Công thức tính: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
+                <p class="text-sm text-gray-500 mt-1">Công thức: (Tổng Nhóm A / Tổng Nhóm B) * 100%</p>
             </div>
             <button on:click={close} class="text-gray-400 hover:text-red-500 transition-colors text-3xl leading-none">&times;</button>
         </div>
 
         <div class="p-6 overflow-y-auto flex-1 custom-scrollbar bg-white">
             
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="space-y-4">
-                    <div>
-                        <label for="col-label" class="block text-sm font-bold text-gray-700 mb-1">Tên hiển thị (Label)</label>
-                        <input id="col-label" type="text" bind:value={label} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="VD: % Gia dụng, % Phụ kiện...">
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        {#if !isAdmin}
-                            <div>
-                                <label for="col-target" class="block text-sm font-bold text-gray-700 mb-1">Mục tiêu khai thác (%)</label>
-                                <input id="col-target" type="number" bind:value={target} class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
-                            </div>
-                        {:else}
-                            <div class="col-span-1 flex items-center p-2 bg-gray-100 rounded text-xs text-gray-500 italic">
-                                Target được thiết lập riêng tại module "Thiết lập mục tiêu".
-                            </div>
-                        {/if}
-                        
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Loại dữ liệu tính</label>
-                            <div class="flex flex-col gap-2 mt-1">
-                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="DTTL" class="mr-2 accent-blue-600"> Doanh thu Thực</label>
-                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="DTQD" class="mr-2 accent-blue-600"> Doanh thu QĐ</label>
-                                <label class="cursor-pointer flex items-center text-sm"><input type="radio" bind:group={type} value="SL" class="mr-2 accent-blue-600"> Số lượng</label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    {#if !isAdmin}
-                        <div class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-xs text-yellow-800 leading-relaxed">
-                            <strong>Lưu ý:</strong> Nếu tỷ lệ của nhân viên nhỏ hơn Mục tiêu, ô sẽ được tô đỏ. Ngược lại sẽ có màu xanh.
-                        </div>
-                    {/if}
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-sm">
+                <div>
+                    <label for="col-label" class="block text-xs font-bold text-gray-500 uppercase mb-1">Tên hiển thị</label>
+                    <input id="col-label" type="text" bind:value={label} class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold" placeholder="VD: % Gia dụng...">
                 </div>
 
-                <div class="hidden lg:flex items-center justify-center bg-blue-50 rounded-lg border border-blue-100 p-6 text-center">
-                    <div>
-                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <h4 class="font-bold text-blue-800 mb-1">Hướng dẫn chọn nhóm</h4>
-                        <p class="text-sm text-blue-700">
-                            <strong>Nhóm A (Tử số):</strong> Các nhóm hàng con cần tính tỷ lệ (VD: Nồi cơm, Bếp ga...).<br>
-                            <strong>Nhóm B (Mẫu số):</strong> Ngành hàng mẹ để so sánh (VD: Gia dụng, CE...).
-                        </p>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Loại dữ liệu</label>
+                    <div class="flex gap-4 mt-2">
+                        <label class="flex items-center text-sm cursor-pointer"><input type="radio" bind:group={type} value="DTTL" class="mr-1.5 accent-blue-600"> DT Thực</label>
+                        <label class="flex items-center text-sm cursor-pointer"><input type="radio" bind:group={type} value="DTQD" class="mr-1.5 accent-purple-600"> DT QĐ</label>
+                        <label class="flex items-center text-sm cursor-pointer"><input type="radio" bind:group={type} value="SL" class="mr-1.5 accent-green-600"> Số lượng</label>
                     </div>
                 </div>
+
+                {#if !isAdmin}
+                    <div>
+                        <label for="col-target" class="block text-xs font-bold text-gray-500 uppercase mb-1">Mục tiêu (%)</label>
+                        <input id="col-target" type="number" bind:value={target} class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="80">
+                    </div>
+                {/if}
             </div>
 
-            <hr class="my-6 border-gray-200">
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[450px]">
-                <div class="flex flex-col border rounded-xl overflow-hidden border-gray-300 shadow-sm">
-                    <div class="p-3 bg-blue-50 border-b border-blue-100">
-                        <h4 class="font-bold text-blue-800 text-sm uppercase">Tên Nhóm A (Tử số)</h4>
-                        <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
-                            <label class="flex items-center cursor-pointer hover:text-blue-700">
-                                <input type="radio" bind:group={modeA} value="group" class="mr-1 accent-blue-600"> Nhóm hàng
-                            </label>
-                            <label class="flex items-center cursor-pointer hover:text-blue-700">
-                                <input type="radio" bind:group={modeA} value="category" class="mr-1 accent-blue-600"> Ngành hàng
-                            </label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-[500px]">
+                
+                <div class="flex flex-col border rounded-xl overflow-hidden border-blue-200 shadow-sm">
+                    <div class="p-3 bg-blue-50 border-b border-blue-200 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-bold text-blue-800 text-sm uppercase">Tử số (Nhóm A)</h4>
+                            <span class="text-xs text-blue-600 font-medium">{groupA.length} đã chọn</span>
                         </div>
-                    </div>
-                    
-                    <div class="p-2 border-b border-gray-200 bg-white">
-                        <input type="text" bind:value={searchA} class="w-full p-2 border border-gray-300 rounded text-sm focus:border-blue-500 outline-none" placeholder="Tìm kiếm...">
-                    </div>
-
-                    <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
-                        <div class="mb-2 px-2 flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-500">{groupA.length} đã chọn</span>
-                            <button class="text-xs text-blue-600 hover:underline font-medium" on:click={() => toggleAll(true, filteredListA)}>
-                                {groupA.length === filteredListA.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                            </button>
-                        </div>
-                        <div class="space-y-1">
-                            {#each filteredListA as item}
-                                <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-blue-200 group">
-                                    <input type="checkbox" checked={groupA.includes(item)} on:change={() => groupA = toggleSelection(groupA, item)} class="mr-3 w-4 h-4 accent-blue-600 rounded border-gray-300">
-                                    <span class="text-sm text-gray-700 group-hover:text-blue-700">{item}</span>
-                                </label>
-                            {/each}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="flex flex-col border rounded-xl overflow-hidden border-gray-300 shadow-sm">
-                    <div class="p-3 bg-green-50 border-b border-green-100">
-                        <h4 class="font-bold text-green-800 text-sm uppercase">Tên Nhóm B (Mẫu số)</h4>
-                        <div class="flex gap-4 mt-2 text-xs font-medium text-gray-600">
-                            <label class="flex items-center cursor-pointer hover:text-green-700">
-                                <input type="radio" bind:group={modeB} value="group" class="mr-1 accent-green-600"> Nhóm hàng
+                        <div class="flex bg-white rounded p-0.5 border border-blue-100">
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeA === 'group' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeA} value="group" class="hidden"> Nhóm
                             </label>
-                            <label class="flex items-center cursor-pointer hover:text-green-700">
-                                <input type="radio" bind:group={modeB} value="category" class="mr-1 accent-green-600"> Ngành hàng
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeA === 'category' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeA} value="category" class="hidden"> Ngành
                             </label>
                         </div>
                     </div>
                     
-                    <div class="p-2 border-b border-gray-200 bg-white">
-                        <input type="text" bind:value={searchB} class="w-full p-2 border border-gray-300 rounded text-sm focus:border-green-500 outline-none" placeholder="Tìm kiếm...">
+                    <div class="p-2 border-b border-blue-100 bg-white relative">
+                        <input type="text" bind:value={searchA} class="w-full pl-8 p-2 border border-gray-200 rounded text-sm focus:border-blue-500 outline-none" placeholder="Tìm kiếm...">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-4 top-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     </div>
 
                     <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
-                        <div class="mb-2 px-2 flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-500">{groupB.length} đã chọn</span>
-                            <button class="text-xs text-green-600 hover:underline font-medium" on:click={() => toggleAll(false, filteredListB)}>
-                                {groupB.length === filteredListB.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                        <div class="flex justify-end mb-2 px-1">
+                            <button class="text-xs text-blue-600 hover:underline font-bold" on:click={() => toggleAll(true, visibleListA)}>
+                                {groupA.length > 0 && visibleListA.every(i => groupA.includes(i.id)) ? 'Bỏ chọn hiển thị' : 'Chọn hiển thị'}
                             </button>
                         </div>
                         <div class="space-y-1">
-                            {#each filteredListB as item}
-                                <label class="flex items-center p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-green-200 group">
-                                    <input type="checkbox" checked={groupB.includes(item)} on:change={() => groupB = toggleSelection(groupB, item)} class="mr-3 w-4 h-4 accent-green-600 rounded border-gray-300">
-                                    <span class="text-sm text-gray-700 group-hover:text-green-700">{item}</span>
+                            {#each visibleListA as item (item.id)}
+                                {@const isChecked = groupA.includes(item.id)}
+                                <label 
+                                    class="flex items-center p-2 rounded cursor-pointer transition-all select-none border
+                                    {isChecked ? 'bg-blue-100 border-blue-300 shadow-sm' : 'bg-white border-transparent hover:bg-white hover:border-gray-200'}"
+                                >
+                                    <input type="checkbox" checked={isChecked} on:change={() => toggleSelection(true, item.id)} class="mr-3 w-4 h-4 accent-blue-600 rounded border-gray-300">
+                                    <span class="text-sm {isChecked ? 'font-bold text-blue-800' : 'text-gray-700'} truncate" title={item.display}>
+                                        {item.display}
+                                    </span>
+                                    {#if isChecked}
+                                        <span class="ml-auto text-xs bg-blue-200 text-blue-800 px-1.5 rounded">✔</span>
+                                    {/if}
                                 </label>
                             {/each}
+                            {#if visibleListA.length === 0}
+                                <p class="text-center text-gray-400 text-xs py-4">Không tìm thấy dữ liệu.</p>
+                            {/if}
                         </div>
                     </div>
                 </div>
+
+                <div class="flex flex-col border rounded-xl overflow-hidden border-green-200 shadow-sm">
+                    <div class="p-3 bg-green-50 border-b border-green-200 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-bold text-green-800 text-sm uppercase">Mẫu số (Nhóm B)</h4>
+                            <span class="text-xs text-green-600 font-medium">{groupB.length} đã chọn</span>
+                        </div>
+                        <div class="flex bg-white rounded p-0.5 border border-green-100">
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeB === 'group' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeB} value="group" class="hidden"> Nhóm
+                            </label>
+                            <label class="cursor-pointer px-2 py-0.5 text-xs rounded transition-colors {modeB === 'category' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}">
+                                <input type="radio" bind:group={modeB} value="category" class="hidden"> Ngành
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="p-2 border-b border-green-100 bg-white relative">
+                        <input type="text" bind:value={searchB} class="w-full pl-8 p-2 border border-gray-200 rounded text-sm focus:border-green-500 outline-none" placeholder="Tìm kiếm...">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-4 top-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    </div>
+
+                    <div class="flex-grow overflow-y-auto p-2 bg-slate-50 custom-scrollbar">
+                        <div class="flex justify-end mb-2 px-1">
+                            <button class="text-xs text-green-600 hover:underline font-bold" on:click={() => toggleAll(false, visibleListB)}>
+                                {groupB.length > 0 && visibleListB.every(i => groupB.includes(i.id)) ? 'Bỏ chọn hiển thị' : 'Chọn hiển thị'}
+                            </button>
+                        </div>
+                        <div class="space-y-1">
+                            {#each visibleListB as item (item.id)}
+                                {@const isChecked = groupB.includes(item.id)}
+                                <label 
+                                    class="flex items-center p-2 rounded cursor-pointer transition-all select-none border
+                                    {isChecked ? 'bg-green-100 border-green-300 shadow-sm' : 'bg-white border-transparent hover:bg-white hover:border-gray-200'}"
+                                >
+                                    <input type="checkbox" checked={isChecked} on:change={() => toggleSelection(false, item.id)} class="mr-3 w-4 h-4 accent-green-600 rounded border-gray-300">
+                                    <span class="text-sm {isChecked ? 'font-bold text-green-800' : 'text-gray-700'} truncate" title={item.display}>
+                                        {item.display}
+                                    </span>
+                                    {#if isChecked}
+                                        <span class="ml-auto text-xs bg-green-200 text-green-800 px-1.5 rounded">✔</span>
+                                    {/if}
+                                </label>
+                            {/each}
+                            {#if visibleListB.length === 0}
+                                <p class="text-center text-gray-400 text-xs py-4">Không tìm thấy dữ liệu.</p>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -16341,15 +16520,28 @@ export const masterReportLogic = {
     import { onMount } from 'svelte';
     import { categoryStructure, macroCategoryConfig } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
+    import { parseIdentity } from '../../../utils.js';
 
     let localConfigs = []; 
     let isSaving = false;
     let editingId = null; 
     let itemSearch = '';
 
-    // [CẬP NHẬT] Lấy danh sách Ngành Hàng (Category) thay vì Nhóm Hàng (Group)
-    // Để hiển thị danh sách tick chọn ngắn gọn hơn
-    $: rawCategories = [...new Set(($categoryStructure || []).map(c => c.nganhHang).filter(Boolean))].sort();
+    // Lấy danh sách Ngành Hàng (Category) kèm ID
+    $: rawCategoriesWithId = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nganhHang) return;
+            const parsed = parseIdentity(c.nganhHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
     
     $: if ($macroCategoryConfig) {
         localConfigs = JSON.parse(JSON.stringify($macroCategoryConfig));
@@ -16369,17 +16561,27 @@ export const masterReportLogic = {
         localConfigs = localConfigs.filter(g => g.id !== id);
     }
 
-    function toggleItem(groupId, itemName) {
+    function toggleItem(groupId, itemId) {
         const groupIndex = localConfigs.findIndex(g => g.id === groupId);
         if (groupIndex === -1) return;
 
         const currentItems = new Set(localConfigs[groupIndex].items || []);
-        if (currentItems.has(itemName)) {
-            currentItems.delete(itemName);
+        if (currentItems.has(itemId)) {
+            currentItems.delete(itemId);
         } else {
-            currentItems.add(itemName);
+            currentItems.add(itemId);
         }
         localConfigs[groupIndex].items = [...currentItems];
+    }
+
+    // [MỚI] Hàm xóa sạch lựa chọn (fix lỗi dữ liệu ma)
+    function clearSelection(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        
+        if (confirm(`Bạn muốn xóa sạch danh sách chọn của nhóm "${localConfigs[groupIndex].name}" để chọn lại từ đầu?`)) {
+            localConfigs[groupIndex].items = [];
+        }
     }
 
     async function handleSave() {
@@ -16395,14 +16597,14 @@ export const masterReportLogic = {
     }
 
     // Filter items cho việc chọn
-    $: filteredRawCategories = rawCategories.filter(g => g.toLowerCase().includes(itemSearch.toLowerCase()));
+    $: filteredRawCategories = rawCategoriesWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
 </script>
 
 <div class="space-y-4">
     <div class="flex justify-between items-center mb-4">
         <p class="text-sm text-gray-500">
             Định nghĩa các nhóm lớn (VD: Gom "Điện thoại", "Laptop" vào nhóm "ICT").
-            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Danh sách dưới đây là các Ngành Hàng (Category).</span>
+            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
         </p>
         <div class="flex gap-2">
             <button 
@@ -16451,27 +16653,35 @@ export const masterReportLogic = {
 
                     {#if editingId === group.id}
                         <div class="p-4 border-t border-gray-200 bg-white animate-fade-in">
-                            <div class="mb-2">
+                            <div class="mb-2 flex gap-2">
                                 <input 
                                     type="text" 
-                                    class="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-blue-500" 
+                                    class="flex-1 p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-blue-500" 
                                     placeholder="🔍 Tìm kiếm ngành hàng..." 
                                     bind:value={itemSearch}
                                 />
+                                <button 
+                                    class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1"
+                                    on:click={() => clearSelection(group.id)}
+                                    title="Xóa sạch mục đã chọn để chọn lại"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Làm sạch ({group.items?.length || 0})
+                                </button>
                             </div>
                             
                             <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
-                                {#each filteredRawCategories as rawItem}
-                                    {@const isChecked = group.items.includes(rawItem)}
+                                {#each filteredRawCategories as item}
+                                    {@const isChecked = group.items.includes(item.id)}
                                     <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
                                         <input 
                                             type="checkbox" 
                                             checked={isChecked} 
-                                            on:change={() => toggleItem(group.id, rawItem)}
+                                            on:change={() => toggleItem(group.id, item.id)}
                                             class="rounded text-blue-600 focus:ring-blue-500"
                                         />
-                                        <span class="text-xs text-gray-700 truncate" title={rawItem}>
-                                            {rawItem}
+                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
+                                            {item.display}
                                         </span>
                                     </label>
                                 {/each}
@@ -16495,15 +16705,28 @@ export const masterReportLogic = {
     import { onMount } from 'svelte';
     import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
-    import { cleanCategoryName } from '../../../utils.js';
+    import { parseIdentity } from '../../../utils.js';
 
     let localConfigs = []; 
     let isSaving = false;
     let editingId = null; 
     let itemSearch = '';
 
-    // [MỚI] Lấy danh sách Nhóm Hàng (Product Group) để tick chọn
-    $: rawProductGroups = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
+    // Lấy danh sách Nhóm Hàng (Product Group) kèm ID để tick chọn
+    $: rawProductGroupsWithId = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nhomHang) return;
+            const parsed = parseIdentity(c.nhomHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
     
     $: if ($macroProductGroupConfig) {
         localConfigs = JSON.parse(JSON.stringify($macroProductGroupConfig));
@@ -16523,17 +16746,27 @@ export const masterReportLogic = {
         localConfigs = localConfigs.filter(g => g.id !== id);
     }
 
-    function toggleItem(groupId, itemName) {
+    function toggleItem(groupId, itemId) {
         const groupIndex = localConfigs.findIndex(g => g.id === groupId);
         if (groupIndex === -1) return;
 
         const currentItems = new Set(localConfigs[groupIndex].items || []);
-        if (currentItems.has(itemName)) {
-            currentItems.delete(itemName);
+        if (currentItems.has(itemId)) {
+            currentItems.delete(itemId);
         } else {
-            currentItems.add(itemName);
+            currentItems.add(itemId);
         }
         localConfigs[groupIndex].items = [...currentItems];
+    }
+
+    // [MỚI] Hàm xóa sạch lựa chọn
+    function clearSelection(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        
+        if (confirm(`Bạn muốn xóa sạch danh sách chọn của nhóm "${localConfigs[groupIndex].name}" để chọn lại từ đầu?`)) {
+            localConfigs[groupIndex].items = [];
+        }
     }
 
     async function handleSave() {
@@ -16549,14 +16782,14 @@ export const masterReportLogic = {
     }
 
     // Filter items cho việc chọn
-    $: filteredRawGroups = rawProductGroups.filter(g => g.toLowerCase().includes(itemSearch.toLowerCase()));
+    $: filteredRawGroups = rawProductGroupsWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
 </script>
 
 <div class="space-y-4">
     <div class="flex justify-between items-center mb-4">
         <p class="text-sm text-gray-500">
             Định nghĩa các nhóm hàng lớn (VD: Gom "Nồi cơm", "Bếp ga" vào nhóm "Gia dụng nhà bếp").
-            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Danh sách dưới đây là các Nhóm Hàng (Product Group).</span>
+            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
         </p>
         <div class="flex gap-2">
             <button 
@@ -16605,27 +16838,35 @@ export const masterReportLogic = {
 
                     {#if editingId === group.id}
                         <div class="p-4 border-t border-gray-200 bg-white animate-fade-in">
-                            <div class="mb-2">
+                            <div class="mb-2 flex gap-2">
                                 <input 
                                     type="text" 
-                                    class="w-full p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" 
+                                    class="flex-1 p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" 
                                     placeholder="🔍 Tìm kiếm nhóm hàng..." 
                                     bind:value={itemSearch}
                                 />
+                                <button 
+                                    class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1"
+                                    on:click={() => clearSelection(group.id)}
+                                    title="Xóa sạch mục đã chọn để chọn lại"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Làm sạch ({group.items?.length || 0})
+                                </button>
                             </div>
                             
                             <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
-                                {#each filteredRawGroups as rawItem}
-                                    {@const isChecked = group.items.includes(rawItem)}
+                                {#each filteredRawGroups as item}
+                                    {@const isChecked = group.items.includes(item.id)}
                                     <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-teal-50 border-teal-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
                                         <input 
                                             type="checkbox" 
                                             checked={isChecked} 
-                                            on:change={() => toggleItem(group.id, rawItem)}
+                                            on:change={() => toggleItem(group.id, item.id)}
                                             class="rounded text-teal-600 focus:ring-teal-500"
                                         />
-                                        <span class="text-xs text-gray-700 truncate" title={rawItem}>
-                                            {rawItem}
+                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
+                                            {item.display}
                                         </span>
                                     </label>
                                 {/each}
@@ -21215,84 +21456,167 @@ export const masterReportLogic = {
 
 --- START FILE: ./src/components/realtime/summary/QdcTable.svelte ---
 <script>
-  import { afterUpdate } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { cleanCategoryName } from '../../../utils.js';
-  import { categoryStructure, macroProductGroupConfig, selectedWarehouse } from '../../../stores.js';
+  import { 
+      categoryStructure, 
+      macroProductGroupConfig, 
+      selectedWarehouse 
+  } from '../../../stores.js';
   import { datasyncService } from '../../../services/datasync.service.js';
+  import { adminService } from '../../../services/admin.service.js';
 
   export let items = []; 
-  // Loại bỏ props activeConfig vì ta sẽ tự load từ kho
-  
+  export let numDays = 1;
+
   let isSettingsOpen = false;
   let filterSearch = '';
-  let localFilter = []; 
   let saveTimer;
+  let localConfig = []; 
 
-  // 1. Data Sources
-  $: allGroupsFromStructure = [...new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean))].sort();
-  $: allMacroGroups = ($macroProductGroupConfig || []).map(m => m.name);
-  $: allPresentGroups = items.map(i => i.name).sort();
-  $: allGroups = [...new Set([...allGroupsFromStructure, ...allMacroGroups, ...allPresentGroups])].sort();
+  // Bảng màu rực rỡ cho thanh tiến trình
+  const BAR_COLORS = [
+      'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-400',
+      'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500',
+      'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
+      'bg-violet-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
+  ];
 
-  $: filterList = allGroups.filter(name => 
-      name.toLowerCase().includes(filterSearch.toLowerCase())
+  // 1. Load config Nhóm Hàng Lớn nếu chưa có
+  onMount(async () => {
+      if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
+          try {
+              const configs = await adminService.loadMacroProductGroupConfig();
+              macroProductGroupConfig.set(configs);
+          } catch (e) {
+              console.error("Lỗi load Macro Product Groups:", e);
+          }
+      }
+  });
+
+  // 2. Tạo danh sách Filter (Ưu tiên Nhóm Lớn lên đầu)
+  $: allGroups = (() => {
+      // A. Nhóm Lớn
+      const macroNames = ($macroProductGroupConfig || []).map(m => ({
+          name: m.name,
+          type: 'macro'
+      })).sort((a, b) => a.name.localeCompare(b.name));
+
+      // B. Nhóm Thường
+      const structureNames = new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean));
+      const presentNames = new Set(items.map(i => i.name).filter(Boolean));
+      
+      const simpleNames = [...new Set([...structureNames, ...presentNames])]
+          .sort()
+          .map(name => ({
+              name: name,
+              type: 'simple'
+          }));
+
+      return [...macroNames, ...simpleNames];
+  })();
+
+  $: filterList = allGroups.filter(g => 
+      g.name.toLowerCase().includes(filterSearch.toLowerCase())
   );
 
-  // 2. Load Config
+  // 3. Logic Load/Save Config (Dùng chung config với Lũy kế để đồng bộ trải nghiệm)
   $: if ($selectedWarehouse) {
       loadConfigForWarehouse($selectedWarehouse);
   } else {
-      localFilter = [...allGroups];
+      localConfig = allGroups.map(g => g.name);
   }
 
   async function loadConfigForWarehouse(kho) {
-      console.log(`[RTQdc] Loading config for warehouse: ${kho}`);
       try {
           const savedConfig = await datasyncService.loadQdcConfig(kho);
           if (savedConfig && Array.isArray(savedConfig)) {
-              localFilter = savedConfig;
+              localConfig = savedConfig;
           } else {
-              // [QUAN TRỌNG] Mặc định hiện tất cả nếu chưa có config
-              localFilter = [...allGroups];
+              localConfig = allGroups.map(g => g.name);
           }
       } catch (e) {
-          console.error("Error loading config:", e);
-          localFilter = [...allGroups];
+          localConfig = allGroups.map(g => g.name);
       }
   }
 
-  // 3. Update & Save Config
   function toggleQdcSelection(name) {
-      if (localFilter.includes(name)) {
-          localFilter = localFilter.filter(n => n !== name);
+      if (localConfig.includes(name)) {
+          localConfig = localConfig.filter(n => n !== name);
       } else {
-          localFilter = [...localFilter, name];
+          localConfig = [...localConfig, name];
       }
       
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
           if ($selectedWarehouse) {
-              datasyncService.saveQdcConfig($selectedWarehouse, localFilter);
+              datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
           }
-      }, 500);
+      }, 500); 
   }
 
   function toggleAllVisibility(show) {
       if (show) {
-          localFilter = [...allGroups];
+          localConfig = allGroups.map(g => g.name);
       } else {
-          localFilter = [];
+          localConfig = [];
       }
       if ($selectedWarehouse) {
-          datasyncService.saveQdcConfig($selectedWarehouse, localFilter);
+         datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
       }
   }
 
-  // 4. Render
+  // 4. Aggregation Logic (Cộng gộp Nhóm Lớn)
   $: sortedItems = (() => {
-      let candidates = items.filter(item => localFilter.includes(item.name));
-      return candidates.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+      if (localConfig.length === 0) return [];
+
+      let finalResults = [];
+      const macroConfigs = $macroProductGroupConfig || [];
+      
+      const selectedMacros = localConfig.filter(name => macroConfigs.some(m => m.name === name));
+      const selectedSimples = localConfig.filter(name => !macroConfigs.some(m => m.name === name));
+
+      // A. Xử lý Macro Group
+      selectedMacros.forEach(macroName => {
+          const config = macroConfigs.find(m => m.name === macroName);
+          if (!config) return;
+
+          const childIds = new Set(config.items || []);
+          const childItems = items.filter(i => childIds.has(i.id));
+
+          if (childItems.length > 0) {
+              // Tính tổng (Hỗ trợ cả field Realtime và Luyke)
+              const aggregatedItem = {
+                  id: config.id, 
+                  name: config.name,
+                  isMacro: true, 
+                  dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || i.revenueQuyDoi || 0), 0),
+                  dt: childItems.reduce((sum, i) => sum + (i.dt || i.revenue || 0), 0),
+                  quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.soLuong || i.sl || 0), 0),
+                  _children: childItems 
+              };
+              finalResults.push(aggregatedItem);
+          } 
+      });
+
+      // B. Xử lý Simple Items
+      selectedSimples.forEach(simpleName => {
+          const item = items.find(i => i.name === simpleName);
+          if (item) {
+              // Chuẩn hóa data field nếu cần để hiển thị thống nhất
+              finalResults.push({ 
+                  ...item, 
+                  dtqd: (item.dtqd || item.revenueQuyDoi || 0),
+                  dt: (item.dt || item.revenue || 0),
+                  quantity: (item.quantity || item.soLuong || item.sl || 0),
+                  isMacro: false 
+              });
+          }
+      });
+
+      // Sắp xếp giảm dần theo doanh thu QĐ
+      return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
@@ -21303,86 +21627,125 @@ export const masterReportLogic = {
       }
   }
 
-  afterUpdate(() => { if (window.feather) feather.replace(); });
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') feather.replace();
+  });
 </script>
 
 <svelte:window on:click={handleWindowClick} />
 
-<div class="luyke-widget h-full">
-  <div class="luyke-widget-header">
-    <div class="luyke-widget-title">
-      <div class="p-1.5 bg-yellow-100 rounded text-yellow-600 mr-2">
-          <i data-feather="star" class="w-4 h-4"></i>
+<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden h-full flex flex-col">
+  <div class="p-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+    <div class="flex items-center gap-2 font-bold text-slate-700 text-sm uppercase">
+      <div class="p-1.5 bg-blue-100 rounded text-blue-600">
+          <i data-feather="zap" class="w-4 h-4"></i>
       </div>
-      <span>TOP NHÓM HÀNG (REALTIME)</span>
+      <span>TOP NHÓM HÀNG</span>
     </div>
 
     <div class="relative filter-wrapper">
-        <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Chọn nhóm hàng hiển thị">
-            <i data-feather="filter" class="w-4 h-4"></i>
+        <button class="p-1.5 hover:bg-gray-100 rounded text-gray-500 transition-colors {isSettingsOpen ? 'bg-blue-50 text-blue-600' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Chọn nhóm hàng">
+             <i data-feather="filter" class="w-4 h-4"></i>
         </button>
-         {#if isSettingsOpen}
-            <div class="filter-dropdown">
-                <div class="filter-header">
-                     <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
+        {#if isSettingsOpen}
+            <div class="absolute right-0 top-full mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 flex flex-col overflow-hidden">
+                <div class="p-2 border-b border-gray-100 bg-gray-50">
+                    <input type="text" class="w-full p-1.5 text-xs border border-gray-300 rounded focus:border-blue-500 outline-none" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
                 </div>
-                <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+                <div class="overflow-y-auto custom-scrollbar p-1" style="max-height: 250px;">
                     {#if filterList.length === 0}
                          <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
-                        {#each filterList as name}
-                            {@const isChecked = localFilter.includes(name)}
-                            <div class="filter-item" on:click={() => toggleQdcSelection(name)}>
-                                 <input type="checkbox" checked={isChecked} />
-                                <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{name}</label>
+                        {#each filterList as group}
+                            {@const isChecked = localConfig.includes(group.name)}
+                            <div class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer" on:click={() => toggleQdcSelection(group.name)}>
+                                 <input type="checkbox" checked={isChecked} class="rounded text-blue-600 focus:ring-blue-500" />
+                                 {#if group.type === 'macro'}
+                                    <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} text-xs flex items-center gap-1 cursor-pointer flex-1">
+                                        <i data-feather="layers" class="w-3 h-3"></i>
+                                        {group.name}
+                                    </label>
+                                 {:else}
+                                    <label class="{isChecked ? 'font-bold text-blue-700' : 'text-gray-700'} text-xs cursor-pointer flex-1">{group.name}</label>
+                                 {/if}
                             </div>
                         {/each}
                     {/if}
-                </div>
-                 <div class="filter-actions">
-                    <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
-                    <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                 </div>
+                <div class="p-2 border-t border-gray-100 bg-gray-50 flex justify-between text-xs">
+                    <button class="text-blue-600 font-semibold hover:underline" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                    <button class="text-red-600 font-semibold hover:underline" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
                 </div>
             </div>
         {/if}
     </div>
   </div>
 
-  <div class="luyke-widget-body custom-scrollbar">
+  <div class="custom-scrollbar flex-1 overflow-y-auto p-2">
     {#if sortedItems.length === 0}
-       <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
-           <p class="text-sm">Chưa có dữ liệu.</p>
-           {#if items.length > 0}
-             <p class="text-xs mt-1">Bạn đã ẩn tất cả.</p>
-           {/if}
+        <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+          <p class="text-sm">Không có dữ liệu hiển thị.</p>
+          {#if items.length > 0}
+             <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
+          {/if}
        </div>
     {:else}
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
           {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
-          <div class="py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50 transition-colors px-1">
+          
+          {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
+          
+          <div class="py-2.5 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1.5 rounded
+                      {item.isMacro ? 'bg-teal-50/40 hover:bg-teal-50/60' : 'hover:bg-gray-50'}">
+            
             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
+               
                <div class="flex-grow min-w-0">
-                    <div class="flex justify-between items-center mb-1">
-                       <span class="text-sm font-semibold text-gray-700 truncate pr-2" title={item.name}>{item.name}</span>
-                       <span class="text-sm font-bold text-blue-600 whitespace-nowrap">{formatters.formatRevenue(item.dtqd)}</span>
+                   <div class="flex justify-between items-center mb-1.5">
+                       <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1.5 {item.isMacro ? 'text-teal-800' : 'text-slate-700'}" title={item.name}>
+                           {#if item.isMacro}
+                                <i data-feather="layers" class="w-3.5 h-3.5 text-teal-600"></i>
+                           {/if}
+                           {item.name}
+                       </span>
+                       <span class="text-sm font-bold whitespace-nowrap text-slate-800">
+                           {formatters.formatRevenue(item.dtqd)}
+                       </span>
                    </div>
-                   <div class="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
-                       <div class="h-full bg-yellow-400 rounded-full" style="width: {percent}%"></div>
+                   
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1.5 shadow-inner">
+                        <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
+                   </div>
+                   
+                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1 font-medium">
+                       <div class="flex gap-3">
+                           <span>DT: <strong class="text-slate-600">{formatters.formatRevenue(item.dt)}</strong></span>
+                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                       </div>
+                       <div class="flex gap-3">
+                           <span>SL: {formatters.formatNumber(item.quantity)}</span>
+                           {#if numDays > 1}
+                                <span>TB: <strong>{formatters.formatNumber(item.quantity / numDays, 0)}</strong>/ngày</span>
+                           {/if}
+                       </div>
                     </div>
-                   <div class="flex justify-between text-[10px] text-gray-500">
-                       <span>DT: <strong>{formatters.formatRevenue(item.dt || item.revenue)}</strong></span>
-                       <span>SL: <strong>{formatters.formatNumber(item.sl || item.quantity)}</strong></span>
-                   </div>
                </div>
             </div>
-           </div>
+          </div>
         {/each}
       </div>
     {/if}
   </div>
 </div>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
 --- END FILE: ./src/components/realtime/summary/QdcTable.svelte ---
 
 --- START FILE: ./src/components/realtime/summary/SummaryTab.svelte ---
