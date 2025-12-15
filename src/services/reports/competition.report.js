@@ -1,5 +1,5 @@
 // src/services/reports/competition.report.js
-// Version 1.0 - Competition logic
+// Version 1.1 - Fix: Include maKho in result for Realtime filtering
 import { get } from 'svelte/store';
 import * as utils from '../../utils.js';
 import { dataProcessing } from '../dataProcessing.js';
@@ -54,7 +54,13 @@ export const competitionReportLogic = {
                     return msnvMatch && msnvMatch[1].trim() === employee.maNV;
                 });
                 if (employeeSales.length === 0) {
-                    return { ...employee, ...stats, tyLeSL: 0, tyLeDT: 0 };
+                    return { 
+                        ...employee, 
+                        maKho: employee.maKho, // [FIX] Ensure maKho is preserved
+                        ...stats, 
+                        tyLeSL: 0, 
+                        tyLeDT: 0 
+                    };
                 }
 
                 employeeSales.forEach(row => {
@@ -77,6 +83,7 @@ export const competitionReportLogic = {
                     maNV: employee.maNV,
                     hoTen: employee.hoTen,
                     boPhan: employee.boPhan,
+                    maKho: employee.maKho, // [FIX] Add maKho here
                     ...stats,
                     tyLeSL,
                     tyLeDT
@@ -102,7 +109,7 @@ export const competitionReportLogic = {
             const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
             const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
                                  (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
-                                 (row.tinhTrangTra || "").trim() === 'Chưa trả' &&
+                                (row.tinhTrangTra || "").trim() === 'Chưa trả' &&
                                 (row.trangThaiXuat || "").trim() === 'Đã xuất';
             return isBaseValid && isDoanhThuHTX;
         });
@@ -138,7 +145,7 @@ export const competitionReportLogic = {
                 let baseCategoryQuantity = 0;
 
                 baseSalesData.forEach(row => {
-                    const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+                     const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
                      if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                         const revenueValue = (parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0);
                         const quantityValue = (parseInt(String(row.soLuong || "0"), 10) || 0);
@@ -163,6 +170,7 @@ export const competitionReportLogic = {
                     maNV: employee.maNV,
                     hoTen: employee.hoTen,
                     boPhan: employee.boPhan,
+                    maKho: employee.maKho, // [FIX] Add maKho here so filter works
                     performanceByBrand,
                     targetBrandsRevenue: totalTargetRevenue,
                     targetBrandsQuantity: totalTargetQuantity,

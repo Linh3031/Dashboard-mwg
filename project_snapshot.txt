@@ -476,7 +476,7 @@ File: src/components/DataSection.svelte
 
 <script>
   /* global feather */
-  import { onMount, onDestroy } from 'svelte'; // [FIX] Thêm onDestroy
+  import { onMount, onDestroy } from 'svelte'; 
   
   import FileInput from './common/FileInput.svelte';
   import PasteInput from './common/PasteInput.svelte';
@@ -485,7 +485,7 @@ File: src/components/DataSection.svelte
       warehouseList,
       selectedWarehouse,
       notificationStore,
-      danhSachNhanVien // [FIX] Import thêm store DSNV để lắng nghe
+      danhSachNhanVien
   } from '../stores.js';
   
   import { dataService } from '../services/dataService.js';
@@ -493,7 +493,7 @@ File: src/components/DataSection.svelte
   export let activeTab;
   
   let isSyncing = false;
-  let dsnvUnsubscribe; // Biến để hủy lắng nghe
+  let dsnvUnsubscribe; 
 
   onMount(async () => {
     if (typeof feather !== 'undefined') {
@@ -505,15 +505,14 @@ File: src/components/DataSection.svelte
         console.log(`[DataSection] Phát hiện kho đã lưu: ${savedWh}. Đang chờ DSNV...`);
         selectedWarehouse.set(savedWh);
         
-        // [FIX QUAN TRỌNG] Thay vì gọi sync ngay, ta lắng nghe DSNV
-        // Chỉ khi DSNV tải xong (length > 0) thì mới bắt đầu đồng bộ các dữ liệu khác
-        // Điều này đảm bảo logic map nhân viên không bị lỗi "0 NV"
+        // Load settings ngay lập tức khi khôi phục kho từ localStorage
+        await dataService.loadWarehouseSettings(savedWh); 
+
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
             if (data && data.length > 0) {
                 console.log(`[DataSection] DSNV đã sẵn sàng (${data.length} dòng). Tiến hành đồng bộ kho ${savedWh}.`);
                 await triggerSync(savedWh);
                 
-                // Đồng bộ xong thì hủy lắng nghe để không gọi lại thừa thãi
                 if (dsnvUnsubscribe) {
                     dsnvUnsubscribe();
                     dsnvUnsubscribe = null;
@@ -523,7 +522,6 @@ File: src/components/DataSection.svelte
     }
   });
 
-  // Hủy lắng nghe khi component bị hủy (để an toàn)
   onDestroy(() => {
       if (dsnvUnsubscribe) dsnvUnsubscribe();
   });
@@ -532,13 +530,13 @@ File: src/components/DataSection.svelte
       if (!warehouse) return;
       isSyncing = true;
       try {
-          const result = await dataService.syncDownFromCloud(warehouse);
+          // [UPDATED] Gọi song song: Đồng bộ file và Tải cấu hình
+          await Promise.all([
+              dataService.syncDownFromCloud(warehouse),
+              dataService.loadWarehouseSettings(warehouse)
+          ]);
           
-          if (result && result.success) {
-               if(result.message && !result.message.includes('Đã kiểm tra')) notificationStore.show(result.message, 'success');
-          } else {
-               notificationStore.show(result?.message || "Lỗi đồng bộ không xác định", 'error');
-          }
+          notificationStore.show(`Đã đồng bộ dữ liệu cho kho ${warehouse}`, 'success');
       } catch (error) {
           console.error("Lỗi nghiêm trọng khi đồng bộ:", error);
           notificationStore.show(`Lỗi đồng bộ: ${error.message}`, 'error');
@@ -571,7 +569,7 @@ File: src/components/DataSection.svelte
 
 <section id="data-section" class="page-section {activeTab === 'data-section' ? '' : 'hidden'}"> 
     <div class="page-header">
-        <div class="flex flex-wrap items-center gap-4">
+         <div class="flex flex-wrap items-center gap-4">
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Cập nhật dữ liệu</h2>
                 <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
@@ -580,33 +578,33 @@ File: src/components/DataSection.svelte
             </div>
             
             <div id="data-warehouse-selector-container" class="flex-shrink-0 flex items-center gap-2">
-                 <label for="data-warehouse-selector" class="text-sm font-semibold text-gray-700">Kho:</label>
+                  <label for="data-warehouse-selector" class="text-sm font-semibold text-gray-700">Kho:</label>
                 <div class="relative">
                     <select 
                       id="data-warehouse-selector" 
                       class="p-2 border rounded-lg text-sm shadow-sm min-w-[200px] 
                              font-semibold text-indigo-800 bg-indigo-50 border-indigo-200 
-                           focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50" 
+                            focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50" 
                       disabled={$warehouseList.length === 0 || isSyncing}
                       value={$selectedWarehouse}
                       on:change={handleWarehouseChange}
                     >
                         {#if $warehouseList.length === 0}
-                            <option>Vui lòng tải file DSNV...</option>
+                             <option>Vui lòng tải file DSNV...</option>
                         {:else}
                             <option value="">-- Chọn Kho --</option>
                             {#each $warehouseList as kho}
-                                <option value={kho}>{kho}</option>
+                                 <option value={kho}>{kho}</option>
                             {/each}
                         {/if}
                     </select>
                     {#if isSyncing}
                         <div class="absolute right-8 top-1/2 -translate-y-1/2">
-                            <svg class="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                             <svg class="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                              </svg>
-                        </div>
+                         </div>
                     {/if}
                 </div>
              </div>
@@ -618,7 +616,7 @@ File: src/components/DataSection.svelte
     
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
         <div class="content-card data-card--blue flex flex-col gap-4"> 
-            <h3 class="content-card__header data-header--blue">
+             <h3 class="content-card__header data-header--blue">
                 <i data-feather="zap" class="h-5 w-5 feather"></i>SỬ DỤNG NHANH MỖI NGÀY
             </h3>
             
@@ -637,7 +635,7 @@ File: src/components/DataSection.svelte
             
             <PasteInput
                 label="Thi đua nhân viên"
-                icon="clipboard"
+                 icon="clipboard"
                 link="https://bi.thegioididong.com/sieu-thi-con?id=16758&tab=bcdtnv&rt=2&dm=1"
                 saveKeyPaste="daily_paste_thiduanv"
                 saveKeyRaw="raw_paste_thiduanv"
@@ -647,7 +645,7 @@ File: src/components/DataSection.svelte
         
          <div class="content-card data-card--green flex flex-col gap-4"> 
             <h3 class="content-card__header data-header--green">
-                 <i data-feather="users" class="h-5 w-5 feather"></i>CHI TIẾT NĂNG SUẤT NHÂN VIÊN
+                  <i data-feather="users" class="h-5 w-5 feather"></i>CHI TIẾT NĂNG SUẤT NHÂN VIÊN
             </h3>
             
             <FileInput
@@ -657,7 +655,7 @@ File: src/components/DataSection.svelte
              />
              
             <FileInput
-                label="Thưởng nóng"
+                 label="Thưởng nóng"
                 icon="gift"
                 saveKey="saved_thuongnong"
             />
@@ -667,7 +665,7 @@ File: src/components/DataSection.svelte
                 icon="clipboard"
                 link="https://bi.thegioididong.com/reward?id=-1&tab=1"
                 saveKeyPaste="daily_paste_thuongerp"
-            />
+             />
         </div>
     </div>
     
@@ -678,7 +676,7 @@ File: src/components/DataSection.svelte
         <p class="text-sm text-yellow-800 bg-yellow-100 p-3 rounded-lg mb-4">Lưu ý: Dữ liệu trong phần này sẽ được lưu vào trình duyệt của bạn. Dữ liệu sẽ tồn tại cho đến khi bạn cập nhật lại.</p> 
         
         <div class="grid md:grid-cols-3 gap-4"> 
-            <div class="space-y-4"> 
+             <div class="space-y-4"> 
                  <FileInput
                     label="Danh sách nhân viên"
                     icon="users"
@@ -686,7 +684,7 @@ File: src/components/DataSection.svelte
                 />
                 <FileInput
                     label="YCX Lũy Kế tháng trước"
-                    icon="file-text"
+                     icon="file-text"
                     saveKey="saved_ycx_thangtruoc"
                 />
             </div> 
@@ -694,7 +692,7 @@ File: src/components/DataSection.svelte
                   <FileInput
                      label="Thưởng nóng tháng trước"
                     icon="gift"
-                    saveKey="saved_thuongnong_thangtruoc"
+                     saveKey="saved_thuongnong_thangtruoc"
                 />
              </div> 
              <div class="space-y-4"> 
@@ -702,7 +700,7 @@ File: src/components/DataSection.svelte
                     label="Thưởng ERP tháng trước"
                     icon="clipboard"
                     link="https://bi.thegioididong.com/reward?id=-1&tab=1"
-                    saveKeyPaste="saved_thuongerp_thangtruoc"
+                     saveKeyPaste="saved_thuongerp_thangtruoc"
                 />
             </div> 
         </div> 
@@ -3475,12 +3473,14 @@ File: src/components/admin/category/CategoryUploader.svelte
 <script>
     import { categoryStructure, brandList } from '../../../stores.js';
     import { dataService } from '../../../services/dataService.js';
+    // [NEW] Import adminService để lưu
+    import { adminService } from '../../../services/admin.service.js';
 
     let isLoading = false;
+    let isSaving = false;
     let showRawData = false;
 
     // Tính toán số liệu thống kê từ Store
-    // Khi F5, adminService load dữ liệu từ Cloud vào Store -> biến này tự cập nhật -> UI hiển thị lại
     $: uniqueCategories = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nganhHang).filter(Boolean))] : [];
     $: uniqueGroups = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nhomHang).filter(Boolean))] : [];
     $: totalBrands = $brandList ? $brandList.length : 0;
@@ -3498,6 +3498,23 @@ File: src/components/admin/category/CategoryUploader.svelte
             isLoading = false;
         }
     }
+
+    // [NEW] Hàm lưu dữ liệu lên Cloud
+    async function saveToCloud() {
+        if (!hasData) return;
+        isSaving = true;
+        try {
+            await adminService.saveCategoryDataToFirestore({
+                categories: $categoryStructure,
+                brands: $brandList
+            });
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi khi lưu: " + e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
 </script>
 
 <div class="space-y-6">
@@ -3505,12 +3522,28 @@ File: src/components/admin/category/CategoryUploader.svelte
         <div class="text-sm text-gray-500 italic">
             Bước 1: Tải lên file Excel cấu trúc (Bắt buộc 3 cột: Ngành hàng, Nhóm hàng, Nhà sản xuất).
         </div>
-        <button 
-            class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
-            on:click={() => dataService.handleTemplateDownload()}
-        >
-            Tải File Mẫu
-        </button>
+        <div class="flex gap-2">
+            <button 
+                class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
+                on:click={() => dataService.handleTemplateDownload()}
+            >
+                Tải File Mẫu
+            </button>
+            
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                on:click={saveToCloud}
+                disabled={!hasData || isSaving || isLoading}
+            >
+                {#if isSaving}
+                    <svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Đang lưu...
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                    Lưu Lên Cloud
+                {/if}
+            </button>
+        </div>
     </div>
 
     <div class="p-6 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 transition-colors text-center">
@@ -4564,7 +4597,7 @@ File: src/components/drawers/GoalDrawer.svelte
         modalState,
         localCompetitionConfigs, 
         selectedWarehouse,
-        efficiencyConfig // Cấu hình admin
+        efficiencyConfig 
     } from '../../stores.js';
     import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
@@ -4583,7 +4616,7 @@ File: src/components/drawers/GoalDrawer.svelte
         localSelectedWarehouse = $selectedWarehouse || ($warehouseList.length > 0 ? $warehouseList[0] : '');
     }
 
-    // [MỚI] Khi đổi kho, tải dữ liệu từ Cloud
+    // Khi đổi kho, tải dữ liệu từ Cloud
     $: if (isOpen && localSelectedWarehouse) {
         loadGoals(localSelectedWarehouse);
     }
@@ -4591,7 +4624,6 @@ File: src/components/drawers/GoalDrawer.svelte
     async function loadGoals(kho) {
         await settingsService.loadGoalsFromCloud(kho);
         
-        // Cập nhật biến local để bind vào input
         currentLuykeGoals = { ...($luykeGoalSettings[kho] || {}) };
         
         const rtSettings = $realtimeGoalSettings[kho] || { goals: {}, timing: {} };
@@ -4629,7 +4661,7 @@ File: src/components/drawers/GoalDrawer.svelte
         settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
-    // Các hàm quản lý thi đua (giữ nguyên)
+    // Các hàm quản lý thi đua
     function openCompetitionManager() {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
@@ -4786,6 +4818,7 @@ File: src/components/drawers/GoalDrawer.svelte
                 <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
                 <button on:click={openCompetitionManager} class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"><i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới</button>
             </div>
+            
             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
                 {#if $localCompetitionConfigs.length === 0}
                     <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
@@ -4794,9 +4827,38 @@ File: src/components/drawers/GoalDrawer.svelte
                 {:else}
                     {#each $localCompetitionConfigs as config, index}
                         <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
-                            <h4 class="text-lg font-bold text-gray-800 mb-2 pr-16">{config.name}</h4>
-                            <div class="text-sm mb-1"><span class="font-semibold text-gray-600">Hãng:</span> <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span></div>
-                            <div class="absolute top-4 right-4 flex gap-2">
+                            
+                            <div class="flex justify-between items-start mb-2 pr-14">
+                                <h4 class="text-base font-bold text-gray-800 leading-tight">{config.name}</h4>
+                            </div>
+                            
+                            <div class="flex flex-wrap gap-2 mb-2">
+                                <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
+                                    {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
+                                </span>
+                                {#if config.excludeApple}
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-50 text-red-600 border border-red-100">No Apple</span>
+                                {/if}
+                            </div>
+
+                            <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 grid grid-cols-1 gap-1">
+                                <div class="flex items-start gap-1">
+                                    <span class="font-bold min-w-[35px]">Hãng:</span>
+                                    <span class="text-blue-700 font-medium">{config.brands.join(', ')}</span>
+                                </div>
+                                <div class="flex items-start gap-1">
+                                    <span class="font-bold min-w-[35px]">Nhóm:</span>
+                                    <span class="text-gray-800">
+                                        {#if config.groups.length > 0}
+                                            {config.groups.join(', ')}
+                                        {:else}
+                                            <span class="italic text-gray-400">Tất cả</span>
+                                        {/if}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="absolute top-3 right-3 flex gap-1">
                                 <button on:click={() => editCompetition(index)} class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><i data-feather="edit-2" class="w-4 h-4"></i></button>
                                 <button on:click={() => deleteCompetition(index)} class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                             </div>
@@ -11366,7 +11428,7 @@ File: src/components/modals/UserCompetitionModal.svelte
 <script>
     import { 
         modalState, 
-        localCompetitionConfigs, // [QUAN TRỌNG] Dùng biến local thay vì global
+        localCompetitionConfigs, 
         categoryStructure,
         brandList,
         selectedWarehouse
@@ -11380,7 +11442,7 @@ File: src/components/modals/UserCompetitionModal.svelte
     let editingIndex = -1;
     let isLoading = false;
     
-    // Form data chuẩn thiết kế cũ
+    // Form data
     let formData = { 
         id: '', name: '', groups: [], brands: [], 
         type: 'doanhthu', minPrice: '', maxPrice: '', excludeApple: false 
@@ -11399,13 +11461,18 @@ File: src/components/modals/UserCompetitionModal.svelte
 
     // Reset khi mở modal
     $: if (isOpen) {
-        if ($selectedWarehouse) {
-            currentView = 'menu';
+        // [FIX] Nếu có tham số editingIndex từ store (khi bấm sửa từ GoalDrawer), vào thẳng form
+        if ($modalState.editingIndex !== undefined && $modalState.editingIndex !== -1) {
+             openEditForm($modalState.editingIndex);
+        } else if ($selectedWarehouse) {
+            // Mặc định vào list nếu đã có data, menu nếu chưa
+             if ($localCompetitionConfigs.length > 0) currentView = 'list';
+             else currentView = 'menu';
         }
     }
 
     function close() {
-        modalState.update(s => ({ ...s, activeModal: null }));
+        modalState.update(s => ({ ...s, activeModal: null, editingIndex: -1 }));
         resetForm();
         currentView = 'menu';
     }
@@ -11416,7 +11483,6 @@ File: src/components/modals/UserCompetitionModal.svelte
     }
 
     function goToBrandCompetition() {
-        // Nếu chưa có chương trình nào, vào thẳng form tạo mới
         if ($localCompetitionConfigs.length === 0) {
             openAddForm();
         } else {
@@ -11443,7 +11509,6 @@ File: src/components/modals/UserCompetitionModal.svelte
     }
 
     function openEditForm(index) {
-        // [FIX] Lấy từ localCompetitionConfigs
         const config = $localCompetitionConfigs[index];
         if (!config) return;
         
@@ -11484,15 +11549,13 @@ File: src/components/modals/UserCompetitionModal.svelte
             target: 0
         };
 
-        // [FIX] Cập nhật vào localCompetitionConfigs
         let newConfigs = [...$localCompetitionConfigs];
         if (editingIndex >= 0) newConfigs[editingIndex] = configToSave;
         else newConfigs.push(configToSave);
 
-        localCompetitionConfigs.set(newConfigs); // Update Store UI ngay lập tức
+        localCompetitionConfigs.set(newConfigs);
 
         try {
-            // [FIX] Lưu vào Document của Kho (WarehouseData) thay vì Global Declarations
             await datasyncService.saveCompetitionConfigs($selectedWarehouse, newConfigs);
             if (currentView === 'form') backToList();
         } catch (error) {
@@ -11506,7 +11569,6 @@ File: src/components/modals/UserCompetitionModal.svelte
     async function deleteProgram(index) {
         if (!confirm("Xóa chương trình này?")) return;
         
-        // [FIX] Xóa từ localCompetitionConfigs
         let newConfigs = [...$localCompetitionConfigs];
         newConfigs.splice(index, 1);
         localCompetitionConfigs.set(newConfigs);
@@ -11520,7 +11582,7 @@ File: src/components/modals/UserCompetitionModal.svelte
 {#if isOpen}
     <div class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-[1100] backdrop-blur-sm" on:click={close} role="button" tabindex="0">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]" on:click|stopPropagation>
-            
+     
             <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-blue-50 rounded-t-xl">
                 <div>
                     <h3 class="text-lg font-bold text-blue-800 flex items-center gap-2">
@@ -11586,27 +11648,39 @@ File: src/components/modals/UserCompetitionModal.svelte
                             </div>
                         {:else}
                             {#each $localCompetitionConfigs as config, index}
-                                <div class="flex justify-between items-start p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition group/item">
-                                    <div>
+                                <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:border-blue-300 hover:shadow-md transition group/item">
+                                    <div class="flex justify-between items-start mb-2">
                                         <div class="flex items-center gap-2">
                                             <h4 class="font-bold text-gray-800 text-base">{config.name}</h4>
                                             <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
                                                 {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
                                             </span>
                                         </div>
-                                        <div class="text-xs text-gray-500 mt-1.5 flex flex-wrap gap-y-1 gap-x-4">
-                                            <span><strong>Hãng:</strong> {config.brands.join(', ')}</span>
-                                            {#if config.groups.length > 0}
-                                                <span><strong>Nhóm:</strong> {config.groups.join(', ')}</span>
-                                            {/if}
-                                            {#if config.excludeApple}
-                                                <span class="text-red-500 font-medium">No Apple</span>
-                                            {/if}
+                                        <div class="flex gap-2">
+                                            <button on:click={() => openEditForm(index)} class="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Sửa"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                                            <button on:click={() => deleteProgram(index)} class="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Xóa"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                                         </div>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <button on:click={() => openEditForm(index)} class="p-2 text-blue-600 hover:bg-blue-50 rounded"><i data-feather="edit-2" class="w-4 h-4"></i></button>
-                                        <button on:click={() => deleteProgram(index)} class="p-2 text-red-600 hover:bg-red-50 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                        <div class="flex items-start gap-2">
+                                            <span class="font-bold min-w-[40px]">Hãng:</span>
+                                            <span class="flex-1 font-medium text-gray-800">{config.brands.join(', ')}</span>
+                                        </div>
+                                        <div class="flex items-start gap-2">
+                                            <span class="font-bold min-w-[40px]">Nhóm:</span>
+                                            <span class="flex-1 font-medium text-gray-800">
+                                                {#if config.groups.length > 0}
+                                                    {config.groups.join(', ')}
+                                                {:else}
+                                                    <span class="text-gray-400 italic">Tất cả nhóm</span>
+                                                {/if}
+                                            </span>
+                                        </div>
+                                        {#if config.excludeApple}
+                                            <div class="col-span-full flex items-center gap-1 text-red-600 font-bold border-t border-gray-200 pt-1 mt-1">
+                                                <i data-feather="alert-circle" class="w-3 h-3"></i> Đã trừ Apple
+                                            </div>
+                                        {/if}
                                     </div>
                                 </div>
                             {/each}
@@ -12408,41 +12482,39 @@ File: src/components/realtime/competition/CompetitionTab.svelte
       realtimeYCXData, 
       globalSpecialPrograms, 
       globalCompetitionConfigs, 
-      localCompetitionConfigs,
-      selectedWarehouse // [FIX] Import store này
+      localCompetitionConfigs, // [QUAN TRỌNG] Store chứa cấu hình thi đua user
+      selectedWarehouse 
   } from '../../../stores.js';
   import { services } from '../../../services.js'; 
   
   import SpecialProgramTable from './SpecialProgramTable.svelte';
   import FocusCompetitionTable from './FocusCompetitionTable.svelte';
 
-  // [FIX] Bỏ export let selectedWarehouse
-
   let specialReportData = [];
   let competitionReportData = [];
   let hasData = false;
 
   $: {
-      // [FIX] Dùng $selectedWarehouse
       const currentWarehouse = $selectedWarehouse;
+      // [FIX] Fallback về mảng rỗng nếu chưa có dữ liệu
       let filteredData = $realtimeYCXData || [];
       
-      console.log(`[CompetitionTab] Recalculating... Rows: ${filteredData.length}, Warehouse: ${currentWarehouse}`);
-
-      // 2. Tính toán SP Đặc Quyền
+      // 1. Tính toán SP Đặc Quyền
       const spReport = services.calculateSpecialProductReport(
           filteredData, 
           $globalSpecialPrograms || []
       );
 
-      // 3. Tính toán Thi Đua Tùy Chỉnh (Hãng)
+      // 2. Tính toán Thi Đua Tùy Chỉnh (Hãng)
+      // [QUAN TRỌNG] Kết hợp cả Global và Local Configs
       const allConfigs = [ ...($globalCompetitionConfigs || []), ...($localCompetitionConfigs || []) ];
+      
       const compReport = services.calculateCompetitionFocusReport(
           filteredData,
           allConfigs
       );
 
-      // 4. Lọc kết quả theo kho
+      // 3. Lọc kết quả theo kho (Nếu đã chọn kho)
       if (currentWarehouse) {
           const filterByWarehouse = (reports) => {
               return reports.map(group => ({
@@ -12466,12 +12538,15 @@ File: src/components/realtime/competition/CompetitionTab.svelte
     {#if !hasData}
         <div class="p-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
             <p class="text-gray-500 font-medium mb-2">Chưa có dữ liệu thi đua hiển thị.</p>
-            <p class="text-xs text-gray-400">
-                Vui lòng kiểm tra: 
-                1. Đã tải file Realtime chưa? 
-                2. Đã tạo chương trình thi đua trong "Thiết lập mục tiêu" chưa?
-                3. Dữ liệu bán hàng có khớp với nhóm hàng đã chọn không?
-            </p>
+            <div class="text-xs text-gray-400 space-y-1">
+                <p>Vui lòng kiểm tra:</p>
+                <p>1. Đã tải file <strong>Realtime</strong> chưa?</p>
+                <p>2. Đã tạo chương trình thi đua trong <strong>"Thiết lập mục tiêu"</strong> chưa?</p>
+                <p>3. Dữ liệu bán hàng có khớp với <strong>Hãng/Nhóm hàng</strong> đã chọn không?</p>
+                {#if $localCompetitionConfigs.length === 0}
+                    <p class="text-orange-500 font-bold mt-2">→ Bạn chưa tạo chương trình thi đua nào cho kho này.</p>
+                {/if}
+            </div>
         </div>
     {:else}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -14956,7 +15031,7 @@ File: src/services/admin.service.js
 ================================================================================
 
 // src/services/admin.service.js
-// Version 3.3 - Add System Performance Tables Support
+// Version 3.4 - Fix: Load Category & Brand globally
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -14973,7 +15048,6 @@ import {
     efficiencyConfig,
     qdcConfigStore,
     competitionNameMappings,
-    // [NEW]
     customPerformanceTables
 } from '../stores.js';
 
@@ -15065,9 +15139,10 @@ export const adminService = {
     },
 
     async loadCategoryDataFromFirestore() {
+        // Hàm này có thể được gọi độc lập nếu cần reload thủ công
         const db = getDB();
         if (!db) return { categories: [], brands: [] };
-        await this.loadMappingsGlobal();
+        
         try {
             const catRef = doc(db, "declarations", "categoryStructure");
             const brandRef = doc(db, "declarations", "brandList");
@@ -15079,6 +15154,7 @@ export const adminService = {
             };
             const categories = getArray(catSnap);
             const brands = getArray(brandSnap);
+            
             categoryStructure.set(categories);
             brandList.set(brands);
             return { categories, brands };
@@ -15135,7 +15211,6 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const d = docSnap.data();
-                // Ưu tiên 'tables', fallback 'data'
                 const tables = d.tables || d.data || [];
                 console.log(`[AdminService] Loaded ${tables.length} system performance tables.`);
                 return tables;
@@ -15163,17 +15238,18 @@ export const adminService = {
             });
             notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
         } catch (error) { 
-            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error); 
+            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error);
             notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error'); 
         }
     },
 
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
+    // [FIX] Cập nhật hàm này để tải cả categoryStructure và brandList
     async loadMappingsGlobal() {
         const db = getDB();
         if (!db) return;
         try {
-            console.log("[admin.service] Đang tải cấu hình Mapping từ Cloud...");
+            console.log("[admin.service] Đang tải cấu hình Mapping & Data từ Cloud...");
             const safeGet = (docSnap, defaultVal = []) => {
                 if (!docSnap.exists()) return defaultVal;
                 const d = docSnap.data();
@@ -15188,8 +15264,12 @@ export const adminService = {
                 "brandNameMapping",
                 "efficiencyConfig", 
                 "qdcConfig",
-                "competitionNameMappings"
+                "competitionNameMappings",
+                // [NEW] Thêm 2 file này vào luồng tải global
+                "categoryStructure",
+                "brandList"
             ];
+            
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
             
@@ -15201,8 +15281,12 @@ export const adminService = {
             efficiencyConfig.set(safeGet(results[5])); 
             qdcConfigStore.set(safeGet(results[6]));
             competitionNameMappings.set(safeGet(results[7], {}));
+            
+            // [NEW] Cập nhật store cho cấu trúc ngành hàng và hãng
+            categoryStructure.set(safeGet(results[8]));
+            brandList.set(safeGet(results[9]));
 
-            console.log("[admin.service] Đã tải xong Mapping & Configs.");
+            console.log("[admin.service] Đã tải xong Mapping & Configs (bao gồm Cấu trúc).");
         } catch (error) {
             console.error("Error loading mappings:", error);
         }
@@ -15255,7 +15339,6 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
     },
 
-    // [MỚI] Thêm hàm này để fix lỗi thiếu function
     async loadMacroProductGroupConfig() {
         const db = getDB();
         const defaultData = [];
@@ -16776,13 +16859,15 @@ import { fileHandler } from './data/fileHandler.js';
 import { pasteHandler } from './data/pasteHandler.js';
 import { syncHandler } from './data/syncHandler.js';
 import { cacheHandler } from './data/cacheHandler.js';
+// [NEW] Import thêm để xử lý load config
+import { datasyncService } from './datasync.service.js';
+import { localCompetitionConfigs, specialProductList } from '../stores.js';
 
 export const dataService = {
     appController: null,
     init(controller) { this.appController = controller; },
 
     // --- File Handlers ---
-    // [FIX] Sử dụng arrow function để wrap, tránh lỗi undefined khi khởi tạo module
     handleFileChange: (file, key) => fileHandler.handleFileChange(file, key),
     handleRealtimeFileInput: (event) => fileHandler.handleRealtimeFileInput(event),
     handleCategoryFile: (event) => fileHandler.handleCategoryFile(event),
@@ -16797,7 +16882,32 @@ export const dataService = {
     downloadFileFromCloud: (key) => syncHandler.downloadFileFromCloud(key),
     loadAllFromCache: () => cacheHandler.loadAllFromCache(),
 
-    _getSavedMetadata(warehouse, dataType) { return null; }
+    _getSavedMetadata(warehouse, dataType) { return null; },
+
+    // [NEW] Hàm tải toàn bộ cấu hình phụ trợ của Kho (Thi đua, SPĐQ...)
+    // Hàm này sẽ được gọi khi chọn Kho
+    async loadWarehouseSettings(warehouse) {
+        if (!warehouse) return;
+        console.log(`[DataService] Loading settings for warehouse: ${warehouse}`);
+        
+        try {
+            // 1. Tải cấu hình Thi đua (User)
+            const competitions = await datasyncService.loadCompetitionConfigs(warehouse);
+            if (competitions) {
+                localCompetitionConfigs.set(competitions);
+                console.log(`[DataService] Loaded ${competitions.length} competitions.`);
+            } else {
+                localCompetitionConfigs.set([]);
+            }
+
+            // 2. Tải danh sách SPĐQ (nếu có lưu theo kho - logic mở rộng)
+            // const spList = await datasyncService.loadSpecialPrograms(warehouse);
+            // ...
+
+        } catch (error) {
+            console.error("[DataService] Error loading warehouse settings:", error);
+        }
+    }
 };
 
 
