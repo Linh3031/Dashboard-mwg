@@ -17,11 +17,9 @@
   let sortKey = 'mainValue'; 
   let sortDirection = 'desc';
 
-  // [FIX] Metrics tổng phải đọc từ mainColumn.metrics, fallback về tableMetrics cũ nếu không có
+  // [FIX] Fallback an toàn cho metrics
   $: tableMetrics = config.mainColumn?.metrics || config.tableMetrics || {
-      sl: false,
-      dt: true,
-      dtqd: false
+      sl: false, dt: true, dtqd: false
   };
 
   // 1. Xử lý dữ liệu
@@ -98,17 +96,23 @@
                         <td class="px-5 py-2 sticky left-0 bg-gray-200 z-30 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TỔNG</td>
                         
                         {#if tableMetrics.sl}
-                              <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200">{formatters.formatNumber(totals.cells?.mainValue?.value_sl || totals.mainValue_sl)}</td>
+                              <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200">
+                                  {formatters.formatNumber(totals.cells?.mainValue?.value_sl || totals.mainValue_sl)}
+                              </td>
                         {/if}
                         {#if tableMetrics.dt}
-                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-blue-800">{formatters.formatRevenue(totals.cells?.mainValue?.value || totals.mainValue)}</td>
+                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-blue-800">
+                                 {formatters.formatRevenue(totals.cells?.mainValue?.value || totals.mainValue)}
+                             </td>
                         {/if}
                         {#if tableMetrics.dtqd}
-                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.cells?.mainValue?.value_dtqd || totals.mainValue_dtqd)}</td>
+                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">
+                                {formatters.formatRevenue(totals.cells?.mainValue?.value_dtqd || totals.mainValue_dtqd)}
+                            </td>
                         {/if}
 
                         {#each config.subColumns as col}
-                            {@const total = totals.cells ? totals.cells[col.id || col.header] : null}
+                            {@const total = totals.cells ? (totals.cells[col.id] || totals.cells[col.header]) : null}
                             {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
                             
                             {#if metrics.sl}

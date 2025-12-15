@@ -15,17 +15,23 @@
     </td>
     
     {#if tableMetrics.sl}
-        <td class="px-2 py-2 text-right font-bold text-gray-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatNumber(item.cells?.mainValue?.value_sl || item.mainValue_sl)}</td>
+        <td class="px-2 py-2 text-right font-bold text-gray-800 bg-gray-50/50 border-r border-gray-300 border-b">
+            {formatters.formatNumber(item.cells?.mainValue?.value_sl || item.mainValue_sl)}
+        </td>
     {/if}
     {#if tableMetrics.dt}
-        <td class="px-2 py-2 text-right font-bold text-blue-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatRevenue(item.cells?.mainValue?.value || item.mainValue)}</td>
+        <td class="px-2 py-2 text-right font-bold text-blue-800 bg-gray-50/50 border-r border-gray-300 border-b">
+            {formatters.formatRevenue(item.cells?.mainValue?.value || item.mainValue)}
+        </td>
     {/if}
     {#if tableMetrics.dtqd}
-        <td class="px-2 py-2 text-right font-bold text-purple-800 bg-gray-50/50 border-r border-gray-300 border-b">{formatters.formatRevenue(item.cells?.mainValue?.value_dtqd || item.mainValue_dtqd)}</td>
+        <td class="px-2 py-2 text-right font-bold text-purple-800 bg-gray-50/50 border-r border-gray-300 border-b">
+            {formatters.formatRevenue(item.cells?.mainValue?.value_dtqd || item.mainValue_dtqd)}
+        </td>
     {/if}
 
     {#each columns as col}
-        {@const cell = item.cells ? item.cells[col.id || col.header] : null}
+        {@const cell = item.cells ? (item.cells[col.id] || item.cells[col.header]) : null}
         {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
         
         {#if metrics.sl}
