@@ -4,6 +4,15 @@ import { normalize } from './utils.js';
 import { dataProcessing } from '../../dataProcessing.js';
 import { parseIdentity } from '../../../utils.js';
 
+// [FIX] Hàm xử lý số an toàn cho định dạng tiền tệ VN (loại bỏ dấu chấm/phẩy phân cách)
+const parseSafeNumber = (value) => {
+    if (typeof value === 'number') return value;
+    if (!value) return 0;
+    // Chuyển về chuỗi, loại bỏ mọi ký tự không phải số hoặc dấu trừ (cho số âm)
+    const cleanStr = String(value).replace(/[^0-9-]/g, '');
+    return parseFloat(cleanStr) || 0;
+};
+
 export const salesProcessor = {
     // --- KHỞI TẠO DỮ LIỆU RỖNG ---
     createEmptySalesData() {
@@ -69,7 +78,8 @@ export const salesProcessor = {
                     const isDaXuat = !trangThaiXuat || trangThaiXuat.trim() === 'Đã xuất' || trangThaiXuat.trim() === 'Đã giao';
 
                     if (isDoanhThuHTX && isDaXuat) {
-                        const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                        // [FIX] Sử dụng parseSafeNumber thay vì parseFloat trực tiếp
+                        const thanhTien = parseSafeNumber(row.thanhTien);
                         const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         
@@ -84,16 +94,18 @@ export const salesProcessor = {
                         // A. CỘNG DỒN VÀO MAP CHI TIẾT (Để dùng cho Dynamic Table / Modal)
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
-                            if (!container[idObj.id]) {
-                                container[idObj.id] = { 
-                                    id: idObj.id, 
+                            // Đảm bảo ID luôn là chuỗi để đồng nhất key
+                            const key = String(idObj.id).trim();
+                            if (!container[key]) {
+                                container[key] = { 
+                                    id: key, 
                                     name: idObj.name || rawString, 
                                     revenue: 0, quantity: 0, revenueQuyDoi: 0 
                                 };
                             }
-                            container[idObj.id].revenue += thanhTien;
-                            container[idObj.id].quantity += soLuong;
-                            container[idObj.id].revenueQuyDoi += thanhTien * heSo;
+                            container[key].revenue += thanhTien;
+                            container[key].quantity += soLuong;
+                            container[key].revenueQuyDoi += thanhTien * heSo;
                         }
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
@@ -107,8 +119,8 @@ export const salesProcessor = {
                             data.doanhThuTraGop += thanhTien;
                         }
 
-                        // C. PHÂN LOẠI NHÓM (FIX LOGIC MỚI: Độc lập hoàn toàn, không dùng if/else if)
-                        const nhomHangCode = nhomIdObj.id;
+                        // C. PHÂN LOẠI NHÓM
+                        const nhomHangCode = String(nhomIdObj.id).trim();
                         
                         // --- 1. Hardcode ID Logic (Mặc định MWG) ---
                         // Nhóm ICT
@@ -126,7 +138,7 @@ export const salesProcessor = {
                             data.dtPhuKien += thanhTien; 
                         }
                         
-                        // Nhóm Gia Dụng (Tách riêng, không phụ thuộc CE hay ICT)
+                        // Nhóm Gia Dụng
                         if (PG.GIA_DUNG && PG.GIA_DUNG.includes(nhomHangCode)) { 
                             data.dtGiaDung += thanhTien; 
                         }
@@ -137,10 +149,7 @@ export const salesProcessor = {
                         if (PG.VAS && PG.VAS.includes(nhomHangCode)) { data.dtVAS += thanhTien; }
                         if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) { data.dtBaoHiem += thanhTien; }
 
-                        // --- 2. Dynamic Keyword Logic (Bổ sung từ Admin Config) ---
-                        // Logic: Nếu Admin định nghĩa thêm keywords (hoặc ID) cho các nhóm này, thì cộng thêm vào.
-                        // Lưu ý: Cần kiểm tra để tránh cộng trùng nếu ID đó đã nằm trong list Hardcode phía trên.
-                        
+                        // --- 2. Dynamic Keyword Logic ---
                         const rawNhomHang = normalize(row.nhomHang);
                         const rawNganhHang = normalize(row.nganhHang);
                         const cleanNhomId = normalize(nhomHangCode);
@@ -150,14 +159,12 @@ export const salesProcessor = {
                             const keywords = uiKeywords[uiKey];
                             if (!keywords || keywords.length === 0) return;
 
-                            // Check xem sản phẩm này có khớp với bất kỳ keyword nào không
                             const isMatch = keywords.some(k => 
                                 rawNhomHang.includes(k) || rawNganhHang.includes(k) || 
                                 cleanNhomId === k || cleanNganhId === k
                             );
 
                             if (isMatch) {
-                                // Kiểm tra xem đã được cộng ở bước Hardcode chưa
                                 const alreadyCounted = hardcodeList.includes(nhomHangCode);
                                 if (!alreadyCounted) {
                                     data[uiKey] += thanhTien;
@@ -174,7 +181,7 @@ export const salesProcessor = {
                         checkDynamic('dtVAS', PG.VAS || []); 
                         checkDynamic('dtBaoHiem', PG.BAO_HIEM_VAS || []);
 
-                        // --- 3. Detailed Stats (Cho Popup chi tiết) ---
+                        // --- 3. Detailed Stats ---
                         if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
                         if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
                         if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
@@ -182,7 +189,7 @@ export const salesProcessor = {
                         if (PG.MAY_GIAT.includes(nhomHangCode)) { data.dtMayGiat += thanhTien; data.slMayGiat += soLuong; }
                         if (PG.MAY_LANH.includes(nhomHangCode)) { data.dtMayLanh += thanhTien; data.slMayLanh += soLuong; }
 
-                        // QDC Groups (Quy đổi chuẩn)
+                        // QDC Groups
                         for (const key in PG.QDC_GROUPS) {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
@@ -191,9 +198,9 @@ export const salesProcessor = {
                             }
                         }
                     } 
-                    // Logic chưa xuất (Giữ nguyên)
+                    // Logic chưa xuất
                     else if (trangThaiXuat === 'Chưa xuất') {
-                        const thanhTien = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                        const thanhTien = parseSafeNumber(row.thanhTien);
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         data.doanhThuChuaXuat += thanhTien;
                         data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
@@ -207,8 +214,6 @@ export const salesProcessor = {
     // --- TÍNH TỶ LỆ PHẦN TRĂM ---
     calculateStaticRatios(data) {
         const totalRevenue = data.doanhThu > 0 ? data.doanhThu : 1;
-        // Các trường này để hiển thị ở bảng Fixed Column nếu người dùng vẫn dùng logic cũ
-        // Nhưng tốt nhất nên dựa vào Dynamic Columns
         return {
             pctPhuKien: data.dtPhuKien / totalRevenue,
             pctGiaDung: data.dtGiaDung / totalRevenue,

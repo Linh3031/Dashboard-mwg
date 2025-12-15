@@ -9,22 +9,19 @@ const getSafeNumber = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
     if (typeof value === 'string') {
-        // Xóa dấu chấm (.) thường dùng phân cách hàng nghìn ở VN, giữ lại dấu phẩy (,) nếu là thập phân hoặc ngược lại
-        // Tuy nhiên, an toàn nhất cho context VN (Revenue) là xóa hết dấu non-numeric trừ dấu trừ (-)
-        // Giả định: Dữ liệu đã được thư viện Excel xử lý sơ bộ, nhưng ta phòng vệ thêm
         const cleanStr = value.replace(/[^0-9.-]+/g, ""); 
         return parseFloat(cleanStr) || 0;
     }
     return 0;
 };
 
-// Helper: Lấy giá trị từ object với nhiều key dự phòng
+// [FIX] Helper: Lấy giá trị từ object, trả về ngay khi tìm thấy key tồn tại (kể cả 0)
 const getValueFromMultiKeys = (obj, keys) => {
     if (!obj) return 0;
     for (const key of keys) {
         if (obj[key] !== undefined && obj[key] !== null) {
-            const val = getSafeNumber(obj[key]);
-            if (val !== 0) return val; // Ưu tiên trả về ngay nếu tìm thấy số khác 0
+            // Nếu key tồn tại, trả về giá trị ngay lập tức, không bỏ qua số 0
+            return getSafeNumber(obj[key]);
         }
     }
     return 0;
@@ -37,7 +34,7 @@ export const dynamicTableProcessor = {
         
         // 1. Chuẩn hóa ID
         const parsed = parseIdentity(targetId);
-        // Trim khoảng trắng thừa trong ID nếu có
+        // Trim khoảng trắng thừa trong ID nếu có. Chuyển về string để so khớp key object.
         const searchKey = (parsed.id !== 'unknown' ? parsed.id : targetId).toString().trim();
 
         // 2. Ưu tiên tìm trong Nhóm Hàng
@@ -90,16 +87,15 @@ export const dynamicTableProcessor = {
             if (data) {
                 processedIds.add(safeId);
                 
-                // [FIX] Sử dụng helper để quét nhiều trường dữ liệu
                 if (type === 'SL') {
-                    // Tìm trong quantity, soLuong, sl, quantity_sold
+                    // Tìm trong quantity, soLuong, sl
                     total += getValueFromMultiKeys(data, ['quantity', 'soLuong', 'sl', 'count']);
                 } else if (type === 'DTQD') {
                     // Tìm trong revenueQuyDoi, doanhThuQuyDoi
                     total += getValueFromMultiKeys(data, ['revenueQuyDoi', 'doanhThuQuyDoi', 'dtqd']);
                 } else {
                     // Mặc định là DT (Doanh thu)
-                    // Tìm trong revenue, doanhThu, thanhTien, total
+                    // [FIX] Ưu tiên 'revenue' vì salesProcessor lưu vào biến này
                     total += getValueFromMultiKeys(data, ['revenue', 'doanhThu', 'thanhTien', 'totalPrice', 'dt']);
                 }
             }
@@ -116,7 +112,6 @@ export const dynamicTableProcessor = {
         // 1. Chuẩn bị danh sách cột cần tính
         const mainColConfig = config.mainColumn ? { ...config.mainColumn, id: 'mainValue', isMain: true } : null;
         const subColsConfig = config.subColumns || [];
-        // Support cả 2 kiểu config của Bảng Hiệu quả và Bảng Doanh thu
         const effectiveSubCols = config.columns || subColsConfig;
         
         const allColumnsToProcess = mainColConfig ? [mainColConfig, ...effectiveSubCols] : [...effectiveSubCols];
@@ -158,15 +153,13 @@ export const dynamicTableProcessor = {
                     // Logic % (Bảng hiệu quả)
                     const numVal = this.calculateGroupValue(employee, col.numerator, col.typeA || 'DT');
                     const denVal = this.calculateGroupValue(employee, col.denominator, col.typeB || 'DT');
-                    
                     const val = denVal > 0 ? numVal / denVal : 0;
+                    
                     cellData.value = val;
                     cellData.display = formatters.formatPercentage(val);
                     
-                    // Logic hiển thị: Nếu có số liệu (tử hoặc mẫu) -> Coi là có data
                     if (numVal > 0 || denVal > 0) hasAnyData = true;
 
-                    // Cộng dồn cho dòng tổng
                     if (!totalRow.cells[colId]) totalRow.cells[colId] = { num: 0, den: 0, type: 'PERCENT' };
                     totalRow.cells[colId].num += numVal;
                     totalRow.cells[colId].den += denVal;
