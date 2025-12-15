@@ -1,5 +1,5 @@
 // src/services/admin.service.js
-// Version 3.3 - Add System Performance Tables Support
+// Version 3.4 - Fix: Load Category & Brand globally
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -16,7 +16,6 @@ import {
     efficiencyConfig,
     qdcConfigStore,
     competitionNameMappings,
-    // [NEW]
     customPerformanceTables
 } from '../stores.js';
 
@@ -108,9 +107,10 @@ export const adminService = {
     },
 
     async loadCategoryDataFromFirestore() {
+        // Hàm này có thể được gọi độc lập nếu cần reload thủ công
         const db = getDB();
         if (!db) return { categories: [], brands: [] };
-        await this.loadMappingsGlobal();
+        
         try {
             const catRef = doc(db, "declarations", "categoryStructure");
             const brandRef = doc(db, "declarations", "brandList");
@@ -122,6 +122,7 @@ export const adminService = {
             };
             const categories = getArray(catSnap);
             const brands = getArray(brandSnap);
+            
             categoryStructure.set(categories);
             brandList.set(brands);
             return { categories, brands };
@@ -178,7 +179,6 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const d = docSnap.data();
-                // Ưu tiên 'tables', fallback 'data'
                 const tables = d.tables || d.data || [];
                 console.log(`[AdminService] Loaded ${tables.length} system performance tables.`);
                 return tables;
@@ -206,17 +206,18 @@ export const adminService = {
             });
             notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
         } catch (error) { 
-            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error); 
+            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error);
             notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error'); 
         }
     },
 
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
+    // [FIX] Cập nhật hàm này để tải cả categoryStructure và brandList
     async loadMappingsGlobal() {
         const db = getDB();
         if (!db) return;
         try {
-            console.log("[admin.service] Đang tải cấu hình Mapping từ Cloud...");
+            console.log("[admin.service] Đang tải cấu hình Mapping & Data từ Cloud...");
             const safeGet = (docSnap, defaultVal = []) => {
                 if (!docSnap.exists()) return defaultVal;
                 const d = docSnap.data();
@@ -231,8 +232,12 @@ export const adminService = {
                 "brandNameMapping",
                 "efficiencyConfig", 
                 "qdcConfig",
-                "competitionNameMappings"
+                "competitionNameMappings",
+                // [NEW] Thêm 2 file này vào luồng tải global
+                "categoryStructure",
+                "brandList"
             ];
+            
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
             
@@ -244,8 +249,12 @@ export const adminService = {
             efficiencyConfig.set(safeGet(results[5])); 
             qdcConfigStore.set(safeGet(results[6]));
             competitionNameMappings.set(safeGet(results[7], {}));
+            
+            // [NEW] Cập nhật store cho cấu trúc ngành hàng và hãng
+            categoryStructure.set(safeGet(results[8]));
+            brandList.set(safeGet(results[9]));
 
-            console.log("[admin.service] Đã tải xong Mapping & Configs.");
+            console.log("[admin.service] Đã tải xong Mapping & Configs (bao gồm Cấu trúc).");
         } catch (error) {
             console.error("Error loading mappings:", error);
         }
@@ -298,7 +307,6 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
     },
 
-    // [MỚI] Thêm hàm này để fix lỗi thiếu function
     async loadMacroProductGroupConfig() {
         const db = getDB();
         const defaultData = [];

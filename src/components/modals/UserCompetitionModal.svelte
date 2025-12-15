@@ -1,7 +1,7 @@
 <script>
     import { 
         modalState, 
-        localCompetitionConfigs, // [QUAN TRỌNG] Dùng biến local thay vì global
+        localCompetitionConfigs, 
         categoryStructure,
         brandList,
         selectedWarehouse
@@ -15,7 +15,7 @@
     let editingIndex = -1;
     let isLoading = false;
     
-    // Form data chuẩn thiết kế cũ
+    // Form data
     let formData = { 
         id: '', name: '', groups: [], brands: [], 
         type: 'doanhthu', minPrice: '', maxPrice: '', excludeApple: false 
@@ -34,13 +34,18 @@
 
     // Reset khi mở modal
     $: if (isOpen) {
-        if ($selectedWarehouse) {
-            currentView = 'menu';
+        // [FIX] Nếu có tham số editingIndex từ store (khi bấm sửa từ GoalDrawer), vào thẳng form
+        if ($modalState.editingIndex !== undefined && $modalState.editingIndex !== -1) {
+             openEditForm($modalState.editingIndex);
+        } else if ($selectedWarehouse) {
+            // Mặc định vào list nếu đã có data, menu nếu chưa
+             if ($localCompetitionConfigs.length > 0) currentView = 'list';
+             else currentView = 'menu';
         }
     }
 
     function close() {
-        modalState.update(s => ({ ...s, activeModal: null }));
+        modalState.update(s => ({ ...s, activeModal: null, editingIndex: -1 }));
         resetForm();
         currentView = 'menu';
     }
@@ -51,7 +56,6 @@
     }
 
     function goToBrandCompetition() {
-        // Nếu chưa có chương trình nào, vào thẳng form tạo mới
         if ($localCompetitionConfigs.length === 0) {
             openAddForm();
         } else {
@@ -78,7 +82,6 @@
     }
 
     function openEditForm(index) {
-        // [FIX] Lấy từ localCompetitionConfigs
         const config = $localCompetitionConfigs[index];
         if (!config) return;
         
@@ -119,15 +122,13 @@
             target: 0
         };
 
-        // [FIX] Cập nhật vào localCompetitionConfigs
         let newConfigs = [...$localCompetitionConfigs];
         if (editingIndex >= 0) newConfigs[editingIndex] = configToSave;
         else newConfigs.push(configToSave);
 
-        localCompetitionConfigs.set(newConfigs); // Update Store UI ngay lập tức
+        localCompetitionConfigs.set(newConfigs);
 
         try {
-            // [FIX] Lưu vào Document của Kho (WarehouseData) thay vì Global Declarations
             await datasyncService.saveCompetitionConfigs($selectedWarehouse, newConfigs);
             if (currentView === 'form') backToList();
         } catch (error) {
@@ -141,7 +142,6 @@
     async function deleteProgram(index) {
         if (!confirm("Xóa chương trình này?")) return;
         
-        // [FIX] Xóa từ localCompetitionConfigs
         let newConfigs = [...$localCompetitionConfigs];
         newConfigs.splice(index, 1);
         localCompetitionConfigs.set(newConfigs);
@@ -155,7 +155,7 @@
 {#if isOpen}
     <div class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-[1100] backdrop-blur-sm" on:click={close} role="button" tabindex="0">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]" on:click|stopPropagation>
-            
+     
             <div class="p-5 border-b border-gray-200 flex justify-between items-center bg-blue-50 rounded-t-xl">
                 <div>
                     <h3 class="text-lg font-bold text-blue-800 flex items-center gap-2">
@@ -221,27 +221,39 @@
                             </div>
                         {:else}
                             {#each $localCompetitionConfigs as config, index}
-                                <div class="flex justify-between items-start p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition group/item">
-                                    <div>
+                                <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:border-blue-300 hover:shadow-md transition group/item">
+                                    <div class="flex justify-between items-start mb-2">
                                         <div class="flex items-center gap-2">
                                             <h4 class="font-bold text-gray-800 text-base">{config.name}</h4>
                                             <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
                                                 {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
                                             </span>
                                         </div>
-                                        <div class="text-xs text-gray-500 mt-1.5 flex flex-wrap gap-y-1 gap-x-4">
-                                            <span><strong>Hãng:</strong> {config.brands.join(', ')}</span>
-                                            {#if config.groups.length > 0}
-                                                <span><strong>Nhóm:</strong> {config.groups.join(', ')}</span>
-                                            {/if}
-                                            {#if config.excludeApple}
-                                                <span class="text-red-500 font-medium">No Apple</span>
-                                            {/if}
+                                        <div class="flex gap-2">
+                                            <button on:click={() => openEditForm(index)} class="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Sửa"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                                            <button on:click={() => deleteProgram(index)} class="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Xóa"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                                         </div>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <button on:click={() => openEditForm(index)} class="p-2 text-blue-600 hover:bg-blue-50 rounded"><i data-feather="edit-2" class="w-4 h-4"></i></button>
-                                        <button on:click={() => deleteProgram(index)} class="p-2 text-red-600 hover:bg-red-50 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                        <div class="flex items-start gap-2">
+                                            <span class="font-bold min-w-[40px]">Hãng:</span>
+                                            <span class="flex-1 font-medium text-gray-800">{config.brands.join(', ')}</span>
+                                        </div>
+                                        <div class="flex items-start gap-2">
+                                            <span class="font-bold min-w-[40px]">Nhóm:</span>
+                                            <span class="flex-1 font-medium text-gray-800">
+                                                {#if config.groups.length > 0}
+                                                    {config.groups.join(', ')}
+                                                {:else}
+                                                    <span class="text-gray-400 italic">Tất cả nhóm</span>
+                                                {/if}
+                                            </span>
+                                        </div>
+                                        {#if config.excludeApple}
+                                            <div class="col-span-full flex items-center gap-1 text-red-600 font-bold border-t border-gray-200 pt-1 mt-1">
+                                                <i data-feather="alert-circle" class="w-3 h-3"></i> Đã trừ Apple
+                                            </div>
+                                        {/if}
                                     </div>
                                 </div>
                             {/each}

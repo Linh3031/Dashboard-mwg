@@ -1,12 +1,14 @@
 <script>
     import { categoryStructure, brandList } from '../../../stores.js';
     import { dataService } from '../../../services/dataService.js';
+    // [NEW] Import adminService để lưu
+    import { adminService } from '../../../services/admin.service.js';
 
     let isLoading = false;
+    let isSaving = false;
     let showRawData = false;
 
     // Tính toán số liệu thống kê từ Store
-    // Khi F5, adminService load dữ liệu từ Cloud vào Store -> biến này tự cập nhật -> UI hiển thị lại
     $: uniqueCategories = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nganhHang).filter(Boolean))] : [];
     $: uniqueGroups = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nhomHang).filter(Boolean))] : [];
     $: totalBrands = $brandList ? $brandList.length : 0;
@@ -24,6 +26,23 @@
             isLoading = false;
         }
     }
+
+    // [NEW] Hàm lưu dữ liệu lên Cloud
+    async function saveToCloud() {
+        if (!hasData) return;
+        isSaving = true;
+        try {
+            await adminService.saveCategoryDataToFirestore({
+                categories: $categoryStructure,
+                brands: $brandList
+            });
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi khi lưu: " + e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
 </script>
 
 <div class="space-y-6">
@@ -31,12 +50,28 @@
         <div class="text-sm text-gray-500 italic">
             Bước 1: Tải lên file Excel cấu trúc (Bắt buộc 3 cột: Ngành hàng, Nhóm hàng, Nhà sản xuất).
         </div>
-        <button 
-            class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
-            on:click={() => dataService.handleTemplateDownload()}
-        >
-            Tải File Mẫu
-        </button>
+        <div class="flex gap-2">
+            <button 
+                class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
+                on:click={() => dataService.handleTemplateDownload()}
+            >
+                Tải File Mẫu
+            </button>
+            
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                on:click={saveToCloud}
+                disabled={!hasData || isSaving || isLoading}
+            >
+                {#if isSaving}
+                    <svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Đang lưu...
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                    Lưu Lên Cloud
+                {/if}
+            </button>
+        </div>
     </div>
 
     <div class="p-6 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 transition-colors text-center">

@@ -3,41 +3,39 @@
       realtimeYCXData, 
       globalSpecialPrograms, 
       globalCompetitionConfigs, 
-      localCompetitionConfigs,
-      selectedWarehouse // [FIX] Import store này
+      localCompetitionConfigs, // [QUAN TRỌNG] Store chứa cấu hình thi đua user
+      selectedWarehouse 
   } from '../../../stores.js';
   import { services } from '../../../services.js'; 
   
   import SpecialProgramTable from './SpecialProgramTable.svelte';
   import FocusCompetitionTable from './FocusCompetitionTable.svelte';
 
-  // [FIX] Bỏ export let selectedWarehouse
-
   let specialReportData = [];
   let competitionReportData = [];
   let hasData = false;
 
   $: {
-      // [FIX] Dùng $selectedWarehouse
       const currentWarehouse = $selectedWarehouse;
+      // [FIX] Fallback về mảng rỗng nếu chưa có dữ liệu
       let filteredData = $realtimeYCXData || [];
       
-      console.log(`[CompetitionTab] Recalculating... Rows: ${filteredData.length}, Warehouse: ${currentWarehouse}`);
-
-      // 2. Tính toán SP Đặc Quyền
+      // 1. Tính toán SP Đặc Quyền
       const spReport = services.calculateSpecialProductReport(
           filteredData, 
           $globalSpecialPrograms || []
       );
 
-      // 3. Tính toán Thi Đua Tùy Chỉnh (Hãng)
+      // 2. Tính toán Thi Đua Tùy Chỉnh (Hãng)
+      // [QUAN TRỌNG] Kết hợp cả Global và Local Configs
       const allConfigs = [ ...($globalCompetitionConfigs || []), ...($localCompetitionConfigs || []) ];
+      
       const compReport = services.calculateCompetitionFocusReport(
           filteredData,
           allConfigs
       );
 
-      // 4. Lọc kết quả theo kho
+      // 3. Lọc kết quả theo kho (Nếu đã chọn kho)
       if (currentWarehouse) {
           const filterByWarehouse = (reports) => {
               return reports.map(group => ({
@@ -61,12 +59,15 @@
     {#if !hasData}
         <div class="p-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
             <p class="text-gray-500 font-medium mb-2">Chưa có dữ liệu thi đua hiển thị.</p>
-            <p class="text-xs text-gray-400">
-                Vui lòng kiểm tra: 
-                1. Đã tải file Realtime chưa? 
-                2. Đã tạo chương trình thi đua trong "Thiết lập mục tiêu" chưa?
-                3. Dữ liệu bán hàng có khớp với nhóm hàng đã chọn không?
-            </p>
+            <div class="text-xs text-gray-400 space-y-1">
+                <p>Vui lòng kiểm tra:</p>
+                <p>1. Đã tải file <strong>Realtime</strong> chưa?</p>
+                <p>2. Đã tạo chương trình thi đua trong <strong>"Thiết lập mục tiêu"</strong> chưa?</p>
+                <p>3. Dữ liệu bán hàng có khớp với <strong>Hãng/Nhóm hàng</strong> đã chọn không?</p>
+                {#if $localCompetitionConfigs.length === 0}
+                    <p class="text-orange-500 font-bold mt-2">→ Bạn chưa tạo chương trình thi đua nào cho kho này.</p>
+                {/if}
+            </div>
         </div>
     {:else}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

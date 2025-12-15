@@ -8,7 +8,7 @@
         modalState,
         localCompetitionConfigs, 
         selectedWarehouse,
-        efficiencyConfig // Cấu hình admin
+        efficiencyConfig 
     } from '../../stores.js';
     import { settingsService } from '../../services/settings.service.js';
     import { datasyncService } from '../../services/datasync.service.js';
@@ -27,7 +27,7 @@
         localSelectedWarehouse = $selectedWarehouse || ($warehouseList.length > 0 ? $warehouseList[0] : '');
     }
 
-    // [MỚI] Khi đổi kho, tải dữ liệu từ Cloud
+    // Khi đổi kho, tải dữ liệu từ Cloud
     $: if (isOpen && localSelectedWarehouse) {
         loadGoals(localSelectedWarehouse);
     }
@@ -35,7 +35,6 @@
     async function loadGoals(kho) {
         await settingsService.loadGoalsFromCloud(kho);
         
-        // Cập nhật biến local để bind vào input
         currentLuykeGoals = { ...($luykeGoalSettings[kho] || {}) };
         
         const rtSettings = $realtimeGoalSettings[kho] || { goals: {}, timing: {} };
@@ -73,7 +72,7 @@
         settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
     }
 
-    // Các hàm quản lý thi đua (giữ nguyên)
+    // Các hàm quản lý thi đua
     function openCompetitionManager() {
         if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
         modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
@@ -230,6 +229,7 @@
                 <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
                 <button on:click={openCompetitionManager} class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"><i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới</button>
             </div>
+            
             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
                 {#if $localCompetitionConfigs.length === 0}
                     <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
@@ -238,9 +238,38 @@
                 {:else}
                     {#each $localCompetitionConfigs as config, index}
                         <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
-                            <h4 class="text-lg font-bold text-gray-800 mb-2 pr-16">{config.name}</h4>
-                            <div class="text-sm mb-1"><span class="font-semibold text-gray-600">Hãng:</span> <span class="font-bold text-blue-600 ml-1">{config.brands.join(', ')}</span></div>
-                            <div class="absolute top-4 right-4 flex gap-2">
+                            
+                            <div class="flex justify-between items-start mb-2 pr-14">
+                                <h4 class="text-base font-bold text-gray-800 leading-tight">{config.name}</h4>
+                            </div>
+                            
+                            <div class="flex flex-wrap gap-2 mb-2">
+                                <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
+                                    {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
+                                </span>
+                                {#if config.excludeApple}
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-50 text-red-600 border border-red-100">No Apple</span>
+                                {/if}
+                            </div>
+
+                            <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 grid grid-cols-1 gap-1">
+                                <div class="flex items-start gap-1">
+                                    <span class="font-bold min-w-[35px]">Hãng:</span>
+                                    <span class="text-blue-700 font-medium">{config.brands.join(', ')}</span>
+                                </div>
+                                <div class="flex items-start gap-1">
+                                    <span class="font-bold min-w-[35px]">Nhóm:</span>
+                                    <span class="text-gray-800">
+                                        {#if config.groups.length > 0}
+                                            {config.groups.join(', ')}
+                                        {:else}
+                                            <span class="italic text-gray-400">Tất cả</span>
+                                        {/if}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="absolute top-3 right-3 flex gap-1">
                                 <button on:click={() => editCompetition(index)} class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><i data-feather="edit-2" class="w-4 h-4"></i></button>
                                 <button on:click={() => deleteCompetition(index)} class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                             </div>
