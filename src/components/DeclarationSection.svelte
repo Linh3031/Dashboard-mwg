@@ -16,6 +16,9 @@
     import AdminSpecialProgram from './admin/AdminSpecialProgram.svelte';
     import AdminConfig from './admin/AdminConfig.svelte';
 
+    // [FIX] Nhận prop activeTab từ App.svelte để xử lý ẩn/hiện
+    export let activeTab;
+
     // State quản lý menu con bên trái
     let activeMenu = 'config'; // config | data | goals | competition | special
 
@@ -44,7 +47,7 @@
     }
 </script>
 
-<section id="declaration-section" class="page-section">
+<section id="declaration-section" class="page-section {activeTab === 'declaration-section' ? '' : 'hidden'}">
     <div class="content-card !p-0 min-h-[600px] flex flex-col md:flex-row overflow-hidden">
         
         {#if !$isAdmin}

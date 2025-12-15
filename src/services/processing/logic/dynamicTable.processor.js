@@ -4,20 +4,47 @@ import { formatters } from '../../../utils/formatters.js';
 import { parseIdentity } from '../../../utils.js';
 import { macroCategoryConfig, macroProductGroupConfig } from '../../../stores.js';
 
+// Helper: Làm sạch và ép kiểu số an toàn
+const getSafeNumber = (value) => {
+    if (typeof value === 'number') return value;
+    if (!value) return 0;
+    if (typeof value === 'string') {
+        // Xóa dấu chấm (.) thường dùng phân cách hàng nghìn ở VN, giữ lại dấu phẩy (,) nếu là thập phân hoặc ngược lại
+        // Tuy nhiên, an toàn nhất cho context VN (Revenue) là xóa hết dấu non-numeric trừ dấu trừ (-)
+        // Giả định: Dữ liệu đã được thư viện Excel xử lý sơ bộ, nhưng ta phòng vệ thêm
+        const cleanStr = value.replace(/[^0-9.-]+/g, ""); 
+        return parseFloat(cleanStr) || 0;
+    }
+    return 0;
+};
+
+// Helper: Lấy giá trị từ object với nhiều key dự phòng
+const getValueFromMultiKeys = (obj, keys) => {
+    if (!obj) return 0;
+    for (const key of keys) {
+        if (obj[key] !== undefined && obj[key] !== null) {
+            const val = getSafeNumber(obj[key]);
+            if (val !== 0) return val; // Ưu tiên trả về ngay nếu tìm thấy số khác 0
+        }
+    }
+    return 0;
+};
+
 export const dynamicTableProcessor = {
     // Tìm dữ liệu trong object nhân viên theo ID (O(1))
     findItemData(employee, targetId) {
         if (!employee || !targetId) return null;
         
-        // 1. Chuẩn hóa ID (nếu targetId dạng "304 - Tivi" thì lấy "304")
+        // 1. Chuẩn hóa ID
         const parsed = parseIdentity(targetId);
-        const searchKey = parsed.id !== 'unknown' ? parsed.id : targetId;
+        // Trim khoảng trắng thừa trong ID nếu có
+        const searchKey = (parsed.id !== 'unknown' ? parsed.id : targetId).toString().trim();
 
-        // 2. Ưu tiên tìm trong Nhóm Hàng (doanhThuTheoNhomHang)
+        // 2. Ưu tiên tìm trong Nhóm Hàng
         if (employee.doanhThuTheoNhomHang && employee.doanhThuTheoNhomHang[searchKey]) {
             return employee.doanhThuTheoNhomHang[searchKey];
         }
-        // 3. Tìm trong Ngành Hàng (doanhThuTheoNganhHang)
+        // 3. Tìm trong Ngành Hàng
         if (employee.doanhThuTheoNganhHang && employee.doanhThuTheoNganhHang[searchKey]) {
             return employee.doanhThuTheoNganhHang[searchKey];
         }
@@ -26,68 +53,75 @@ export const dynamicTableProcessor = {
     },
 
     /**
-     * Tính tổng giá trị từ danh sách ID (Hỗ trợ cả ID đơn và ID nhóm gộp Macro)
-     * @param {Object} employee - Dữ liệu nhân viên
-     * @param {Array} items - Danh sách ID cần tính (có thể chứa macro_id)
-     * @param {String} type - Loại dữ liệu ('DT', 'SL', 'DTQD')
+     * Tính tổng giá trị từ danh sách ID
      */
     calculateGroupValue(employee, items, type = 'DT') {
         if (!items || items.length === 0) return 0;
 
-        // Lấy cấu hình Macro từ Store
         const macroCats = get(macroCategoryConfig) || [];
         const macroGroups = get(macroProductGroupConfig) || [];
 
         let total = 0;
-        // Set để tránh cộng trùng lặp nếu 1 ID xuất hiện nhiều lần hoặc trong nhiều Macro lồng nhau
         const processedIds = new Set();
 
-        // Hàm đệ quy để xử lý ID
         const processId = (id) => {
-            // Nếu đã xử lý ID này rồi thì bỏ qua
-            if (processedIds.has(id)) return;
+            // Chuẩn hóa ID input
+            const safeId = id ? id.toString().trim() : '';
+            if (!safeId || processedIds.has(safeId)) return;
             
-            // 1. Kiểm tra xem ID này có phải là Macro Category không?
-            const macroCat = macroCats.find(m => m.id === id || m.name === id);
+            // 1. Check Macro Category
+            const macroCat = macroCats.find(m => m.id == safeId || m.name === safeId);
             if (macroCat && macroCat.items) {
-                processedIds.add(id); // Đánh dấu đã xử lý macro này
+                processedIds.add(safeId);
                 macroCat.items.forEach(childId => processId(childId));
                 return;
             }
 
-            // 2. Kiểm tra xem ID này có phải là Macro Product Group không?
-            const macroGroup = macroGroups.find(m => m.id === id || m.name === id);
+            // 2. Check Macro Product Group
+            const macroGroup = macroGroups.find(m => m.id == safeId || m.name === safeId);
             if (macroGroup && macroGroup.items) {
-                processedIds.add(id);
+                processedIds.add(safeId);
                 macroGroup.items.forEach(childId => processId(childId));
                 return;
             }
 
-            // 3. Nếu không phải Macro, coi đây là ID gốc (Raw ID) -> Tìm dữ liệu
-            // Chỉ đánh dấu processed nếu tìm thấy dữ liệu để tránh bỏ sót nếu ID trùng tên Macro
-            const data = this.findItemData(employee, id);
+            // 3. Raw ID
+            const data = this.findItemData(employee, safeId);
             if (data) {
-                processedIds.add(id); // Đánh dấu đã cộng ID này
-                if (type === 'SL') total += (data.quantity || 0);
-                else if (type === 'DTQD') total += (data.revenueQuyDoi || 0);
-                else total += (data.revenue || 0); // Default DT
+                processedIds.add(safeId);
+                
+                // [FIX] Sử dụng helper để quét nhiều trường dữ liệu
+                if (type === 'SL') {
+                    // Tìm trong quantity, soLuong, sl, quantity_sold
+                    total += getValueFromMultiKeys(data, ['quantity', 'soLuong', 'sl', 'count']);
+                } else if (type === 'DTQD') {
+                    // Tìm trong revenueQuyDoi, doanhThuQuyDoi
+                    total += getValueFromMultiKeys(data, ['revenueQuyDoi', 'doanhThuQuyDoi', 'dtqd']);
+                } else {
+                    // Mặc định là DT (Doanh thu)
+                    // Tìm trong revenue, doanhThu, thanhTien, total
+                    total += getValueFromMultiKeys(data, ['revenue', 'doanhThu', 'thanhTien', 'totalPrice', 'dt']);
+                }
             }
         };
 
-        // Bắt đầu vòng lặp
         items.forEach(id => processId(id));
-
         return total;
     },
 
-    // Hàm chính: Xử lý dữ liệu bảng
+    // --- REWRITE: Xử lý dữ liệu bảng toàn diện ---
     processTableData(reportData, config) {
         if (!reportData || !config) return { processedData: [], totals: {} };
 
-        // [DETECT TYPE] Xác định cấu trúc config
-        const columnsConfig = config.columns || config.subColumns || [];
+        // 1. Chuẩn bị danh sách cột cần tính
+        const mainColConfig = config.mainColumn ? { ...config.mainColumn, id: 'mainValue', isMain: true } : null;
+        const subColsConfig = config.subColumns || [];
+        // Support cả 2 kiểu config của Bảng Hiệu quả và Bảng Doanh thu
+        const effectiveSubCols = config.columns || subColsConfig;
         
-        // Khởi tạo dòng tổng
+        const allColumnsToProcess = mainColConfig ? [mainColConfig, ...effectiveSubCols] : [...effectiveSubCols];
+
+        // 2. Khởi tạo dòng tổng
         const totalRow = {
             maNV: 'TOTAL',
             hoTen: 'TỔNG CỘNG',
@@ -95,65 +129,92 @@ export const dynamicTableProcessor = {
             cells: {} 
         };
 
+        // 3. Loop qua từng nhân viên
         const processedData = reportData.map(employee => {
             const row = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
-                mucTieu: employee.mucTieu || {}, // Lấy mục tiêu cá nhân
+                mucTieu: employee.mucTieu || {},
                 cells: {}
             };
 
-            let hasData = false;
+            let hasAnyData = false;
 
-            columnsConfig.forEach(col => {
+            allColumnsToProcess.forEach(col => {
                 const colId = col.id || col.header;
-                let value = 0;
-                let displayValue = '';
                 
-                // --- LOGIC MỚI: BẢNG HIỆU QUẢ ---
+                // Khởi tạo object cell
+                const cellData = {
+                    sl: 0,
+                    dt: 0,
+                    dtqd: 0,
+                    value: 0,
+                    display: '',
+                    config: col
+                };
+
+                // --- LOGIC TÍNH TOÁN ---
                 if (col.type === 'PERCENT') {
-                    // 1. Tính Tử số (Dùng hàm calculateGroupValue mới hỗ trợ Macro)
+                    // Logic % (Bảng hiệu quả)
                     const numVal = this.calculateGroupValue(employee, col.numerator, col.typeA || 'DT');
-                    // 2. Tính Mẫu số
                     const denVal = this.calculateGroupValue(employee, col.denominator, col.typeB || 'DT');
                     
-                    value = denVal > 0 ? numVal / denVal : 0;
-                    displayValue = formatters.formatPercentage(value);
+                    const val = denVal > 0 ? numVal / denVal : 0;
+                    cellData.value = val;
+                    cellData.display = formatters.formatPercentage(val);
                     
+                    // Logic hiển thị: Nếu có số liệu (tử hoặc mẫu) -> Coi là có data
+                    if (numVal > 0 || denVal > 0) hasAnyData = true;
+
                     // Cộng dồn cho dòng tổng
                     if (!totalRow.cells[colId]) totalRow.cells[colId] = { num: 0, den: 0, type: 'PERCENT' };
                     totalRow.cells[colId].num += numVal;
                     totalRow.cells[colId].den += denVal;
 
                 } else {
-                    // --- LOGIC THƯỜNG: SL, DT, DTQD ---
-                    const calcType = col.type === 'DTQD' ? 'DTQD' : (col.type === 'SL' ? 'SL' : 'DT');
-                    
-                    // Tính tổng (Hỗ trợ Macro)
-                    value = this.calculateGroupValue(employee, col.items, calcType);
-                    
-                    if (calcType === 'SL') displayValue = formatters.formatNumber(value);
-                    else displayValue = formatters.formatRevenue(value);
+                    // --- LOGIC DOANH THU: Tính ĐỦ cả 3 chỉ số ---
+                    cellData.sl = this.calculateGroupValue(employee, col.items, 'SL');
+                    cellData.dt = this.calculateGroupValue(employee, col.items, 'DT');
+                    cellData.dtqd = this.calculateGroupValue(employee, col.items, 'DTQD');
 
-                    // Cộng dồn dòng tổng
-                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { val: 0, type: col.type || 'DT' };
-                    totalRow.cells[colId].val += value;
+                    // Xác định giá trị chính
+                    if (col.type === 'SL') {
+                        cellData.value = cellData.sl;
+                        cellData.display = formatters.formatNumber(cellData.sl);
+                    } else if (col.type === 'DTQD') {
+                        cellData.value = cellData.dtqd;
+                        cellData.display = formatters.formatRevenue(cellData.dtqd);
+                    } else {
+                        cellData.value = cellData.dt; // Mặc định DT
+                        cellData.display = formatters.formatRevenue(cellData.dt);
+                    }
+
+                    // Đánh dấu có dữ liệu (Chỉ cần 1 trong 3 chỉ số > 0)
+                    if (cellData.value > 0 || cellData.sl > 0 || cellData.dt > 0 || cellData.dtqd > 0) hasAnyData = true;
+
+                    // Cộng dồn cho dòng tổng
+                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { sl: 0, dt: 0, dtqd: 0, val: 0, type: col.type || 'DT' };
+                    totalRow.cells[colId].sl += cellData.sl;
+                    totalRow.cells[colId].dt += cellData.dt;
+                    totalRow.cells[colId].dtqd += cellData.dtqd;
+                    totalRow.cells[colId].val += cellData.value;
                 }
 
-                if (value > 0) hasData = true;
-
-                // Lưu vào cell
-                row.cells[colId] = {
-                    value,
-                    display: displayValue,
-                    config: col
-                };
+                // Map vào row
+                row.cells[colId] = cellData;
+                
+                // Map phẳng cho Main Column (Sorting support)
+                if (col.isMain) {
+                    row.mainValue = cellData.value;
+                    row.mainValue_sl = cellData.sl;
+                    row.mainValue_dtqd = cellData.dtqd;
+                }
             });
 
-            return hasData ? row : null;
+            return hasAnyData ? row : null;
         }).filter(Boolean);
 
-        // Tính toán hiển thị cho dòng Tổng
+        // 4. Finalize dòng tổng
         Object.keys(totalRow.cells).forEach(key => {
             const cell = totalRow.cells[key];
             if (cell.type === 'PERCENT') {
@@ -164,20 +225,26 @@ export const dynamicTableProcessor = {
                 if (cell.type === 'SL') cell.display = formatters.formatNumber(cell.val);
                 else cell.display = formatters.formatRevenue(cell.val);
                 cell.value = cell.val;
+                
+                if (key === 'mainValue') {
+                    totalRow.mainValue = cell.val;
+                    totalRow.mainValue_sl = cell.sl;
+                    totalRow.mainValue_dtqd = cell.dtqd;
+                }
             }
         });
 
         return { processedData, totals: totalRow };
     },
 
-    // Hàm sắp xếp (Giữ nguyên)
+    // Hàm sắp xếp
     sortTableData(data, key, direction) {
         return [...data].sort((a, b) => {
             if (key === 'hoTen') {
                 return direction === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
             }
-            const valA = a.cells[key]?.value || 0;
-            const valB = b.cells[key]?.value || 0;
+            const valA = a.cells[key]?.value ?? a[key] ?? 0;
+            const valB = b.cells[key]?.value ?? b[key] ?? 0;
             return direction === 'asc' ? valA - valB : valB - valA;
         });
     }
