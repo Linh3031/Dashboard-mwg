@@ -120,10 +120,9 @@
                     {#each sortedData as row (row.maNV)}
                         <tr class="hover:bg-blue-50/50 transition-colors group">
                             <td class="px-3 py-2 font-semibold text-gray-700 border-r border-b border-gray-300 bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                <div class="flex flex-col">
-                                    <span class="text-blue-700 text-sm">{formatters.getShortEmployeeName(row.hoTen, row.maNV).split(' - ')[0]}</span>
-                                    <span class="text-[10px] text-gray-400 font-mono">{row.maNV}</span>
-                                </div>
+                                <span class="text-blue-700 text-sm block truncate" title="{row.hoTen} - {row.maNV}">
+                                    {formatters.getShortEmployeeName(row.hoTen, row.maNV)}
+                                </span>
                             </td>
 
                             {#each config.columns as col (col.id)}
