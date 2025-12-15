@@ -1,7 +1,8 @@
 <script>
     import { specialProductList } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
-    import * as dataService from '../../services/dataService.js';
+    // [FIX] Sửa import * as thành import { } để lấy đúng object dataService
+    import { dataService } from '../../services/dataService.js';
     import { onMount } from 'svelte';
 
     let isLoading = false;
@@ -13,6 +14,7 @@
     async function handleFileUpload(event) {
         isLoading = true;
         try {
+            // Bây giờ hàm này sẽ được gọi đúng từ object dataService
             await dataService.handleSpecialProductFileUpload(event);
             // Auto-save to localStorage for testing persistence
             localStorage.setItem('temp_specialProductList', JSON.stringify($specialProductList));
@@ -57,7 +59,7 @@
             </div>
             Sản Phẩm Đặc Quyền
         </h2>
-        
+   
         <div class="flex gap-2">
             <button 
                 class="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"

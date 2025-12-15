@@ -1,130 +1,138 @@
-/**
- * CREATE SNAPSHOT SCRIPT - VERSION 3.3 (FINAL FIX)
- * - Đã fix lỗi không chặn được src/config.js
- * - Đã chặn thư mục .history
+/*
+ * CodeGenesis Gem - Optimized Snapshot Script
+ * Phiên bản: 3.0 (Anti-History & Size Limit)
+ * Fix lỗi: Loại bỏ folder .history (Local History plugin) gây nặng file.
  */
+
 const fs = require('fs');
 const path = require('path');
 
-const config = {
-    rootDirectory: '.', 
-    outputFile: 'project_snapshot_svelte.txt',
-    
-    // Chỉ lấy code nguồn
-    allowedExtensions: [
-        '.svelte', '.js', '.ts', '.cjs', '.mjs', 
-        '.css', '.html', '.json'
-    ],
+// 1. CẤU HÌNH OUTPUT
+const OUTPUT_FILE = 'project_snapshot.txt';
+const MAX_FILE_SIZE_KB = 100; // Bỏ qua file > 100KB
 
-    // Thư mục rác cần bỏ qua
-    ignoredDirectories: [
-        'node_modules', '.git', '.vscode', '.history', '.idea',
-        '.svelte-kit', 'dist', 'build', 'public', 'assets', 
-        'images', 'fonts', 'coverage', 'tmp', 'temp'
-    ],
+// 2. DANH SÁCH LOẠI TRỪ (BLACKLIST)
+const IGNORE_DIRS = [
+  'node_modules',
+  '.git',
+  '.history',      // <--- THỦ PHẠM CHÍNH
+  '.vscode',
+  '.svelte-kit',
+  '.idea',
+  'dist',
+  'build',
+  'coverage',
+  'public',
+  'assets',
+  'luyke'          // Thấy trong ảnh có folder này, nếu là data rác thì bỏ qua, nếu cần code thì xóa dòng này
+];
 
-    // File rác hoặc file data lớn cần bỏ qua
-    ignoredFiles: [
-        'package-lock.json',
-        'bun.lockb',
-        'yarn.lock',
-        '.DS_Store',
-        '.env',
-        'README.md',
-        'project_snapshot_svelte.txt', 
-        'create_snapshot.cjs',
-        
-        // --- CHẶN CÁC FILE NẶNG CỤ THỂ ---
-        'src/config.js',   // Chặn file data cứng
-        'config.js',       
-        'data.js'
-    ],
+const IGNORE_FILES = [
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lockb',
+  '.DS_Store',
+  '.env',
+  '.env.local',
+  OUTPUT_FILE,
+  'create_snapshot.cjs',
+  'project_snapshot_full.txt',
+  'project_snapshot_svelte.txt'
+];
 
-    maxFileSize: 200 * 1024 // 200KB
-};
+// 3. DANH SÁCH CHO PHÉP (WHITELIST)
+const ALLOWED_EXTENSIONS = [
+  '.js', '.cjs', '.mjs', '.ts',
+  '.svelte',
+  '.css', '.scss', '.postcss',
+  '.html',
+  '.json',
+  '.md'
+];
 
-// --- LOGIC MỚI: So sánh đường dẫn chính xác hơn ---
-function shouldIgnoreFile(fileName, relativePath) {
-    // 1. Check tên file (VD: package-lock.json)
-    if (config.ignoredFiles.includes(fileName)) return true;
-    
-    // 2. Check đường dẫn (VD: src/config.js) -> Chuẩn hóa dấu \ thành /
-    const normalizedPath = relativePath.replace(/\\/g, '/'); 
-    
-    // Check chính xác hoặc check đuôi
-    if (config.ignoredFiles.some(ignore => normalizedPath.endsWith(ignore))) return true;
+function isAllowedFile(filePath, sizeBytes) {
+  const fileName = path.basename(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  
+  // 1. Check Blacklist tên file
+  if (IGNORE_FILES.includes(fileName)) return false;
+  
+  // 2. Check đuôi file (chỉ lấy code)
+  if (!ALLOWED_EXTENSIONS.includes(ext)) return false;
 
+  // 3. Check kích thước (Chặn file quá lớn)
+  if (sizeBytes > MAX_FILE_SIZE_KB * 1024) {
+    console.warn(`⚠️  Skipped large file: ${fileName} (${(sizeBytes/1024).toFixed(1)} KB)`);
     return false;
+  }
+
+  // 4. Logic riêng cho JSON (chỉ lấy config)
+  if (ext === '.json') {
+    const allowedJsons = ['package.json', 'tsconfig.json', 'jsconfig.json', 'svelte.config.js', 'tailwind.config.js'];
+    return allowedJsons.includes(fileName);
+  }
+
+  return true;
 }
 
-function getAllFiles(dirPath, arrayOfFiles) {
-    const files = fs.readdirSync(dirPath);
-    arrayOfFiles = arrayOfFiles || [];
+function processDirectory(dir, outputStream) {
+  let files;
+  try {
+    files = fs.readdirSync(dir);
+  } catch (err) {
+    return;
+  }
 
-    files.forEach(file => {
-        const fullPath = path.join(dirPath, file);
-        const stat = fs.statSync(fullPath);
+  for (const file of files) {
+    const fullPath = path.join(dir, file);
+    
+    // Bỏ qua nếu path chứa folder bị cấm (như .history)
+    if (IGNORE_DIRS.some(ignored => fullPath.includes(path.sep + ignored) || fullPath.includes(ignored + path.sep))) {
+      continue;
+    }
 
-        if (stat.isDirectory()) {
-            if (!config.ignoredDirectories.includes(file)) {
-                arrayOfFiles = getAllFiles(fullPath, arrayOfFiles);
-            }
-        } else {
-            const ext = path.extname(file).toLowerCase();
-            const fileName = path.basename(file);
-            const relativePath = path.relative(config.rootDirectory, fullPath);
+    try {
+      const stat = fs.statSync(fullPath);
 
-            // Logic chặn cải tiến
-            if (shouldIgnoreFile(fileName, relativePath)) return;
-            
-            if (!config.allowedExtensions.includes(ext)) return;
-            if (stat.size > config.maxFileSize) return;
-
-            arrayOfFiles.push(fullPath);
+      if (stat.isDirectory()) {
+        if (!IGNORE_DIRS.includes(file)) {
+          processDirectory(fullPath, outputStream);
         }
-    });
-
-    return arrayOfFiles;
+      } else {
+        if (isAllowedFile(fullPath, stat.size)) {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          outputStream.write(`\n================================================================================\n`);
+          outputStream.write(`File: ${fullPath}\n`);
+          outputStream.write(`================================================================================\n\n`);
+          outputStream.write(content);
+          outputStream.write(`\n\n`);
+        }
+      }
+    } catch (err) {
+      // Ignore error
+    }
+  }
 }
 
-console.log("🚀 Đang tạo snapshot v3.3...");
+function createSnapshot() {
+  console.log('🚀 Đang tạo snapshot (đã lọc .history)...');
+  
+  if (fs.existsSync(OUTPUT_FILE)) {
+    fs.unlinkSync(OUTPUT_FILE);
+  }
 
-if (fs.existsSync(config.outputFile)) {
-    fs.unlinkSync(config.outputFile);
+  const stream = fs.createWriteStream(OUTPUT_FILE, { flags: 'a' });
+  stream.write(`# PROJECT SNAPSHOT v3\n# Excluded: .history, node_modules\n\n`);
+
+  processDirectory('.', stream);
+
+  stream.end();
+  
+  stream.on('finish', () => {
+    const size = fs.statSync(OUTPUT_FILE).size / 1024;
+    console.log(`✅ Hoàn tất! File mới: ${(size/1024).toFixed(2)} MB (${size.toFixed(0)} KB)`);
+  });
 }
 
-try {
-    const allFiles = getAllFiles(config.rootDirectory);
-    allFiles.sort(); // Sắp xếp tên file
-
-    let fileCount = 0;
-    let totalSize = 0;
-
-    console.log(`🔍 Tìm thấy ${allFiles.length} file mã nguồn.`);
-
-    allFiles.forEach(filepath => {
-        try {
-            const content = fs.readFileSync(filepath, 'utf8');
-            const normalizedPath = filepath.replace(/\\/g, '/');
-            const displayPath = normalizedPath.startsWith('./') ? normalizedPath : `./${normalizedPath}`;
-
-            const fileHeader = `--- START FILE: ${displayPath} ---\n`;
-            const fileFooter = `\n--- END FILE: ${displayPath} ---\n\n`;
-
-            fs.appendFileSync(config.outputFile, fileHeader);
-            fs.appendFileSync(config.outputFile, content);
-            fs.appendFileSync(config.outputFile, fileFooter);
-
-            fileCount++;
-            totalSize += content.length;
-        } catch (err) {}
-    });
-
-    const sizeInMB = (totalSize / 1024 / 1024).toFixed(2);
-    console.log(`\n✅ HOÀN TẤT!`);
-    console.log(`📄 Tổng số file: ${fileCount}`);
-    console.log(`💾 Dung lượng: ${sizeInMB} MB`);
-
-} catch (error) {
-    console.error("Lỗi:", error);
-}
+createSnapshot();
