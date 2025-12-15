@@ -7,6 +7,8 @@
       modalState, 
       efficiencyConfig, 
       customRevenueTables, 
+      // [NEW] Store cho bảng hiệu quả
+      customPerformanceTables,
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse
@@ -40,12 +42,22 @@
   import ComposerModal from './components/modals/ComposerModal.svelte';
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
+  // [NEW] Import Modal mới
+  import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
 
   onMount(async () => {
     try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
     const isLoggedIn = authService.initAuth();
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
+    
+    // [NEW] Load bảng hiệu quả khi khởi động (User bảng sẽ load khi chọn kho)
+    loadInitialTables();
   });
+
+  async function loadInitialTables() {
+     const sysTables = await adminService.loadSystemPerformanceTables();
+     customPerformanceTables.set(sysTables);
+  }
 
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
@@ -70,6 +82,7 @@
       } 
       // LOGIC USER (Tab Lũy kế / Realtime)
       else {
+      
           // User thì đánh dấu isSystem = false
           newItem.isSystem = false;
 
@@ -88,7 +101,7 @@
           
           const wh = get(selectedWarehouse);
           if(wh) {
-              datasyncService.saveCustomMetrics(wh, currentLocal);
+               datasyncService.saveCustomMetrics(wh, currentLocal);
           } else {
               alert("Vui lòng chọn Kho để lưu chỉ số này.");
           }
@@ -112,25 +125,50 @@
       
       // 2. Phân loại nơi lưu trữ
       if (newItem.isSystem) {
-          // A. Nếu là bảng HỆ THỐNG (Chỉ Admin tạo/sửa)
-          // Lấy toàn bộ bảng hệ thống từ store hiện tại để lưu đè lên Cloud
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
           console.log("Đã lưu bảng hệ thống lên Admin Cloud");
       } else {
-          // B. Nếu là bảng CÁ NHÂN (User tạo)
-          // Lấy bảng cá nhân để lưu
           const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
-          
-          // Lưu LocalStorage (Backup)
           localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
           
-          // Lưu Warehouse Cloud (Nếu đã chọn kho)
           const wh = get(selectedWarehouse);
           if (wh) {
               await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
           }
           console.log("Đã lưu bảng cá nhân");
+      }
+  }
+
+  // [NEW] Xử lý lưu Bảng Hiệu Quả (Performance Table)
+  async function handleSavePerformanceTable(event) {
+      const newItem = event.detail;
+      
+      // 1. Cập nhật Store hiển thị
+      customPerformanceTables.update(items => {
+          const idx = items.findIndex(i => i.id === newItem.id);
+          if (idx >= 0) {
+              items[idx] = { ...items[idx], ...newItem };
+              return [...items];
+          } else {
+              return [...items, newItem];
+          }
+      });
+
+      // 2. Phân luồng lưu trữ
+      if (newItem.isSystem) {
+          // Admin System Table
+          const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
+          await adminService.saveSystemPerformanceTables(systemTables);
+      } else {
+          // User Personal Table
+          const personalTables = get(customPerformanceTables).filter(t => !t.isSystem);
+          const wh = get(selectedWarehouse);
+          if (wh) {
+              await datasyncService.savePersonalPerformanceTables(wh, personalTables);
+          } else {
+              alert("Vui lòng chọn Kho để lưu bảng cá nhân.");
+          }
       }
   }
 </script>
@@ -150,6 +188,14 @@
     editItem={$modalState.payload}
     on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
     on:save={handleSaveCustomTable}
+/>
+
+<AddPerformanceTableModal
+    isOpen={$modalState.activeModal === 'add-performance-table-modal'}
+    editItem={$modalState.payload}
+    isSystem={$modalState.isSystem || false}
+    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:save={handleSavePerformanceTable}
 />
 
 <AddEfficiencyColumnModal 
@@ -378,6 +424,9 @@ export const warehouseCustomMetrics = writable([]);
 
 // [CẬP NHẬT] Reset về mảng rỗng để không hiện bảng mẫu khi khởi tạo
 export const customRevenueTables = writable([]);
+
+// [MỚI - PERFORMANCE TABLE] Store lưu trữ cấu hình bảng hiệu quả (Cả Admin & User)
+export const customPerformanceTables = writable([]);
 
 /**
  * Cài đặt & Trạng thái UI
@@ -938,6 +987,52 @@ export const fileSyncState = writable({});
 </div>
 --- END FILE: ./src/components/admin/AdminCompetition.svelte ---
 
+--- START FILE: ./src/components/admin/AdminConfig.svelte ---
+<script>
+    import { onMount } from 'svelte';
+    import { declarations } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+
+    let config = {
+        ycx: '',
+        ycxGop: '',
+        heSo: ''
+    };
+
+    onMount(async () => {
+        const data = await adminService.loadDeclarationsFromFirestore();
+        config.ycx = data.hinhThucXuat || '';
+        config.ycxGop = data.hinhThucXuatGop || '';
+        config.heSo = data.heSoQuyDoi || '';
+    });
+
+    async function handleSave() {
+        await adminService.saveDeclarationsToFirestore(config);
+    }
+</script>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+        <h4 class="font-bold text-slate-800 mb-2">Hình thức xuất (YCX)</h4>
+        <textarea bind:value={config.ycx} class="w-full h-32 p-2 border rounded text-sm" placeholder="Nhập các hình thức xuất, cách nhau dấu phẩy..."></textarea>
+    </div>
+
+    <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+        <h4 class="font-bold text-slate-800 mb-2">Hình thức xuất gộp (YCX Gộp)</h4>
+        <textarea bind:value={config.ycxGop} class="w-full h-32 p-2 border rounded text-sm" placeholder="Nhập các hình thức gộp..."></textarea>
+    </div>
+
+    <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm md:col-span-2">
+        <h4 class="font-bold text-slate-800 mb-2">Hệ số quy đổi</h4>
+        <textarea bind:value={config.heSo} class="w-full h-32 p-2 border rounded text-sm font-mono" placeholder="JSON hệ số quy đổi..."></textarea>
+    </div>
+
+    <div class="md:col-span-2 flex justify-end">
+        <button on:click={handleSave} class="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Lưu Cấu Hình</button>
+    </div>
+</div>
+--- END FILE: ./src/components/admin/AdminConfig.svelte ---
+
 --- START FILE: ./src/components/admin/AdminEfficiency.svelte ---
 <script>
     import { onMount } from 'svelte';
@@ -1022,6 +1117,92 @@ export const fileSyncState = writable({});
     </div>
 </div>
 --- END FILE: ./src/components/admin/AdminEfficiency.svelte ---
+
+--- START FILE: ./src/components/admin/AdminGoalSettings.svelte ---
+<script>
+    import { onMount } from 'svelte';
+    import { warehouseList, luykeGoalSettings } from '../../stores.js';
+    import { datasyncService } from '../../services/datasync.service.js';
+
+    let selectedKho = '';
+    let currentGoals = {};
+    let isLoading = false;
+
+    // Khi chọn kho, load dữ liệu mục tiêu của kho đó
+    async function handleWarehouseChange() {
+        if (!selectedKho) {
+            currentGoals = {};
+            return;
+        }
+        isLoading = true;
+        try {
+            const settings = await datasyncService.loadGoalSettings(selectedKho);
+            currentGoals = settings.luyke || {};
+        } catch (error) {
+            console.error(error);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function saveGoals() {
+        if (!selectedKho) return alert("Vui lòng chọn Kho.");
+        isLoading = true;
+        try {
+            await datasyncService.saveGoalSettings(selectedKho, 'luyke', currentGoals);
+            alert(`Đã lưu mục tiêu cho kho ${selectedKho} thành công!`);
+        } catch (error) {
+            alert("Lỗi khi lưu: " + error.message);
+        } finally {
+            isLoading = false;
+        }
+    }
+</script>
+
+<div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+    <div class="mb-6">
+        <label class="block text-sm font-bold text-slate-700 mb-2">Chọn Kho thiết lập:</label>
+        <select 
+            bind:value={selectedKho} 
+            on:change={handleWarehouseChange}
+            class="w-full md:w-1/3 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+        >
+            <option value="">-- Chọn kho --</option>
+            {#each $warehouseList as kho}
+                <option value={kho}>{kho}</option>
+            {/each}
+        </select>
+    </div>
+
+    {#if selectedKho}
+        <div class="space-y-4">
+            <div class="p-4 bg-yellow-50 text-yellow-800 text-sm rounded border border-yellow-200">
+                <i data-feather="info" class="w-4 h-4 inline mr-1"></i>
+                Hệ thống đang cập nhật giao diện thiết lập mục tiêu chi tiết. Hiện tại vui lòng sử dụng file Excel hoặc chức năng import.
+            </div>
+            
+            <div class="border-t pt-4">
+                <h4 class="font-bold text-gray-700 mb-2">Cấu hình JSON (Nâng cao)</h4>
+                <textarea 
+                    class="w-full h-64 p-3 border border-gray-300 rounded font-mono text-sm"
+                    value={JSON.stringify(currentGoals, null, 2)}
+                    on:input={(e) => {
+                        try { currentGoals = JSON.parse(e.target.value); } catch(err){}
+                    }}
+                ></textarea>
+            </div>
+
+            <button 
+                on:click={saveGoals} 
+                disabled={isLoading}
+                class="px-6 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700 transition disabled:opacity-50"
+            >
+                {isLoading ? 'Đang lưu...' : 'Lưu Cấu Hình'}
+            </button>
+        </div>
+    {/if}
+</div>
+--- END FILE: ./src/components/admin/AdminGoalSettings.svelte ---
 
 --- START FILE: ./src/components/admin/AdminHelp.svelte ---
 <script>
@@ -1477,6 +1658,126 @@ export const fileSyncState = writable({});
 </style>
 --- END FILE: ./src/components/admin/AdminMappings.svelte ---
 
+--- START FILE: ./src/components/admin/AdminPerformanceTables.svelte ---
+<script>
+    import { onMount } from 'svelte';
+    import { customPerformanceTables, modalState } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    
+    // Load bảng hệ thống khi mount
+    onMount(async () => {
+        const tables = await adminService.loadSystemPerformanceTables();
+        // Cập nhật store hiển thị
+        customPerformanceTables.update(current => {
+            // Giữ lại bảng cá nhân (nếu có), thay thế bảng hệ thống cũ bằng bảng mới tải về
+            const userTables = current.filter(t => !t.isSystem);
+            // Gán cờ isSystem cho chắc chắn
+            const sysTables = tables.map(t => ({ ...t, isSystem: true }));
+            return [...sysTables, ...userTables];
+        });
+    });
+
+    // Chỉ hiển thị bảng hệ thống trong trang Admin
+    $: systemTables = $customPerformanceTables.filter(t => t.isSystem);
+
+    function openAddModal() {
+        // Mở modal với cờ isSystem = true (Admin tạo)
+        modalState.update(s => ({ 
+            ...s, 
+            activeModal: 'add-performance-table-modal', 
+            payload: null,
+            isSystem: true 
+        }));
+    }
+
+    function editTable(table) {
+        modalState.update(s => ({ 
+            ...s, 
+            activeModal: 'add-performance-table-modal', 
+            payload: table,
+            isSystem: true 
+        }));
+    }
+
+    async function deleteTable(id) {
+        if(!confirm("Bạn có chắc muốn xóa bảng hiệu quả hệ thống này? Hành động này sẽ ảnh hưởng đến toàn bộ người dùng.")) return;
+        
+        const newTables = $customPerformanceTables.filter(t => t.id !== id);
+        // Cập nhật Store local
+        customPerformanceTables.set(newTables);
+        
+        // Lọc lấy danh sách system mới để lưu Cloud
+        const systemTablesToSave = newTables.filter(t => t.isSystem);
+        await adminService.saveSystemPerformanceTables(systemTablesToSave);
+    }
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="p-2.5 bg-teal-50 rounded-lg text-teal-600 shadow-sm">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-slate-800 text-lg">Cấu hình Bảng Hiệu quả (Hệ thống)</h3>
+                    <span class="bg-teal-100 text-teal-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-teal-200">Global</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-0.5">Tạo bảng mẫu (Tỷ lệ %, Doanh thu, SL) hiển thị ở tab "Hiệu quả NV"</p>
+            </div>
+        </div>
+        <button on:click={openAddModal} class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold shadow-sm flex items-center gap-2 text-sm transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            Tạo bảng mới
+        </button>
+    </div>
+    
+    <div class="p-6 bg-slate-50/50">
+        {#if systemTables.length === 0}
+            <div class="text-center py-8 border-2 border-dashed border-slate-300 rounded-xl">
+                <p class="text-slate-500 italic">Chưa có bảng hiệu quả hệ thống nào.</p>
+            </div>
+        {:else}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {#each systemTables as table}
+                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col hover:border-teal-300 transition-colors group">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-bold text-slate-800 text-lg">{table.title}</h4>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Sửa" on:click={() => editTable(table)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Xóa" on:click={() => deleteTable(table.id)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-auto">
+                            <p class="text-xs text-slate-500 font-semibold uppercase mb-2">Cấu trúc:</p>
+                            <div class="flex flex-wrap gap-2">
+                                {#each table.columns as col}
+                                    <span class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200 flex items-center gap-1">
+                                        {col.header} 
+                                        {#if col.type === 'PERCENT'}
+                                            <span class="text-[9px] bg-red-100 text-red-600 px-1 rounded font-bold">%</span>
+                                        {:else if col.type === 'SL'}
+                                            <span class="text-[9px] bg-gray-200 text-gray-600 px-1 rounded font-bold">SL</span>
+                                        {:else}
+                                            <span class="text-[9px] bg-blue-100 text-blue-600 px-1 rounded font-bold">DT</span>
+                                        {/if}
+                                    </span>
+                                {/each}
+                            </div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    </div>
+</div>
+--- END FILE: ./src/components/admin/AdminPerformanceTables.svelte ---
+
 --- START FILE: ./src/components/admin/AdminRevenueTables.svelte ---
 <script>
     import { onMount } from 'svelte';
@@ -1726,6 +2027,29 @@ export const fileSyncState = writable({});
     {/if}
 </div>
 --- END FILE: ./src/components/admin/AdminSpecialProducts.svelte ---
+
+--- START FILE: ./src/components/admin/AdminSpecialProgram.svelte ---
+<script>
+    import { onMount } from 'svelte';
+    import { adminService } from '../../services/admin.service.js';
+    
+    let programs = [];
+    
+    onMount(async () => {
+        programs = await adminService.loadGlobalSpecialPrograms();
+    });
+</script>
+
+<div class="bg-white p-6 rounded-lg border border-slate-200 text-center">
+    <p class="text-slate-500 mb-4">Danh sách chương trình độc quyền (Global).</p>
+    <div class="p-4 bg-slate-50 rounded border border-slate-200 inline-block text-left w-full">
+        <pre class="text-xs overflow-auto max-h-60">{JSON.stringify(programs, null, 2)}</pre>
+    </div>
+    <div class="mt-4">
+        <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm font-bold cursor-not-allowed">Chỉnh sửa (Sắp ra mắt)</button>
+    </div>
+</div>
+--- END FILE: ./src/components/admin/AdminSpecialProgram.svelte ---
 
 --- START FILE: ./src/components/admin/AdminUserStats.svelte ---
 <script>
@@ -3128,174 +3452,179 @@ export const fileSyncState = writable({});
 
 --- START FILE: ./src/components/DeclarationSection.svelte ---
 <script>
-  import { afterUpdate } from 'svelte';
-  
-  // Import các component con
-  import AdminCategory from './admin/AdminCategory.svelte';
-  import AdminSpecialProducts from './admin/AdminSpecialProducts.svelte';
-  import AdminCalculation from './admin/AdminCalculation.svelte';
-  import AdminMappings from './admin/AdminMappings.svelte';
-  import AdminHelp from './admin/AdminHelp.svelte';
-  import AdminUserStats from './admin/AdminUserStats.svelte';
-  import AdminCompetition from './admin/AdminCompetition.svelte';
-  import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
-  import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
-  import AdminEfficiency from './admin/AdminEfficiency.svelte';
+    import { onMount } from 'svelte';
+    import { fade } from 'svelte/transition';
+    import { isAdmin, modalState } from '../stores.js';
+    import { authService } from '../services/auth.service.js';
 
-  export let activeTab;
+    // Import Admin Components
+    import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
+    // [NEW] Component quản lý bảng hiệu quả
+    import AdminPerformanceTables from './admin/AdminPerformanceTables.svelte';
+    
+    import AdminEfficiency from './admin/AdminEfficiency.svelte';
+    import AdminCategory from './admin/AdminCategory.svelte';
+    import AdminGoalSettings from './admin/AdminGoalSettings.svelte';
+    import AdminCompetition from './admin/AdminCompetition.svelte';
+    import AdminSpecialProgram from './admin/AdminSpecialProgram.svelte';
+    import AdminConfig from './admin/AdminConfig.svelte';
 
-  let activeMenu = 'home'; // Default tab
+    // State quản lý menu con bên trái
+    let activeMenu = 'config'; // config | data | goals | competition | special
 
-  const menuItems = [
-      { id: 'home', label: 'Quản lý trang chủ', icon: 'layout' },
-      { id: 'config', label: 'Cấu hình bảng & chỉ số', icon: 'sliders' },
-      { id: 'competition', label: 'Khai báo thi đua', icon: 'award' },
-      { id: 'structure', label: 'Nạp dữ liệu cấu trúc', icon: 'database' },
-      { id: 'logic', label: 'Thiết lập logic', icon: 'cpu' },
-      { id: 'users', label: 'Quản lý người dùng', icon: 'users' }
-  ];
+    // Menu items
+    const menuItems = [
+        { id: 'config', label: 'Cấu hình Bảng & Chỉ số', icon: 'layout' },
+        { id: 'data', label: 'Dữ liệu & Tính toán', icon: 'database' },
+        { id: 'goals', label: 'Thiết lập Mục tiêu', icon: 'target' },
+        { id: 'competition', label: 'Thi đua & Khen thưởng', icon: 'award' },
+        { id: 'special', label: 'Chương trình Độc quyền', icon: 'star' }
+    ];
 
-  function setActiveMenu(id) {
-      activeMenu = id;
-  }
+    onMount(() => {
+        // Kiểm tra quyền admin lại một lần nữa khi mount
+        if (!$isAdmin) {
+            // Nếu không phải admin, có thể redirect hoặc hiện thông báo (đã xử lý ở AdminModal)
+        }
+    });
 
-  // Hook replace icon mỗi khi tab hoặc menu con thay đổi
-  $: if (activeTab === 'declaration-section') {
-      // Delay nhỏ để DOM render xong mới replace icon
-      setTimeout(() => {
-          if (typeof feather !== 'undefined') feather.replace();
-      }, 50);
-  }
-  
-  afterUpdate(() => {
-      if (activeTab === 'declaration-section') {
-          if (typeof feather !== 'undefined') feather.replace();
-      }
-  });
+    function handleLogin() {
+        modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
+    }
+
+    function switchMenu(id) {
+        activeMenu = id;
+    }
 </script>
 
-<section id="declaration-section" class="page-section {activeTab === 'declaration-section' ? '' : 'hidden'}"> 
-    <div class="max-w-[1600px] mx-auto pb-10">
-        <div class="flex flex-col lg:flex-row gap-6">
-            
-            <div class="w-full lg:w-64 flex-shrink-0">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden sticky top-4">
-                    <div class="p-4 bg-slate-50 border-b border-slate-200">
-                        <h2 class="font-bold text-slate-800 flex items-center gap-2">
-                            <i data-feather="settings" class="w-4 h-4 text-blue-600"></i>
-                            Hệ thống
-                        </h2>
+<section id="declaration-section" class="page-section">
+    <div class="content-card !p-0 min-h-[600px] flex flex-col md:flex-row overflow-hidden">
+        
+        {#if !$isAdmin}
+            <div class="flex-1 flex flex-col items-center justify-center p-12 bg-slate-50">
+                <div class="bg-white p-8 rounded-2xl shadow-lg border border-slate-100 max-w-md w-full text-center">
+                    <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
                     </div>
-                    <nav class="flex flex-col p-2 space-y-1">
-                        {#each menuItems as item}
-                            <button 
-                                class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-left
-                                       {activeMenu === item.id 
-                                            ? 'bg-blue-50 text-blue-700 shadow-sm' 
-                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}"
-                                on:click={() => setActiveMenu(item.id)}
-                            >
-                                <i data-feather={item.icon} class="w-4 h-4 {activeMenu === item.id ? 'text-blue-600' : 'text-slate-400'}"></i>
-                                {item.label}
-                            </button>
-                        {/each}
-                    </nav>
+                    <h2 class="text-xl font-bold text-slate-800 mb-2">Yêu cầu quyền Quản trị</h2>
+                    <p class="text-slate-500 mb-6 text-sm">Khu vực này dành riêng cho quản trị viên để thiết lập cấu hình hệ thống.</p>
+                    <button 
+                        on:click={handleLogin}
+                        class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-md transition-all transform hover:scale-[1.02]"
+                    >
+                        Đăng nhập Admin
+                    </button>
+                </div>
+            </div>
+        {:else}
+            <div class="w-full md:w-64 bg-slate-50 border-r border-slate-200 flex-shrink-0">
+                <div class="p-4 border-b border-slate-200">
+                    <h2 class="font-bold text-slate-700 uppercase text-xs tracking-wider">Danh mục quản lý</h2>
+                </div>
+                <nav class="p-2 space-y-1">
+                    {#each menuItems as item}
+                        <button 
+                            class="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all
+                            {activeMenu === item.id ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}"
+                            on:click={() => switchMenu(item.id)}
+                        >
+                            <div class="{activeMenu === item.id ? 'text-blue-600' : 'text-slate-400'}">
+                                {#if item.icon === 'layout'}
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
+                                {:else if item.icon === 'database'}
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                                {:else if item.icon === 'target'}
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                {:else if item.icon === 'award'}
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                {:else if item.icon === 'star'}
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                                {/if}
+                            </div>
+                            {item.label}
+                        </button>
+                    {/each}
+                </nav>
+                
+                <div class="mt-auto p-4 border-t border-slate-200">
+                    <button class="w-full py-2 border border-slate-300 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors" on:click={() => authService.logout()}>
+                        Đăng xuất Admin
+                    </button>
                 </div>
             </div>
 
-            <div class="flex-grow min-w-0">
-                <div class="lg:hidden mb-4 p-4 bg-blue-600 text-white rounded-xl shadow-sm">
-                    <span class="uppercase text-xs font-bold opacity-80">Đang chọn:</span>
-                    <h3 class="text-xl font-bold">{menuItems.find(i => i.id === activeMenu)?.label}</h3>
-                </div>
+            <div class="flex-1 bg-white p-6 md:p-8 overflow-y-auto h-[800px] custom-scrollbar">
+                
+                {#if activeMenu === 'config'}
+                    <div in:fade={{ duration: 200 }}>
+                        <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <span class="bg-blue-100 text-blue-600 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg></span>
+                            Cấu hình Bảng hiển thị & Chỉ số
+                        </h3>
+                        <div class="space-y-8">
+                            <AdminRevenueTables />
 
-                <div class="space-y-6 animate-fade-in">
-                    
-                    {#if activeMenu === 'home'}
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b border-slate-200">Quản lý Trang Chủ</h3>
-                            <div class="space-y-6">
-                                <AdminHomeConfig />
-                                
-                                <AdminHelp />
-                            </div>
+                            <AdminPerformanceTables />
+
+                            <AdminEfficiency />
+
+                            <AdminCategory viewMode="config" />
                         </div>
-                    {/if}
+                    </div>
+                {/if}
 
-                    {#if activeMenu === 'config'}
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b border-slate-200">Cấu hình Bảng & Chỉ số</h3>
-                            <div class="space-y-6">
-                                <AdminRevenueTables />
+                {#if activeMenu === 'data'}
+                    <div in:fade={{ duration: 200 }}>
+                        <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <span class="bg-indigo-100 text-indigo-600 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg></span>
+                            Khai báo Dữ liệu & Công thức
+                        </h3>
+                        <AdminConfig />
+                    </div>
+                {/if}
 
-                                <div class="bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
-                                    <div class="inline-flex p-3 bg-slate-200 rounded-full text-slate-500 mb-3">
-                                        <i data-feather="layout" class="w-6 h-6"></i>
-                                    </div>
-                                    <h4 class="font-bold text-slate-600">Cấu hình Bảng Hiệu Quả</h4>
-                                    <p class="text-sm text-slate-400 mt-1">Chức năng đang được phát triển...</p>
-                                </div>
+                {#if activeMenu === 'goals'}
+                    <div in:fade={{ duration: 200 }}>
+                        <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <span class="bg-green-100 text-green-600 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></span>
+                            Thiết lập Mục tiêu & KPI
+                        </h3>
+                        <AdminGoalSettings />
+                    </div>
+                {/if}
 
-                                <AdminEfficiency />
+                {#if activeMenu === 'competition'}
+                    <div in:fade={{ duration: 200 }}>
+                        <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <span class="bg-yellow-100 text-yellow-600 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></span>
+                            Cấu hình Thi đua & Khen thưởng
+                        </h3>
+                        <AdminCompetition />
+                    </div>
+                {/if}
 
-                                <AdminCategory viewMode="config" />
-                            </div>
-                        </div>
-                    {/if}
+                {#if activeMenu === 'special'}
+                    <div in:fade={{ duration: 200 }}>
+                        <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <span class="bg-purple-100 text-purple-600 p-1.5 rounded"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg></span>
+                            Chương trình Độc quyền
+                        </h3>
+                        <AdminSpecialProgram />
+                    </div>
+                {/if}
 
-                    {#if activeMenu === 'competition'}
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b border-slate-200">Khai báo Thi đua</h3>
-                            <div class="space-y-6">
-                                <AdminMappings />
-                                <AdminCompetition />
-                            </div>
-                        </div>
-                    {/if}
-
-                    {#if activeMenu === 'structure'}
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b border-slate-200">Nạp dữ liệu Cấu trúc</h3>
-                            <div class="space-y-6">
-                                <AdminCategory viewMode="upload" />
-                                
-                                <AdminSpecialProducts />
-                            </div>
-                        </div>
-                    {/if}
-
-                    {#if activeMenu === 'logic'}
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b border-slate-200">Thiết lập Logic & Tính toán</h3>
-                            <div class="space-y-6">
-                                <AdminCalculation />
-                            </div>
-                        </div>
-                    {/if}
-
-                    {#if activeMenu === 'users'}
-                        <div>
-                            <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b border-slate-200">Quản lý Người dùng</h3>
-                            <div class="space-y-6">
-                                <AdminUserStats />
-                            </div>
-                        </div>
-                    {/if}
-
-                </div>
             </div>
-        </div>
+        {/if}
     </div>
 </section>
 
 <style>
-    .animate-fade-in {
-        animation: fadeIn 0.3s ease-out;
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(5px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
+    .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 </style>
 --- END FILE: ./src/components/DeclarationSection.svelte ---
 
@@ -6350,6 +6679,308 @@ export const fileSyncState = writable({});
 </style>
 --- END FILE: ./src/components/health-staff/IncomeTable.svelte ---
 
+--- START FILE: ./src/components/health-staff/performance/DynamicPerformanceTable.svelte ---
+<script>
+    import { createEventDispatcher } from 'svelte';
+    import { formatters } from '../../../utils/formatters.js';
+    import { dynamicTableProcessor } from '../../../services/processing/logic/dynamicTable.processor.js';
+    import { isAdmin } from '../../../stores.js';
+    
+    // Components
+    import SortableTh from '../../common/SortableTh.svelte';
+
+    export let config = {};      // Cấu hình bảng (từ Admin/User)
+    export let reportData = [];  // Dữ liệu nhân viên (Master Data)
+    export let colorTheme = 'blue';
+
+    const dispatch = createEventDispatcher();
+
+    // --- STATE ---
+    let sortKey = 'hoTen';
+    let sortDirection = 'asc';
+
+    // --- PROCESSING ---
+    // 1. Biến đổi dữ liệu thô -> Dữ liệu hiển thị (kèm logic tính %)
+    $: processedResult = dynamicTableProcessor.processTableData(reportData, config);
+    $: tableData = processedResult.processedData;
+    $: totals = processedResult.totals;
+
+    // 2. Sắp xếp
+    $: sortedData = dynamicTableProcessor.sortTableData(tableData, sortKey, sortDirection);
+
+    // --- HANDLERS ---
+    function handleSort(event) {
+        const key = event.detail;
+        if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+        else { sortKey = key; sortDirection = 'desc'; }
+    }
+
+    // --- STYLING HELPERS ---
+    const themeMap = {
+        blue: { header: 'bg-blue-50 border-blue-200', title: 'text-blue-800' },
+        green: { header: 'bg-green-50 border-green-200', title: 'text-green-800' },
+        orange: { header: 'bg-orange-50 border-orange-200', title: 'text-orange-800' },
+        purple: { header: 'bg-purple-50 border-purple-200', title: 'text-purple-800' },
+        teal: { header: 'bg-teal-50 border-teal-200', title: 'text-teal-800' },
+    };
+    $: theme = themeMap[colorTheme] || themeMap.blue;
+
+    // Hàm lấy màu sắc cho giá trị (So sánh với Target nếu là %)
+    function getValueColor(cell, targetObj) {
+        if (cell.config.type === 'PERCENT') {
+            // Lấy target từ config bảng hoặc goal settings (nếu có logic override)
+            // Ở đây ta dùng targetId để map vào object mucTieu của nhân viên
+            const targetId = cell.config.targetId;
+            const targetVal = targetId && targetObj && targetObj[targetId] 
+                ? parseFloat(targetObj[targetId]) 
+                : 0;
+
+            const currentVal = cell.value * 100; // Đưa về thang 100
+            
+            if (targetVal > 0) {
+                return currentVal >= targetVal ? 'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
+            }
+            return 'text-red-600'; // Mặc định % là màu đỏ (hoặc cam)
+        }
+        if (cell.config.type === 'SL') return 'text-gray-800';
+        return 'text-blue-700 font-semibold'; // DT, DTQD
+    }
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col transition-all hover:shadow-md relative group/card">
+    
+    <div class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity flex gap-1 z-20 bg-white/90 backdrop-blur rounded-lg p-1 shadow-sm border border-gray-100">
+        {#if !config.isSystem || $isAdmin}
+            <button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Sửa" on:click|stopPropagation={() => dispatch('edit', config)}>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            </button>
+            <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title="Xóa" on:click|stopPropagation={() => dispatch('delete', config.id)}>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+        {/if}
+    </div>
+
+    <div class="px-5 py-3 border-b {theme.header} flex justify-between items-center">
+        <h4 class="text-base font-bold uppercase {theme.title} truncate flex items-center gap-2" title={config.title}>
+            <i data-feather="bar-chart-2" class="w-4 h-4"></i> {config.title}
+        </h4>
+    </div>
+
+    {#if sortedData.length === 0}
+        <div class="flex-grow flex items-center justify-center p-8 bg-slate-50/30">
+             <p class="text-gray-400 italic text-sm">Chưa có phát sinh dữ liệu.</p>
+        </div>
+    {:else}
+        <div class="overflow-x-auto flex-grow custom-scrollbar relative">
+            <table class="min-w-full text-sm border-collapse border-0">
+                <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
+                    <tr>
+                        <SortableTh 
+                            key="hoTen" 
+                            label="Nhân viên" 
+                            className="sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 min-w-[150px]" 
+                            {sortKey} {sortDirection} 
+                            on:sort={handleSort} 
+                        />
+                        
+                        {#each config.columns as col (col.id)}
+                            {@const bgClass = col.color ? `bg-${col.color}-50` : 'bg-gray-50'}
+                            {@const textClass = col.color ? `text-${col.color}-800` : 'text-gray-700'}
+                            <SortableTh 
+                                key={col.id} 
+                                label={col.header} 
+                                align="right" 
+                                className="{bgClass} {textClass} border-r border-b border-gray-200 min-w-[100px]" 
+                                {sortKey} {sortDirection} 
+                                on:sort={handleSort} 
+                            />
+                        {/each}
+                    </tr>
+                </thead>
+
+                <tbody class="divide-y divide-gray-100">
+                    {#each sortedData as row (row.maNV)}
+                        <tr class="hover:bg-blue-50/50 transition-colors group">
+                            <td class="px-3 py-2 font-semibold text-gray-700 border-r border-b border-gray-300 bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                <div class="flex flex-col">
+                                    <span class="text-blue-700 text-sm">{formatters.getShortEmployeeName(row.hoTen, row.maNV).split(' - ')[0]}</span>
+                                    <span class="text-[10px] text-gray-400 font-mono">{row.maNV}</span>
+                                </div>
+                            </td>
+
+                            {#each config.columns as col (col.id)}
+                                {@const cell = row.cells[col.id]}
+                                <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell, row.mucTieu)}">
+                                    {cell ? cell.display : '-'}
+                                </td>
+                            {/each}
+                        </tr>
+                    {/each}
+                </tbody>
+
+                <tfoot class="bg-gray-100 font-bold text-gray-800 border-t-2 border-gray-300 sticky bottom-0 z-20">
+                    <tr>
+                        <td class="px-3 py-2 sticky left-0 bg-gray-200 z-30 border-r border-gray-300">TỔNG</td>
+                        {#each config.columns as col (col.id)}
+                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100">
+                                {totals.cells[col.id]?.display || '-'}
+                            </td>
+                        {/each}
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    {/if}
+</div>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+</style>
+--- END FILE: ./src/components/health-staff/performance/DynamicPerformanceTable.svelte ---
+
+--- START FILE: ./src/components/health-staff/performance/PerformanceView.svelte ---
+<script>
+    import { onMount } from 'svelte';
+    import { customPerformanceTables, isAdmin, modalState, selectedWarehouse } from '../../../stores.js';
+    import { adminService } from '../../../services/admin.service.js';
+    import { datasyncService } from '../../../services/datasync.service.js';
+    
+    import DynamicPerformanceTable from './DynamicPerformanceTable.svelte';
+
+    export let reportData = [];
+
+    // --- LOGIC LOAD DỮ LIỆU ---
+    // Tự động load khi Warehouse thay đổi (Reactive)
+    $: if ($selectedWarehouse) {
+        loadData($selectedWarehouse);
+    }
+
+    async function loadData(kho) {
+        // 1. Load System Tables (Admin)
+        const sysTables = await adminService.loadSystemPerformanceTables();
+        
+        // 2. Load Personal Tables (User)
+        const perTables = await datasyncService.loadPersonalPerformanceTables(kho);
+
+        // 3. Load trạng thái ẩn/hiện local
+        const hiddenIds = JSON.parse(localStorage.getItem('hiddenPerformanceTableIds') || '[]');
+
+        // 4. Merge
+        const merged = [
+            ...sysTables.map(t => ({ ...t, isSystem: true, isVisible: !hiddenIds.includes(t.id) })),
+            ...perTables.map(t => ({ ...t, isSystem: false, isVisible: true }))
+        ];
+        
+        customPerformanceTables.set(merged);
+    }
+
+    // --- VISIBILITY LOGIC ---
+    function toggleTableVisibility(tableId) {
+        customPerformanceTables.update(items => {
+            const newItems = items.map(t => t.id === tableId ? { ...t, isVisible: !t.isVisible } : t);
+            
+            // Save preference for System tables
+            const hiddenIds = newItems.filter(t => t.isSystem && !t.isVisible).map(t => t.id);
+            localStorage.setItem('hiddenPerformanceTableIds', JSON.stringify(hiddenIds));
+            
+            return newItems;
+        });
+    }
+
+    // --- CRUD ACTIONS ---
+    function openAddModal() {
+        if (!$selectedWarehouse) return alert("Vui lòng chọn Kho trước.");
+        // Mở modal tạo mới (User context)
+        modalState.update(s => ({ ...s, activeModal: 'add-performance-table-modal', payload: null, isSystem: false }));
+    }
+
+    function editTable(table) {
+        // Check quyền
+        if (table.isSystem && !$isAdmin) return alert("Bạn không có quyền sửa bảng hệ thống.");
+        
+        modalState.update(s => ({ 
+            ...s, 
+            activeModal: 'add-performance-table-modal', 
+            payload: table,
+            isSystem: table.isSystem 
+        }));
+    }
+
+    async function deleteTable(id) {
+        const table = $customPerformanceTables.find(t => t.id === id);
+        if (!table) return;
+
+        if (table.isSystem) {
+            if (!$isAdmin) return alert("Bạn không có quyền xóa bảng hệ thống.");
+            if (!confirm("Xóa vĩnh viễn bảng hệ thống này?")) return;
+            
+            const newTables = $customPerformanceTables.filter(t => t.id !== id && t.isSystem);
+            await adminService.saveSystemPerformanceTables(newTables);
+        } else {
+            if (!confirm("Xóa bảng cá nhân này?")) return;
+            const newTables = $customPerformanceTables.filter(t => t.id !== id && !t.isSystem);
+            await datasyncService.savePersonalPerformanceTables($selectedWarehouse, newTables);
+        }
+        // Reload local store
+        customPerformanceTables.update(items => items.filter(t => t.id !== id));
+    }
+
+    $: visibleTables = $customPerformanceTables.filter(t => t.isVisible);
+    const colors = ['blue', 'green', 'orange', 'purple', 'teal'];
+</script>
+
+<div class="mb-6 flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+    <div class="text-xs font-bold uppercase text-gray-500 mr-2 flex items-center gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+        Bảng hiển thị:
+    </div>
+    
+    {#each $customPerformanceTables as table}
+        <button 
+            class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
+                   {table.isVisible ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
+                   {table.isSystem ? 'border-dashed' : ''}"
+            on:click={() => toggleTableVisibility(table.id)}
+            title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
+        >
+            {#if table.isSystem}<span class="text-[10px] opacity-70">🌐</span>{/if}
+            {table.title}
+        </button>
+    {/each}
+
+    <button 
+        class="px-3 py-1.5 rounded-full text-xs font-bold border border-dashed border-gray-300 text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors ml-auto flex items-center gap-1"
+        on:click={openAddModal}
+    >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+        Tạo bảng mới
+    </button>
+</div>
+
+{#if visibleTables.length === 0}
+    <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
+         <p class="text-gray-500 font-medium">Bạn đã ẩn tất cả các bảng. Vui lòng bật lại trên thanh công cụ.</p>
+    </div>
+{:else}
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
+        {#each visibleTables as table, index (table.id)}
+            <div data-capture-group="performance-table">
+                <DynamicPerformanceTable 
+                    config={table} 
+                    {reportData} 
+                    colorTheme={colors[index % colors.length]}
+                    on:edit={() => editTable(table)}
+                    on:delete={() => deleteTable(table.id)}
+                />
+            </div>
+        {/each}
+    </div>
+{/if}
+--- END FILE: ./src/components/health-staff/performance/PerformanceView.svelte ---
+
 --- START FILE: ./src/components/health-staff/revenue/DailyPerfChart.svelte ---
 <script>
   import { onMount, afterUpdate } from 'svelte';
@@ -7310,12 +7941,10 @@ export const fileSyncState = writable({});
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
-  
-  // [MỚI] Import thêm RevenueDetailView
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
-
   import IncomeTable from './health-staff/IncomeTable.svelte';
-  import EfficiencyTable from './health-staff/EfficiencyTable.svelte';
+  // [NEW] Thay thế EfficiencyTable bằng PerformanceView
+  import PerformanceView from './health-staff/performance/PerformanceView.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
 
@@ -7335,6 +7964,8 @@ export const fileSyncState = writable({});
   ];
 
   let lastDataHash = ''; 
+  
+  // Logic tính toán Master Report khi dữ liệu thay đổi
   $: {
       if ($danhSachNhanVien.length > 0 && $ycxData.length > 0) {
           const currentHash = `${$danhSachNhanVien.length}-${$ycxData.length}-${$selectedWarehouse}`;
@@ -7347,6 +7978,7 @@ export const fileSyncState = writable({});
       }
   }
 
+  // Logic xử lý Processed Report (thêm đánh giá, trung bình bộ phận)
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -7476,7 +8108,7 @@ export const fileSyncState = writable({});
                 {:else if activeSubTab === 'hieuqua'}
                     <div id="subtab-hieuqua" class="sub-tab-content" data-capture-preset="landscape-table">
                         <div id="efficiency-report-container">
-                            <EfficiencyTable reportData={processedReport} />
+                            <PerformanceView reportData={processedReport} />
                         </div>
                     </div>
 
@@ -10649,6 +11281,528 @@ export const fileSyncState = writable({});
 </style>
 --- END FILE: ./src/components/modals/AddMetricModal.svelte ---
 
+--- START FILE: ./src/components/modals/AddPerformanceTableModal.svelte ---
+<script>
+    import { createEventDispatcher } from 'svelte';
+    import { 
+        categoryStructure, 
+        macroCategoryConfig, 
+        macroProductGroupConfig,
+        efficiencyConfig,
+        warehouseCustomMetrics
+    } from '../../stores.js';
+    import { parseIdentity } from '../../utils.js';
+
+    export let isOpen = false;
+    export let editItem = null; // null = tạo mới, object = sửa
+    export let isSystem = false; // true = Admin tạo, false = User tạo
+
+    const dispatch = createEventDispatcher();
+
+    // --- CẤU HÌNH UI ---
+    const COLORS = [
+        { id: 'blue',   bg: 'bg-blue-500',   class: 'bg-blue-100 text-blue-900 border-blue-200', label: 'Xanh dương' },
+        { id: 'green',  bg: 'bg-green-500',  class: 'bg-green-100 text-green-900 border-green-200', label: 'Xanh lá' },
+        { id: 'orange', bg: 'bg-orange-500', class: 'bg-orange-100 text-orange-900 border-orange-200', label: 'Cam' },
+        { id: 'purple', bg: 'bg-purple-500', class: 'bg-purple-100 text-purple-900 border-purple-200', label: 'Tím' },
+        { id: 'teal',   bg: 'bg-teal-500',   class: 'bg-teal-100 text-teal-900 border-teal-200', label: 'Xanh cổ vịt' },
+        { id: 'red',    bg: 'bg-red-500',    class: 'bg-red-100 text-red-900 border-red-200', label: 'Đỏ' },
+        { id: 'gray',   bg: 'bg-gray-500',   class: 'bg-gray-100 text-gray-900 border-gray-200', label: 'Xám' }
+    ];
+
+    const DATA_TYPES = [
+        { id: 'DT', label: 'Doanh thu', icon: 'dollar-sign' },
+        { id: 'DTQD', label: 'DTQĐ', icon: 'refresh-cw' },
+        { id: 'SL', label: 'Số lượng', icon: 'hash' },
+        { id: 'PERCENT', label: 'Tỷ lệ %', icon: 'percent' }
+    ];
+
+    // --- DATA SOURCES ---
+    let sourceList = []; 
+    let searchFilter = '';
+
+    // --- STATE ---
+    let tableId = '';
+    let tableName = '';
+    let columns = [];
+    let activeColIndex = 0;
+    let wasOpen = false;
+
+    $: activeColumn = columns[activeColIndex] || null;
+
+    // --- INITIALIZATION ---
+    $: if (isOpen) {
+        if (!wasOpen) {
+            initDataSource();
+            if (editItem) {
+                // Clone deep để ngắt tham chiếu với dữ liệu gốc
+                tableId = editItem.id;
+                tableName = editItem.title;
+                columns = JSON.parse(JSON.stringify(editItem.columns || []));
+            } else {
+                resetForm();
+            }
+            if (columns.length === 0) addColumn();
+            activeColIndex = 0;
+            wasOpen = true;
+        }
+    } else {
+        wasOpen = false;
+        searchFilter = '';
+    }
+
+    function resetForm() {
+        tableId = `perf_table_${Date.now()}`;
+        tableName = '';
+        columns = [];
+    }
+
+    function initDataSource() {
+        const uniqueMap = new Map();
+
+        // 1. MACRO CONFIG (Nhóm hàng lớn)
+        ($macroCategoryConfig || []).forEach(m => {
+            const id = (m.id || m.name).trim();
+            if (!uniqueMap.has(id)) uniqueMap.set(id, { id, name: m.name, type: 'MACRO_CAT' });
+        });
+
+        ($macroProductGroupConfig || []).forEach(m => {
+            const id = (m.id || m.name).trim();
+            if (!uniqueMap.has(id)) uniqueMap.set(id, { id, name: m.name, type: 'MACRO_GROUP' });
+        });
+        
+        // 2. DATA STRUCTURE (Từ file Excel) - [LOGIC ID]
+        // Tách ID ra khỏi chuỗi "ID - Name" (Ví dụ: "304 - Điện tử" -> ID: "304")
+        
+        const processItem = (rawString, type) => {
+            if (!rawString) return;
+            // Sử dụng parseIdentity để tách mã và tên
+            const { identity, name } = parseIdentity(rawString);
+            
+            // Logic quan trọng: Dùng ID (identity) làm Key chính
+            // Nếu không tách được ID (identity trùng name), dùng nguyên chuỗi
+            const key = identity || rawString.trim(); 
+            const displayName = rawString.trim(); // Hiển thị vẫn giữ nguyên "304 - Điện tử" cho dễ nhìn
+
+            if (!uniqueMap.has(key)) {
+                uniqueMap.set(key, { id: key, name: displayName, type });
+            }
+        };
+
+        ($categoryStructure || []).forEach(c => {
+            if (c.nhomHang) processItem(c.nhomHang, 'GROUP');
+            if (c.nganhHang) processItem(c.nganhHang, 'CATEGORY');
+        });
+
+        // Chuyển Map thành Array và sort theo tên hiển thị
+        sourceList = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // --- COLUMN ACTIONS ---
+    function addColumn() {
+        columns = [...columns, {
+            id: `col_${Date.now()}`,
+            header: `Cột ${columns.length + 1}`,
+            type: 'DT',
+            color: 'blue',
+            items: [],
+            numerator: [],
+            denominator: [],
+            targetId: null
+        }];
+        activeColIndex = columns.length - 1;
+    }
+
+    function removeColumn(index) {
+        if (columns.length <= 1) return alert("Bảng cần ít nhất 1 cột.");
+        if (confirm("Xóa cột này?")) {
+            columns = columns.filter((_, i) => i !== index);
+            if (activeColIndex >= columns.length) activeColIndex = columns.length - 1;
+        }
+    }
+
+    // --- HANDLE CHANGES ---
+    function updateActiveColumn(key, value) {
+        if (!activeColumn) return;
+        columns[activeColIndex][key] = value;
+    }
+
+    // --- SELECTION LOGIC ---
+    function toggleSelection(item, targetArrayName) {
+        if (!activeColumn) return;
+        
+        const currentArr = activeColumn[targetArrayName] || [];
+        const idx = currentArr.indexOf(item.id); // Lưu ID (VD: "304")
+        
+        let newArr;
+        if (idx >= 0) {
+            newArr = currentArr.filter(i => i !== item.id);
+        } else {
+            newArr = [...currentArr, item.id];
+        }
+        
+        columns[activeColIndex][targetArrayName] = newArr;
+        if (activeColumn.type === 'PERCENT') detectExistingIndicator();
+    }
+
+    // [MỚI] Nút Xóa tất cả lựa chọn
+    function clearAllSelection(targetArrayName) {
+        if (!activeColumn) return;
+        const currentArr = activeColumn[targetArrayName] || [];
+        if (currentArr.length === 0) return;
+
+        if (confirm(`Bạn có chắc muốn xóa tất cả ${currentArr.length} mục đã chọn?`)) {
+            columns[activeColIndex][targetArrayName] = [];
+            if (activeColumn.type === 'PERCENT') detectExistingIndicator();
+        }
+    }
+
+    function toggleAll(targetArrayName, select) {
+        if (!activeColumn) return;
+        const visibleItems = sourceList
+            .filter(i => i.name.toLowerCase().includes(searchFilter.toLowerCase()))
+            .map(i => i.id);
+
+        let newArr;
+        if (select) {
+            const currentSet = new Set(activeColumn[targetArrayName] || []);
+            visibleItems.forEach(id => currentSet.add(id));
+            newArr = [...currentSet];
+        } else {
+            const visibleSet = new Set(visibleItems);
+            newArr = (activeColumn[targetArrayName] || []).filter(id => !visibleSet.has(id));
+        }
+        columns[activeColIndex][targetArrayName] = newArr;
+    }
+
+    function detectExistingIndicator() {
+        if (!activeColumn || activeColumn.type !== 'PERCENT') return;
+
+        const num = new Set(activeColumn.numerator || []);
+        const den = new Set(activeColumn.denominator || []);
+
+        const allConfigs = [...$efficiencyConfig, ...$warehouseCustomMetrics];
+        
+        const match = allConfigs.find(cfg => {
+            const cfgNum = new Set(cfg.groupA || []);
+            const cfgDen = new Set(cfg.groupB || []);
+            const eq = (s1, s2) => s1.size === s2.size && [...s1].every(x => s2.has(x));
+            return eq(num, cfgNum) && eq(den, cfgDen);
+        });
+
+        if (match) {
+            columns[activeColIndex].targetId = match.id;
+        } else {
+            columns[activeColIndex].targetId = null;
+        }
+    }
+
+    function handleSave() {
+        if (!tableName.trim()) return alert("Vui lòng nhập Tên bảng.");
+        if (columns.length === 0) return alert("Vui lòng thêm ít nhất 1 cột.");
+
+        for (let i = 0; i < columns.length; i++) {
+            const col = columns[i];
+            if (!col.header.trim()) return alert(`Cột số ${i+1} chưa có tên.`);
+            
+            if (col.type === 'PERCENT') {
+                if (col.numerator.length === 0) return alert(`Cột "${col.header}": Chưa chọn Tử số.`);
+                if (col.denominator.length === 0) return alert(`Cột "${col.header}": Chưa chọn Mẫu số.`);
+                
+                if (!col.targetId) {
+                    col.targetId = `eff_custom_${Date.now()}_${i}`;
+                }
+            } else {
+                if (col.items.length === 0) return alert(`Cột "${col.header}": Chưa chọn nguồn dữ liệu.`);
+            }
+        }
+
+        dispatch('save', {
+            id: tableId,
+            title: tableName,
+            isSystem: isSystem,
+            columns: columns
+        });
+        close();
+    }
+
+    function close() { dispatch('close'); }
+</script>
+
+{#if isOpen}
+<div class="fixed inset-0 bg-gray-900/60 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm" on:click={close} role="button" tabindex="0">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-[1200px] h-[90vh] flex flex-col overflow-hidden animate-scale-in" on:click|stopPropagation role="document" tabindex="0">
+        
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+            <div>
+                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <i data-feather="layout" class="w-5 h-5 text-blue-600"></i>
+                    {editItem ? 'Chỉnh sửa' : 'Thêm mới'} Bảng Hiệu Quả
+                    {#if isSystem}
+                        <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded border border-purple-200 uppercase font-bold">System</span>
+                    {/if}
+                </h3>
+                <p class="text-xs text-gray-500 mt-1">Tạo bảng báo cáo tuỳ chỉnh với đa dạng loại dữ liệu (SL, DT, %)</p>
+            </div>
+            <button on:click={close} class="text-gray-400 hover:text-red-500 text-3xl leading-none transition-colors">&times;</button>
+        </div>
+
+        <div class="flex-1 overflow-hidden flex flex-col lg:flex-row">
+            
+            <div class="w-full lg:w-3/12 border-r border-gray-200 bg-white flex flex-col z-10 shadow-[2px_0_10px_rgba(0,0,0,0.05)]">
+                <div class="p-4 border-b border-gray-100 bg-slate-50">
+                    <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Tên Bảng Hiển Thị</label>
+                    <input 
+                        type="text" 
+                        bind:value={tableName} 
+                        class="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-bold text-gray-800 shadow-sm"
+                        placeholder="VD: Hiệu quả Phụ Kiện..."
+                    >
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-gray-50/50">
+                    {#each columns as col, index}
+                        <div 
+                            class="bg-white border rounded-xl p-3 cursor-pointer transition-all relative group
+                            {activeColIndex === index ? 'border-blue-500 ring-2 ring-blue-100 shadow-md' : 'border-gray-200 hover:border-blue-300 shadow-sm'}"
+                            on:click={() => activeColIndex = index}
+                            role="button" tabindex="0"
+                        >
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-[10px] font-bold uppercase text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                    Cột {index + 1}
+                                </span>
+                                <button 
+                                    class="text-gray-300 hover:text-red-500 p-1 rounded-md hover:bg-red-50 transition-colors"
+                                    on:click|stopPropagation={() => removeColumn(index)}
+                                    title="Xóa cột"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                            <div class="text-sm font-bold text-gray-700 truncate">{col.header}</div>
+                            <div class="text-[10px] text-gray-500 mt-1 flex items-center gap-1">
+                                <span class="w-2 h-2 rounded-full {COLORS.find(c=>c.id===col.color)?.bg || 'bg-blue-500'}"></span>
+                                {DATA_TYPES.find(t=>t.id===col.type)?.label}
+                            </div>
+                        </div>
+                    {/each}
+
+                    <button 
+                        class="w-full py-3 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all font-bold text-sm flex items-center justify-center gap-2 group"
+                        on:click={addColumn}
+                    >
+                        <span class="bg-gray-200 group-hover:bg-blue-200 rounded-full p-0.5"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" /></svg></span>
+                        Thêm cột mới
+                    </button>
+                </div>
+            </div>
+
+            <div class="w-full lg:w-9/12 flex flex-col bg-slate-50 h-full">
+                
+                {#if activeColumn}
+                    <div class="p-4 border-b border-gray-200 bg-white shadow-sm z-20 space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                            <div class="md:col-span-4">
+                                <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Tiêu đề cột</label>
+                                <input 
+                                    type="text" 
+                                    value={activeColumn.header} 
+                                    on:input={(e) => updateActiveColumn('header', e.target.value)}
+                                    class="w-full p-2 border border-gray-300 rounded text-sm font-bold text-gray-800 focus:border-blue-500 outline-none"
+                                    placeholder="Nhập tên cột..."
+                                >
+                            </div>
+
+                            <div class="md:col-span-5">
+                                <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Loại dữ liệu</label>
+                                <div class="flex flex-wrap gap-2">
+                                    {#each DATA_TYPES as type}
+                                        <button 
+                                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all
+                                            {activeColumn.type === type.id ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-100' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}"
+                                            on:click={() => updateActiveColumn('type', type.id)}
+                                        >
+                                            {#if type.icon === 'percent'}%{:else if type.icon === 'hash'}#{:else}${/if} {type.label}
+                                        </button>
+                                    {/each}
+                                </div>
+                            </div>
+
+                            <div class="md:col-span-3">
+                                <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Màu sắc</label>
+                                <div class="flex gap-1.5">
+                                    {#each COLORS as color}
+                                        <button 
+                                            class="w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 {color.bg}
+                                            {activeColumn.color === color.id ? 'border-gray-800 scale-110 shadow-sm ring-2 ring-white' : 'border-transparent opacity-70 hover:opacity-100'}"
+                                            on:click={() => updateActiveColumn('color', color.id)}
+                                            title={color.label}
+                                        ></button>
+                                    {/each}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="relative">
+                            <input 
+                                type="text" 
+                                bind:value={searchFilter}
+                                class="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm focus:bg-white transition-colors"
+                                placeholder="🔍 Tìm kiếm nhóm hàng, ngành hàng để chọn..."
+                            >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-3 top-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-hidden p-4">
+                        {#if activeColumn.type === 'PERCENT'}
+                            <div class="flex h-full gap-4">
+                                <div class="flex-1 flex flex-col border border-blue-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <div class="bg-blue-50 p-2 border-b border-blue-200 flex justify-between items-center">
+                                        <span class="font-bold text-blue-800 text-xs uppercase flex items-center gap-1">
+                                            <span class="bg-blue-600 text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">A</span> Tử Số
+                                        </span>
+                                        <div class="flex gap-2 text-[10px]">
+                                            <button class="text-blue-600 font-bold hover:underline" on:click={() => toggleAll('numerator', true)}>Chọn hết</button>
+                                            <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('numerator')}>Xóa tất cả</button>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                                        {@render DataSourceList({ 
+                                            items: sourceList, 
+                                            selectedIds: activeColumn.numerator, 
+                                            filter: searchFilter, 
+                                            onToggle: (item) => toggleSelection(item, 'numerator'),
+                                            selectedColor: "bg-blue-50 border-blue-300 text-blue-800"
+                                        })}
+                                    </div>
+                                    <div class="bg-gray-50 p-2 text-[10px] text-gray-500 text-center border-t border-gray-100">
+                                        Đã chọn: <strong>{activeColumn.numerator.length}</strong>
+                                    </div>
+                                </div>
+
+                                <div class="flex-1 flex flex-col border border-orange-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                                    <div class="bg-orange-50 p-2 border-b border-orange-200 flex justify-between items-center">
+                                        <span class="font-bold text-orange-800 text-xs uppercase flex items-center gap-1">
+                                            <span class="bg-orange-500 text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">B</span> Mẫu Số
+                                        </span>
+                                        <div class="flex gap-2 text-[10px]">
+                                            <button class="text-orange-600 font-bold hover:underline" on:click={() => toggleAll('denominator', true)}>Chọn hết</button>
+                                            <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('denominator')}>Xóa tất cả</button>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                                        {@render DataSourceList({ 
+                                            items: sourceList, 
+                                            selectedIds: activeColumn.denominator, 
+                                            filter: searchFilter, 
+                                            onToggle: (item) => toggleSelection(item, 'denominator'),
+                                            selectedColor: "bg-orange-50 border-orange-300 text-orange-800"
+                                        })}
+                                    </div>
+                                    <div class="bg-gray-50 p-2 text-[10px] text-gray-500 text-center border-t border-gray-100">
+                                        Đã chọn: <strong>{activeColumn.denominator.length}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                            {#if activeColumn.targetId}
+                                <div class="mt-2 text-center">
+                                    <span class="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                                        Đã tự động liên kết với chỉ số mục tiêu hệ thống
+                                    </span>
+                                </div>
+                            {/if}
+
+                        {:else}
+                            <div class="h-full flex flex-col border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                                <div class="bg-gray-50 p-2 border-b border-gray-200 flex justify-between items-center">
+                                    <span class="font-bold text-gray-700 text-xs uppercase">Danh sách Nguồn dữ liệu</span>
+                                    <div class="flex gap-3 text-xs">
+                                        <button class="text-blue-600 font-bold hover:underline" on:click={() => toggleAll('items', true)}>Chọn hiển thị ({sourceList.filter(i => i.name.toLowerCase().includes(searchFilter.toLowerCase())).length})</button>
+                                        <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('items')}>Xóa tất cả</button>
+                                    </div>
+                                </div>
+                                <div class="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {@render DataSourceList({ 
+                                            items: sourceList, 
+                                            selectedIds: activeColumn.items, 
+                                            filter: searchFilter, 
+                                            onToggle: (item) => toggleSelection(item, 'items'),
+                                            selectedColor: "bg-blue-50 border-blue-300 text-blue-800 ring-1 ring-blue-200",
+                                            gridLayout: true
+                                        })}
+                                    </div>
+                                </div>
+                                <div class="bg-gray-50 p-2 text-xs text-gray-500 border-t border-gray-200 flex justify-between px-4">
+                                    <span>Tổng nguồn: {sourceList.length}</span>
+                                    <span>Đã chọn: <strong>{activeColumn.items.length}</strong></span>
+                                </div>
+                            </div>
+                        {/if}
+                    </div>
+
+                {:else}
+                    <div class="h-full flex items-center justify-center text-gray-400 bg-gray-50">
+                        <div class="text-center">
+                            <i data-feather="arrow-left" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                            <p>Vui lòng chọn hoặc thêm một cột để cấu hình.</p>
+                        </div>
+                    </div>
+                {/if}
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-gray-200 bg-white flex justify-end gap-3 z-30">
+            <button on:click={close} class="px-6 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-medium transition-colors shadow-sm">Hủy</button>
+            <button on:click={handleSave} class="px-8 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-colors flex items-center gap-2">
+                <i data-feather="save" class="w-4 h-4"></i> Lưu Bảng
+            </button>
+        </div>
+    </div>
+</div>
+{/if}
+
+{#snippet DataSourceList({ items, selectedIds, filter, onToggle, selectedColor, gridLayout = false })}
+    {#each items.filter(i => i.name.toLowerCase().includes(filter.toLowerCase())) as item (item.id)}
+        {@const isSelected = selectedIds.includes(item.id)}
+        <div 
+            class="flex items-center p-2 rounded cursor-pointer border transition-all select-none
+            {isSelected ? selectedColor : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-200'}"
+            on:click={() => onToggle(item)}
+            role="button" tabindex="0"
+        >
+            <div class="mr-2 flex-shrink-0 flex items-center justify-center w-4 h-4 border rounded 
+                {isSelected ? 'bg-blue-600 border-transparent' : 'border-gray-300 bg-white'}">
+                {#if isSelected}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                {/if}
+            </div>
+            <span class="text-xs truncate flex-1 {isSelected ? 'font-bold' : 'text-gray-600'}">
+                {item.name}
+            </span>
+            {#if item.type.includes('MACRO')}
+                <span class="text-[9px] px-1 bg-gray-200 text-gray-500 rounded ml-1 font-bold">GỘP</span>
+            {/if}
+        </div>
+    {/each}
+{/snippet}
+
+<style>
+    .animate-scale-in { animation: scaleIn 0.2s ease-out; }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+    
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
+--- END FILE: ./src/components/modals/AddPerformanceTableModal.svelte ---
+
 --- START FILE: ./src/components/modals/AddRevenueTableModal.svelte ---
 <script>
     import { createEventDispatcher } from 'svelte';
@@ -13096,32 +14250,31 @@ export const fileSyncState = writable({});
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   
-  // [THAY ĐỔI QUAN TRỌNG] Import bảng từ Health Staff để đồng bộ giao diện
-  import EfficiencyTable from '../../health-staff/EfficiencyTable.svelte';
+  // [NEW] Sử dụng View mới thay vì EfficiencyTable cũ
+  import PerformanceView from '../../health-staff/performance/PerformanceView.svelte';
 
-  // Biến dữ liệu
   let filteredReport = [];
 
   $: {
-    // 1. Lấy dữ liệu & Mục tiêu
     const currentWarehouse = $selectedWarehouse;
+    // Lấy mục tiêu Realtime
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     const goals = settings.goals || {};
 
-    // 2. Tính toán Master Report (Array danh sách nhân viên)
+    // Tính toán Master Report (isRealtime = true để xử lý đúng logic realtime)
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
     
-    // 3. Lọc theo kho
+    // Lọc theo kho
     if (currentWarehouse) {
-      filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
+       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
-      filteredReport = masterReport;
+       filteredReport = masterReport;
     }
   }
 </script>
 
 <div class="animate-fade-in pb-10">
-    <EfficiencyTable reportData={filteredReport} />
+    <PerformanceView reportData={filteredReport} />
 </div>
 
 <style>
@@ -15469,7 +16622,7 @@ export const actionService = {
 
 --- START FILE: ./src/services/admin.service.js ---
 // src/services/admin.service.js
-// Version 3.2 - Fix Missing loadMacroCategoryConfig
+// Version 3.3 - Add System Performance Tables Support
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { 
@@ -15485,7 +16638,9 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    competitionNameMappings
+    competitionNameMappings,
+    // [NEW]
+    customPerformanceTables
 } from '../stores.js';
 
 const getDB = () => {
@@ -15552,7 +16707,6 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const raw = docSnap.data();
-                // Fallback đọc nhiều trường
                 const data = raw.data || raw.config || raw;
                 if (data) homeConfig.set(data);
             }
@@ -15579,28 +16733,20 @@ export const adminService = {
     async loadCategoryDataFromFirestore() {
         const db = getDB();
         if (!db) return { categories: [], brands: [] };
-        
         await this.loadMappingsGlobal();
-
         try {
             const catRef = doc(db, "declarations", "categoryStructure");
             const brandRef = doc(db, "declarations", "brandList");
-            
             const [catSnap, brandSnap] = await Promise.all([getDoc(catRef), getDoc(brandRef)]);
-            
-            // [FIX] Fallback đọc data
             const getArray = (snap) => {
                 if (!snap.exists()) return [];
                 const d = snap.data();
                 return d.data || d.items || d.list || [];
             };
-
             const categories = getArray(catSnap);
             const brands = getArray(brandSnap);
-
             categoryStructure.set(categories);
             brandList.set(brands);
-
             return { categories, brands };
         } catch (error) {
             console.error("Error loading category data:", error);
@@ -15617,9 +16763,8 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const d = docSnap.data();
-                // [FIX] Ưu tiên 'tables', nếu không có thì tìm 'data', 'items'
                 const tables = d.tables || d.data || d.items || [];
-                console.log(`[AdminService] Loaded ${tables.length} system tables.`);
+                console.log(`[AdminService] Loaded ${tables.length} system revenue tables.`);
                 return tables;
             }
             return [];
@@ -15633,21 +16778,59 @@ export const adminService = {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
         if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
+        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
+        try {
+            const docRef = doc(db, "declarations", "systemRevenueTables");
+            await setDoc(docRef, { 
+                tables: systemTables,
+                updatedAt: serverTimestamp() 
+            });
+            notify(`Đã lưu ${systemTables.length} bảng doanh thu hệ thống lên Cloud!`, 'success');
+        } catch (error) { 
+            console.error("Firebase Error Full:", error); 
+            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
+        }
+    },
+
+    // --- [NEW] 4.5. SYSTEM PERFORMANCE TABLES (BẢNG HIỆU QUẢ) ---
+    async loadSystemPerformanceTables() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "systemPerformanceTables");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                // Ưu tiên 'tables', fallback 'data'
+                const tables = d.tables || d.data || [];
+                console.log(`[AdminService] Loaded ${tables.length} system performance tables.`);
+                return tables;
+            }
+            return [];
+        } catch (e) {
+            console.error("Lỗi tải bảng hiệu quả hệ thống:", e);
+            return [];
+        }
+    },
+
+    async saveSystemPerformanceTables(tables) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
         
         // Chỉ lưu bảng có cờ isSystem = true
         const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
         
         try {
-            const docRef = doc(db, "declarations", "systemRevenueTables");
-            // Lưu thống nhất vào field 'tables'
+            const docRef = doc(db, "declarations", "systemPerformanceTables");
             await setDoc(docRef, { 
                 tables: systemTables,
                 updatedAt: serverTimestamp() 
             });
-            notify(`Đã lưu ${systemTables.length} bảng mẫu hệ thống lên Cloud!`, 'success');
+            notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
         } catch (error) { 
-            console.error("Firebase Error Full:", error); 
-            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
+            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error); 
+            notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error'); 
         }
     },
 
@@ -15655,14 +16838,11 @@ export const adminService = {
     async loadMappingsGlobal() {
         const db = getDB();
         if (!db) return;
-        
         try {
             console.log("[admin.service] Đang tải cấu hình Mapping từ Cloud...");
-            // Helper để lấy dữ liệu array an toàn
             const safeGet = (docSnap, defaultVal = []) => {
                 if (!docSnap.exists()) return defaultVal;
                 const d = docSnap.data();
-                // Kiểm tra các trường phổ biến
                 return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
             };
 
@@ -15677,7 +16857,6 @@ export const adminService = {
                 "competitionNameMappings"
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
-            
             const results = await Promise.all(promises);
             
             macroCategoryConfig.set(safeGet(results[0]));
@@ -15685,7 +16864,7 @@ export const adminService = {
             categoryNameMapping.set(safeGet(results[2], {}));
             groupNameMapping.set(safeGet(results[3], {}));
             brandNameMapping.set(safeGet(results[4], {}));
-            efficiencyConfig.set(safeGet(results[5])); // Bảng hiệu quả
+            efficiencyConfig.set(safeGet(results[5])); 
             qdcConfigStore.set(safeGet(results[6]));
             competitionNameMappings.set(safeGet(results[7], {}));
 
@@ -15706,10 +16885,8 @@ export const adminService = {
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
     },
 
-    // [MỚI] Hàm tải cấu hình nhóm ngành hàng lớn (Fix lỗi TypeError)
     async loadMacroCategoryConfig() {
         const db = getDB();
-        // Dữ liệu mặc định (Fallback) phòng trường hợp DB chưa có
         const defaultData = [
             { id: 'macro_dt', name: 'ĐIỆN TỬ', items: ['dt_tivi', 'dt_loa', 'Tivi', 'Loa', 'Dàn âm thanh', 'Tivi - Loa - Dàn máy'] },
             { id: 'macro_dl', name: 'ĐIỆN LẠNH', items: ['dl_maylanh', 'dl_tulanh', 'dl_maygiat', 'Tủ lạnh', 'Máy lạnh', 'Máy giặt', 'Tủ đông', 'Tủ mát'] },
@@ -15742,6 +16919,27 @@ export const adminService = {
             await setDoc(docRef, { data: sanitizeForFirestore(data) });
             notify('Đã lưu Cấu hình Nhóm Hàng Lớn!', 'success');
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
+    },
+
+    // [MỚI] Thêm hàm này để fix lỗi thiếu function
+    async loadMacroProductGroupConfig() {
+        const db = getDB();
+        const defaultData = [];
+
+        if (!db) return defaultData;
+        try {
+            const docRef = doc(db, "declarations", "macroProductGroupConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const data = d.data || d.items || d.config || [];
+                if (data.length > 0) return data;
+            }
+            return defaultData;
+        } catch (e) {
+            console.error("Lỗi tải macroProductGroupConfig:", e);
+            return defaultData;
+        }
     },
 
     async saveNameMapping(type, data) {
@@ -15869,7 +17067,6 @@ export const adminService = {
     },
 
     // --- 9. EFFICIENCY & QDC CONFIGS ---
-    // (BẢNG HIỆU QUẢ)
     async saveEfficiencyConfig(config) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
@@ -15897,7 +17094,6 @@ export const adminService = {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const d = docSnap.data();
-                // [FIX] Đọc fallback 'data' hoặc 'items' hoặc 'config'
                 const data = d.data || d.items || d.config || [];
                 console.log(`[AdminService] Loaded efficiency config: ${data.length} items`);
                 return data;
@@ -15909,7 +17105,6 @@ export const adminService = {
         }
     },
     
-    // (TOP NHÓM HÀNG)
     async saveQdcConfig(selectedGroups) {
          const db = getDB();
         if (!db || !get(isAdmin)) return;
@@ -17360,6 +18555,34 @@ export const datasyncService = {
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : []; } catch(e) { return []; }
     },
 
+    // --- [NEW] BẢNG HIỆU QUẢ CÁ NHÂN ---
+    async savePersonalPerformanceTables(kho, tables) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const personalTables = tables.filter(t => !t.isSystem);
+        const khoRef = doc(db, "warehouseData", kho);
+        try { 
+            await setDoc(khoRef, { 
+                personalPerformanceTables: personalTables, 
+                updatedAt: serverTimestamp() 
+            }, { merge: true }); 
+        } catch (error) { throw error; }
+    },
+
+    async loadPersonalPerformanceTables(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+        const khoRef = doc(db, "warehouseData", kho);
+        try { 
+            const docSnap = await getDoc(khoRef); 
+            return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; 
+        } catch(e) { 
+            console.error("Lỗi tải bảng hiệu quả cá nhân:", e);
+            return []; 
+        }
+    },
+    // --- END NEW ---
+
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
         if (!db || !kho) return;
@@ -17917,10 +19140,9 @@ export const competitionProcessor = {
 import { formatters } from '../../../utils/formatters.js';
 
 export const dynamicTableProcessor = {
-    // [LOGIC MỚI] Tìm kiếm dữ liệu trực tiếp bằng ID (O(1))
+    // Tìm dữ liệu theo ID (O(1))
     findItemData(employee, targetId) {
         if (!employee || !targetId) return null;
-
         // Ưu tiên 1: Tìm trong Nhóm Hàng
         if (employee.doanhThuTheoNhomHang && employee.doanhThuTheoNhomHang[targetId]) {
             return employee.doanhThuTheoNhomHang[targetId];
@@ -17932,111 +19154,127 @@ export const dynamicTableProcessor = {
         return null;
     },
 
-    // Hàm chính: Biến đổi dữ liệu thô thành dữ liệu hiển thị
+    // Hàm tính tổng giá trị từ danh sách ID
+    calculateGroupValue(employee, items, type = 'DT') {
+        if (!items || items.length === 0) return 0;
+        
+        return items.reduce((sum, itemId) => {
+            const data = this.findItemData(employee, itemId);
+            if (!data) return sum;
+
+            if (type === 'SL') return sum + (data.quantity || 0);
+            if (type === 'DTQD') return sum + (data.revenueQuyDoi || 0);
+            return sum + (data.revenue || 0); // Default DT
+        }, 0);
+    },
+
+    // Hàm chính: Xử lý dữ liệu bảng
     processTableData(reportData, config) {
         if (!reportData || !config) return { processedData: [], totals: {} };
+
+        // [DETECT TYPE] Xác định cấu trúc config mới hay cũ
+        const columnsConfig = config.columns || config.subColumns || [];
+        
+        // Khởi tạo dòng tổng
+        const totalRow = {
+            maNV: 'TOTAL',
+            hoTen: 'TỔNG CỘNG',
+            isTotal: true,
+            // Dynamic cells
+            cells: {} 
+        };
 
         const processedData = reportData.map(employee => {
             const row = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
-                mainValue: 0,      // Tổng DT
-                mainValue_dtqd: 0, // Tổng DTQĐ
-                mainValue_sl: 0,   // Tổng SL
-                columns: {}        // Data chi tiết từng cột phụ
+                mucTieu: employee.mucTieu || {}, // Lấy mục tiêu cá nhân
+                cells: {}
             };
 
-            // --- BƯỚC 1: TÍNH TOÁN CỘT TỔNG (MAIN COLUMN) ---
-            // Nếu người dùng CÓ chọn items cho cột tổng -> Tính theo items đó
-            if (config.mainColumn && config.mainColumn.items && config.mainColumn.items.length > 0) {
-                config.mainColumn.items.forEach(itemId => {
-                    const itemData = this.findItemData(employee, itemId);
-                    if (itemData) {
-                        row.mainValue_sl += (itemData.quantity || 0);
-                        row.mainValue += (itemData.revenue || 0);
-                        row.mainValue_dtqd += (itemData.revenueQuyDoi || 0);
-                    }
-                });
-            } 
-            // Nếu KHÔNG chọn items (để trống) -> Logic cũ: Sẽ cộng dồn từ cột phụ ở Bước 2
-            
-            // --- BƯỚC 2: TÍNH TOÁN CỘT PHỤ (SUB COLUMNS) ---
-            if (config.subColumns && Array.isArray(config.subColumns)) {
-                config.subColumns.forEach(col => {
-                    let sl = 0, dt = 0, dtqd = 0;
-                    let details = [];
+            let hasData = false;
 
-                    col.items.forEach(itemId => {
-                        const itemData = this.findItemData(employee, itemId);
-                        if (itemData) {
-                            const qty = itemData.quantity || 0;
-                            const rev = itemData.revenue || 0;
-                            const revQd = itemData.revenueQuyDoi || 0;
-
-                            sl += qty;
-                            dt += rev;
-                            dtqd += revQd;
-                            
-                            if (qty > 0 || rev > 0) {
-                                details.push(`${itemData.name}: ${formatters.formatNumber(qty)} / ${formatters.formatRevenue(rev)}`);
-                            }
-                        }
-                    });
-
-                    row.columns[col.header] = { sl, dt, dtqd, tooltip: details.join('\n') };
+            columnsConfig.forEach(col => {
+                const colId = col.id || col.header; // Fallback cho bảng cũ
+                let value = 0;
+                let displayValue = '';
+                let rawData = {};
+                
+                // --- LOGIC MỚI: BẢNG HIỆU QUẢ ---
+                if (col.type === 'PERCENT') {
+                    // 1. Tính Tử số
+                    const numVal = this.calculateGroupValue(employee, col.numerator, 'DT'); // Mặc định DT, có thể mở rộng sau
+                    // 2. Tính Mẫu số
+                    const denVal = this.calculateGroupValue(employee, col.denominator, 'DT');
                     
-                    // Fallback Logic: Nếu cột tổng chưa được tính (không có items), thì cộng dồn từ cột phụ
-                    if (!config.mainColumn || !config.mainColumn.items || config.mainColumn.items.length === 0) {
-                        const metrics = config.mainColumn?.metrics || { dt: true }; // Mặc định DT
-                        if (metrics.dt) row.mainValue += dt;
-                        if (metrics.dtqd) row.mainValue_dtqd += dtqd;
-                        if (metrics.sl) row.mainValue_sl += sl;
-                    }
-                });
-            }
-            
-            // Chỉ trả về nếu có dữ liệu ở cột tổng hoặc bất kỳ cột phụ nào
-            const hasData = row.mainValue > 0 || row.mainValue_sl > 0 || row.mainValue_dtqd > 0 || Object.values(row.columns).some(c => c.dt > 0 || c.sl > 0);
-            return hasData ? row : null;
+                    value = denVal > 0 ? numVal / denVal : 0;
+                    displayValue = formatters.formatPercentage(value);
+                    
+                    // Cộng dồn cho dòng tổng (Tử & Mẫu riêng)
+                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { num: 0, den: 0, type: 'PERCENT' };
+                    totalRow.cells[colId].num += numVal;
+                    totalRow.cells[colId].den += denVal;
 
+                } else {
+                    // --- LOGIC CŨ/THƯỜNG: SL, DT, DTQD ---
+                    // Map type config sang type tính toán
+                    const calcType = col.type === 'DTQD' ? 'DTQD' : (col.type === 'SL' ? 'SL' : 'DT');
+                    
+                    // Nếu là bảng cũ (subColumns), items nằm ở col.items
+                    // Nếu là bảng mới (columns), items cũng nằm ở col.items
+                    value = this.calculateGroupValue(employee, col.items, calcType);
+                    
+                    if (calcType === 'SL') displayValue = formatters.formatNumber(value);
+                    else displayValue = formatters.formatRevenue(value);
+
+                    // Cộng dồn dòng tổng
+                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { val: 0, type: col.type || 'DT' };
+                    totalRow.cells[colId].val += value;
+                }
+
+                if (value > 0) hasData = true;
+
+                // Lưu vào cell
+                row.cells[colId] = {
+                    value,
+                    display: displayValue,
+                    config: col
+                };
+            });
+
+            return hasData ? row : null;
         }).filter(Boolean);
 
-        // Tính tổng toàn bảng (Totals Row)
-        const totals = processedData.reduce((acc, row) => {
-            acc.mainValue += row.mainValue;
-            acc.mainValue_dtqd += row.mainValue_dtqd;
-            acc.mainValue_sl += row.mainValue_sl;
+        // Tính toán hiển thị cho dòng Tổng
+        Object.keys(totalRow.cells).forEach(key => {
+            const cell = totalRow.cells[key];
+            if (cell.type === 'PERCENT') {
+                const val = cell.den > 0 ? cell.num / cell.den : 0;
+                cell.value = val;
+                cell.display = formatters.formatPercentage(val);
+            } else {
+                if (cell.type === 'SL') cell.display = formatters.formatNumber(cell.val);
+                else cell.display = formatters.formatRevenue(cell.val);
+                cell.value = cell.val;
+            }
+        });
 
-            Object.keys(row.columns).forEach(key => {
-                if (!acc.columns[key]) acc.columns[key] = { sl: 0, dt: 0, dtqd: 0 };
-                acc.columns[key].sl += row.columns[key].sl;
-                acc.columns[key].dt += row.columns[key].dt;
-                acc.columns[key].dtqd += row.columns[key].dtqd;
-            });
-            return acc;
-        }, { mainValue: 0, mainValue_dtqd: 0, mainValue_sl: 0, columns: {} });
-
-        return { processedData, totals };
+        return { processedData, totals: totalRow };
     },
 
-    // Hàm sắp xếp (Giữ nguyên)
+    // Hàm sắp xếp
     sortTableData(data, key, direction) {
         return [...data].sort((a, b) => {
+            // Sort theo tên
             if (key === 'hoTen') {
                 return direction === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
             }
-            if (key === 'mainValue') return direction === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
-            if (key === 'totalSL') return direction === 'asc' ? a.mainValue_sl - b.mainValue_sl : b.mainValue_sl - a.mainValue_sl;
-            if (key === 'totalDTQD') return direction === 'asc' ? a.mainValue_dtqd - b.mainValue_dtqd : b.mainValue_dtqd - a.mainValue_dtqd;
-
-            if (key.includes('|')) {
-                const [colHeader, type] = key.split('|');
-                const valA = a.columns[colHeader]?.[type] || 0;
-                const valB = b.columns[colHeader]?.[type] || 0;
-                return direction === 'asc' ? valA - valB : valB - valA;
-            }
-     
-            return direction === 'asc' ? a.mainValue - b.mainValue : b.mainValue - a.mainValue;
+            
+            // Sort theo giá trị cột (truy cập vào cells)
+            const valA = a.cells[key]?.value || 0;
+            const valB = b.cells[key]?.value || 0;
+            
+            return direction === 'asc' ? valA - valB : valB - valA;
         });
     }
 };

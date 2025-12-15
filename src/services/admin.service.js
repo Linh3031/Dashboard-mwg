@@ -41,7 +41,6 @@ const sanitizeForFirestore = (obj) => {
 };
 
 export const adminService = {
-    // ... (Giữ nguyên code cũ từ mục 1 đến 3) ...
     // --- 1. HELP CONTENT ---
     async saveHelpContent(contents) {
         const db = getDB();
@@ -208,11 +207,10 @@ export const adminService = {
             notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
         } catch (error) { 
             console.error("Lỗi lưu bảng hiệu quả hệ thống:", error); 
-            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
+            notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error'); 
         }
     },
 
-    // ... (Giữ nguyên các phần còn lại từ mục 5 đến 9) ...
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
     async loadMappingsGlobal() {
         const db = getDB();
@@ -298,6 +296,27 @@ export const adminService = {
             await setDoc(docRef, { data: sanitizeForFirestore(data) });
             notify('Đã lưu Cấu hình Nhóm Hàng Lớn!', 'success');
         } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
+    },
+
+    // [MỚI] Thêm hàm này để fix lỗi thiếu function
+    async loadMacroProductGroupConfig() {
+        const db = getDB();
+        const defaultData = [];
+
+        if (!db) return defaultData;
+        try {
+            const docRef = doc(db, "declarations", "macroProductGroupConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const data = d.data || d.items || d.config || [];
+                if (data.length > 0) return data;
+            }
+            return defaultData;
+        } catch (e) {
+            console.error("Lỗi tải macroProductGroupConfig:", e);
+            return defaultData;
+        }
     },
 
     async saveNameMapping(type, data) {

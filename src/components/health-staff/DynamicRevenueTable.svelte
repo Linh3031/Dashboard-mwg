@@ -70,7 +70,7 @@
     <div class="px-5 py-4 border-b {theme.header} flex justify-between items-center">
         <div class="flex items-center gap-3 w-full">
             <h4 class="text-lg font-bold uppercase {theme.title} truncate" title={config.title}>{config.title}</h4>
-            </div>
+        </div>
     </div>
     
     {#if sortedData.length === 0}
@@ -98,26 +98,27 @@
                         <td class="px-5 py-2 sticky left-0 bg-gray-200 z-30 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TỔNG</td>
                         
                         {#if tableMetrics.sl}
-                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200">{formatters.formatNumber(totals.mainValue_sl)}</td>
+                              <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200">{formatters.formatNumber(totals.cells?.mainValue?.value_sl || totals.mainValue_sl)}</td>
                         {/if}
                         {#if tableMetrics.dt}
-                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-blue-800">{formatters.formatRevenue(totals.mainValue)}</td>
+                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-blue-800">{formatters.formatRevenue(totals.cells?.mainValue?.value || totals.mainValue)}</td>
                         {/if}
                         {#if tableMetrics.dtqd}
-                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.mainValue_dtqd)}</td>
+                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-200 text-purple-800">{formatters.formatRevenue(totals.cells?.mainValue?.value_dtqd || totals.mainValue_dtqd)}</td>
                         {/if}
 
                         {#each config.subColumns as col}
-                            {@const total = totals.columns[col.header]}
+                            {@const total = totals.cells ? totals.cells[col.id || col.header] : null}
                             {@const metrics = col.metrics || { sl: false, dt: true, dtqd: false }}
+                            
                             {#if metrics.sl}
-                                <td class="px-2 py-2 text-right border-r border-gray-300">{formatters.formatNumber(total?.sl)}</td>
+                                <td class="px-2 py-2 text-right border-r border-gray-300">{formatters.formatNumber(total?.value_sl || total?.sl)}</td>
                             {/if}
                             {#if metrics.dt}
-                                <td class="px-2 py-2 text-right border-r border-gray-300 text-blue-700">{formatters.formatRevenue(total?.dt)}</td>
+                                <td class="px-2 py-2 text-right border-r border-gray-300 text-blue-700">{formatters.formatRevenue(total?.value || total?.dt)}</td>
                             {/if}
                             {#if metrics.dtqd}
-                                <td class="px-2 py-2 text-right border-r border-gray-300 text-purple-700">{formatters.formatRevenue(total?.dtqd)}</td>
+                                <td class="px-2 py-2 text-right border-r border-gray-300 text-purple-700">{formatters.formatRevenue(total?.value_dtqd || total?.dtqd)}</td>
                             {/if}
                         {/each}
                     </tr>
