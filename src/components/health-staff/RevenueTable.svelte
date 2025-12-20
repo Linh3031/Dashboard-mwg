@@ -2,6 +2,10 @@
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
   
+  // [CODEGENESIS] Import Store và Utils
+  import { kpiStore } from '../../stores.js';
+  import { getCompletionColor } from '../../utils/kpi.utils.js';
+  
   export let reportData = [];
 
   const dispatch = createEventDispatcher();
@@ -42,31 +46,40 @@
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
-  // [FIX] Logic tô màu
+  // [FIX] Logic tô màu & Style
   function getCellClass(item, colKey) {
+      // 1. Các cột số liệu tiền tệ mặc định in đậm
       if (['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat'].includes(colKey)) {
           return 'font-bold text-gray-800';
       }
 
-      if (!item.mucTieu) return 'text-gray-600'; // Nếu không có mục tiêu thì không tô màu
+      // 2. Lấy cài đặt mục tiêu (Nếu không nhập -> globalSettings là rỗng -> targetSettings là undefined/empty)
+      const userTarget = $kpiStore.targets[item.maNV];
+      const targetSettings = userTarget || $kpiStore.globalSettings;
 
+      // Nếu không có cài đặt mục tiêu nào -> Không tô màu, trả về text xám mặc định
+      // (Lưu ý: globalSettings giờ đã rỗng mặc định, nên logic này sẽ chặn việc tô màu 80/20 cũ)
+      if (!targetSettings || Object.keys(targetSettings).length === 0) return 'text-gray-600';
+
+      // 3. Xử lý cột % Quy Đổi
       if (colKey === 'hieuQuaQuyDoi') {
-          // Target %Quy Đổi (VD: 80%)
-          const target = (item.mucTieu.phanTramQD || 0) / 100;
-          if (target === 0) return 'text-blue-800 font-bold';
-          return item.hieuQuaQuyDoi >= target 
-              ? 'text-green-600 font-extrabold bg-green-50' // Đạt
-              : 'text-red-600 font-bold bg-red-50';        // Không đạt
+          const actual = item.hieuQuaQuyDoi;
+          const target = (targetSettings.phanTramQD || 0) / 100; 
+          
+          // Lấy màu từ Utils (Đỏ hoặc Rỗng)
+          const colorClass = getCompletionColor(actual, target);
+          
+          // [YÊU CẦU] Luôn nối thêm 'font-bold' bất kể có màu hay không
+          return `${colorClass} font-bold`;
       }
       
+      // 4. Xử lý cột % Trả Chậm
       if (colKey === 'tyLeTraCham') {
-          // Target % Trả chậm
-          const target = (item.mucTieu.phanTramTC || 0) / 100;
-          if (target === 0) return 'text-green-800 font-bold';
-          return item.tyLeTraCham >= target 
-              ? 'text-green-600 font-extrabold bg-green-50' 
-              : 'text-red-600 font-bold bg-red-50';
+          const actual = item.tyLeTraCham;
+          const target = (targetSettings.phanTramTC || 0) / 100;
+          return getCompletionColor(actual, target);
       }
+
       return 'text-gray-600';
   }
 
@@ -110,7 +123,9 @@
                             </td>
                             <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                            
                             <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                            
                             <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
                             <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>

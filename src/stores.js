@@ -104,6 +104,15 @@ export const customPerformanceTables = writable([]);
 /**
  * Cài đặt & Trạng thái UI
  */
+
+// --- [CODEGENESIS MODIFIED] QUẢN LÝ MỤC TIÊU (KPI) ---
+export const kpiStore = writable({
+    targets: {}, 
+    // SỬA: Xóa bỏ mặc định 80/20. Để rỗng để không tô màu khi chưa nhập.
+    globalSettings: {} 
+});
+// -----------------------------------------------------
+
 export const luykeGoalSettings = writable({});
 export const realtimeGoalSettings = writable({});
 export const highlightSettings = writable({
