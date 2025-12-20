@@ -2,6 +2,10 @@
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
+  
+  // [CODEGENESIS] Import Store & Logic màu sắc mới
+  import { kpiStore } from '../../../stores.js';
+  import { getCompletionColor } from '../../../utils/kpi.utils.js';
 
   export let reportData = [];
   const dispatch = createEventDispatcher();
@@ -75,7 +79,7 @@
                 <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-0 bg-slate-200 z-30 min-w-[180px] select-none" on:click={() => handleSort('hoTen')}>
                   <div class="flex items-center gap-1">
                     <span>Nhân viên</span>
-                     <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{sortKey === 'hoTen' && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
                     </svg>
                   </div>
@@ -102,8 +106,12 @@
             </thead>
             <tbody class="divide-y divide-gray-200">
               {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item (item.maNV)}
-                {@const qdClass = (item.mucTieu && item.hieuQuaQuyDoi < (item.mucTieu.phanTramQD / 100)) ? 'text-red-600 bg-red-50' : 'text-green-600'}
-                {@const tcClass = (item.mucTieu && item.tyLeTraCham < (item.mucTieu.phanTramTC / 100)) ? 'text-red-600 bg-red-50' : ''}
+                {@const userTarget = $kpiStore.targets[item.maNV] || $kpiStore.globalSettings}
+                {@const targetQD = (userTarget?.phanTramQD || 0) / 100}
+                {@const targetTC = (userTarget?.phanTramTC || 0) / 100}
+
+                {@const qdClass = getCompletionColor(item.hieuQuaQuyDoi, targetQD)}
+                {@const tcClass = getCompletionColor(item.tyLeTraCham, targetTC)}
                  
                 <tr class="hover:bg-blue-50 transition cursor-pointer interactive-row" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
                   <td class="px-4 py-2 font-semibold text-blue-600 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200">
@@ -111,9 +119,13 @@
                   </td>
                   <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThu)}</td>
                   <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold {qdClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold {tcClass}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
                 </tr>
               {/each}
