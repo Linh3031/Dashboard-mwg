@@ -1,25 +1,32 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
-  
-  // [CODEGENESIS] Import Store và Utils
   import { kpiStore } from '../../stores.js';
   import { getCompletionColor } from '../../utils/kpi.utils.js';
   
   export let reportData = [];
 
+  // [LOGGER] Theo dõi dữ liệu đầu vào
+  $: {
+      console.log(`[RevenueTable ${new Date().toLocaleTimeString()}] Store Value:`, $kpiStore);
+      console.log(`[RevenueTable] Report Data Length:`, reportData.length);
+  }
+
   const dispatch = createEventDispatcher();
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // [CẤU HÌNH] Giữ nguyên
+  // [CẤU HÌNH] Giữ nguyên header
   const columns = [
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
+      // [STYLE FIX] Đổi border-blue-200 để khớp tông màu header xanh
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
       { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
       { key: 'hieuQuaQuyDoi', label: '% QĐ', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
+      // [STYLE FIX] Đổi border-green-200
       { key: 'doanhThuTraGop', label: 'DT Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800 border-l border-green-200' },
       { key: 'tyLeTraCham', label: '% Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800' },
+      // [STYLE FIX] Đổi border-yellow-200
       { key: 'doanhThuChuaXuat', label: 'DT Chưa Xuất', align: 'right', headerClass: 'bg-yellow-50 text-yellow-800 border-l border-yellow-200' }
   ];
 
@@ -46,41 +53,32 @@
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
-  // [FIX] Logic tô màu & Style
   function getCellClass(item, colKey) {
-      // 1. Các cột số liệu tiền tệ mặc định in đậm
-      if (['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat'].includes(colKey)) {
-          return 'font-bold text-gray-800';
-      }
+      const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
+      let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
 
-      // 2. Lấy cài đặt mục tiêu (Nếu không nhập -> globalSettings là rỗng -> targetSettings là undefined/empty)
       const userTarget = $kpiStore.targets[item.maNV];
       const targetSettings = userTarget || $kpiStore.globalSettings;
 
-      // Nếu không có cài đặt mục tiêu nào -> Không tô màu, trả về text xám mặc định
-      // (Lưu ý: globalSettings giờ đã rỗng mặc định, nên logic này sẽ chặn việc tô màu 80/20 cũ)
-      if (!targetSettings || Object.keys(targetSettings).length === 0) return 'text-gray-600';
+      if (!targetSettings || Object.keys(targetSettings).length === 0) {
+          return baseClass; 
+      }
 
-      // 3. Xử lý cột % Quy Đổi
       if (colKey === 'hieuQuaQuyDoi') {
           const actual = item.hieuQuaQuyDoi;
           const target = (targetSettings.phanTramQD || 0) / 100; 
-          
-          // Lấy màu từ Utils (Đỏ hoặc Rỗng)
           const colorClass = getCompletionColor(actual, target);
-          
-          // [YÊU CẦU] Luôn nối thêm 'font-bold' bất kể có màu hay không
-          return `${colorClass} font-bold`;
+          return colorClass ? `${colorClass} font-bold` : baseClass;
       }
       
-      // 4. Xử lý cột % Trả Chậm
       if (colKey === 'tyLeTraCham') {
           const actual = item.tyLeTraCham;
           const target = (targetSettings.phanTramTC || 0) / 100;
-          return getCompletionColor(actual, target);
+          const colorClass = getCompletionColor(actual, target);
+          return colorClass ? `${colorClass} font-bold` : baseClass;
       }
 
-      return 'text-gray-600';
+      return baseClass;
   }
 
   function handleRowClick(employeeId) { dispatch('viewDetail', { employeeId }); }
@@ -95,7 +93,7 @@
                 <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
             </div>
         </div>
-        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: VNĐ</span>
+        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
     </div>
 
     <div class="overflow-x-auto">
@@ -112,23 +110,21 @@
                     {/each}
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100">
+            <tbody class="divide-y divide-gray-200">
                 {#if sortedData.length === 0}
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
                         <tr class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}" on:click={() => handleRowClick(item.maNV)}>
-                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-100 group-hover:text-blue-800 group-hover:underline">
+                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
-                            <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
+                            <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
-                            
                             <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
-                            
-                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-200 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-200 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
                         </tr>
                     {/each}
                 {/if}
