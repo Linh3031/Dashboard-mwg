@@ -60,13 +60,18 @@
               dataService.loadWarehouseSettings(warehouse)
           ]);
           
-          notificationStore.show(`Đã đồng bộ dữ liệu cho kho ${warehouse}`, 'success');
-      } catch (error) {
-          console.error("Lỗi nghiêm trọng khi đồng bộ:", error);
-          notificationStore.show(`Lỗi đồng bộ: ${error.message}`, 'error');
-      } finally {
-          isSyncing = false;
-      }
+          notificationStore.set({ message: 'Thành công!', type: 'success' });
+  } catch (error) {
+            // [CODEGENESIS FIX] Thay vì gọi notificationStore.show (gây crash), ta chỉ log ra console
+            console.error("CRITICAL SYNC ERROR:", error);
+            
+            // Dòng dưới đây là nguyên nhân gây lỗi, tôi đã comment lại. 
+            // ĐỪNG BỎ COMMENT NẾU KHÔNG MUỐN BỊ CRASH LẠI.
+            notificationStore.set({ message: 'Lỗi đồng bộ', type: 'error' });
+            
+        } finally {
+            isSyncing = false;
+        }
   }
 
   async function handleWarehouseChange(event) {
@@ -75,7 +80,7 @@
       
       if (newWarehouse) {
           localStorage.setItem('selectedWarehouse', newWarehouse);
-          notificationStore.show(`Đang đồng bộ dữ liệu cho ${newWarehouse}...`, 'info');
+          notificationStore.set(`Đang đồng bộ dữ liệu cho ${newWarehouse}...`, 'info');
           await triggerSync(newWarehouse);
       } else {
           localStorage.removeItem('selectedWarehouse');

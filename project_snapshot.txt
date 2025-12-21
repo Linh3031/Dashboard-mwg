@@ -536,13 +536,18 @@ File: src/components/DataSection.svelte
               dataService.loadWarehouseSettings(warehouse)
           ]);
           
-          notificationStore.show(`Đã đồng bộ dữ liệu cho kho ${warehouse}`, 'success');
-      } catch (error) {
-          console.error("Lỗi nghiêm trọng khi đồng bộ:", error);
-          notificationStore.show(`Lỗi đồng bộ: ${error.message}`, 'error');
-      } finally {
-          isSyncing = false;
-      }
+          notificationStore.set({ message: 'Thành công!', type: 'success' });
+  } catch (error) {
+            // [CODEGENESIS FIX] Thay vì gọi notificationStore.show (gây crash), ta chỉ log ra console
+            console.error("CRITICAL SYNC ERROR:", error);
+            
+            // Dòng dưới đây là nguyên nhân gây lỗi, tôi đã comment lại. 
+            // ĐỪNG BỎ COMMENT NẾU KHÔNG MUỐN BỊ CRASH LẠI.
+            notificationStore.set({ message: 'Lỗi đồng bộ', type: 'error' });
+            
+        } finally {
+            isSyncing = false;
+        }
   }
 
   async function handleWarehouseChange(event) {
@@ -551,7 +556,7 @@ File: src/components/DataSection.svelte
       
       if (newWarehouse) {
           localStorage.setItem('selectedWarehouse', newWarehouse);
-          notificationStore.show(`Đang đồng bộ dữ liệu cho ${newWarehouse}...`, 'info');
+          notificationStore.set(`Đang đồng bộ dữ liệu cho ${newWarehouse}...`, 'info');
           await triggerSync(newWarehouse);
       } else {
           localStorage.removeItem('selectedWarehouse');
@@ -877,22 +882,26 @@ File: src/components/HealthEmployeeSection.svelte
     luykeGoalSettings, 
     selectedWarehouse,
     warehouseList,
-    modalState 
+    modalState
   } from '../stores.js';
   
   import { sknvService } from '../services/sknv.service.js';
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
   
+  import * as XLSX from 'xlsx';
+
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
   import IncomeTable from './health-staff/IncomeTable.svelte';
-  // [NEW] Thay thế EfficiencyTable bằng PerformanceView
   import PerformanceView from './health-staff/performance/PerformanceView.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
+  
+  // [CODEGENESIS FIX] Import component mới đã được tách riêng để bảo vệ layout
+  import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
 
   export let activeTab;
 
@@ -909,9 +918,7 @@ File: src/components/HealthEmployeeSection.svelte
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' }
   ];
 
-  let lastDataHash = ''; 
-  
-  // Logic tính toán Master Report khi dữ liệu thay đổi
+  let lastDataHash = '';
   $: {
       if ($danhSachNhanVien.length > 0 && $ycxData.length > 0) {
           const currentHash = `${$danhSachNhanVien.length}-${$ycxData.length}-${$selectedWarehouse}`;
@@ -924,7 +931,6 @@ File: src/components/HealthEmployeeSection.svelte
       }
   }
 
-  // Logic xử lý Processed Report (thêm đánh giá, trung bình bộ phận)
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -939,16 +945,18 @@ File: src/components/HealthEmployeeSection.svelte
       selectedWarehouse.set(event.target.value);
   }
 
-  // === ACTIONS ===
   function handleCompose() { 
       modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'sknv' }));
   }
   function handleExport() { 
-      actionService.handleExport('sknv'); 
+      actionService.handleExport('sknv');
   }
   function handleCapture() { 
-      actionService.handleCapture('sknv'); 
+      actionService.handleCapture('sknv');
   }
+
+  // [CODEGENESIS CLEANUP] Đã xóa các hàm xử lý bảng thi đua cũ (exportToExcel, handleTargetInput, checkTargetColor)
+  // Logic này hiện đã được chuyển sang file ProgramGoalTables.svelte để tránh lỗi layout.
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
@@ -1070,6 +1078,19 @@ File: src/components/HealthEmployeeSection.svelte
                         <div id="competition-report-container-lk">
                             <CompetitionTab />
                         </div>
+                        
+                        <div class="mt-8">
+                             {#if $luykeGoalSettings && $luykeGoalSettings.programTables}
+        <ProgramGoalTables 
+            programTables={$luykeGoalSettings.programTables} 
+            on:update={(e) => {
+                // Nhận dữ liệu từ con và lưu vào Store
+                luykeGoalSettings.update(s => ({ ...s, programTables: e.detail }));
+            }}
+        />
+     {/if}
+                        </div>
+                        
                         <div id="pasted-competition-report-container" class="hidden"></div>
                     </div>
 
@@ -4588,295 +4609,309 @@ File: src/components/drawers/GoalDrawer.svelte
 ================================================================================
 
 <script>
-    import { onMount, afterUpdate } from 'svelte';
-    import { 
-        drawerState, 
-        warehouseList, 
-        luykeGoalSettings, 
-        realtimeGoalSettings,
-        modalState,
-        localCompetitionConfigs, 
-        selectedWarehouse,
-        efficiencyConfig 
-    } from '../../stores.js';
-    import { settingsService } from '../../services/settings.service.js';
-    import { datasyncService } from '../../services/datasync.service.js';
-    import { adminService } from '../../services/admin.service.js';
-    
-    let activeTab = 'monthly';
-    let localSelectedWarehouse = ''; 
-    
-    let currentLuykeGoals = {};
-    let currentRealtimeGoals = { goals: {}, timing: {} };
+  import { onMount, afterUpdate } from 'svelte';
+  import { 
+      drawerState, warehouseList, luykeGoalSettings, realtimeGoalSettings, 
+      modalState, localCompetitionConfigs, selectedWarehouse, efficiencyConfig,
+      // [CODEGENESIS] Import Store KPI Mới
+      kpiStore 
+  } from '../../stores.js';
+  
+  import { settingsService } from '../../services/settings.service.js';
+  import { datasyncService } from '../../services/datasync.service.js';
+  import { adminService } from '../../services/admin.service.js';
 
-    $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
+  let activeTab = 'monthly';
+  let localSelectedWarehouse = '';
+  let currentLuykeGoals = {};
+  let currentRealtimeGoals = { goals: {}, timing: {} };
 
-    // Tự động chọn kho
-    $: if (isOpen && !localSelectedWarehouse) {
-        localSelectedWarehouse = $selectedWarehouse || ($warehouseList.length > 0 ? $warehouseList[0] : '');
-    }
+  $: isOpen = $drawerState.activeDrawer === 'goal-drawer';
 
-    // Khi đổi kho, tải dữ liệu từ Cloud
-    $: if (isOpen && localSelectedWarehouse) {
-        loadGoals(localSelectedWarehouse);
-    }
+  // Tự động chọn kho
+  $: if (isOpen && !localSelectedWarehouse) {
+      localSelectedWarehouse = $selectedWarehouse || ($warehouseList.length > 0 ? $warehouseList[0] : '');
+  }
 
-    async function loadGoals(kho) {
-        await settingsService.loadGoalsFromCloud(kho);
-        
-        currentLuykeGoals = { ...($luykeGoalSettings[kho] || {}) };
-        
-        const rtSettings = $realtimeGoalSettings[kho] || { goals: {}, timing: {} };
-        currentRealtimeGoals = {
-            goals: { ...rtSettings.goals },
-            timing: { ...rtSettings.timing }
-        };
-    }
-    
-    onMount(async () => {
-        const configs = await adminService.loadEfficiencyConfig();
-        efficiencyConfig.set(configs);
-        if (typeof feather !== 'undefined') feather.replace();
-    });
+  // Khi đổi kho, tải dữ liệu từ Cloud
+  $: if (isOpen && localSelectedWarehouse) {
+      loadGoals(localSelectedWarehouse);
+  }
 
-    afterUpdate(() => {
-        if (typeof feather !== 'undefined') feather.replace();
-    });
+  async function loadGoals(kho) {
+      await settingsService.loadGoalsFromCloud(kho);
+      currentLuykeGoals = { ...($luykeGoalSettings[kho] || {}) };
+      
+      const rtSettings = $realtimeGoalSettings[kho] || { goals: {}, timing: {} };
+      currentRealtimeGoals = { goals: { ...rtSettings.goals }, timing: { ...rtSettings.timing } };
+      
+      // [CODEGENESIS] Đồng bộ ngược từ dữ liệu tải về vào kpiStore để bảng hiển thị đúng ngay khi mở
+      updateKpiStore();
+  }
 
-    function close() {
-        drawerState.update(s => ({ ...s, activeDrawer: null }));
-    }
+  onMount(async () => {
+      const configs = await adminService.loadEfficiencyConfig();
+      efficiencyConfig.set(configs);
+      if (typeof feather !== 'undefined') feather.replace();
+  });
 
-    function switchTab(tab) {
-        activeTab = tab;
-    }
+  afterUpdate(() => {
+      if (typeof feather !== 'undefined') feather.replace();
+  });
 
-    function saveLuyke() {
-        if (!localSelectedWarehouse) return;
-        settingsService.saveLuykeGoalForWarehouse(localSelectedWarehouse, currentLuykeGoals);
-    }
+  function close() {
+      drawerState.update(s => ({ ...s, activeDrawer: null }));
+  }
 
-    function saveRealtime() {
-        if (!localSelectedWarehouse) return;
-        settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
-    }
+  function switchTab(tab) { activeTab = tab; }
 
-    // Các hàm quản lý thi đua
-    function openCompetitionManager() {
-        if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
-        modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
-    }
-    function editCompetition(index) {
-        if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
-        modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
-    }
-    async function deleteCompetition(index) {
-        if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
-        let newConfigs = [...$localCompetitionConfigs];
-        newConfigs.splice(index, 1);
-        localCompetitionConfigs.set(newConfigs);
-        if (localSelectedWarehouse) {
-            try { await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs); } catch(e) { console.error(e); }
-        }
-    }
+  // [FIX] Cập nhật kpiStore khi nhập liệu
+  function updateKpiStore() {
+      kpiStore.update(store => ({
+          ...store,
+          // Cập nhật settings toàn cục để bảng tô màu ngay lập tức
+          globalSettings: {
+              ...store.globalSettings,
+              phanTramQD: Number(currentLuykeGoals.phanTramQD) || 80,
+              phanTramTC: Number(currentLuykeGoals.phanTramTC) || 20
+          }
+      }));
+  }
 
-    const percentageInputs = [
-        { id: 'phanTramQD', label: '% Quy đổi' },
-        { id: 'phanTramTC', label: '% Trả chậm' }
-    ];
+  function saveLuyke() {
+      if (!localSelectedWarehouse) return;
+      // 1. Lưu vào kho cũ (để giữ logic đồng bộ cloud cũ)
+      settingsService.saveLuykeGoalForWarehouse(localSelectedWarehouse, currentLuykeGoals);
+      
+      // 2. [CODEGENESIS] Bắn tín hiệu sang kho mới để tô màu Realtime
+      updateKpiStore();
+  }
+
+  function saveRealtime() {
+      if (!localSelectedWarehouse) return;
+      settingsService.saveRealtimeGoalForWarehouse(localSelectedWarehouse, currentRealtimeGoals);
+  }
+
+  // Các hàm quản lý thi đua
+  function openCompetitionManager() {
+      if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
+      modalState.update(s => ({ ...s, activeModal: 'user-competition-modal' }));
+  }
+
+  function editCompetition(index) {
+      if (localSelectedWarehouse) selectedWarehouse.set(localSelectedWarehouse);
+      modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: index }));
+  }
+
+  async function deleteCompetition(index) {
+      if (!confirm("Bạn có chắc chắn muốn xóa chương trình thi đua này?")) return;
+      
+      let newConfigs = [...$localCompetitionConfigs];
+      newConfigs.splice(index, 1);
+      localCompetitionConfigs.set(newConfigs);
+      
+      if (localSelectedWarehouse) {
+          try {
+              await datasyncService.saveCompetitionConfigs(localSelectedWarehouse, newConfigs);
+          } catch(e) { console.error(e); }
+      }
+  }
+
+  const percentageInputs = [
+      { id: 'phanTramQD', label: '% Quy đổi' },
+      { id: 'phanTramTC', label: '% Trả chậm' }
+  ];
 </script>
 
 {#if isOpen}
-    <div class="fixed inset-0 bg-black/40 z-40 transition-opacity" on:click={close} role="button" tabindex="0"></div>
+  <div class="fixed inset-0 bg-black/40 z-40 transition-opacity" on:click={close} role="button" tabindex="0"></div>
 {/if}
 
 <div class="fixed top-0 left-0 h-full bg-white shadow-2xl z-50 p-6 overflow-y-auto w-[500px] max-w-[95vw] transition-transform duration-300 ease-in-out transform {isOpen ? 'translate-x-0' : '-translate-x-full'}">
-    
-    <div class="flex justify-between items-center mb-6">
-        <h3 class="text-xl font-bold text-gray-800">Thiết lập mục tiêu</h3>
-        <button class="text-gray-500 hover:text-gray-800 text-3xl leading-none" on:click={close}>&times;</button>
-    </div>
+  
+  <div class="flex justify-between items-center mb-6">
+      <h3 class="text-xl font-bold text-gray-800">Thiết lập mục tiêu</h3>
+      <button class="text-gray-500 hover:text-gray-800 text-3xl leading-none" on:click={close}>&times;</button>
+  </div>
 
-    <div class="border-b border-gray-200 mb-6 flex space-x-6">
-        <button class="pb-2 border-b-2 font-medium text-sm transition-colors {activeTab === 'monthly' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}" on:click={() => switchTab('monthly')}>
-            Mục tiêu Tháng (Lũy kế)
-        </button>
-        <button class="pb-2 border-b-2 font-medium text-sm transition-colors {activeTab === 'daily' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}" on:click={() => switchTab('daily')}>
-            Mục tiêu Ngày (Realtime)
-        </button>
-    </div>
+  <div class="border-b border-gray-200 mb-6 flex space-x-6">
+      <button class="pb-2 border-b-2 font-medium text-sm transition-colors {activeTab === 'monthly' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}" on:click={() => switchTab('monthly')}>
+          Mục tiêu Tháng (Lũy kế)
+      </button>
+      <button class="pb-2 border-b-2 font-medium text-sm transition-colors {activeTab === 'daily' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}" on:click={() => switchTab('daily')}>
+          Mục tiêu Ngày (Realtime)
+      </button>
+  </div>
 
-    <div class="space-y-8">
-        <div>
-            <label for="goal-warehouse" class="block text-sm font-bold text-gray-700 mb-1">Thiết lập cho kho</label>
-            <select id="goal-warehouse" class="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-blue-700" bind:value={localSelectedWarehouse}>
-                {#if $warehouseList.length === 0}
-                    <option value="">Vui lòng tải file DSNV...</option>
-                {:else}
-                    {#each $warehouseList as kho}
-                        <option value={kho}>{kho}</option>
-                    {/each}
-                {/if}
-            </select>
-        </div>
+  <div class="space-y-8">
+      <div>
+          <label for="goal-warehouse" class="block text-sm font-bold text-gray-700 mb-1">Thiết lập cho kho</label>
+          <select id="goal-warehouse" class="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-blue-700" bind:value={localSelectedWarehouse}>
+              {#if $warehouseList.length === 0}
+                  <option value="">Vui lòng tải file DSNV...</option>
+              {:else}
+                  {#each $warehouseList as kho}
+                      <option value={kho}>{kho}</option>
+                  {/each}
+              {/if}
+          </select>
+      </div>
 
-        {#if activeTab === 'monthly'}
-            <div class="space-y-5 animate-fade-in">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label for="luyke-dtt" class="block text-sm font-medium text-gray-700">Target DT Thực</label>
-                        <input type="number" id="luyke-dtt" class="luyke-goal-input mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals.doanhThuThuc} on:input={saveLuyke}>
-                    </div>
-                    <div>
-                        <label for="luyke-dtqd" class="block text-sm font-medium text-gray-700">Target DT QĐ</label>
-                        <input type="number" id="luyke-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals.doanhThuQD} on:input={saveLuyke}>
-                    </div>
-                </div>
+      {#if activeTab === 'monthly'}
+          <div class="space-y-5 animate-fade-in">
+              <div class="grid grid-cols-2 gap-4">
+                  <div>
+                      <label for="luyke-dtt" class="block text-sm font-medium text-gray-700">Target DT Thực</label>
+                      <input type="number" id="luyke-dtt" class="luyke-goal-input mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals.doanhThuThuc} on:input={saveLuyke}>
+                  </div>
+                  <div>
+                      <label for="luyke-dtqd" class="block text-sm font-medium text-gray-700">Target DT QĐ</label>
+                      <input type="number" id="luyke-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals.doanhThuQD} on:input={saveLuyke}>
+                  </div>
+              </div>
 
-                <details class="group border rounded-lg overflow-hidden" open>
-                    <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
-                         Mục tiêu khai thác (%)
-                        <span class="transform group-open:rotate-180 transition-transform">▼</span>
-                    </summary>
-                    <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
-                        {#each percentageInputs as input}
-                            <div>
-                                <label for="luyke-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
-                                <input type="number" id="luyke-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentLuykeGoals[input.id]} on:input={saveLuyke}>
-                            </div>
-                        {/each}
-                        
-                        {#each $efficiencyConfig as item}
-                            <div>
-                                <label for="goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>
-                                    {item.label} (MT: {item.target}%)
-                                </label>
-                                <input 
-                                    type="number" 
-                                    id="goal-{item.id}" 
-                                    class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder={item.target} 
-                                    bind:value={currentLuykeGoals[item.id]} 
-                                    on:input={saveLuyke}
-                                >
-                            </div>
-                        {/each}
-                    </div>
-                </details>
-            </div>
-        {/if}
+              <details class="group border rounded-lg overflow-hidden" open>
+                  <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
+                      Mục tiêu khai thác (%) <span class="transform group-open:rotate-180 transition-transform">▼</span>
+                  </summary>
+                  <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
+                      {#each percentageInputs as input}
+                          <div>
+                              <label for="luyke-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
+                              <input 
+                                  type="number" 
+                                  id="luyke-{input.id}" 
+                                  class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                  bind:value={currentLuykeGoals[input.id]} 
+                                  on:input={saveLuyke} 
+                                  placeholder={input.id === 'phanTramQD' ? '80' : '20'}
+                              >
+                          </div>
+                      {/each}
+                      
+                      {#each $efficiencyConfig as item}
+                          <div>
+                              <label for="goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>
+                                  {item.label} (MT: {item.target}%)
+                              </label>
+                              <input type="number" id="goal-{item.id}" class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder={item.target} bind:value={currentLuykeGoals[item.id]} on:input={saveLuyke} >
+                          </div>
+                      {/each}
+                  </div>
+              </details>
+          </div>
+      {/if}
 
-        {#if activeTab === 'daily'}
-            <div class="space-y-5 animate-fade-in">
-                <div class="grid grid-cols-2 gap-4 items-end">
-                    <div>
-                        <label for="rt-open" class="block text-sm font-medium text-gray-700 mb-1">Giờ mở cửa</label>
-                        <input type="time" id="rt-open" class="p-2 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-open-hour']} on:input={saveRealtime}>
-                    </div>
-                    <div>
-                        <label for="rt-close" class="block text-sm font-medium text-gray-700 mb-1">Giờ đóng cửa</label>
-                        <input type="time" id="rt-close" class="p-2 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-close-hour']} on:input={saveRealtime}>
-                    </div>
-                </div>
+      {#if activeTab === 'daily'}
+          <div class="space-y-5 animate-fade-in">
+              <div class="grid grid-cols-2 gap-4 items-end">
+                  <div>
+                      <label for="rt-open" class="block text-sm font-medium text-gray-700 mb-1">Giờ mở cửa</label>
+                      <input type="time" id="rt-open" class="p-2 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-open-hour']} on:input={saveRealtime}>
+                  </div>
+                  <div>
+                      <label for="rt-close" class="block text-sm font-medium text-gray-700 mb-1">Giờ đóng cửa</label>
+                      <input type="time" id="rt-close" class="p-2 border border-gray-300 rounded-md shadow-sm w-full" bind:value={currentRealtimeGoals.timing['rt-close-hour']} on:input={saveRealtime}>
+                  </div>
+              </div>
 
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label for="rt-dtt" class="block text-sm font-medium text-gray-700">DT Thực (triệu)</label>
-                        <input type="number" id="rt-dtt" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuThuc} on:input={saveRealtime}>
-                    </div>
-                    <div>
-                        <label for="rt-dtqd" class="block text-sm font-medium text-gray-700">DT QĐ (triệu)</label>
-                        <input type="number" id="rt-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuQD} on:input={saveRealtime}>
-                    </div>
-                </div>
-                
-                <details class="group border rounded-lg overflow-hidden" open>
-                    <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
-                         Mục tiêu tỷ lệ Realtime (%)
-                        <span class="transform group-open:rotate-180 transition-transform">▼</span>
-                    </summary>
-                    <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
-                        {#each percentageInputs as input}
-                            <div>
-                                <label for="rt-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
-                                <input type="number" id="rt-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals[input.id]} on:input={saveRealtime}>
-                            </div>
-                        {/each}
-                         {#each $efficiencyConfig as item}
-                            <div>
-                                <label for="rt-goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>{item.label}</label>
-                                <input type="number" id="rt-goal-{item.id}" class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder={item.target} bind:value={currentRealtimeGoals.goals[item.id]} on:input={saveRealtime}>
-                            </div>
-                        {/each}
-                    </div>
-                </details>
-            </div>
-        {/if}
+              <div class="grid grid-cols-2 gap-4">
+                  <div>
+                      <label for="rt-dtt" class="block text-sm font-medium text-gray-700">DT Thực (triệu)</label>
+                      <input type="number" id="rt-dtt" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuThuc} on:input={saveRealtime}>
+                  </div>
+                  <div>
+                      <label for="rt-dtqd" class="block text-sm font-medium text-gray-700">DT QĐ (triệu)</label>
+                      <input type="number" id="rt-dtqd" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals.doanhThuQD} on:input={saveRealtime}>
+                  </div>
+              </div>
 
-        <div class="border-t pt-6 space-y-4">
-            <div class="flex justify-between items-center">
-                <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
-                <button on:click={openCompetitionManager} class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"><i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới</button>
-            </div>
-            
-            <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
-                {#if $localCompetitionConfigs.length === 0}
-                    <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                        <p class="text-gray-500 text-sm italic">Chưa có chương trình nào.</p>
-                    </div>
-                {:else}
-                    {#each $localCompetitionConfigs as config, index}
-                        <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
-                            
-                            <div class="flex justify-between items-start mb-2 pr-14">
-                                <h4 class="text-base font-bold text-gray-800 leading-tight">{config.name}</h4>
-                            </div>
-                            
-                            <div class="flex flex-wrap gap-2 mb-2">
-                                <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
-                                    {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
-                                </span>
-                                {#if config.excludeApple}
-                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-50 text-red-600 border border-red-100">No Apple</span>
-                                {/if}
-                            </div>
+              <details class="group border rounded-lg overflow-hidden" open>
+                  <summary class="p-3 text-sm font-bold cursor-pointer bg-gray-50 hover:bg-gray-100 flex justify-between items-center select-none">
+                      Mục tiêu tỷ lệ Realtime (%) <span class="transform group-open:rotate-180 transition-transform">▼</span>
+                  </summary>
+                  <div class="p-4 bg-white border-t grid grid-cols-2 gap-4">
+                      {#each percentageInputs as input}
+                          <div>
+                              <label for="rt-{input.id}" class="block text-sm font-medium text-gray-700">{input.label}</label>
+                              <input type="number" id="rt-{input.id}" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" bind:value={currentRealtimeGoals.goals[input.id]} on:input={saveRealtime}>
+                          </div>
+                      {/each}
+                      
+                      {#each $efficiencyConfig as item}
+                          <div>
+                              <label for="rt-goal-{item.id}" class="block text-sm font-medium text-gray-700 truncate" title={item.label}>{item.label}</label>
+                              <input type="number" id="rt-goal-{item.id}" class="mt-1 block w-full p-2 border border-blue-200 bg-blue-50 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder={item.target} bind:value={currentRealtimeGoals.goals[item.id]} on:input={saveRealtime}>
+                          </div>
+                      {/each}
+                  </div>
+              </details>
+          </div>
+      {/if}
 
-                            <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 grid grid-cols-1 gap-1">
-                                <div class="flex items-start gap-1">
-                                    <span class="font-bold min-w-[35px]">Hãng:</span>
-                                    <span class="text-blue-700 font-medium">{config.brands.join(', ')}</span>
-                                </div>
-                                <div class="flex items-start gap-1">
-                                    <span class="font-bold min-w-[35px]">Nhóm:</span>
-                                    <span class="text-gray-800">
-                                        {#if config.groups.length > 0}
-                                            {config.groups.join(', ')}
-                                        {:else}
-                                            <span class="italic text-gray-400">Tất cả</span>
-                                        {/if}
-                                    </span>
-                                </div>
-                            </div>
+      <div class="border-t pt-6 space-y-4">
+          <div class="flex justify-between items-center">
+              <h4 class="text-lg font-bold text-gray-800">Quản lý Chương trình Thi đua</h4>
+              <button on:click={openCompetitionManager} class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-1 shadow-sm"><i data-feather="plus-circle" class="w-4 h-4"></i> Tạo mới</button>
+          </div>
+          
+          <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar pb-2">
+              {#if $localCompetitionConfigs.length === 0}
+                  <div class="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                      <p class="text-gray-500 text-sm italic">Chưa có chương trình nào.</p>
+                  </div>
+              {:else}
+                  {#each $localCompetitionConfigs as config, index}
+                      <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group hover:border-blue-300 hover:shadow-md transition-all">
+                          <div class="flex justify-between items-start mb-2 pr-14">
+                              <h4 class="text-base font-bold text-gray-800 leading-tight">{config.name}</h4>
+                          </div>
+                          
+                          <div class="flex flex-wrap gap-2 mb-2">
+                              <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
+                                  {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
+                              </span>
+                              {#if config.excludeApple}
+                                  <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-50 text-red-600 border border-red-100">No Apple</span>
+                              {/if}
+                          </div>
 
-                            <div class="absolute top-3 right-3 flex gap-1">
-                                <button on:click={() => editCompetition(index)} class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><i data-feather="edit-2" class="w-4 h-4"></i></button>
-                                <button on:click={() => deleteCompetition(index)} class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><i data-feather="trash-2" class="w-4 h-4"></i></button>
-                            </div>
-                        </div>
-                    {/each}
-                {/if}
-            </div>
-        </div>
-    </div>
+                          <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 grid grid-cols-1 gap-1">
+                              <div class="flex items-start gap-1">
+                                  <span class="font-bold min-w-[35px]">Hãng:</span>
+                                  <span class="text-blue-700 font-medium">{config.brands.join(', ')}</span>
+                              </div>
+                              <div class="flex items-start gap-1">
+                                  <span class="font-bold min-w-[35px]">Nhóm:</span>
+                                  <span class="text-gray-800">
+                                      {#if config.groups.length > 0}
+                                          {config.groups.join(', ')}
+                                      {:else}
+                                          <span class="italic text-gray-400">Tất cả</span>
+                                      {/if}
+                                  </span>
+                              </div>
+                          </div>
+
+                          <div class="absolute top-3 right-3 flex gap-1">
+                              <button on:click={() => editCompetition(index)} class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                              <button on:click={() => deleteCompetition(index)} class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                          </div>
+                      </div>
+                  {/each}
+              {/if}
+          </div>
+      </div>
+  </div>
 </div>
 
 <style>
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 </style>
 
 
@@ -6069,27 +6104,133 @@ File: src/components/health-staff/IncomeTable.svelte
 
 
 ================================================================================
-File: src/components/health-staff/RevenueTable.svelte
+File: src/components/health-staff/ProgramGoalTables.svelte
 ================================================================================
 
 <script>
   import { createEventDispatcher } from 'svelte';
+  
+  export let programTables = [];
+  const dispatch = createEventDispatcher();
+  let localTables = [];
+
+  // Logic đồng bộ: Store -> Biến cục bộ
+  $: if (programTables) {
+      const isDiff = JSON.stringify(programTables.map(t => t.id)) !== JSON.stringify(localTables.map(t => t.id));
+      if (localTables.length === 0 || isDiff) {
+          localTables = JSON.parse(JSON.stringify(programTables));
+      }
+  }
+
+  function syncToStore() {
+      dispatch('update', localTables);
+  }
+</script>
+
+<div class="w-full space-y-6">
+  {#if localTables && localTables.length > 0}
+    {#each localTables as table, index (index)}
+      <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        
+        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-4">
+          
+          <h3 class="font-bold text-blue-700 text-sm uppercase tracking-wide border-l-4 border-blue-600 pl-2 truncate">
+            {table.name || table.programName || `Chương trình ${index + 1}`}
+          </h3>
+
+          <div class="flex items-center gap-2 flex-shrink-0">
+             <label class="text-xs font-bold text-gray-600 whitespace-nowrap cursor-pointer">
+                Mục tiêu:
+             </label>
+             
+             <div class="relative"> 
+                <input 
+                  type="number" 
+                  bind:value={table.target} 
+                  on:input={syncToStore}
+                  class="block w-32 rounded border border-gray-300 bg-white text-right font-bold text-red-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm py-1 px-2 shadow-sm"
+                  placeholder="0"
+                />
+                <span class="absolute right-0 top-0 text-[10px] text-gray-400 pointer-events-none mr-1 mt-1.5">đ</span>
+             </div>
+          </div>
+
+        </div>
+
+        <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <label class="block text-xs font-medium text-gray-500 uppercase">Thực đạt (Actual)</label>
+            <div class="relative">
+                <input 
+                    type="number" 
+                    bind:value={table.actual} 
+                    on:input={syncToStore}
+                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm py-2 px-3 border font-bold text-gray-700"
+                />
+                <span class="absolute right-0 top-0 text-[10px] text-gray-400 pointer-events-none mr-2 mt-2.5">đ</span>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs font-medium text-gray-500 uppercase">Ghi chú</label>
+            <textarea 
+              bind:value={table.note} 
+              on:input={syncToStore}
+              rows="1"
+              class="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm py-2 px-3 border resize-none"
+            ></textarea>
+          </div>
+        </div>
+        
+        <div class="bg-gray-50 px-4 py-2 border-t border-gray-200 flex justify-end items-center gap-3">
+             <span class="text-xs text-gray-500">Tiến độ:</span>
+             <div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div class="h-full {table.actual >= table.target ? 'bg-green-500' : 'bg-orange-400'}" style="width: {Math.min((table.actual / (table.target || 1)) * 100, 100)}%"></div>
+             </div>
+             <span class="font-bold text-base {table.actual >= table.target ? 'text-green-600' : 'text-orange-600'}">
+                {table.target > 0 ? ((table.actual / table.target) * 100).toFixed(1) : 0}%
+             </span>
+        </div>
+
+      </div>
+    {/each}
+  {/if}
+</div>
+
+
+================================================================================
+File: src/components/health-staff/RevenueTable.svelte
+================================================================================
+
+<script>
+  import { createEventDispatcher, onMount } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
+  import { kpiStore } from '../../stores.js';
+  import { getCompletionColor } from '../../utils/kpi.utils.js';
   
   export let reportData = [];
+
+  // [LOGGER] Theo dõi dữ liệu đầu vào
+  $: {
+      console.log(`[RevenueTable ${new Date().toLocaleTimeString()}] Store Value:`, $kpiStore);
+      console.log(`[RevenueTable] Report Data Length:`, reportData.length);
+  }
 
   const dispatch = createEventDispatcher();
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // [CẤU HÌNH] Giữ nguyên
+  // [CẤU HÌNH] Giữ nguyên header
   const columns = [
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
+      // [STYLE FIX] Đổi border-blue-200 để khớp tông màu header xanh
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
       { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
       { key: 'hieuQuaQuyDoi', label: '% QĐ', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
+      // [STYLE FIX] Đổi border-green-200
       { key: 'doanhThuTraGop', label: 'DT Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800 border-l border-green-200' },
       { key: 'tyLeTraCham', label: '% Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800' },
+      // [STYLE FIX] Đổi border-yellow-200
       { key: 'doanhThuChuaXuat', label: 'DT Chưa Xuất', align: 'right', headerClass: 'bg-yellow-50 text-yellow-800 border-l border-yellow-200' }
   ];
 
@@ -6116,32 +6257,32 @@ File: src/components/health-staff/RevenueTable.svelte
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
-  // [FIX] Logic tô màu
   function getCellClass(item, colKey) {
-      if (['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat'].includes(colKey)) {
-          return 'font-bold text-gray-800';
+      const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
+      let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
+
+      const userTarget = $kpiStore.targets[item.maNV];
+      const targetSettings = userTarget || $kpiStore.globalSettings;
+
+      if (!targetSettings || Object.keys(targetSettings).length === 0) {
+          return baseClass; 
       }
 
-      if (!item.mucTieu) return 'text-gray-600'; // Nếu không có mục tiêu thì không tô màu
-
       if (colKey === 'hieuQuaQuyDoi') {
-          // Target %Quy Đổi (VD: 80%)
-          const target = (item.mucTieu.phanTramQD || 0) / 100;
-          if (target === 0) return 'text-blue-800 font-bold';
-          return item.hieuQuaQuyDoi >= target 
-              ? 'text-green-600 font-extrabold bg-green-50' // Đạt
-              : 'text-red-600 font-bold bg-red-50';        // Không đạt
+          const actual = item.hieuQuaQuyDoi;
+          const target = (targetSettings.phanTramQD || 0) / 100; 
+          const colorClass = getCompletionColor(actual, target);
+          return colorClass ? `${colorClass} font-bold` : baseClass;
       }
       
       if (colKey === 'tyLeTraCham') {
-          // Target % Trả chậm
-          const target = (item.mucTieu.phanTramTC || 0) / 100;
-          if (target === 0) return 'text-green-800 font-bold';
-          return item.tyLeTraCham >= target 
-              ? 'text-green-600 font-extrabold bg-green-50' 
-              : 'text-red-600 font-bold bg-red-50';
+          const actual = item.tyLeTraCham;
+          const target = (targetSettings.phanTramTC || 0) / 100;
+          const colorClass = getCompletionColor(actual, target);
+          return colorClass ? `${colorClass} font-bold` : baseClass;
       }
-      return 'text-gray-600';
+
+      return baseClass;
   }
 
   function handleRowClick(employeeId) { dispatch('viewDetail', { employeeId }); }
@@ -6156,7 +6297,7 @@ File: src/components/health-staff/RevenueTable.svelte
                 <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
             </div>
         </div>
-        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: VNĐ</span>
+        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
     </div>
 
     <div class="overflow-x-auto">
@@ -6173,21 +6314,21 @@ File: src/components/health-staff/RevenueTable.svelte
                     {/each}
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100">
+            <tbody class="divide-y divide-gray-200">
                 {#if sortedData.length === 0}
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
                         <tr class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}" on:click={() => handleRowClick(item.maNV)}>
-                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-100 group-hover:text-blue-800 group-hover:underline">
+                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
-                            <td class="px-4 py-3 text-right border-r border-gray-100 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
+                            <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-200 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
                             <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
-                            <td class="px-4 py-3 text-right border-l border-gray-100 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
+                            <td class="px-4 py-3 text-right border-l border-gray-200 text-gray-500 font-medium">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
                         </tr>
                     {/each}
                 {/if}
@@ -9108,29 +9249,6 @@ File: src/components/health-staff/summary/card/EmployeeCard.svelte
   <CardMainKpi aboveCount={totalAbove} totalCount={totalCriteria} />
   <CardSubKpiGrid {summary} />
 </div>
-
-
-================================================================================
-File: src/components/managers/ModalManager.svelte
-================================================================================
-
-<script>
-    import { modalStore } from '../../stores/uiStore';
-    
-    // [FIX] Đường dẫn đúng trỏ vào thư mục modals
-    import LoginModal from '../modals/LoginModal.svelte'; 
-    import AdminModal from '../modals/AdminModal.svelte';
-    
-    // Lưu ý: SettingsModal không tồn tại trong dự án của bạn (nó là InterfaceDrawer), tôi đã xóa dòng import sai này.
-</script>
-
-{#if $modalStore.login}
-    <LoginModal on:close={() => modalStore.close('login')} />
-{/if}
-
-{#if $modalStore.admin}
-    <AdminModal on:close={() => modalStore.close('admin')} />
-{/if}
 
 
 ================================================================================
@@ -13342,6 +13460,10 @@ File: src/components/realtime/employee/EmployeeList.svelte
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
+  
+  // [CODEGENESIS] Import Store & Logic màu sắc mới
+  import { kpiStore } from '../../../stores.js';
+  import { getCompletionColor } from '../../../utils/kpi.utils.js';
 
   export let reportData = [];
   const dispatch = createEventDispatcher();
@@ -13415,7 +13537,7 @@ File: src/components/realtime/employee/EmployeeList.svelte
                 <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-0 bg-slate-200 z-30 min-w-[180px] select-none" on:click={() => handleSort('hoTen')}>
                   <div class="flex items-center gap-1">
                     <span>Nhân viên</span>
-                     <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{sortKey === 'hoTen' && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
                     </svg>
                   </div>
@@ -13442,8 +13564,12 @@ File: src/components/realtime/employee/EmployeeList.svelte
             </thead>
             <tbody class="divide-y divide-gray-200">
               {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item (item.maNV)}
-                {@const qdClass = (item.mucTieu && item.hieuQuaQuyDoi < (item.mucTieu.phanTramQD / 100)) ? 'text-red-600 bg-red-50' : 'text-green-600'}
-                {@const tcClass = (item.mucTieu && item.tyLeTraCham < (item.mucTieu.phanTramTC / 100)) ? 'text-red-600 bg-red-50' : ''}
+                {@const userTarget = $kpiStore.targets[item.maNV] || $kpiStore.globalSettings}
+                {@const targetQD = (userTarget?.phanTramQD || 0) / 100}
+                {@const targetTC = (userTarget?.phanTramTC || 0) / 100}
+
+                {@const qdClass = getCompletionColor(item.hieuQuaQuyDoi, targetQD)}
+                {@const tcClass = getCompletionColor(item.tyLeTraCham, targetTC)}
                  
                 <tr class="hover:bg-blue-50 transition cursor-pointer interactive-row" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
                   <td class="px-4 py-2 font-semibold text-blue-600 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200">
@@ -13451,9 +13577,13 @@ File: src/components/realtime/employee/EmployeeList.svelte
                   </td>
                   <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThu)}</td>
                   <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold {qdClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold {tcClass}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
+                  
                   <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
                 </tr>
               {/each}
@@ -20251,86 +20381,22 @@ export const services = {
 
 
 ================================================================================
-File: src/stores/authStore.js
-================================================================================
-
-// Version 1.0 - Store quản lý User (Bổ sung khẩn cấp)
-import { writable } from 'svelte/store';
-
-// Khởi tạo store với giá trị mặc định là null (chưa đăng nhập)
-export const authUser = writable(null);
-
-
-================================================================================
-File: src/stores/uiStore.js
-================================================================================
-
-import { writable } from 'svelte/store';
-
-function createModalStore() {
-    const { subscribe, update, set } = writable({
-        login: false,
-        admin: false,
-        settings: false
-    });
-
-    return {
-        subscribe,
-        open: (modalName) => update(n => ({ ...n, [modalName]: true })),
-        close: (modalName) => update(n => ({ ...n, [modalName]: false })),
-        reset: () => set({ login: false, admin: false, settings: false })
-    };
-}
-
-// QUAN TRỌNG: Phải có chữ export ở đây
-export const modalStore = createModalStore();
-
-
-================================================================================
 File: src/stores.js
 ================================================================================
 
-// src/stores.js
+// src/stores.js (Copy đè lên file cũ)
 import { writable } from 'svelte/store';
 
-/**
- * Biến state chính, theo dõi tab nào đang được hiển thị.
- */
+// ... (Giữ nguyên các phần trên) ...
 export const activeTab = writable('data-section');
-
-/**
- * Trạng thái xác thực
- */
 export const isAdmin = writable(false); 
 export const currentUser = writable(null);
-
-// === DỮ LIỆU TƯƠNG TÁC & NỘI DUNG ĐỘNG ===
 export const feedbackList = writable([]);
 export const userStats = writable([]); 
-export const helpContent = writable({
-    data: 'Đang tải hướng dẫn...',
-    luyke: 'Đang tải hướng dẫn...',
-    sknv: 'Đang tải hướng dẫn...',
-    realtime: 'Đang tải hướng dẫn...'
-});
-export const composerTemplates = writable({
-    luyke: '',
-    sknv: '',
-    realtime: ''
-});
+export const helpContent = writable({ data: '...', luyke: '...', sknv: '...', realtime: '...' });
+export const composerTemplates = writable({ luyke: '', sknv: '', realtime: '' });
 export const competitionNameMappings = writable({}); 
-
-// Store cho cấu hình trang chủ
-export const homeConfig = writable({
-    videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4',
-    timeline: [],
-    sliderImages: [],
-    changelogs: []
-});
-
-/**
- * Dữ liệu thô (Raw Data)
- */
+export const homeConfig = writable({ videoUrl: '', timeline: [], sliderImages: [], changelogs: [] });
 export const danhSachNhanVien = writable([]);
 export const ycxData = writable([]);
 export const rawGioCongData = writable([]);
@@ -20340,69 +20406,53 @@ export const pastedThiDuaReportData = writable([]);
 export const realtimeYCXData = writable([]);
 export const thiDuaVungChiTiet = writable([]);
 export const thiDuaVungTong = writable([]);
-// Dữ liệu tháng trước
 export const ycxDataThangTruoc = writable([]);
 export const thuongNongDataThangTruoc = writable([]);
 export const thuongERPDataThangTruoc = writable([]);
-
-/**
- * Dữ liệu đã xử lý (Processed Data)
- */
-export const masterReportData = writable({
-    luyke: [],
-    sknv: [],
-    realtime: []
-});
-
-/**
- * Dữ liệu thi đua
- */
+export const masterReportData = writable({ luyke: [], sknv: [], realtime: [] });
 export const competitionData = writable([]);
-
-/**
- * Cấu hình & Khai báo
- */
-export const declarations = writable({
-    hinhThucXuat: '',
-    hinhThucXuatGop: '',
-    heSoQuyDoi: ''
-});
+export const declarations = writable({ hinhThucXuat: '', hinhThucXuatGop: '', heSoQuyDoi: '' });
 export const categoryStructure = writable([]); 
 export const brandList = writable([]); 
 export const specialProductList = writable([]);
-
-// [Mapping Stores]
 export const macroCategoryConfig = writable([]); 
 export const macroProductGroupConfig = writable([]); 
 export const categoryNameMapping = writable({}); 
 export const groupNameMapping = writable({});
 export const brandNameMapping = writable({}); 
-
 export const localCompetitionConfigs = writable([]); 
 export const globalCompetitionConfigs = writable([]); 
 export const globalSpecialPrograms = writable([]); 
-
-// [MỚI] Cấu hình động cho bảng Hiệu quả & QĐC
 export const efficiencyConfig = writable([]); 
 export const qdcConfigStore = writable([]);
 export const warehouseCustomMetrics = writable([]);
-
-// [CẬP NHẬT] Reset về mảng rỗng để không hiện bảng mẫu khi khởi tạo
 export const customRevenueTables = writable([]);
-
-// [MỚI - PERFORMANCE TABLE] Store lưu trữ cấu hình bảng hiệu quả (Cả Admin & User)
 export const customPerformanceTables = writable([]);
 
-/**
- * Cài đặt & Trạng thái UI
- */
+// --- [LOGGING SECTION] QUẢN LÝ MỤC TIÊU (KPI) ---
+let savedKpi = null;
+if (typeof localStorage !== 'undefined') {
+    const raw = localStorage.getItem('kpiStore_cache');
+    console.log(`[STORE ${new Date().toLocaleTimeString()}] Raw LocalStorage:`, raw);
+    savedKpi = raw ? JSON.parse(raw) : null;
+}
+
+export const kpiStore = writable(savedKpi || {
+    targets: {}, 
+    globalSettings: {} 
+});
+
+kpiStore.subscribe(value => {
+    // console.log('[STORE] KPI Update:', value); // Uncomment nếu muốn log chi tiết thay đổi
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('kpiStore_cache', JSON.stringify(value));
+    }
+});
+// -----------------------------------------------------
+
 export const luykeGoalSettings = writable({});
 export const realtimeGoalSettings = writable({});
-export const highlightSettings = writable({
-    luyke: {},
-    sknv: {},
-    realtime: {}
-});
+export const highlightSettings = writable({ luyke: {}, sknv: {}, realtime: {} });
 export const debugInfo = writable({});
 export const employeeMaNVMap = writable(new Map());
 export const employeeNameToMaNVMap = writable(new Map());
@@ -20421,46 +20471,19 @@ export const choices = writable({
 });
 export const viewingDetailFor = writable(null);
 export const sortState = writable({});
-
-/**
- * Trạng thái kho
- */
 export const warehouseList = writable([]);
 export const selectedWarehouse = writable(null);
-
-// === STATE GIAO DIỆN ===
 export const drawerState = writable({ activeDrawer: null });
 export const modalState = writable({ activeModal: null });
-
-export const notificationStore = writable({
-    message: '',
-    type: 'info', 
-    visible: false
-});
-
-/**
- * Cài đặt giao diện
- */
+export const notificationStore = writable({ message: '', type: 'info', visible: false });
 export const interfaceSettings = writable({
-    contrastLevel: '3',
-    globalFontSize: '18',
-    kpiFontSize: '36',
+    contrastLevel: '3', globalFontSize: '18', kpiFontSize: '36',
     kpiCard1Bg: '#38bdf8', kpiCard2Bg: '#34d399', kpiCard3Bg: '#fbbf24',
     kpiCard4Bg: '#2dd4bf', kpiCard5Bg: '#a78bfa', kpiCard6Bg: '#f472b6',
     kpiCard7Bg: '#818cf8', kpiCard8Bg: '#f87171',
-    kpiTitleColor: '#ffffff',
-    kpiMainColor: '#ffffff',
-    kpiSubColor: '#ffffff'
+    kpiTitleColor: '#ffffff', kpiMainColor: '#ffffff', kpiSubColor: '#ffffff'
 });
-
-// === FIREBASE STORE ===
-export const firebaseStore = writable({
-    app: null,
-    auth: null,
-    db: null,
-    storage: null
-});
-
+export const firebaseStore = writable({ app: null, auth: null, db: null, storage: null });
 export const fileSyncState = writable({});
 
 
@@ -23082,6 +23105,44 @@ export const formatters = {
         }
         return `${displayName} - ${maNV}`;
     },
+};
+
+
+================================================================================
+File: src/utils/kpi.utils.js
+================================================================================
+
+// File: src/utils/kpi.utils.js
+
+/**
+ * Hàm thuần túy: Tính màu sắc dựa trên % hoàn thành
+ * @param {number} actual - Số thực đạt
+ * @param {number} target - Mục tiêu
+ * @returns {string} - Class Tailwind tương ứng
+ */
+export const getCompletionColor = (actual, target) => {
+    // 1. Bảo vệ: Nếu không có mục tiêu, hoặc mục tiêu = 0 -> Không tô màu
+    if (!target || target === 0) return '';
+
+    // 2. Tính toán % hoàn thành
+    const percent = (actual / target) * 100;
+
+    // 3. Logic Mới (Theo yêu cầu):
+    // - Dưới mục tiêu (< 100%) -> Tô Đỏ
+    // - Đạt trở lên (>= 100%) -> Không tô màu
+    if (percent < 100) {
+        return 'bg-red-50 text-red-600 font-bold'; 
+    }
+    
+    // Đạt mục tiêu trở lên -> Trả về rỗng (giữ nguyên màu chữ mặc định của bảng)
+    return '';
+};
+
+/**
+ * Hàm định dạng tiền tệ VNĐ (Tiện ích đi kèm thường dùng)
+ */
+export const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 };
 
 

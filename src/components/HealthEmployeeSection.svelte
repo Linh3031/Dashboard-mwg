@@ -7,22 +7,26 @@
     luykeGoalSettings, 
     selectedWarehouse,
     warehouseList,
-    modalState 
+    modalState
   } from '../stores.js';
   
   import { sknvService } from '../services/sknv.service.js';
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
   
+  import * as XLSX from 'xlsx';
+
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
   import IncomeTable from './health-staff/IncomeTable.svelte';
-  // [NEW] Thay thế EfficiencyTable bằng PerformanceView
   import PerformanceView from './health-staff/performance/PerformanceView.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
+  
+  // [CODEGENESIS FIX] Import component mới đã được tách riêng để bảo vệ layout
+  import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
 
   export let activeTab;
 
@@ -39,9 +43,7 @@
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' }
   ];
 
-  let lastDataHash = ''; 
-  
-  // Logic tính toán Master Report khi dữ liệu thay đổi
+  let lastDataHash = '';
   $: {
       if ($danhSachNhanVien.length > 0 && $ycxData.length > 0) {
           const currentHash = `${$danhSachNhanVien.length}-${$ycxData.length}-${$selectedWarehouse}`;
@@ -54,7 +56,6 @@
       }
   }
 
-  // Logic xử lý Processed Report (thêm đánh giá, trung bình bộ phận)
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -69,16 +70,18 @@
       selectedWarehouse.set(event.target.value);
   }
 
-  // === ACTIONS ===
   function handleCompose() { 
       modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'sknv' }));
   }
   function handleExport() { 
-      actionService.handleExport('sknv'); 
+      actionService.handleExport('sknv');
   }
   function handleCapture() { 
-      actionService.handleCapture('sknv'); 
+      actionService.handleCapture('sknv');
   }
+
+  // [CODEGENESIS CLEANUP] Đã xóa các hàm xử lý bảng thi đua cũ (exportToExcel, handleTargetInput, checkTargetColor)
+  // Logic này hiện đã được chuyển sang file ProgramGoalTables.svelte để tránh lỗi layout.
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
@@ -200,6 +203,19 @@
                         <div id="competition-report-container-lk">
                             <CompetitionTab />
                         </div>
+                        
+                        <div class="mt-8">
+                             {#if $luykeGoalSettings && $luykeGoalSettings.programTables}
+        <ProgramGoalTables 
+            programTables={$luykeGoalSettings.programTables} 
+            on:update={(e) => {
+                // Nhận dữ liệu từ con và lưu vào Store
+                luykeGoalSettings.update(s => ({ ...s, programTables: e.detail }));
+            }}
+        />
+     {/if}
+                        </div>
+                        
                         <div id="pasted-competition-report-container" class="hidden"></div>
                     </div>
 
