@@ -35,7 +35,7 @@ export const captureService = {
 
         captureWrapper.appendChild(contentClone);
         document.body.appendChild(captureWrapper);
-    
+
         // 5. Tắt animation của Chart.js (nếu có) để chụp không bị mờ
         if (typeof Chart !== 'undefined') {
             Chart.defaults.animation = false;
@@ -49,15 +49,16 @@ export const captureService = {
 
         try {
             // 8. Chụp bằng html2canvas
+            // [MODIFIED] Tăng scale lên 3 để ảnh nét hơn (theo yêu cầu)
             const canvas = await window.html2canvas(captureWrapper, {
-                scale: 2, // Tăng chất lượng ảnh
+                scale: 3, // High resolution
                 useCORS: true, // Cho phép ảnh từ domain khác
                 backgroundColor: '#f3f4f6', // Màu nền xám nhạt
                 logging: false,
                 windowWidth: captureWrapper.scrollWidth,
                 windowHeight: captureWrapper.scrollHeight
             });
-    
+
             // 9. Tải xuống
             const link = document.createElement('a');
             link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
@@ -65,7 +66,7 @@ export const captureService = {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
+
             notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
             setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
 
@@ -91,9 +92,8 @@ export const captureService = {
 
         const user = get(currentUser);
         analyticsService.incrementCounter('actionsTaken', user?.email);
-        
         notificationStore.update(s => ({ ...s, visible: true, type: 'info', message: `Đang xử lý ảnh: ${baseTitle}...` }));
-    
+
         // Gom nhóm các phần tử cần chụp (data-capture-group)
         const captureGroups = new Map();
         contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
@@ -106,15 +106,14 @@ export const captureService = {
                 captureGroups.get(group).push(el);
             }
         });
-        
+
         // Inject CSS (QUAN TRỌNG: Để định dạng bảng, mobile preset, v.v.)
         const styleElement = injectCaptureStyles();
-        
         if (typeof Chart !== 'undefined') {
             Chart.defaults.animation = false;
         }
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
         try {
             // Case 1: Không có group nào, chụp nguyên container
             if (captureGroups.size === 0) {
@@ -130,9 +129,34 @@ export const captureService = {
 
             // Case 2: Chụp từng group
             for (const [group, elements] of captureGroups.entries()) {
-                const targetElement = elements[0];
                 
-                // Tìm tiêu đề con (h3, h4) để đặt tên file cho đẹp
+                // [MODIFIED] XỬ LÝ ĐẶC BIỆT CHO TAB DT NGÀNH HÀNG (category-revenue)
+                // Yêu cầu: Không ghép ảnh, chụp từng bảng riêng lẻ
+                if (group === 'category-revenue') {
+                    for (const targetElement of elements) {
+                        // Tìm tiêu đề con bên trong bảng để đặt tên file
+                        let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
+                        
+                        // Làm sạch tiêu đề
+                        const captureTitle = (foundTitle || baseTitle)
+                                                .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
+                                                .replace(/\s+/g, '_');
+                        
+                        const preset = targetElement.dataset.capturePreset;
+                        const presetClass = preset ? `preset-${preset}` : '';
+
+                        // Gọi chụp ngay lập tức cho từng phần tử
+                        await this.captureAndDownload(targetElement, captureTitle, presetClass);
+                        
+                        // Delay nhỏ để tránh treo trình duyệt khi loop
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                    // Bỏ qua logic mặc định bên dưới, chuyển sang group tiếp theo
+                    continue; 
+                }
+
+                // --- LOGIC MẶC ĐỊNH CHO CÁC TAB KHÁC (GIỮ NGUYÊN) ---
+                const targetElement = elements[0];
                 let foundTitle = '';
                 if (targetElement) {
                     foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
@@ -141,7 +165,7 @@ export const captureService = {
                 const captureTitle = (foundTitle || baseTitle)
                                         .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
                                         .replace(/\s+/g, '_');
-                
+
                 const preset = targetElement.dataset.capturePreset;
                 const isKpiGroup = group === 'kpi'; // KPI Group cần xử lý grid đặc biệt
                 
@@ -166,7 +190,7 @@ export const captureService = {
     
                 await this.captureAndDownload(elementToCapture, captureTitle, presetClass);
                 
-                // Delay nhỏ giữa các lần chụp để không treo trình duyệt
+                // Delay nhỏ giữa các lần chụp
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
         } finally {
