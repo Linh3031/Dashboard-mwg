@@ -9,19 +9,52 @@ const _injectCaptureStyles = () => {
     document.getElementById(styleId)?.remove();
 
     const styles = `
-        /* Container gốc: Trả về trạng thái linh hoạt để Mobile Preset hoạt động */
+        /* Container gốc */
         .capture-container { 
             padding: 24px; 
             background-color: #f3f4f6; 
             box-sizing: border-box; 
-            width: fit-content; /* Quan trọng: Để nội dung bên trong quyết định độ rộng */
+            width: fit-content; 
             position: absolute;
             left: -9999px;
             top: 0;
             z-index: -1;
         }
         
-        /* [NEW] Class dành riêng cho Realtime để ép giao diện Desktop */
+        /* [UPDATED FIX] Xử lý triệt để lỗi cắt chữ (g, y, p...) ở mọi cấp độ */
+        
+        /* 1. Cấp độ ô bảng (TD/TH) */
+        .capture-container th,
+        .capture-container td {
+            padding-top: 8px !important;
+            padding-bottom: 8px !important;
+            line-height: 1.5 !important;
+            height: auto !important;      /* Bắt buộc chiều cao tự động giãn */
+        }
+
+        /* 2. Cấp độ nội dung bên trong (DIV/SPAN/P/STRONG) - Quan trọng cho Tên Nhân Viên */
+        /* Nguyên nhân tên bị cắt là do thẻ bao bên trong td bị giới hạn chiều cao hoặc overflow */
+        .capture-container td > div,
+        .capture-container td > span,
+        .capture-container td > p,
+        .capture-container th > div,
+        .capture-container th > span {
+            overflow: visible !important;  /* Cấm ẩn nội dung thừa */
+            padding-bottom: 4px !important; /* Nới đáy cho thẻ con */
+            line-height: 1.5 !important;
+            height: auto !important;
+            white-space: normal !important; /* Cho phép xuống dòng nếu cần, tránh bị cắt ngang */
+        }
+
+        /* 3. Cấp độ Tiêu đề lớn */
+        .capture-container h3, 
+        .capture-container h4,
+        .capture-container .font-bold {
+            padding-bottom: 6px !important;
+            line-height: 1.5 !important;
+            overflow: visible !important;
+        }
+
         .force-desktop-mode {
             min-width: 1600px !important;
             width: fit-content !important;
@@ -32,6 +65,7 @@ const _injectCaptureStyles = () => {
             flex-direction: column; 
             gap: 24px; 
         }
+        
         .capture-title { 
             font-size: 28px; 
             font-weight: bold; 
@@ -40,9 +74,11 @@ const _injectCaptureStyles = () => {
             text-align: center; 
             font-family: 'Segoe UI', sans-serif;
             text-transform: uppercase;
+            line-height: 1.5 !important;
+            padding-bottom: 10px !important;
         }
 
-        /* [RESTORED] Mobile Portrait Preset - Giữ nguyên logic bóp gọn cho điện thoại */
+        /* Mobile Portrait Preset */
         .preset-mobile-portrait {
             width: 450px !important;
             min-width: 450px !important;
@@ -117,7 +153,6 @@ export const captureService = {
         // 4. Clone nội dung
         const contentClone = elementToCapture.cloneNode(true);
         if (presetClass) { 
-            // presetClass có thể chứa nhiều class (cách nhau bằng khoảng trắng)
             const classes = presetClass.split(' ').filter(c => c);
             contentClone.classList.add(...classes); 
         }
@@ -136,39 +171,8 @@ export const captureService = {
         // 7. Đợi render 
         await new Promise(resolve => setTimeout(resolve, 300));
 
-        // --- BẮT ĐẦU ĐOẠN LOG DEBUG (CodeGenesis) ---
-        // Mục tiêu: Bắt chính xác kích thước thật mà html2canvas nhìn thấy trước khi chụp
-        console.group(`📸 DEBUG CAPTURE: ${title}`);
-        const rect = captureWrapper.getBoundingClientRect();
-        // Lấy thông tin element con đầu tiên (thường là bảng) để so sánh
-        const firstChild = captureWrapper.querySelector('table') || captureWrapper.firstElementChild; 
-        
-        console.log("1. Wrapper (Container ảo):", {
-            width: rect.width,
-            height: rect.height,
-            scrollWidth: captureWrapper.scrollWidth,
-            scrollHeight: captureWrapper.scrollHeight
-        });
-
-        if (firstChild) {
-            console.log("2. Nội dung chính (Bảng/Group):", {
-                tagName: firstChild.tagName,
-                className: firstChild.className,
-                offsetWidth: firstChild.offsetWidth,
-                scrollWidth: firstChild.scrollWidth
-            });
-        }
-
-        console.log("3. Môi trường:", {
-            devicePixelRatio: window.devicePixelRatio,
-            presetClass: presetClass
-        });
-        console.groupEnd();
-        // --- KẾT THÚC ĐOẠN LOG DEBUG ---
-
         try {
             // 8. Chụp bằng html2canvas
-            // Scale 3 để ảnh nét (High Resolution)
             const canvas = await window.html2canvas(captureWrapper, {
                 scale: 5, 
                 useCORS: true,
@@ -233,28 +237,22 @@ export const captureService = {
 
         // --- CẤU HÌNH LOGIC CHỤP ẢNH ---
         
-        // 1. Danh sách các nhóm cần TÁCH ẢNH (1 bảng = 1 file)
         const SPLIT_GROUPS = [
-            'category-revenue',         // DT Ngành hàng
-            'competition-program',      // Thi đua (theo chương trình)
+            'category-revenue',         
+            'competition-program',      
             'competition-program-view', 
-            'efficiency-program',       // Hiệu quả (theo chương trình)
+            'efficiency-program',       
             'efficiency-program-view',
-            'regional-competition'      
+            'regional-competition',
+            'efficiency-luyke'
         ];
 
         try {
-            // Case 1: Không có group -> Chụp nguyên container (Fallback)
+            // Case 1: Không có group
             if (captureGroups.size === 0) {
                 if (contentContainer.offsetParent !== null) {
                     const preset = contentContainer.dataset.capturePreset;
                     let presetClass = preset ? `preset-${preset}` : '';
-
-                    // [AUTO DETECT] Nếu là Realtime nhưng không có group -> Ép Desktop Mode
-                    if (baseTitle.toLowerCase().includes('realtime') || contentContainer.id.includes('realtime')) {
-                        presetClass += ' force-desktop-mode';
-                    }
-
                     await this.captureAndDownload(contentContainer, baseTitle, presetClass);
                 } else {
                      alert('Không có nội dung hiển thị để chụp.');
@@ -265,10 +263,6 @@ export const captureService = {
             // Case 2: Xử lý từng group
             for (const [group, elements] of captureGroups.entries()) {
                 
-                // Xác định xem nhóm này có cần ép Desktop Mode không (cho Realtime)
-                const isRealtime = group.toLowerCase().includes('realtime');
-                const forceDesktopClass = isRealtime ? ' force-desktop-mode' : '';
-
                 // --- A. LOGIC TÁCH ẢNH ---
                 if (SPLIT_GROUPS.includes(group)) {
                     for (const targetElement of elements) {
@@ -278,7 +272,7 @@ export const captureService = {
                                                 .replace(/\s+/g, '_');
                         
                         const preset = targetElement.dataset.capturePreset;
-                        let presetClass = (preset ? `preset-${preset}` : '') + forceDesktopClass;
+                        let presetClass = (preset ? `preset-${preset}` : '');
 
                         await this.captureAndDownload(targetElement, captureTitle, presetClass);
                         await new Promise(resolve => setTimeout(resolve, 500));
@@ -286,7 +280,7 @@ export const captureService = {
                     continue; 
                 }
 
-                // --- B. LOGIC GỘP (Mặc định) ---
+                // --- B. LOGIC GỘP ---
                 const targetElement = elements[0];
                 let foundTitle = '';
                 if (targetElement) {
@@ -308,15 +302,9 @@ export const captureService = {
                     presetClass = `preset-${preset}`;
                 }
                 
-                // Thêm class ép desktop nếu là Realtime
-                presetClass += forceDesktopClass;
-
                 if (elements.length > 1 && !isKpiGroup) {
                     const tempContainer = document.createElement('div');
                     tempContainer.className = 'capture-layout-container';
-                    // Nếu gộp nhiều bảng Realtime, container này cũng cần class desktop
-                    if (isRealtime) tempContainer.classList.add('force-desktop-mode');
-                    
                     elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
                     elementToCapture = tempContainer;
                 } else {
