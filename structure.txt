@@ -1,10 +1,6 @@
 src
-src/ui
 src/stores.js
 src/services.js
-src/features
-src/features/health
-src/logic
 src/app.css
 src/utils
 src/utils/kpi.utils.js
@@ -70,7 +66,6 @@ src/components/realtime/brand
 src/components/realtime/brand/BrandTab.svelte
 src/components/realtime/brand/BrandTable.svelte
 src/components/realtime/competition
-src/components/realtime/competition/FocusCompetitionTable.svelte
 src/components/realtime/competition/CompetitionTab.svelte
 src/components/realtime/competition/SpecialProgramTable.svelte
 src/components/realtime/employee
