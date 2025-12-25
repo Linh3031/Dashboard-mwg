@@ -161,7 +161,7 @@
                             <img 
                                 src={img.url} 
                                 alt={img.title} 
-                                class="w-full h-full object-cover"
+                                class="w-full h-full object-contain"
                             >
                             <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
                                 <h3 class="text-white font-bold text-lg drop-shadow-md">{img.title}</h3>

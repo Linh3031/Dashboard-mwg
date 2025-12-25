@@ -1,5 +1,4 @@
 <script>
-    // Version 2.2 - Larger Textarea and Template Insert for Changelog
     import { onMount, afterUpdate } from 'svelte';
     import { homeConfig } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
@@ -7,16 +6,18 @@
     let localConfig = {
         videoUrl: '',
         timeline: [],
-        sliderImages: [],
+        sliderImages: [], 
         changelogs: []
     };
+
+    let activeTab = 'video'; 
+    let isSaving = false;
+    let isUploading = false;
+    let fileInput; 
 
     $: if ($homeConfig) {
         localConfig = JSON.parse(JSON.stringify($homeConfig));
     }
-
-    let activeTab = 'video'; 
-    let isSaving = false;
 
     // --- LOGIC TIMELINE VIDEO ---
     function addTimelineItem() {
@@ -26,11 +27,36 @@
         localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index);
     }
 
-    // --- LOGIC SLIDER ẢNH ---
-    function addSliderItem() {
-        localConfig.sliderImages = [...localConfig.sliderImages, { url: '', title: '' }];
+    // --- LOGIC UPLOAD ẢNH CLOUD ---
+    function triggerUpload() {
+        fileInput.click();
     }
-    function removeSliderItem(index) {
+
+    async function handleFilesSelect(event) {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        isUploading = true;
+        const newImages = [];
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const imageObj = {
+                url: URL.createObjectURL(file), 
+                fileName: file.name,
+                title: '', 
+                fileRaw: file 
+            };
+            newImages.push(imageObj);
+        }
+
+        localConfig.sliderImages = [...localConfig.sliderImages, ...newImages];
+        event.target.value = '';
+        isUploading = false;
+    }
+
+    function removeSlide(index) {
+        if(!confirm("Bạn muốn xóa ảnh này khỏi danh sách?")) return;
         localConfig.sliderImages = localConfig.sliderImages.filter((_, i) => i !== index);
     }
 
@@ -43,16 +69,14 @@
         localConfig.changelogs = localConfig.changelogs.filter((_, i) => i !== index);
     }
     
-    // [MỚI] Hàm chèn mẫu soạn thảo
     function insertTemplate(index) {
         const template = `<ul>
-    <li><strong>Tính năng chính 1:</strong>
+    <li><strong>Tính năng chính:</strong>
         <ul style="list-style-type: circle; margin-left: 20px;">
             <li>Chi tiết A</li>
-            <li>Chi tiết B</li>
         </ul>
     </li>
-    <li><strong>Sửa lỗi:</strong> Mô tả lỗi đã sửa.</li>
+    <li><strong>Sửa lỗi:</strong> ...</li>
 </ul>`;
         localConfig.changelogs[index].content = template;
     }
@@ -63,6 +87,7 @@
         isSaving = true;
         try {
             await adminService.saveHomeConfig(localConfig);
+            alert("Đã lưu cấu hình và upload ảnh thành công!");
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
@@ -75,7 +100,8 @@
 </script>
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
-    <details class="group" open> <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+    <details class="group" open> 
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
             <div class="flex items-center gap-3">
                 <div class="p-2 bg-pink-50 rounded-lg text-pink-600">
                     <i data-feather="layout"></i>
@@ -93,24 +119,9 @@
         <div class="p-6 border-t border-slate-100 bg-slate-50/50">
             
             <div class="flex space-x-2 mb-6 border-b border-gray-200 pb-1">
-                <button 
-                    class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'video' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}"
-                    on:click={() => activeTab = 'video'}
-                >
-                    Video & Timeline
-                </button>
-                <button 
-                    class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'slider' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}"
-                    on:click={() => activeTab = 'slider'}
-                >
-                    Slide Ảnh
-                </button>
-                <button 
-                    class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'changelog' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}"
-                    on:click={() => activeTab = 'changelog'}
-                >
-                    Lịch sử cập nhật
-                </button>
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'video' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'video'}>Video & Timeline</button>
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'slider' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'slider'}>Slide Ảnh (Cloud)</button>
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'changelog' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'changelog'}>Lịch sử cập nhật</button>
             </div>
 
             {#if activeTab === 'video'}
@@ -118,9 +129,7 @@
                     <div>
                         <label class="block text-sm font-bold text-slate-700 mb-1">Youtube Embed URL</label>
                         <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border rounded-md text-sm" placeholder="https://www.youtube.com/embed/...">
-                        <p class="text-xs text-gray-400 mt-1">Lưu ý: Phải là link "Embed" (Nhúng) của Youtube.</p>
                     </div>
-                    
                     <div>
                         <label class="block text-sm font-bold text-slate-700 mb-2">Timeline (Mục lục video)</label>
                         <div class="space-y-2">
@@ -140,25 +149,92 @@
             {/if}
 
             {#if activeTab === 'slider'}
-                <div class="space-y-4 animate-fade-in">
-                    <p class="text-xs text-gray-500 bg-blue-50 p-2 rounded">
-                        Mẹo: Sử dụng link trực tiếp của ảnh (đuôi .jpg, .png). Hoặc đường dẫn nội bộ (VD: /slides/anh1.jpg).
-                    </p>
-                    <div class="space-y-4">
-                        {#each localConfig.sliderImages as img, index}
-                            <div class="flex flex-col gap-2 p-3 border rounded-lg bg-white shadow-sm">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-xs font-bold text-gray-400">Slide #{index + 1}</span>
-                                    <button on:click={() => removeSliderItem(index)} class="text-red-500 text-xs hover:underline">Xóa</button>
-                                </div>
-                                <input type="text" bind:value={img.url} class="w-full p-2 border rounded-md text-sm" placeholder="Link ảnh (URL)...">
-                                <input type="text" bind:value={img.title} class="w-full p-2 border rounded-md text-sm" placeholder="Tiêu đề ảnh (hiển thị đè lên ảnh)...">
-                            </div>
-                        {/each}
+                <div class="space-y-6 animate-fade-in">
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-sm text-blue-800">
+                        <p class="font-bold mb-1 flex items-center gap-2"><i data-feather="info" class="w-4 h-4"></i> Mẹo hiển thị:</p>
+                        <ul class="list-disc ml-5 space-y-1 text-blue-700">
+                            <li>Ảnh sẽ được hiển thị <strong>trọn vẹn theo chiều rộng</strong> (không bị zoom/cắt).</li>
+                            <li>Nếu ảnh quá cao hoặc quá thấp so với khung, sẽ có khoảng trắng đệm để giữ nguyên tỉ lệ ảnh.</li>
+                        </ul>
                     </div>
-                    <button on:click={addSliderItem} class="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-pink-500 hover:text-pink-500 transition">
-                        + Thêm Slide Mới
-                    </button>
+
+                    <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/50 hover:bg-blue-50 transition-colors">
+                        <input 
+                            type="file" 
+                            multiple 
+                            accept="image/*" 
+                            class="hidden" 
+                            bind:this={fileInput}
+                            on:change={handleFilesSelect}
+                        />
+                        <button 
+                            on:click={triggerUpload}
+                            class="flex flex-col items-center gap-2 group/btn"
+                            disabled={isUploading}
+                        >
+                            <div class="p-3 bg-white rounded-full shadow-md text-blue-600 group-hover/btn:scale-110 transition-transform">
+                                <i data-feather="cloud-upload" class="w-8 h-8"></i>
+                            </div>
+                            <span class="text-blue-700 font-bold text-sm">
+                                {isUploading ? 'Đang xử lý...' : 'Nhấn để chọn ảnh từ máy tính'}
+                            </span>
+                            <span class="text-xs text-blue-400">Hỗ trợ JPG, PNG (Có thể chọn nhiều ảnh)</span>
+                        </button>
+                    </div>
+
+                    {#if localConfig.sliderImages.length > 0}
+                        <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
+                            <div class="bg-slate-100 px-4 py-3 border-b flex justify-between items-center">
+                                <h4 class="font-bold text-slate-700 text-sm uppercase">Danh sách ảnh đã chọn ({localConfig.sliderImages.length})</h4>
+                                <button class="text-xs text-red-500 hover:underline" on:click={() => localConfig.sliderImages = []}>Xóa tất cả</button>
+                            </div>
+                            
+                            <div class="divide-y divide-slate-100">
+                                {#each localConfig.sliderImages as img, index}
+                                    <div class="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors group/row">
+                                        
+                                        <div class="w-1/3 flex gap-3">
+                                            <div class="w-32 h-20 bg-slate-800 rounded-lg border overflow-hidden flex-shrink-0 relative flex items-center justify-center">
+                                                <img 
+                                                    src={img.url} 
+                                                    alt="Thumbnail" 
+                                                    class="w-full h-full object-contain"
+                                                />
+                                            </div>
+                                            <div class="flex flex-col justify-center overflow-hidden">
+                                                <span class="text-sm font-bold text-slate-700 truncate block w-full" title={img.fileName}>
+                                                    {img.fileName || `Slide #${index + 1}`}
+                                                </span>
+                                                <span class="text-xs text-slate-400">
+                                                    {img.fileRaw ? 'Sẵn sàng upload' : 'Đã có trên Cloud'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex-grow flex items-center gap-3">
+                                            <div class="flex-grow">
+                                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ghi chú hiển thị</label>
+                                                <input 
+                                                    type="text" 
+                                                    bind:value={img.title} 
+                                                    class="w-full p-2 border border-slate-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition" 
+                                                    placeholder="Nhập ghi chú..."
+                                                >
+                                            </div>
+                                            <button 
+                                                on:click={() => removeSlide(index)} 
+                                                class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition mt-4"
+                                                title="Xóa ảnh này"
+                                            >
+                                                <i data-feather="trash-2" class="w-5 h-5"></i>
+                                            </button>
+                                        </div>
+
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             {/if}
 
@@ -171,7 +247,6 @@
                         {#each localConfig.changelogs as log, index}
                             <div class="flex flex-col gap-3 p-4 border rounded-xl bg-white shadow-sm relative">
                                 <button on:click={() => removeChangelogItem(index)} class="absolute top-4 right-4 text-red-500 hover:bg-red-50 p-1.5 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
-                                
                                 <div class="flex gap-4 pr-10">
                                     <div class="flex flex-col gap-1 w-1/4">
                                         <label class="text-xs font-bold text-gray-500 uppercase">Phiên bản</label>
@@ -182,23 +257,14 @@
                                         <input type="text" bind:value={log.date} class="w-full p-2 border rounded text-sm" placeholder="dd/mm/yyyy">
                                     </div>
                                 </div>
-
                                 <div class="flex flex-col gap-1">
                                     <div class="flex justify-between items-end">
                                         <label class="text-xs font-bold text-gray-500 uppercase">Nội dung (Hỗ trợ HTML)</label>
-                                        <button 
-                                            class="text-xs text-blue-600 hover:underline flex items-center gap-1 bg-blue-50 px-2 py-1 rounded"
-                                            on:click={() => insertTemplate(index)}
-                                        >
+                                        <button class="text-xs text-blue-600 hover:underline flex items-center gap-1 bg-blue-50 px-2 py-1 rounded" on:click={() => insertTemplate(index)}>
                                             <i data-feather="code" class="w-3 h-3"></i> Chèn mẫu chuẩn
                                         </button>
                                     </div>
-                                    <textarea 
-                                        bind:value={log.content} 
-                                        rows="12" 
-                                        class="w-full p-3 border rounded text-sm font-mono leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none" 
-                                        placeholder="Nhập nội dung cập nhật..."
-                                    ></textarea>
+                                    <textarea bind:value={log.content} rows="12" class="w-full p-3 border rounded text-sm font-mono leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập nội dung cập nhật..."></textarea>
                                 </div>
                             </div>
                         {/each}
@@ -207,14 +273,10 @@
             {/if}
 
             <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
-                <button 
-                    on:click={saveAllConfig} 
-                    disabled={isSaving} 
-                    class="bg-pink-600 text-white px-5 py-2.5 rounded-lg hover:bg-pink-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50"
-                >
+                <button on:click={saveAllConfig} disabled={isSaving} class="bg-pink-600 text-white px-5 py-2.5 rounded-lg hover:bg-pink-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
                     {#if isSaving}
                         <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        Đang lưu...
+                        Đang lưu & Upload...
                     {:else}
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                         Lưu Cấu Hình
