@@ -6,7 +6,7 @@
     let localConfig = {
         videoUrl: '',
         timeline: [],
-        sliderImages: [], 
+        sliderImages: [], // Cấu trúc: { url: '...', fileName: '...', title: '...' }
         changelogs: []
     };
 
@@ -81,13 +81,32 @@
         localConfig.changelogs[index].content = template;
     }
 
-    // --- HÀM LƯU CHUNG ---
+    // --- HÀM LƯU CHUNG (CÓ FIX LỖI VIDEO) ---
     async function saveAllConfig() {
-        console.log("Đang lưu cấu hình...", localConfig);
+        console.log("Đang xử lý dữ liệu...", localConfig);
+        
+        // [FIX] Tự động chuyển link Youtube thường thành link Embed
+        // Ví dụ: watch?v=ABC -> embed/ABC
+        if (localConfig.videoUrl) {
+            let url = localConfig.videoUrl;
+            if (url.includes('watch?v=')) {
+                url = url.replace('watch?v=', 'embed/');
+                // Xử lý trường hợp có thêm tham số &t=... (nếu có)
+                const ampersandIndex = url.indexOf('&');
+                if (ampersandIndex !== -1) {
+                    url = url.substring(0, ampersandIndex);
+                }
+            } else if (url.includes('youtu.be/')) {
+                // Xử lý link rút gọn: youtu.be/ABC -> youtube.com/embed/ABC
+                url = url.replace('youtu.be/', 'www.youtube.com/embed/');
+            }
+            localConfig.videoUrl = url;
+        }
+
         isSaving = true;
         try {
             await adminService.saveHomeConfig(localConfig);
-            alert("Đã lưu cấu hình và upload ảnh thành công!");
+            alert("Đã lưu thành công! Link Video đã được tự động chuẩn hóa.");
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
@@ -126,10 +145,12 @@
 
             {#if activeTab === 'video'}
                 <div class="space-y-4 animate-fade-in">
-                    <div>
-                        <label class="block text-sm font-bold text-slate-700 mb-1">Youtube Embed URL</label>
-                        <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border rounded-md text-sm" placeholder="https://www.youtube.com/embed/...">
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-2">
+                        <label class="block text-sm font-bold text-blue-800 mb-1">Youtube Link</label>
+                        <p class="text-xs text-blue-600 mb-2">Bạn có thể dán link trực tiếp (VD: https://www.youtube.com/watch?v=...) code sẽ tự động sửa lỗi hiển thị.</p>
+                        <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Dán link Youtube vào đây...">
                     </div>
+                    
                     <div>
                         <label class="block text-sm font-bold text-slate-700 mb-2">Timeline (Mục lục video)</label>
                         <div class="space-y-2">
@@ -153,8 +174,8 @@
                     <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-sm text-blue-800">
                         <p class="font-bold mb-1 flex items-center gap-2"><i data-feather="info" class="w-4 h-4"></i> Mẹo hiển thị:</p>
                         <ul class="list-disc ml-5 space-y-1 text-blue-700">
-                            <li>Ảnh sẽ được hiển thị <strong>trọn vẹn theo chiều rộng</strong> (không bị zoom/cắt).</li>
-                            <li>Nếu ảnh quá cao hoặc quá thấp so với khung, sẽ có khoảng trắng đệm để giữ nguyên tỉ lệ ảnh.</li>
+                            <li>Ảnh sẽ được hiển thị <strong>trọn vẹn theo chiều rộng</strong>.</li>
+                            <li>Hỗ trợ kéo thả hoặc chọn nhiều ảnh cùng lúc.</li>
                         </ul>
                     </div>
 
@@ -276,7 +297,7 @@
                 <button on:click={saveAllConfig} disabled={isSaving} class="bg-pink-600 text-white px-5 py-2.5 rounded-lg hover:bg-pink-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
                     {#if isSaving}
                         <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        Đang lưu & Upload...
+                        Đang lưu...
                     {:else}
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                         Lưu Cấu Hình

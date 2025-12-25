@@ -1,5 +1,5 @@
 <script>
-  // Version 2.4 - Upgrade Changelog UI (Blue title, Version prefix, HTML content)
+  // Version 2.5 - Fix Youtube Refused to Connect & Image Object Fit
   import { onMount, afterUpdate, onDestroy } from 'svelte';
   import { homeConfig } from '../stores.js';
   import { adminService } from '../services/admin.service.js';
@@ -19,13 +19,38 @@
   };
 
   let config = {
-      videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4',
+      videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4', // Link mặc định chuẩn
       timeline: [],
       sliderImages: [],
       changelogs: []
   };
 
   $: config = $homeConfig || config;
+
+  // [MỚI] Hàm xử lý link Youtube an toàn
+  // Dù dữ liệu nhập vào là gì, hàm này sẽ luôn trả về link embed chuẩn
+  function getSafeVideoUrl(url) {
+      if (!url) return '';
+      // Nếu đã là link embed thì giữ nguyên
+      if (url.includes('/embed/')) return url;
+      
+      // Nếu là link xem thường (youtube.com/watch?v=ABC)
+      if (url.includes('v=')) {
+          const v = url.split('v=')[1].split('&')[0];
+          return `https://www.youtube.com/embed/${v}`;
+      }
+      
+      // Nếu là link rút gọn (youtu.be/ABC)
+      if (url.includes('youtu.be/')) {
+          const v = url.split('youtu.be/')[1].split('?')[0];
+          return `https://www.youtube.com/embed/${v}`;
+      }
+      
+      return url; // Trả về gốc nếu không nhận dạng được
+  }
+
+  // Biến phản ứng để luôn lấy link chuẩn
+  $: safeVideoSrc = getSafeVideoUrl(config.videoUrl);
 
   onMount(async () => {
       adminService.loadHomeConfig();
@@ -52,7 +77,9 @@
       } else {
           seconds = parseInt(timeStr);
       }
-      let baseUrl = config.videoUrl.split('?')[0];
+      // Khi nhảy thời gian, cũng phải dùng link chuẩn
+      let baseUrl = safeVideoSrc.split('?')[0];
+      // Cập nhật lại config.videoUrl tạm thời để iframe load lại (nhưng dùng safeVideoSrc làm gốc)
       config.videoUrl = `${baseUrl}?start=${seconds}&autoplay=1`;
   }
 
@@ -98,7 +125,7 @@
                 <i data-feather="message-circle" class="w-4 h-4"></i>
                 Nhóm Line hỗ trợ
              </button>
-         </div>
+        </div>
 
          <div id="usage-counter-display" class="text-sm font-medium bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm flex gap-4 text-gray-600"> 
             <span>Người dùng: <strong class="text-blue-600">{formatters.formatNumber(stats.totalUsers)}</strong></span>
@@ -108,11 +135,12 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    
         <div class="lg:col-span-2 content-card !p-0 overflow-hidden flex flex-col shadow-lg border-0">
             <div class="relative w-full" style="padding-top: 56.25%;"> 
                 <iframe
                     class="absolute top-0 left-0 w-full h-full"
-                    src={config.videoUrl}
+                    src={safeVideoSrc}
                     title="Hướng dẫn sử dụng"
                     frameborder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -123,12 +151,12 @@
 
         <div class="content-card flex flex-col h-full !mb-0 bg-white border border-gray-200">
             <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <i data-feather="list" class="text-blue-600"></i> Mục lục Video
+                 <i data-feather="list" class="text-blue-600"></i> Mục lục Video
             </h3>
             <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar max-h-[300px] lg:max-h-none space-y-2">
                 {#if config.timeline && config.timeline.length > 0}
                    {#each config.timeline as item}
-                        <button 
+                     <button 
                             class="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition flex items-start gap-3 group border border-transparent hover:border-blue-100"
                             on:click={() => jumpToTime(item.time)}
                         >
@@ -163,7 +191,7 @@
                                 alt={img.title} 
                                 class="w-full h-full object-contain"
                             >
-                            <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
+                             <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
                                 <h3 class="text-white font-bold text-lg drop-shadow-md">{img.title}</h3>
                              </div>
                         </div>
@@ -199,7 +227,7 @@
                    {#each config.changelogs as log}
                         <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                             <div class="mb-3 border-b border-gray-100 pb-2">
-                                <span class="text-lg font-bold text-blue-700">Phiên bản {log.version} <span class="text-gray-500 font-medium text-sm ml-1">({log.date})</span></span>
+                                 <span class="text-lg font-bold text-blue-700">Phiên bản {log.version} <span class="text-gray-500 font-medium text-sm ml-1">({log.date})</span></span>
                             </div>
                             <div class="text-sm text-gray-700 leading-relaxed changelog-content">
                                 {@html log.content}
