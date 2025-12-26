@@ -68,7 +68,7 @@
                     <i data-feather="download-cloud" class="w-8 h-8 text-white"></i>
                 </div>
                 <h2 class="text-2xl font-bold text-white mb-1">Cập nhật hệ thống</h2>
-                <p class="text-blue-100 text-sm">Đã có phiên bản mới: <span class="font-mono font-bold bg-white/20 px-2 py-0.5 rounded">{latestVersionData.version}</span></p>
+                <p class="text-blue-100 text-sm">Đã có phiên bản mới: <span class=" font-bold bg-white/20 px-2 py-0.5 rounded">{latestVersionData.version}</span></p>
             </div>
             
             <div class="p-6">
@@ -110,7 +110,7 @@
                 <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
                     <div>
                         <p class="text-xs text-slate-500 uppercase font-bold">Phiên bản hiện tại</p>
-                        <p class="text-lg font-bold text-blue-600 font-mono">{latestVersionData.version}</p>
+                        <p class="text-lg font-bold text-blue-600 ">{latestVersionData.version}</p>
                     </div>
                     <div class="text-right">
                         <p class="text-xs text-slate-500 uppercase font-bold">Ngày cập nhật</p>

@@ -157,22 +157,32 @@
             {#if tickerStatus !== 'none'}
                 <div 
                     id="version-marquee-container" 
-                    class="flex-grow min-w-[200px] {tickerStatus === 'new' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-700 hover:bg-blue-800'} text-white font-bold rounded-lg px-4 py-2 cursor-pointer shadow-lg border border-white/20 transition-all flex items-center overflow-hidden relative group"
+                    class="flex-grow min-w-[200px] rounded-lg px-4 py-2 cursor-pointer shadow-sm border transition-all flex items-center overflow-hidden relative group
+                    {tickerStatus === 'new' 
+                        ? 'bg-red-50 border-red-200 hover:bg-red-100' 
+                        : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}"
                     on:click={() => showVersionDetails.set(true)}
                     role="button"
                     tabindex="0"
                 >
                     <div class="marquee-content whitespace-nowrap text-sm flex items-center gap-4">
                         {#if tickerStatus === 'new'}
-                            <span class="flex items-center gap-1 bg-yellow-400 text-red-900 px-2 py-0.5 rounded text-xs font-extrabold uppercase tracking-wider animate-pulse shadow-sm border border-yellow-500">
+                            <span class="flex items-center gap-1 bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-extrabold uppercase tracking-wider animate-pulse border border-red-200">
                                 <i data-feather="zap" class="w-3 h-3"></i> Mới
                             </span>
-                            <span class="drop-shadow-md text-white">Đã có phiên bản <span class="text-yellow-300 font-mono text-base bg-black/20 px-1.5 rounded border border-white/10">{latestVersion}</span> - Bấm để xem chi tiết!</span>
+                            <span class="text-red-900 font-bold">
+                                Đã có phiên bản <span class="bg-red-200 text-red-800 px-1.5 rounded font-bold mx-1">{latestVersion}</span> - Bấm cập nhật ngay!
+                            </span>
                         {:else}
-                            <span class="flex items-center gap-1 bg-white/20 text-white px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-white/30">
+                            <span class="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-green-200">
                                 <i data-feather="check-circle" class="w-3 h-3"></i> Đã cập nhật
                             </span>
-                            <span class="drop-shadow-md text-blue-50">Hệ thống đang chạy phiên bản <span class="font-mono text-base text-white bg-blue-900/30 px-1.5 rounded border border-white/10">{latestVersion}</span></span>
+                            <span class="text-indigo-900 font-bold flex items-center gap-1">
+                                Hệ thống đang chạy phiên bản 
+                                <span class="text-base font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-100 shadow-sm">
+                                    {latestVersion}
+                                </span>
+                            </span>
                         {/if}
                     </div>
                 </div>

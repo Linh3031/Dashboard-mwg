@@ -123,6 +123,7 @@ src/components/health-staff/ProgramGoalTables.svelte
 src/components/common
 src/components/common/PasteInput.svelte
 src/components/common/FileInput.svelte
+src/components/common/VersionManager.svelte
 src/components/common/GlobalNotification.svelte
 src/components/common/SortableTh.svelte
 src/components/DataSection.svelte
@@ -169,6 +170,7 @@ src/services/processing/helpers.js
 src/services/dataService.js
 src/services/analytics.service.js
 src/services/storage.service.js
+src/services/capture.strategies.js
 src/services/dataProcessing.js
 src/services/auth.service.js
 src/services/modal.service.js
@@ -184,6 +186,7 @@ src/services/data/syncHandler.js
 src/services/data/fileHandler.js
 src/services/data/pasteHandler.js
 src/services/employeeService.js
+src/services/capture.config.js
 src/services/composerService.js
 src/services/reports
 src/services/reports/master.report.js

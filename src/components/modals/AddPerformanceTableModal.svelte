@@ -36,6 +36,7 @@
     // --- DATA SOURCES ---
     let sourceList = []; 
     let searchFilter = '';
+    let sourceTypeFilter = 'ALL'; // 'ALL' | 'GROUP' | 'CATEGORY'
 
     // --- STATE ---
     let tableId = '';
@@ -51,7 +52,6 @@
         if (!wasOpen) {
             initDataSource();
             if (editItem) {
-                // Clone deep để ngắt tham chiếu với dữ liệu gốc
                 tableId = editItem.id;
                 tableName = editItem.title;
                 columns = JSON.parse(JSON.stringify(editItem.columns || []));
@@ -60,11 +60,13 @@
             }
             if (columns.length === 0) addColumn();
             activeColIndex = 0;
+            searchFilter = ''; // Reset khi mở
             wasOpen = true;
         }
     } else {
         wasOpen = false;
         searchFilter = '';
+        sourceTypeFilter = 'ALL';
     }
 
     function resetForm() {
@@ -75,30 +77,23 @@
 
     function initDataSource() {
         const uniqueMap = new Map();
-
-        // 1. MACRO CONFIG (Nhóm hàng lớn)
+        
+        // 1. MACRO CONFIG -> Type: MACRO_GROUP
         ($macroCategoryConfig || []).forEach(m => {
             const id = (m.id || m.name).trim();
             if (!uniqueMap.has(id)) uniqueMap.set(id, { id, name: m.name, type: 'MACRO_CAT' });
         });
-
         ($macroProductGroupConfig || []).forEach(m => {
             const id = (m.id || m.name).trim();
             if (!uniqueMap.has(id)) uniqueMap.set(id, { id, name: m.name, type: 'MACRO_GROUP' });
         });
-        
-        // 2. DATA STRUCTURE (Từ file Excel) - [LOGIC ID]
-        // Tách ID ra khỏi chuỗi "ID - Name" (Ví dụ: "304 - Điện tử" -> ID: "304")
-        
+
+        // 2. DATA STRUCTURE
         const processItem = (rawString, type) => {
             if (!rawString) return;
-            // Sử dụng parseIdentity để tách mã và tên
-            const { identity, name } = parseIdentity(rawString);
-            
-            // Logic quan trọng: Dùng ID (identity) làm Key chính
-            // Nếu không tách được ID (identity trùng name), dùng nguyên chuỗi
+            const { identity } = parseIdentity(rawString);
             const key = identity || rawString.trim(); 
-            const displayName = rawString.trim(); // Hiển thị vẫn giữ nguyên "304 - Điện tử" cho dễ nhìn
+            const displayName = rawString.trim();
 
             if (!uniqueMap.has(key)) {
                 uniqueMap.set(key, { id: key, name: displayName, type });
@@ -110,7 +105,6 @@
             if (c.nganhHang) processItem(c.nganhHang, 'CATEGORY');
         });
 
-        // Chuyển Map thành Array và sort theo tên hiển thị
         sourceList = Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     }
 
@@ -127,17 +121,25 @@
             targetId: null
         }];
         activeColIndex = columns.length - 1;
+        searchFilter = ''; // [MỚI] Reset tìm kiếm khi thêm cột
+    }
+
+    function selectColumn(index) {
+        activeColIndex = index;
+        searchFilter = ''; // [MỚI] Reset tìm kiếm khi chuyển cột
     }
 
     function removeColumn(index) {
         if (columns.length <= 1) return alert("Bảng cần ít nhất 1 cột.");
         if (confirm("Xóa cột này?")) {
             columns = columns.filter((_, i) => i !== index);
-            if (activeColIndex >= columns.length) activeColIndex = columns.length - 1;
+            if (activeColIndex >= columns.length) {
+                activeColIndex = columns.length - 1;
+                searchFilter = ''; // Reset khi xóa và chuyển cột
+            }
         }
     }
 
-    // --- HANDLE CHANGES ---
     function updateActiveColumn(key, value) {
         if (!activeColumn) return;
         columns[activeColIndex][key] = value;
@@ -146,9 +148,8 @@
     // --- SELECTION LOGIC ---
     function toggleSelection(item, targetArrayName) {
         if (!activeColumn) return;
-        
         const currentArr = activeColumn[targetArrayName] || [];
-        const idx = currentArr.indexOf(item.id); // Lưu ID (VD: "304")
+        const idx = currentArr.indexOf(item.id);
         
         let newArr;
         if (idx >= 0) {
@@ -161,12 +162,10 @@
         if (activeColumn.type === 'PERCENT') detectExistingIndicator();
     }
 
-    // [MỚI] Nút Xóa tất cả lựa chọn
     function clearAllSelection(targetArrayName) {
         if (!activeColumn) return;
         const currentArr = activeColumn[targetArrayName] || [];
         if (currentArr.length === 0) return;
-
         if (confirm(`Bạn có chắc muốn xóa tất cả ${currentArr.length} mục đã chọn?`)) {
             columns[activeColIndex][targetArrayName] = [];
             if (activeColumn.type === 'PERCENT') detectExistingIndicator();
@@ -175,9 +174,9 @@
 
     function toggleAll(targetArrayName, select) {
         if (!activeColumn) return;
-        const visibleItems = sourceList
-            .filter(i => i.name.toLowerCase().includes(searchFilter.toLowerCase()))
-            .map(i => i.id);
+        
+        // Lấy danh sách đang hiển thị (sau khi lọc)
+        const visibleItems = getProcessedItems(sourceList, activeColumn[targetArrayName] || [], searchFilter, sourceTypeFilter).map(i => i.id);
 
         let newArr;
         if (select) {
@@ -191,21 +190,36 @@
         columns[activeColIndex][targetArrayName] = newArr;
     }
 
+    function copyFromColumn(targetSide, sourceColIndex) {
+        if (sourceColIndex === '' || sourceColIndex === undefined) return;
+        const sourceCol = columns[sourceColIndex];
+        if (!sourceCol) return;
+
+        let sourceItems = [];
+        if (sourceCol.type === 'PERCENT') {
+            sourceItems = sourceCol.numerator || [];
+        } else {
+            sourceItems = sourceCol.items || [];
+        }
+
+        const targetKey = targetSide === 'TOP' ? 'numerator' : 'denominator';
+        columns[activeColIndex][targetKey] = [...sourceItems];
+        
+        if (activeColumn.type === 'PERCENT') detectExistingIndicator();
+    }
+
     function detectExistingIndicator() {
         if (!activeColumn || activeColumn.type !== 'PERCENT') return;
-
         const num = new Set(activeColumn.numerator || []);
         const den = new Set(activeColumn.denominator || []);
 
         const allConfigs = [...$efficiencyConfig, ...$warehouseCustomMetrics];
-        
         const match = allConfigs.find(cfg => {
             const cfgNum = new Set(cfg.groupA || []);
             const cfgDen = new Set(cfg.groupB || []);
             const eq = (s1, s2) => s1.size === s2.size && [...s1].every(x => s2.has(x));
             return eq(num, cfgNum) && eq(den, cfgDen);
         });
-
         if (match) {
             columns[activeColIndex].targetId = match.id;
         } else {
@@ -213,10 +227,36 @@
         }
     }
 
+    // --- [MỚI] HÀM XỬ LÝ DANH SÁCH (FILTER + SORT) ---
+    function getProcessedItems(items, selectedIds, filter, sourceType) {
+        // 1. Lọc (Filter)
+        const filtered = items.filter(i => {
+            const matchesSearch = i.name.toLowerCase().includes(filter.toLowerCase());
+            
+            // Logic lọc nguồn: GROUP bao gồm cả Macro và Raw Group
+            const matchesType = sourceType === 'ALL' ? true : 
+                                (sourceType === 'GROUP' ? ['MACRO_CAT', 'MACRO_GROUP', 'GROUP'].includes(i.type) : i.type === 'CATEGORY');
+            
+            return matchesSearch && matchesType;
+        });
+
+        // 2. Sắp xếp (Sort): Đã chọn lên đầu
+        return filtered.sort((a, b) => {
+            const isA = selectedIds.includes(a.id);
+            const isB = selectedIds.includes(b.id);
+            
+            // Nếu trạng thái chọn khác nhau: Đã chọn (true) lên trước
+            if (isA && !isB) return -1;
+            if (!isA && isB) return 1;
+            
+            // Nếu cùng trạng thái: Giữ nguyên thứ tự Alpha ban đầu
+            return 0; 
+        });
+    }
+
     function handleSave() {
         if (!tableName.trim()) return alert("Vui lòng nhập Tên bảng.");
         if (columns.length === 0) return alert("Vui lòng thêm ít nhất 1 cột.");
-
         for (let i = 0; i < columns.length; i++) {
             const col = columns[i];
             if (!col.header.trim()) return alert(`Cột số ${i+1} chưa có tên.`);
@@ -224,7 +264,6 @@
             if (col.type === 'PERCENT') {
                 if (col.numerator.length === 0) return alert(`Cột "${col.header}": Chưa chọn Tử số.`);
                 if (col.denominator.length === 0) return alert(`Cột "${col.header}": Chưa chọn Mẫu số.`);
-                
                 if (!col.targetId) {
                     col.targetId = `eff_custom_${Date.now()}_${i}`;
                 }
@@ -247,7 +286,7 @@
 
 {#if isOpen}
 <div class="fixed inset-0 bg-gray-900/60 z-[1300] flex items-center justify-center p-4 backdrop-blur-sm" on:click={close} role="button" tabindex="0">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-[1200px] h-[90vh] flex flex-col overflow-hidden animate-scale-in" on:click|stopPropagation role="document" tabindex="0">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-[1300px] h-[95vh] flex flex-col overflow-hidden animate-scale-in" on:click|stopPropagation role="document" tabindex="0">
         
         <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
@@ -265,23 +304,23 @@
 
         <div class="flex-1 overflow-hidden flex flex-col lg:flex-row">
             
-            <div class="w-full lg:w-3/12 border-r border-gray-200 bg-white flex flex-col z-10 shadow-[2px_0_10px_rgba(0,0,0,0.05)]">
-                <div class="p-4 border-b border-gray-100 bg-slate-50">
-                    <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Tên Bảng Hiển Thị</label>
+            <div class="w-full lg:w-2/12 border-r border-gray-200 bg-white flex flex-col z-10 shadow-[2px_0_10px_rgba(0,0,0,0.05)]">
+                <div class="p-3 border-b border-gray-100 bg-slate-50">
+                    <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Tên Bảng Hiển Thị</label>
                     <input 
                         type="text" 
                         bind:value={tableName} 
-                        class="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-bold text-gray-800 shadow-sm"
+                        class="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-bold text-gray-800 shadow-sm"
                         placeholder="VD: Hiệu quả Phụ Kiện..."
                     >
                 </div>
 
-                <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-gray-50/50">
+                <div class="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-gray-50/50">
                     {#each columns as col, index}
                         <div 
-                            class="bg-white border rounded-xl p-3 cursor-pointer transition-all relative group
-                            {activeColIndex === index ? 'border-blue-500 ring-2 ring-blue-100 shadow-md' : 'border-gray-200 hover:border-blue-300 shadow-sm'}"
-                            on:click={() => activeColIndex = index}
+                            class="bg-white border rounded-lg p-3 cursor-pointer transition-all relative group
+                            {activeColIndex === index ? 'border-blue-500 ring-1 ring-blue-100 shadow-md' : 'border-gray-200 hover:border-blue-300 shadow-sm'}"
+                            on:click={() => selectColumn(index)}
                             role="button" tabindex="0"
                         >
                             <div class="flex justify-between items-center mb-1">
@@ -305,38 +344,39 @@
                     {/each}
 
                     <button 
-                        class="w-full py-3 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all font-bold text-sm flex items-center justify-center gap-2 group"
+                        class="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-lg hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all font-bold text-xs flex items-center justify-center gap-2 group"
                         on:click={addColumn}
                     >
-                        <span class="bg-gray-200 group-hover:bg-blue-200 rounded-full p-0.5"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" /></svg></span>
+                        <span class="bg-gray-200 group-hover:bg-blue-200 rounded-full p-0.5"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" /></svg></span>
                         Thêm cột mới
                     </button>
                 </div>
             </div>
 
-            <div class="w-full lg:w-9/12 flex flex-col bg-slate-50 h-full">
+            <div class="w-full lg:w-10/12 flex flex-col bg-slate-50 h-full">
                 
                 {#if activeColumn}
-                    <div class="p-4 border-b border-gray-200 bg-white shadow-sm z-20 space-y-4">
-                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                            <div class="md:col-span-4">
-                                <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Tiêu đề cột</label>
+                    <div class="p-3 border-b border-gray-200 bg-white shadow-sm z-20 space-y-3">
+                        
+                        <div class="flex flex-wrap items-end gap-6">
+                            <div class="flex-1 min-w-[200px]">
+                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Tiêu đề cột</label>
                                 <input 
                                     type="text" 
                                     value={activeColumn.header} 
                                     on:input={(e) => updateActiveColumn('header', e.target.value)}
-                                    class="w-full p-2 border border-gray-300 rounded text-sm font-bold text-gray-800 focus:border-blue-500 outline-none"
+                                    class="w-full p-2 border border-gray-300 rounded text-sm font-bold text-gray-800 focus:border-blue-500 outline-none bg-gray-50 focus:bg-white"
                                     placeholder="Nhập tên cột..."
                                 >
                             </div>
 
-                            <div class="md:col-span-5">
-                                <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Loại dữ liệu</label>
-                                <div class="flex flex-wrap gap-2">
+                            <div class="flex-shrink-0">
+                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Loại dữ liệu</label>
+                                <div class="inline-flex bg-gray-100 p-1 rounded-lg">
                                     {#each DATA_TYPES as type}
                                         <button 
-                                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all
-                                            {activeColumn.type === type.id ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-100' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}"
+                                            class="px-4 py-1.5 rounded-md text-xs font-bold transition-all
+                                            {activeColumn.type === type.id ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}"
                                             on:click={() => updateActiveColumn('type', type.id)}
                                         >
                                             {#if type.icon === 'percent'}%{:else if type.icon === 'hash'}#{:else}${/if} {type.label}
@@ -345,12 +385,12 @@
                                 </div>
                             </div>
 
-                            <div class="md:col-span-3">
-                                <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Màu sắc</label>
-                                <div class="flex gap-1.5">
+                            <div class="flex-shrink-0">
+                                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Màu sắc</label>
+                                <div class="flex gap-1">
                                     {#each COLORS as color}
                                         <button 
-                                            class="w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 {color.bg}
+                                            class="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 {color.bg}
                                             {activeColumn.color === color.id ? 'border-gray-800 scale-110 shadow-sm ring-2 ring-white' : 'border-transparent opacity-70 hover:opacity-100'}"
                                             on:click={() => updateActiveColumn('color', color.id)}
                                             title={color.label}
@@ -360,94 +400,143 @@
                             </div>
                         </div>
 
-                        <div class="relative">
-                            <input 
-                                type="text" 
-                                bind:value={searchFilter}
-                                class="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 outline-none text-sm focus:bg-white transition-colors"
-                                placeholder="🔍 Tìm kiếm nhóm hàng, ngành hàng để chọn..."
-                            >
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-3 top-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        <div class="flex items-center gap-4 bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                            <div class="flex items-center gap-3 border-r border-blue-200 pr-4">
+                                <span class="text-[10px] font-bold uppercase text-blue-400">Lọc nguồn:</span>
+                                <label class="flex items-center text-xs font-bold cursor-pointer hover:text-blue-700 transition-colors">
+                                    <input type="radio" bind:group={sourceTypeFilter} value="ALL" class="mr-1.5 accent-blue-600"> Tất cả
+                                </label>
+                                <label class="flex items-center text-xs font-bold cursor-pointer hover:text-blue-700 transition-colors">
+                                    <input type="radio" bind:group={sourceTypeFilter} value="GROUP" class="mr-1.5 accent-blue-600"> Nhóm Hàng (Gộp)
+                                </label>
+                                <label class="flex items-center text-xs font-bold cursor-pointer hover:text-blue-700 transition-colors">
+                                    <input type="radio" bind:group={sourceTypeFilter} value="CATEGORY" class="mr-1.5 accent-blue-600"> Ngành Hàng (Lẻ)
+                                </label>
+                            </div>
+
+                            <div class="flex-1 relative">
+                                <input 
+                                    type="text" 
+                                    bind:value={searchFilter}
+                                    class="w-full pl-8 pr-4 py-1.5 bg-white border border-blue-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none text-sm placeholder-gray-400"
+                                    placeholder="🔍 Tìm kiếm nhóm hàng..."
+                                >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 absolute left-2.5 top-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="flex-1 overflow-hidden p-4">
+                    <div class="flex-1 overflow-hidden p-4 bg-slate-100 relative">
                         {#if activeColumn.type === 'PERCENT'}
-                            <div class="flex h-full gap-4">
+                            
+                            <div class="flex items-center justify-center mb-4">
+                                <div class="bg-white border border-gray-200 shadow-sm px-6 py-2 rounded-full flex items-center gap-3">
+                                    <span class="text-xs font-bold text-gray-500 uppercase">Công thức:</span>
+                                    <div class="flex items-center gap-2 font-mono text-sm font-bold text-gray-700">
+                                        <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-200">( A ) Tử số</span>
+                                        <span class="text-gray-400">/</span>
+                                        <span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded border border-orange-200">( B ) Mẫu số</span>
+                                        <span class="text-gray-400">x</span>
+                                        <span class="text-green-600">100%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex h-[calc(100%-60px)] gap-4">
+                                
                                 <div class="flex-1 flex flex-col border border-blue-200 rounded-xl overflow-hidden shadow-sm bg-white">
-                                    <div class="bg-blue-50 p-2 border-b border-blue-200 flex justify-between items-center">
-                                        <span class="font-bold text-blue-800 text-xs uppercase flex items-center gap-1">
-                                            <span class="bg-blue-600 text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">A</span> Tử Số
-                                        </span>
-                                        <div class="flex gap-2 text-[10px]">
-                                            <button class="text-blue-600 font-bold hover:underline" on:click={() => toggleAll('numerator', true)}>Chọn hết</button>
-                                            <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('numerator')}>Xóa tất cả</button>
+                                    <div class="bg-blue-50 p-3 border-b border-blue-100">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <div class="flex items-center gap-2">
+                                                <span class="bg-blue-600 text-white w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold shadow-sm">A</span>
+                                                <span class="font-bold text-blue-800 text-sm uppercase">Tử Số</span>
+                                            </div>
+                                            <div class="flex gap-2 text-[10px]">
+                                                <button class="text-blue-600 font-bold hover:underline" on:click={() => toggleAll('numerator', true)}>Chọn hết</button>
+                                                <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('numerator')}>Xóa tất cả</button>
+                                            </div>
+                                        </div>
+                                        <div class="relative">
+                                            <select 
+                                                class="w-full text-xs border border-blue-200 rounded-lg px-2 py-1.5 text-blue-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
+                                                on:change={(e) => { copyFromColumn('TOP', e.target.value); e.target.value = ''; }}
+                                            >
+                                                <option value="">⚡ Nạp nhanh từ cột khác...</option>
+                                                {#each columns.slice(0, activeColIndex) as prevCol, idx}
+                                                    <option value={idx}>Lấy từ: {prevCol.header}</option>
+                                                {/each}
+                                            </select>
                                         </div>
                                     </div>
+                                    
                                     <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
                                         {@render DataSourceList({ 
-                                            items: sourceList, 
+                                            items: getProcessedItems(sourceList, activeColumn.numerator, searchFilter, sourceTypeFilter), 
                                             selectedIds: activeColumn.numerator, 
-                                            filter: searchFilter, 
                                             onToggle: (item) => toggleSelection(item, 'numerator'),
-                                            selectedColor: "bg-blue-50 border-blue-300 text-blue-800"
+                                            selectedColor: "bg-blue-50 border-blue-300 text-blue-800 shadow-sm"
                                         })}
                                     </div>
-                                    <div class="bg-gray-50 p-2 text-[10px] text-gray-500 text-center border-t border-gray-100">
-                                        Đã chọn: <strong>{activeColumn.numerator.length}</strong>
+                                    <div class="bg-gray-50 px-3 py-1.5 text-xs text-gray-500 text-center border-t border-gray-100 font-bold">
+                                        Đã chọn: <span class="text-blue-600">{activeColumn.numerator.length}</span>
                                     </div>
                                 </div>
 
                                 <div class="flex-1 flex flex-col border border-orange-200 rounded-xl overflow-hidden shadow-sm bg-white">
-                                    <div class="bg-orange-50 p-2 border-b border-orange-200 flex justify-between items-center">
-                                        <span class="font-bold text-orange-800 text-xs uppercase flex items-center gap-1">
-                                            <span class="bg-orange-500 text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">B</span> Mẫu Số
-                                        </span>
-                                        <div class="flex gap-2 text-[10px]">
-                                            <button class="text-orange-600 font-bold hover:underline" on:click={() => toggleAll('denominator', true)}>Chọn hết</button>
-                                            <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('denominator')}>Xóa tất cả</button>
+                                    <div class="bg-orange-50 p-3 border-b border-orange-100">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <div class="flex items-center gap-2">
+                                                <span class="bg-orange-500 text-white w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold shadow-sm">B</span>
+                                                <span class="font-bold text-orange-800 text-sm uppercase">Mẫu Số</span>
+                                            </div>
+                                            <div class="flex gap-2 text-[10px]">
+                                                <button class="text-orange-600 font-bold hover:underline" on:click={() => toggleAll('denominator', true)}>Chọn hết</button>
+                                                <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('denominator')}>Xóa tất cả</button>
+                                            </div>
+                                        </div>
+                                        <div class="relative">
+                                            <select 
+                                                class="w-full text-xs border border-orange-200 rounded-lg px-2 py-1.5 text-orange-700 bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 cursor-pointer"
+                                                on:change={(e) => { copyFromColumn('BOTTOM', e.target.value); e.target.value = ''; }}
+                                            >
+                                                <option value="">⚡ Nạp nhanh từ cột khác...</option>
+                                                {#each columns.slice(0, activeColIndex) as prevCol, idx}
+                                                    <option value={idx}>Lấy từ: {prevCol.header}</option>
+                                                {/each}
+                                            </select>
                                         </div>
                                     </div>
+
                                     <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
                                         {@render DataSourceList({ 
-                                            items: sourceList, 
+                                            items: getProcessedItems(sourceList, activeColumn.denominator, searchFilter, sourceTypeFilter), 
                                             selectedIds: activeColumn.denominator, 
-                                            filter: searchFilter, 
                                             onToggle: (item) => toggleSelection(item, 'denominator'),
-                                            selectedColor: "bg-orange-50 border-orange-300 text-orange-800"
+                                            selectedColor: "bg-orange-50 border-orange-300 text-orange-800 shadow-sm"
                                         })}
                                     </div>
-                                    <div class="bg-gray-50 p-2 text-[10px] text-gray-500 text-center border-t border-gray-100">
-                                        Đã chọn: <strong>{activeColumn.denominator.length}</strong>
+                                    <div class="bg-gray-50 px-3 py-1.5 text-xs text-gray-500 text-center border-t border-gray-100 font-bold">
+                                        Đã chọn: <span class="text-orange-600">{activeColumn.denominator.length}</span>
                                     </div>
                                 </div>
                             </div>
-                            {#if activeColumn.targetId}
-                                <div class="mt-2 text-center">
-                                    <span class="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
-                                        Đã tự động liên kết với chỉ số mục tiêu hệ thống
-                                    </span>
-                                </div>
-                            {/if}
 
                         {:else}
                             <div class="h-full flex flex-col border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white">
                                 <div class="bg-gray-50 p-2 border-b border-gray-200 flex justify-between items-center">
-                                    <span class="font-bold text-gray-700 text-xs uppercase">Danh sách Nguồn dữ liệu</span>
-                                    <div class="flex gap-3 text-xs">
-                                        <button class="text-blue-600 font-bold hover:underline" on:click={() => toggleAll('items', true)}>Chọn hiển thị ({sourceList.filter(i => i.name.toLowerCase().includes(searchFilter.toLowerCase())).length})</button>
+                                    <span class="font-bold text-gray-700 text-xs uppercase px-2">Danh sách Nguồn dữ liệu</span>
+                                    <div class="flex gap-3 text-xs px-2">
+                                        <button class="text-blue-600 font-bold hover:underline" on:click={() => toggleAll('items', true)}>Chọn hiển thị</button>
                                         <button class="text-red-500 font-bold hover:underline" on:click={() => clearAllSelection('items')}>Xóa tất cả</button>
                                     </div>
                                 </div>
-                                <div class="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                                <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
                                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                                         {@render DataSourceList({ 
-                                            items: sourceList, 
+                                            items: getProcessedItems(sourceList, activeColumn.items, searchFilter, sourceTypeFilter), 
                                             selectedIds: activeColumn.items, 
-                                            filter: searchFilter, 
                                             onToggle: (item) => toggleSelection(item, 'items'),
-                                            selectedColor: "bg-blue-50 border-blue-300 text-blue-800 ring-1 ring-blue-200",
+                                            selectedColor: "bg-blue-50 border-blue-300 text-blue-800 ring-1 ring-blue-200 shadow-sm",
                                             gridLayout: true
                                         })}
                                     </div>
@@ -481,8 +570,8 @@
 </div>
 {/if}
 
-{#snippet DataSourceList({ items, selectedIds, filter, onToggle, selectedColor, gridLayout = false })}
-    {#each items.filter(i => i.name.toLowerCase().includes(filter.toLowerCase())) as item (item.id)}
+{#snippet DataSourceList({ items, selectedIds, onToggle, selectedColor, gridLayout = false })}
+    {#each items as item (item.id)}
         {@const isSelected = selectedIds.includes(item.id)}
         <div 
             class="flex items-center p-2 rounded cursor-pointer border transition-all select-none
