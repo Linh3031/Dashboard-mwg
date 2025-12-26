@@ -6,7 +6,6 @@
       modalState, 
       efficiencyConfig, 
       customRevenueTables, 
-      // [NEW] Store cho bảng hiệu quả
       customPerformanceTables,
       isAdmin, 
       warehouseCustomMetrics,
@@ -28,6 +27,8 @@
   
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
+  // [MỚI] Import trình quản lý phiên bản
+  import VersionManager from './components/common/VersionManager.svelte';
 
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
@@ -41,7 +42,6 @@
   import ComposerModal from './components/modals/ComposerModal.svelte';
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
-  // [NEW] Import Modal mới
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
 
   onMount(async () => {
@@ -49,7 +49,7 @@
     const isLoggedIn = authService.initAuth();
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
     
-    // [NEW] Load bảng hiệu quả khi khởi động (User bảng sẽ load khi chọn kho)
+    // Load bảng hiệu quả khi khởi động
     loadInitialTables();
   });
 
@@ -62,16 +62,10 @@
     if (window.feather) window.feather.replace();
   });
 
-  // [FIX] Tách biệt logic lưu Admin vs User
   function handleSaveEffConfig(event) {
-      // Clone object để tránh tham chiếu
       const newItem = { ...event.detail };
-      
-      // LOGIC ADMIN (Tab Khai Báo)
       if ($activeTab === 'declaration-section') {
-          // Admin thì đánh dấu isSystem = true (nếu chưa có)
           newItem.isSystem = true;
-          
           efficiencyConfig.update(items => {
               const idx = items.findIndex(i => i.id === newItem.id);
               if (idx >= 0) { items[idx] = newItem; return [...items]; } 
@@ -79,25 +73,16 @@
           });
           adminService.saveEfficiencyConfig(get(efficiencyConfig));
       } 
-      // LOGIC USER (Tab Lũy kế / Realtime)
       else {
-      
-          // User thì đánh dấu isSystem = false
           newItem.isSystem = false;
-
           let currentLocal = get(warehouseCustomMetrics) || [];
           const idx = currentLocal.findIndex(i => i.id === newItem.id);
-          
           if (idx >= 0) {
-              // Sửa
               currentLocal[idx] = newItem;
           } else {
-              // Thêm mới
               currentLocal = [...currentLocal, newItem];
           }
-          
           warehouseCustomMetrics.set(currentLocal);
-          
           const wh = get(selectedWarehouse);
           if(wh) {
                datasyncService.saveCustomMetrics(wh, currentLocal);
@@ -107,22 +92,18 @@
       }
   }
 
-  // [CẬP NHẬT] Xử lý lưu bảng doanh thu (Phân quyền Admin vs User)
   async function handleSaveCustomTable(event) {
       const newItem = event.detail;
-      
-      // 1. Cập nhật Store hiển thị tức thì
       customRevenueTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
           if (idx >= 0) { 
-              items[idx] = { ...items[idx], ...newItem }; // Merge để giữ các props khác
+              items[idx] = { ...items[idx], ...newItem }; 
               return [...items]; 
           } else { 
               return [...items, newItem]; 
           }
       });
-      
-      // 2. Phân loại nơi lưu trữ
+
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
@@ -130,7 +111,6 @@
       } else {
           const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
           localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
-          
           const wh = get(selectedWarehouse);
           if (wh) {
               await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
@@ -139,28 +119,22 @@
       }
   }
 
-  // [NEW] Xử lý lưu Bảng Hiệu Quả (Performance Table)
   async function handleSavePerformanceTable(event) {
       const newItem = event.detail;
-      
-      // 1. Cập nhật Store hiển thị
       customPerformanceTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
           if (idx >= 0) {
               items[idx] = { ...items[idx], ...newItem };
               return [...items];
           } else {
-              return [...items, newItem];
+             return [...items, newItem];
           }
       });
 
-      // 2. Phân luồng lưu trữ
       if (newItem.isSystem) {
-          // Admin System Table
           const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
           await adminService.saveSystemPerformanceTables(systemTables);
       } else {
-          // User Personal Table
           const personalTables = get(customPerformanceTables).filter(t => !t.isSystem);
           const wh = get(selectedWarehouse);
           if (wh) {
@@ -173,6 +147,8 @@
 </script>
 
 <GlobalNotification />
+<VersionManager />
+
 <InterfaceDrawer />
 <GoalDrawer />
 

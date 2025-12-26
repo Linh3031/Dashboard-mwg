@@ -6,7 +6,7 @@
     let localConfig = {
         videoUrl: '',
         timeline: [],
-        sliderImages: [], // Cấu trúc: { url: '...', fileName: '...', title: '...' }
+        sliderImages: [], // { url, title, fileName, fileRaw }
         changelogs: []
     };
 
@@ -15,80 +15,104 @@
     let isUploading = false;
     let fileInput; 
 
+    // --- BIẾN CHO TRÌNH SOẠN THẢO MỚI ---
+    let mainTitle = ''; // Tiêu đề chính (VD: Cập nhật tháng 12)
+    let editorSections = []; // Danh sách các mục nhỏ
+
     $: if ($homeConfig) {
         localConfig = JSON.parse(JSON.stringify($homeConfig));
     }
 
     // --- LOGIC TIMELINE VIDEO ---
-    function addTimelineItem() {
-        localConfig.timeline = [...localConfig.timeline, { time: '00:00', label: 'Mốc mới' }];
-    }
-    function removeTimelineItem(index) {
-        localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index);
-    }
+    function addTimelineItem() { localConfig.timeline = [...localConfig.timeline, { time: '00:00', label: 'Mốc mới' }]; }
+    function removeTimelineItem(index) { localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index); }
 
-    // --- LOGIC UPLOAD ẢNH CLOUD (MỚI) ---
-    function triggerUpload() {
-        fileInput.click();
-    }
-
+    // --- LOGIC UPLOAD ẢNH CLOUD ---
+    function triggerUpload() { fileInput.click(); }
+    
     async function handleFilesSelect(event) {
         const files = event.target.files;
         if (!files || files.length === 0) return;
-
         isUploading = true;
         const newImages = [];
-        
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const imageObj = {
-                // Tạo URL tạm để xem trước ngay lập tức
-                url: URL.createObjectURL(file), 
-                fileName: file.name,
-                title: '', 
-                fileRaw: file // Lưu file gốc để tí nữa hàm Save gửi lên Cloud
-            };
-            newImages.push(imageObj);
+            newImages.push({ url: URL.createObjectURL(file), fileName: file.name, title: '', fileRaw: file });
         }
-
         localConfig.sliderImages = [...localConfig.sliderImages, ...newImages];
-        event.target.value = ''; // Reset input để chọn lại được
+        event.target.value = '';
         isUploading = false;
     }
-
     function removeSlide(index) {
-        if(!confirm("Bạn muốn xóa ảnh này khỏi danh sách?")) return;
+        if(!confirm("Xóa ảnh này?")) return;
         localConfig.sliderImages = localConfig.sliderImages.filter((_, i) => i !== index);
     }
 
-    // --- LOGIC CHANGELOG ---
+    // --- LOGIC CHANGELOG (NÂNG CẤP - KHÔNG CẦN HTML) ---
     function addChangelogItem() {
         const today = new Date().toLocaleDateString('vi-VN');
+        // Tạo bản ghi mới
         localConfig.changelogs = [{ version: '', date: today, content: '' }, ...localConfig.changelogs];
+        
+        // Mở trình soạn thảo ngay
+        mainTitle = 'Cập nhật tính năng mới';
+        editorSections = [{ title: 'Thay đổi chính', content: '' }];
     }
+
     function removeChangelogItem(index) {
         localConfig.changelogs = localConfig.changelogs.filter((_, i) => i !== index);
     }
     
-    function insertTemplate(index) {
-        const template = `<ul>
-    <li><strong>Tính năng chính:</strong>
-        <ul style="list-style-type: circle; margin-left: 20px;">
-            <li>Chi tiết A</li>
-        </ul>
-    </li>
-    <li><strong>Sửa lỗi:</strong> ...</li>
-</ul>`;
-        localConfig.changelogs[index].content = template;
+    // Thêm một mục soạn thảo
+    function addEditorSection() {
+        editorSections = [...editorSections, { title: '', content: '' }];
     }
 
-    // --- HÀM LƯU & UPLOAD ---
-    async function saveAllConfig() {
-        console.log("Đang xử lý dữ liệu...", localConfig);
-        isSaving = true;
+    function removeEditorSection(idx) {
+        editorSections = editorSections.filter((_, i) => i !== idx);
+    }
 
+    // [QUAN TRỌNG] Chuyển đổi từ Form nhập liệu -> HTML để lưu
+    function applyEditorContent(logIndex) {
+        let html = '';
+        
+        // 1. Tiêu đề chính (Màu xanh đậm, in hoa)
+        if (mainTitle) {
+            html += `<h3 style="color:#1d4ed8; font-size:1.1em; font-weight:800; margin-bottom:10px; text-transform:uppercase;">${mainTitle}</h3>`;
+        }
+
+        // 2. Các mục con
+        editorSections.forEach(sec => {
+            if (sec.title) {
+                // Tiêu đề phụ (Màu xám đậm)
+                html += `<h4 style="color:#334155; font-weight:700; margin-top:8px; margin-bottom:4px;">${sec.title}:</h4>`;
+            }
+            if (sec.content) {
+                html += '<ul style="margin-bottom:12px;">';
+                // Tách dòng
+                const lines = sec.content.split('\n').map(l => l.trim()).filter(l => l);
+                lines.forEach(line => {
+                    html += `<li>${line}</li>`;
+                });
+                html += '</ul>';
+            }
+        });
+        
+        localConfig.changelogs[logIndex].content = html;
+        
+        // Xóa editor sau khi apply (để tránh nhầm lẫn)
+        mainTitle = '';
+        editorSections = [];
+        
+        alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
+    }
+
+    // --- HÀM LƯU CHUNG ---
+    async function saveAllConfig() {
+        console.log("Đang lưu...", localConfig);
+        isSaving = true;
         try {
-            // 1. Xử lý Link Video (Tự sửa lỗi Embed)
+            // 1. Fix link Youtube
             if (localConfig.videoUrl) {
                 let url = localConfig.videoUrl;
                 if (url.includes('watch?v=')) {
@@ -101,38 +125,24 @@
                 localConfig.videoUrl = url;
             }
 
-            // 2. [QUAN TRỌNG] Upload ảnh mới lên Cloud (Firebase Storage)
+            // 2. Upload ảnh mới lên Cloud
             const uploadPromises = localConfig.sliderImages.map(async (img) => {
-                // Chỉ upload những ảnh CÓ fileRaw (ảnh mới chọn từ máy)
                 if (img.fileRaw) {
                     try {
-                        if (!adminService.uploadImage) {
-                            throw new Error("Thiếu hàm uploadImage trong adminService! Hãy kiểm tra file admin.service.js");
-                        }
-                        
-                        console.log(`Đang upload: ${img.fileName}...`);
                         const cloudUrl = await adminService.uploadImage(img.fileRaw, 'slides');
-                        
-                        return { 
-                            ...img, 
-                            url: cloudUrl, // Thay link tạm bằng link Cloud xịn
-                            fileRaw: null  // Xóa file raw để nhẹ bộ nhớ
-                        };
+                        return { ...img, url: cloudUrl, fileRaw: null };
                     } catch (err) {
-                        console.error("Lỗi upload ảnh:", img.fileName, err);
-                        alert(`Không thể upload ảnh ${img.fileName}. Lỗi: ${err.message}`);
+                        console.error("Lỗi upload:", err);
                         return img; 
                     }
                 }
-                return img; // Ảnh cũ giữ nguyên
+                return img;
             });
-
-            // Chờ tất cả ảnh upload xong
             localConfig.sliderImages = await Promise.all(uploadPromises);
 
-            // 3. Lưu cấu hình cuối cùng xuống DB
+            // 3. Lưu Firestore
             await adminService.saveHomeConfig(localConfig);
-            alert("Đã lưu thành công! Ảnh và Video đã được đồng bộ lên Cloud.");
+            alert("Đã lưu thành công! Dữ liệu đã được đồng bộ.");
             
         } catch (e) {
             console.error(e);
@@ -174,12 +184,10 @@
                 <div class="space-y-4 animate-fade-in">
                     <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-2">
                         <label class="block text-sm font-bold text-blue-800 mb-1">Youtube Link</label>
-                        <p class="text-xs text-blue-600 mb-2">Dán link trực tiếp (VD: https://www.youtube.com/watch?v=...), hệ thống sẽ tự sửa lỗi.</p>
-                        <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Dán link Youtube vào đây...">
+                        <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border border-blue-300 rounded-md text-sm outline-none" placeholder="Dán link Youtube...">
                     </div>
-                    
                     <div>
-                        <label class="block text-sm font-bold text-slate-700 mb-2">Timeline (Mục lục video)</label>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Timeline</label>
                         <div class="space-y-2">
                             {#each localConfig.timeline as item, index}
                                 <div class="flex items-center gap-2">
@@ -189,95 +197,36 @@
                                 </div>
                             {/each}
                         </div>
-                        <button on:click={addTimelineItem} class="mt-2 text-sm text-blue-600 hover:underline flex items-center gap-1">
-                            <i data-feather="plus" class="w-3 h-3"></i> Thêm mốc thời gian
-                        </button>
+                        <button on:click={addTimelineItem} class="mt-2 text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-feather="plus" class="w-3 h-3"></i> Thêm mốc</button>
                     </div>
                 </div>
             {/if}
 
             {#if activeTab === 'slider'}
                 <div class="space-y-6 animate-fade-in">
-                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-sm text-blue-800">
-                        <p class="font-bold mb-1 flex items-center gap-2"><i data-feather="cloud" class="w-4 h-4"></i> Chế độ Upload Cloud:</p>
-                        <ul class="list-disc ml-5 space-y-1 text-blue-700">
-                            <li>Ảnh sẽ được lưu vĩnh viễn trên Cloud (xem được ở mọi máy).</li>
-                            <li>Hỗ trợ kéo thả hoặc chọn nhiều ảnh cùng lúc.</li>
-                        </ul>
-                    </div>
-
                     <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/50 hover:bg-blue-50 transition-colors">
-                        <input 
-                            type="file" 
-                            multiple 
-                            accept="image/*" 
-                            class="hidden" 
-                            bind:this={fileInput}
-                            on:change={handleFilesSelect}
-                        />
-                        <button 
-                            on:click={triggerUpload}
-                            class="flex flex-col items-center gap-2 group/btn"
-                            disabled={isUploading}
-                        >
-                            <div class="p-3 bg-white rounded-full shadow-md text-blue-600 group-hover/btn:scale-110 transition-transform">
-                                <i data-feather="cloud-upload" class="w-8 h-8"></i>
-                            </div>
-                            <span class="text-blue-700 font-bold text-sm">
-                                {isUploading ? 'Đang xử lý...' : 'Nhấn để chọn ảnh từ máy tính'}
-                            </span>
-                            <span class="text-xs text-blue-400">Hỗ trợ JPG, PNG (Có thể chọn nhiều ảnh)</span>
+                        <input type="file" multiple accept="image/*" class="hidden" bind:this={fileInput} on:change={handleFilesSelect} />
+                        <button on:click={triggerUpload} class="flex flex-col items-center gap-2 group/btn" disabled={isUploading}>
+                            <div class="p-3 bg-white rounded-full shadow-md text-blue-600 group-hover/btn:scale-110 transition-transform"><i data-feather="cloud-upload" class="w-8 h-8"></i></div>
+                            <span class="text-blue-700 font-bold text-sm">{isUploading ? 'Đang xử lý...' : 'Nhấn để chọn ảnh từ máy tính'}</span>
                         </button>
                     </div>
-
                     {#if localConfig.sliderImages.length > 0}
                         <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
                             <div class="bg-slate-100 px-4 py-3 border-b flex justify-between items-center">
                                 <h4 class="font-bold text-slate-700 text-sm uppercase">Danh sách ảnh ({localConfig.sliderImages.length})</h4>
                                 <button class="text-xs text-red-500 hover:underline" on:click={() => localConfig.sliderImages = []}>Xóa tất cả</button>
                             </div>
-                            
                             <div class="divide-y divide-slate-100">
                                 {#each localConfig.sliderImages as img, index}
-                                    <div class="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors group/row">
-                                        
-                                        <div class="w-1/3 flex gap-3">
-                                            <div class="w-32 h-20 bg-slate-800 rounded-lg border overflow-hidden flex-shrink-0 relative flex items-center justify-center">
-                                                <img 
-                                                    src={img.url} 
-                                                    alt="Thumbnail" 
-                                                    class="w-full h-full object-contain"
-                                                />
-                                            </div>
-                                            <div class="flex flex-col justify-center overflow-hidden">
-                                                <span class="text-sm font-bold text-slate-700 truncate block w-full" title={img.fileName}>
-                                                    {img.fileName || `Slide #${index + 1}`}
-                                                </span>
-                                                <span class="text-xs text-slate-400">
-                                                    {img.fileRaw ? 'Sẵn sàng upload' : 'Đã có trên Cloud'}
-                                                </span>
-                                            </div>
+                                    <div class="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors">
+                                        <div class="w-24 h-16 bg-slate-200 rounded-lg border overflow-hidden flex-shrink-0 relative flex items-center justify-center">
+                                            <img src={img.url} alt="Thumbnail" class="w-full h-full object-contain" />
                                         </div>
-
-                                        <div class="flex-grow flex items-center gap-3">
-                                            <div class="flex-grow">
-                                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ghi chú hiển thị</label>
-                                                <input 
-                                                    type="text" 
-                                                    bind:value={img.title} 
-                                                    class="w-full p-2 border border-slate-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition" 
-                                                    placeholder="Nhập ghi chú..."
-                                                >
-                                            </div>
-                                            <button 
-                                                on:click={() => removeSlide(index)} 
-                                                class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition mt-4"
-                                                title="Xóa ảnh này"
-                                            >
-                                                <i data-feather="trash-2" class="w-5 h-5"></i>
-                                            </button>
+                                        <div class="flex-grow flex flex-col gap-2">
+                                            <input type="text" bind:value={img.title} class="w-full p-2 border border-slate-200 rounded text-sm outline-none" placeholder="Ghi chú...">
                                         </div>
-
+                                        <button on:click={() => removeSlide(index)} class="p-2 text-slate-300 hover:text-red-500 rounded-lg"><i data-feather="trash-2" class="w-5 h-5"></i></button>
                                     </div>
                                 {/each}
                             </div>
@@ -288,32 +237,63 @@
 
             {#if activeTab === 'changelog'}
                 <div class="space-y-4 animate-fade-in">
-                    <button on:click={addChangelogItem} class="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm">
-                        + Thêm bản cập nhật mới
+                    <button on:click={addChangelogItem} class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-md font-bold flex justify-center items-center gap-2">
+                        <i data-feather="plus-circle" class="w-5 h-5"></i> Soạn bản cập nhật mới
                     </button>
+                    
                     <div class="space-y-6 max-h-[600px] overflow-y-auto pr-2">
                         {#each localConfig.changelogs as log, index}
-                            <div class="flex flex-col gap-3 p-4 border rounded-xl bg-white shadow-sm relative">
-                                <button on:click={() => removeChangelogItem(index)} class="absolute top-4 right-4 text-red-500 hover:bg-red-50 p-1.5 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
-                                <div class="flex gap-4 pr-10">
-                                    <div class="flex flex-col gap-1 w-1/4">
-                                        <label class="text-xs font-bold text-gray-500 uppercase">Phiên bản</label>
-                                        <input type="text" bind:value={log.version} class="w-full p-2 border rounded text-sm font-bold text-blue-700" placeholder="4.2">
+                            <div class="flex flex-col gap-3 p-4 border rounded-xl bg-white shadow-sm relative group">
+                                <button on:click={() => removeChangelogItem(index)} class="absolute top-4 right-4 text-slate-300 hover:text-red-500 p-1.5 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                                
+                                <div class="flex gap-4 pr-10 border-b border-gray-100 pb-3 mb-2">
+                                    <div class="flex flex-col gap-1 w-1/3">
+                                        <label class="text-xs font-bold text-gray-500 uppercase">Phiên bản (VD: 2.5)</label>
+                                        <input type="text" bind:value={log.version} class="w-full p-2 border rounded text-sm font-bold text-blue-700 font-mono" placeholder="2.5">
                                     </div>
-                                    <div class="flex flex-col gap-1 w-1/4">
+                                    <div class="flex flex-col gap-1 w-1/3">
                                         <label class="text-xs font-bold text-gray-500 uppercase">Ngày</label>
                                         <input type="text" bind:value={log.date} class="w-full p-2 border rounded text-sm" placeholder="dd/mm/yyyy">
                                     </div>
                                 </div>
-                                <div class="flex flex-col gap-1">
-                                    <div class="flex justify-between items-end">
-                                        <label class="text-xs font-bold text-gray-500 uppercase">Nội dung (Hỗ trợ HTML)</label>
-                                        <button class="text-xs text-blue-600 hover:underline flex items-center gap-1 bg-blue-50 px-2 py-1 rounded" on:click={() => insertTemplate(index)}>
-                                            <i data-feather="code" class="w-3 h-3"></i> Chèn mẫu chuẩn
-                                        </button>
+
+                                {#if index === 0 && editorSections.length > 0}
+                                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
+                                        <div class="mb-4">
+                                            <label class="block text-xs font-bold text-blue-800 mb-1 uppercase">Tiêu đề chính phiên bản</label>
+                                            <input type="text" bind:value={mainTitle} class="w-full p-2 border border-blue-200 rounded text-sm font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-300" placeholder="VD: Cập nhật tháng 12">
+                                        </div>
+
+                                        <div class="space-y-3">
+                                            <label class="block text-xs font-bold text-slate-500 uppercase">Nội dung chi tiết</label>
+                                            {#each editorSections as sec, secIdx}
+                                                <div class="bg-white p-3 rounded border border-slate-200 relative shadow-sm">
+                                                    <button on:click={() => removeEditorSection(secIdx)} class="absolute -top-2 -right-2 bg-white text-red-400 hover:text-red-600 rounded-full border border-gray-200 p-1 shadow-sm"><i data-feather="x" class="w-3 h-3"></i></button>
+                                                    
+                                                    <input type="text" bind:value={sec.title} class="w-full p-1.5 border-b border-gray-100 text-sm font-bold text-slate-700 outline-none placeholder-slate-400 mb-2" placeholder="Tiêu đề phụ (VD: Tính năng mới)">
+                                                    <textarea bind:value={sec.content} rows="3" class="w-full p-1.5 text-sm text-slate-600 outline-none resize-none placeholder-slate-300" placeholder="- Gạch đầu dòng 1&#10;- Gạch đầu dòng 2..."></textarea>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                        
+                                        <div class="flex justify-between items-center pt-4">
+                                            <button on:click={addEditorSection} class="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"><i data-feather="plus" class="w-3 h-3"></i> Thêm mục</button>
+                                            <button on:click={() => applyEditorContent(index)} class="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700 shadow-sm flex items-center gap-2">
+                                                <i data-feather="check" class="w-3 h-3"></i> Áp dụng & Đóng gói
+                                            </button>
+                                        </div>
                                     </div>
-                                    <textarea bind:value={log.content} rows="12" class="w-full p-3 border rounded text-sm font-mono leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập nội dung cập nhật..."></textarea>
-                                </div>
+                                {:else}
+                                    <div class="flex flex-col gap-1">
+                                        <div class="flex justify-between items-end">
+                                            <label class="text-xs font-bold text-gray-400 italic">Nội dung (HTML đã đóng gói)</label>
+                                            {#if index === 0}
+                                                <button class="text-xs text-blue-500 hover:underline" on:click={() => { mainTitle='Sửa đổi'; editorSections=[{title:'',content:''}] }}>Sửa lại bằng bộ soạn thảo</button>
+                                            {/if}
+                                        </div>
+                                        <textarea bind:value={log.content} rows="4" class="w-full p-3 border rounded text-xs font-mono bg-slate-50 text-slate-500 leading-relaxed outline-none"></textarea>
+                                    </div>
+                                {/if}
                             </div>
                         {/each}
                     </div>

@@ -2,23 +2,48 @@
   /* global feather */
   import { onMount, onDestroy } from 'svelte'; 
   
+  // Import các component con
   import FileInput from './common/FileInput.svelte';
   import PasteInput from './common/PasteInput.svelte';
 
+  // Import Stores
   import { 
       warehouseList,
       selectedWarehouse,
       notificationStore,
-      danhSachNhanVien
+      danhSachNhanVien,
+      homeConfig
   } from '../stores.js';
   
+  // Import Services
   import { dataService } from '../services/dataService.js';
+  
+  // Import để mở Popup chi tiết phiên bản
+  import { showVersionDetails } from './common/VersionManager.svelte';
 
   export let activeTab;
   
   let isSyncing = false;
   let dsnvUnsubscribe; 
 
+  // --- LOGIC MỚI: KIỂM TRA PHIÊN BẢN ---
+  let latestVersion = '';
+  let tickerStatus = 'none'; // 'none' | 'new' | 'current'
+
+  $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
+      const serverVer = $homeConfig.changelogs[0].version;
+      const clientVer = localStorage.getItem('app_client_version') || '';
+      
+      latestVersion = serverVer; // Luôn hiển thị version mới nhất
+
+      if (serverVer && serverVer !== clientVer) {
+          tickerStatus = 'new'; // Có bản mới -> Hiện màu đỏ/vàng
+      } else {
+          tickerStatus = 'current'; // Đã update -> Hiện màu xanh/trắng
+      }
+  }
+
+  // --- LOGIC CŨ: ĐỒNG BỘ DỮ LIỆU ---
   onMount(async () => {
     if (typeof feather !== 'undefined') {
       feather.replace();
@@ -29,7 +54,6 @@
         console.log(`[DataSection] Phát hiện kho đã lưu: ${savedWh}. Đang chờ DSNV...`);
         selectedWarehouse.set(savedWh);
         
-        // Load settings ngay lập tức khi khôi phục kho từ localStorage
         await dataService.loadWarehouseSettings(savedWh); 
 
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
@@ -54,30 +78,22 @@
       if (!warehouse) return;
       isSyncing = true;
       try {
-          // [UPDATED] Gọi song song: Đồng bộ file và Tải cấu hình
           await Promise.all([
               dataService.syncDownFromCloud(warehouse),
               dataService.loadWarehouseSettings(warehouse)
           ]);
-          
           notificationStore.set({ message: 'Thành công!', type: 'success' });
-  } catch (error) {
-            // [CODEGENESIS FIX] Thay vì gọi notificationStore.show (gây crash), ta chỉ log ra console
+      } catch (error) {
             console.error("CRITICAL SYNC ERROR:", error);
-            
-            // Dòng dưới đây là nguyên nhân gây lỗi, tôi đã comment lại. 
-            // ĐỪNG BỎ COMMENT NẾU KHÔNG MUỐN BỊ CRASH LẠI.
-            notificationStore.set({ message: 'Lỗi đồng bộ', type: 'error' });
-            
-        } finally {
+            // Không set error notification để tránh spam lỗi nếu mạng chập chờn
+      } finally {
             isSyncing = false;
-        }
+      }
   }
 
   async function handleWarehouseChange(event) {
       const newWarehouse = event.target.value;
       selectedWarehouse.set(newWarehouse);
-      
       if (newWarehouse) {
           localStorage.setItem('selectedWarehouse', newWarehouse);
           notificationStore.set(`Đang đồng bộ dữ liệu cho ${newWarehouse}...`, 'info');
@@ -98,7 +114,7 @@
 
 <section id="data-section" class="page-section {activeTab === 'data-section' ? '' : 'hidden'}"> 
     <div class="page-header">
-         <div class="flex flex-wrap items-center gap-4">
+         <div class="flex flex-wrap items-center gap-4 w-full">
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Cập nhật dữ liệu</h2>
                 <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
@@ -112,7 +128,7 @@
                     <select 
                       id="data-warehouse-selector" 
                       class="p-2 border rounded-lg text-sm shadow-sm min-w-[200px] 
-                             font-semibold text-indigo-800 bg-indigo-50 border-indigo-200 
+                              font-semibold text-indigo-800 bg-indigo-50 border-indigo-200 
                             focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50" 
                       disabled={$warehouseList.length === 0 || isSyncing}
                       value={$selectedWarehouse}
@@ -136,11 +152,32 @@
                          </div>
                     {/if}
                 </div>
-             </div>
+            </div>
+
+            {#if tickerStatus !== 'none'}
+                <div 
+                    id="version-marquee-container" 
+                    class="flex-grow min-w-[200px] {tickerStatus === 'new' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-700 hover:bg-blue-800'} text-white font-bold rounded-lg px-4 py-2 cursor-pointer shadow-lg border border-white/20 transition-all flex items-center overflow-hidden relative group"
+                    on:click={() => showVersionDetails.set(true)}
+                    role="button"
+                    tabindex="0"
+                >
+                    <div class="marquee-content whitespace-nowrap text-sm flex items-center gap-4">
+                        {#if tickerStatus === 'new'}
+                            <span class="flex items-center gap-1 bg-yellow-400 text-red-900 px-2 py-0.5 rounded text-xs font-extrabold uppercase tracking-wider animate-pulse shadow-sm border border-yellow-500">
+                                <i data-feather="zap" class="w-3 h-3"></i> Mới
+                            </span>
+                            <span class="drop-shadow-md text-white">Đã có phiên bản <span class="text-yellow-300 font-mono text-base bg-black/20 px-1.5 rounded border border-white/10">{latestVersion}</span> - Bấm để xem chi tiết!</span>
+                        {:else}
+                            <span class="flex items-center gap-1 bg-white/20 text-white px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-white/30">
+                                <i data-feather="check-circle" class="w-3 h-3"></i> Đã cập nhật
+                            </span>
+                            <span class="drop-shadow-md text-blue-50">Hệ thống đang chạy phiên bản <span class="font-mono text-base text-white bg-blue-900/30 px-1.5 rounded border border-white/10">{latestVersion}</span></span>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
         </div>
-        <div id="version-marquee-container" class="marquee-container flex-grow min-w-[200px]">
-             <p class="marquee-text"></p>
-          </div>
     </div>
     
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
@@ -213,13 +250,13 @@
                 />
                 <FileInput
                     label="YCX Lũy Kế tháng trước"
-                     icon="file-text"
+                    icon="file-text"
                     saveKey="saved_ycx_thangtruoc"
                 />
             </div> 
              <div class="space-y-4"> 
                   <FileInput
-                     label="Thưởng nóng tháng trước"
+                    label="Thưởng nóng tháng trước"
                     icon="gift"
                      saveKey="saved_thuongnong_thangtruoc"
                 />
@@ -235,3 +272,17 @@
         </div> 
     </div> 
 </section>
+
+<style>
+    /* Animation cho dòng chữ chạy */
+    .marquee-content {
+        animation: marquee 12s linear infinite;
+    }
+    .group:hover .marquee-content {
+        animation-play-state: paused;
+    }
+    @keyframes marquee {
+        0% { transform: translateX(100%); }
+        100% { transform: translateX(-100%); }
+    }
+</style>
