@@ -2,6 +2,9 @@
 // Version 3.4 - Fix: Load Category & Brand globally
 import { get } from 'svelte/store';
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+// [MỚI] Thêm import cho Firebase Storage
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
 import { 
     firebaseStore, 
     isAdmin, 
@@ -107,7 +110,6 @@ export const adminService = {
     },
 
     async loadCategoryDataFromFirestore() {
-        // Hàm này có thể được gọi độc lập nếu cần reload thủ công
         const db = getDB();
         if (!db) return { categories: [], brands: [] };
         
@@ -170,7 +172,7 @@ export const adminService = {
         }
     },
 
-    // --- [NEW] 4.5. SYSTEM PERFORMANCE TABLES (BẢNG HIỆU QUẢ) ---
+    // --- 4.5. SYSTEM PERFORMANCE TABLES (BẢNG HIỆU QUẢ) ---
     async loadSystemPerformanceTables() {
         const db = getDB();
         if (!db) return [];
@@ -195,7 +197,6 @@ export const adminService = {
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
         if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
         
-        // Chỉ lưu bảng có cờ isSystem = true
         const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
         
         try {
@@ -212,7 +213,6 @@ export const adminService = {
     },
 
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
-    // [FIX] Cập nhật hàm này để tải cả categoryStructure và brandList
     async loadMappingsGlobal() {
         const db = getDB();
         if (!db) return;
@@ -233,7 +233,6 @@ export const adminService = {
                 "efficiencyConfig", 
                 "qdcConfig",
                 "competitionNameMappings",
-                // [NEW] Thêm 2 file này vào luồng tải global
                 "categoryStructure",
                 "brandList"
             ];
@@ -249,8 +248,6 @@ export const adminService = {
             efficiencyConfig.set(safeGet(results[5])); 
             qdcConfigStore.set(safeGet(results[6]));
             competitionNameMappings.set(safeGet(results[7], {}));
-            
-            // [NEW] Cập nhật store cho cấu trúc ngành hàng và hãng
             categoryStructure.set(safeGet(results[8]));
             brandList.set(safeGet(results[9]));
 
@@ -512,5 +509,29 @@ export const adminService = {
             }
             return [];
         } catch (e) { return []; }
+    },
+
+    // [MỚI] Hàm upload ảnh sử dụng Firebase Storage
+    async uploadImage(file, folder = 'slides') {
+        const fb = get(firebaseStore);
+        // Kiểm tra storage đã được khởi tạo trong firebaseStore chưa
+        if (!fb.storage) {
+            console.warn("Firebase Storage chưa được khởi tạo trong firebaseStore.");
+            // Fallback: Nếu không có storage, trả về null để code bên ngoài xử lý
+            return null;
+        }
+
+        try {
+            // Tạo tên file unique
+            const fileName = `${Date.now()}_${file.name}`;
+            const storageRef = ref(fb.storage, `${folder}/${fileName}`);
+            
+            const snapshot = await uploadBytes(storageRef, file);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            return downloadURL;
+        } catch (error) {
+            console.error("Upload failed:", error);
+            throw error;
+        }
     }
 };

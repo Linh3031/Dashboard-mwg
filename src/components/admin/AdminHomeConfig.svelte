@@ -27,7 +27,7 @@
         localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index);
     }
 
-    // --- LOGIC UPLOAD ẢNH CLOUD ---
+    // --- LOGIC UPLOAD ẢNH CLOUD (MỚI) ---
     function triggerUpload() {
         fileInput.click();
     }
@@ -42,16 +42,17 @@
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const imageObj = {
+                // Tạo URL tạm để xem trước ngay lập tức
                 url: URL.createObjectURL(file), 
                 fileName: file.name,
                 title: '', 
-                fileRaw: file 
+                fileRaw: file // Lưu file gốc để tí nữa hàm Save gửi lên Cloud
             };
             newImages.push(imageObj);
         }
 
         localConfig.sliderImages = [...localConfig.sliderImages, ...newImages];
-        event.target.value = '';
+        event.target.value = ''; // Reset input để chọn lại được
         isUploading = false;
     }
 
@@ -81,32 +82,58 @@
         localConfig.changelogs[index].content = template;
     }
 
-    // --- HÀM LƯU CHUNG (CÓ FIX LỖI VIDEO) ---
+    // --- HÀM LƯU & UPLOAD ---
     async function saveAllConfig() {
         console.log("Đang xử lý dữ liệu...", localConfig);
-        
-        // [FIX] Tự động chuyển link Youtube thường thành link Embed
-        // Ví dụ: watch?v=ABC -> embed/ABC
-        if (localConfig.videoUrl) {
-            let url = localConfig.videoUrl;
-            if (url.includes('watch?v=')) {
-                url = url.replace('watch?v=', 'embed/');
-                // Xử lý trường hợp có thêm tham số &t=... (nếu có)
-                const ampersandIndex = url.indexOf('&');
-                if (ampersandIndex !== -1) {
-                    url = url.substring(0, ampersandIndex);
-                }
-            } else if (url.includes('youtu.be/')) {
-                // Xử lý link rút gọn: youtu.be/ABC -> youtube.com/embed/ABC
-                url = url.replace('youtu.be/', 'www.youtube.com/embed/');
-            }
-            localConfig.videoUrl = url;
-        }
-
         isSaving = true;
+
         try {
+            // 1. Xử lý Link Video (Tự sửa lỗi Embed)
+            if (localConfig.videoUrl) {
+                let url = localConfig.videoUrl;
+                if (url.includes('watch?v=')) {
+                    url = url.replace('watch?v=', 'embed/');
+                    const ampersandIndex = url.indexOf('&');
+                    if (ampersandIndex !== -1) url = url.substring(0, ampersandIndex);
+                } else if (url.includes('youtu.be/')) {
+                    url = url.replace('youtu.be/', 'www.youtube.com/embed/');
+                }
+                localConfig.videoUrl = url;
+            }
+
+            // 2. [QUAN TRỌNG] Upload ảnh mới lên Cloud (Firebase Storage)
+            const uploadPromises = localConfig.sliderImages.map(async (img) => {
+                // Chỉ upload những ảnh CÓ fileRaw (ảnh mới chọn từ máy)
+                if (img.fileRaw) {
+                    try {
+                        if (!adminService.uploadImage) {
+                            throw new Error("Thiếu hàm uploadImage trong adminService! Hãy kiểm tra file admin.service.js");
+                        }
+                        
+                        console.log(`Đang upload: ${img.fileName}...`);
+                        const cloudUrl = await adminService.uploadImage(img.fileRaw, 'slides');
+                        
+                        return { 
+                            ...img, 
+                            url: cloudUrl, // Thay link tạm bằng link Cloud xịn
+                            fileRaw: null  // Xóa file raw để nhẹ bộ nhớ
+                        };
+                    } catch (err) {
+                        console.error("Lỗi upload ảnh:", img.fileName, err);
+                        alert(`Không thể upload ảnh ${img.fileName}. Lỗi: ${err.message}`);
+                        return img; 
+                    }
+                }
+                return img; // Ảnh cũ giữ nguyên
+            });
+
+            // Chờ tất cả ảnh upload xong
+            localConfig.sliderImages = await Promise.all(uploadPromises);
+
+            // 3. Lưu cấu hình cuối cùng xuống DB
             await adminService.saveHomeConfig(localConfig);
-            alert("Đã lưu thành công! Link Video đã được tự động chuẩn hóa.");
+            alert("Đã lưu thành công! Ảnh và Video đã được đồng bộ lên Cloud.");
+            
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
@@ -147,7 +174,7 @@
                 <div class="space-y-4 animate-fade-in">
                     <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-2">
                         <label class="block text-sm font-bold text-blue-800 mb-1">Youtube Link</label>
-                        <p class="text-xs text-blue-600 mb-2">Bạn có thể dán link trực tiếp (VD: https://www.youtube.com/watch?v=...) code sẽ tự động sửa lỗi hiển thị.</p>
+                        <p class="text-xs text-blue-600 mb-2">Dán link trực tiếp (VD: https://www.youtube.com/watch?v=...), hệ thống sẽ tự sửa lỗi.</p>
                         <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Dán link Youtube vào đây...">
                     </div>
                     
@@ -172,9 +199,9 @@
             {#if activeTab === 'slider'}
                 <div class="space-y-6 animate-fade-in">
                     <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-sm text-blue-800">
-                        <p class="font-bold mb-1 flex items-center gap-2"><i data-feather="info" class="w-4 h-4"></i> Mẹo hiển thị:</p>
+                        <p class="font-bold mb-1 flex items-center gap-2"><i data-feather="cloud" class="w-4 h-4"></i> Chế độ Upload Cloud:</p>
                         <ul class="list-disc ml-5 space-y-1 text-blue-700">
-                            <li>Ảnh sẽ được hiển thị <strong>trọn vẹn theo chiều rộng</strong>.</li>
+                            <li>Ảnh sẽ được lưu vĩnh viễn trên Cloud (xem được ở mọi máy).</li>
                             <li>Hỗ trợ kéo thả hoặc chọn nhiều ảnh cùng lúc.</li>
                         </ul>
                     </div>
@@ -206,7 +233,7 @@
                     {#if localConfig.sliderImages.length > 0}
                         <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
                             <div class="bg-slate-100 px-4 py-3 border-b flex justify-between items-center">
-                                <h4 class="font-bold text-slate-700 text-sm uppercase">Danh sách ảnh đã chọn ({localConfig.sliderImages.length})</h4>
+                                <h4 class="font-bold text-slate-700 text-sm uppercase">Danh sách ảnh ({localConfig.sliderImages.length})</h4>
                                 <button class="text-xs text-red-500 hover:underline" on:click={() => localConfig.sliderImages = []}>Xóa tất cả</button>
                             </div>
                             
@@ -297,7 +324,7 @@
                 <button on:click={saveAllConfig} disabled={isSaving} class="bg-pink-600 text-white px-5 py-2.5 rounded-lg hover:bg-pink-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
                     {#if isSaving}
                         <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        Đang lưu...
+                        Đang lưu & Upload...
                     {:else}
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                         Lưu Cấu Hình
