@@ -1,7 +1,8 @@
-// src/stores.js (Copy đè lên file cũ)
+// src/stores.js
 import { writable } from 'svelte/store';
 
-// ... (Giữ nguyên các phần trên) ...
+// QUAN TRỌNG: Phải có chữ 'export' ở đầu dòng này
+export const currentCluster = writable(null);
 export const activeTab = writable('data-section');
 export const isAdmin = writable(false); 
 export const currentUser = writable(null);
