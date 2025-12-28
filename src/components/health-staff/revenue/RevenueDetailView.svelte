@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { masterReportData, ycxData, modalState } from '../../../stores.js'; // [FIX] Import modalState
+  import { masterReportData, ycxData, modalState } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
@@ -19,7 +19,6 @@
 
   $: if (employeeId && $ycxData.length > 0) {
       employeeData = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeId));
-
       if (employeeData) {
           const settings = settingsService.getLuykeGoalSettings(employeeData.maKho);
           goals = settings.goals || {};
@@ -27,27 +26,29 @@
       }
   }
 
-  function goBack() { dispatch('back'); }
+  function goBack() { 
+      dispatch('back');
+  }
 
-  // [MỚI] Hàm xử lý mở Modal
+  // [ĐÃ SỬA] Bỏ điều kiện kiểm tra sâu, đảm bảo lệnh mở Modal luôn được thực thi
   function openUnexportedModal() {
-      if (detailData && detailData.unexportedDetails) {
+      if (detailData) {
           modalState.update(s => ({ 
               ...s, 
               activeModal: 'unexported-detail-modal',
-              payload: { unexportedDetails: detailData.unexportedDetails }
+              payload: { unexportedDetails: detailData.unexportedDetails || [] }
           }));
       }
   }
 
   function openOrdersModal() {
-      if (detailData && detailData.byCustomer) {
+      if (detailData) {
           modalState.update(s => ({ 
               ...s, 
               activeModal: 'customer-detail-modal',
               payload: { 
-                  customers: detailData.byCustomer,
-                  mucTieu: employeeData.mucTieu
+                  customers: detailData.byCustomer || [],
+                  mucTieu: employeeData ? employeeData.mucTieu : {}
               }
           }));
       }

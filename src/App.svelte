@@ -10,7 +10,7 @@
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse
-  } from './stores.js'; 
+  } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
@@ -24,16 +24,13 @@
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
-  
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
   // [MỚI] Import trình quản lý phiên bản
   import VersionManager from './components/common/VersionManager.svelte';
-
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
-
   // --- MODALS ---
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
@@ -43,6 +40,10 @@
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
+  
+  // [FIX] Import 2 Modal chi tiết còn thiếu
+  import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
+  import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
 
   onMount(async () => {
     try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
@@ -103,7 +104,6 @@
               return [...items, newItem]; 
           }
       });
-
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
@@ -130,7 +130,6 @@
              return [...items, newItem];
           }
       });
-
       if (newItem.isSystem) {
           const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
           await adminService.saveSystemPerformanceTables(systemTables);
@@ -144,6 +143,9 @@
           }
       }
   }
+
+  // Hàm đóng modal chung
+  const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
 </script>
 
 <GlobalNotification />
@@ -158,10 +160,25 @@
 <UserSpecialProgramModal />
 <ComposerModal /> 
 
+{#if $modalState.activeModal === 'unexported-detail-modal'}
+    <UnexportedDetailModal 
+        unexportedDetails={$modalState.payload?.unexportedDetails || []}
+        on:close={closeModal}
+    />
+{/if}
+
+{#if $modalState.activeModal === 'customer-detail-modal'}
+    <CustomerDetailModal 
+        customers={$modalState.payload?.customers || []}
+        mucTieu={$modalState.payload?.mucTieu || {}}
+        on:close={closeModal}
+    />
+{/if}
+
 <AddRevenueTableModal 
     isOpen={$modalState.activeModal === 'add-revenue-table-modal'} 
     editItem={$modalState.payload}
-    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:close={closeModal}
     on:save={handleSaveCustomTable}
 />
 
@@ -169,7 +186,7 @@
     isOpen={$modalState.activeModal === 'add-performance-table-modal'}
     editItem={$modalState.payload}
     isSystem={$modalState.isSystem || false}
-    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:close={closeModal}
     on:save={handleSavePerformanceTable}
 />
 
@@ -177,7 +194,7 @@
     isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
     editItem={$modalState.payload}
     isAdmin={$activeTab === 'declaration-section'}
-    on:close={() => modalState.update(s => ({ ...s, activeModal: null, payload: null }))}
+    on:close={closeModal}
     on:save={handleSaveEffConfig}
 />
 

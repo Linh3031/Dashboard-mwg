@@ -155,6 +155,7 @@ src/services/admin.service.js
 src/services/datasync.service.js
 src/services/processing
 src/services/processing/parsers
+src/services/processing/parsers/employee.parser.js
 src/services/processing/parsers/erp.parser.js
 src/services/processing/parsers/luyke.parser.js
 src/services/processing/parsers/thidua.parser.js
@@ -170,6 +171,11 @@ src/services/processing/helpers.js
 src/services/dataService.js
 src/services/analytics.service.js
 src/services/storage.service.js
+src/services/declarations
+src/services/declarations/config.service.js
+src/services/declarations/category.service.js
+src/services/declarations/utils.js
+src/services/declarations/performance.service.js
 src/services/capture.strategies.js
 src/services/dataProcessing.js
 src/services/auth.service.js

@@ -172,541 +172,66 @@ File: src/services/admin.service.js
 ================================================================================
 
 // src/services/admin.service.js
-// Version 3.4 - Fix: Load Category & Brand globally
-import { get } from 'svelte/store';
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
-// [MỚI] Thêm import cho Firebase Storage
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+// Version 4.0 - Refactored into 'declarations' sub-services to avoid name conflict
 
-import { 
-    firebaseStore, 
-    isAdmin, 
-    homeConfig, 
-    macroCategoryConfig, 
-    macroProductGroupConfig, 
-    categoryNameMapping, 
-    groupNameMapping,
-    brandNameMapping,
-    categoryStructure, 
-    brandList,
-    efficiencyConfig,
-    qdcConfigStore,
-    competitionNameMappings,
-    customPerformanceTables
-} from '../stores.js';
-
-const getDB = () => {
-    const fb = get(firebaseStore);
-    if (!fb.db) {
-        console.warn("Firestore chưa được khởi tạo.");
-        return null;
-    }
-    return fb.db;
-};
-
-const notify = (msg, type='info') => {
-    console.log(`[${type.toUpperCase()}] ${msg}`);
-    if(type === 'success' || type === 'error') alert(msg);
-};
-
-const sanitizeForFirestore = (obj) => {
-    return JSON.parse(JSON.stringify(obj, (key, value) => {
-        return value === undefined ? null : value;
-    }));
-};
+import { configService } from './declarations/config.service.js';
+import { categoryService } from './declarations/category.service.js';
+import { performanceService } from './declarations/performance.service.js';
 
 export const adminService = {
     // --- 1. HELP CONTENT ---
-    async saveHelpContent(contents) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin để thực hiện thao tác này!", "error"); return; }
-        try {
-            await Promise.all([
-                setDoc(doc(db, "help_content", "data"), { content: contents.data }),
-                setDoc(doc(db, "help_content", "luyke"), { content: contents.luyke }),
-                setDoc(doc(db, "help_content", "sknv"), { content: contents.sknv }),
-                setDoc(doc(db, "help_content", "realtime"), { content: contents.realtime })
-            ]);
-            notify('Đã cập nhật nội dung hướng dẫn thành công!', 'success');
-        } catch (error) { 
-            console.error("Error saving help content:", error); 
-            notify('Lỗi khi lưu nội dung hướng dẫn.', 'error'); 
-        }
-    },
+    saveHelpContent: configService.saveHelpContent,
 
     // --- 2. HOME CONFIG ---
-    async saveHomeConfig(configData) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const docRef = doc(db, "declarations", "homeConfig");
-            await setDoc(docRef, { data: sanitizeForFirestore(configData) });
-            homeConfig.set(configData);
-            notify('Đã lưu cấu hình Trang chủ thành công!', 'success');
-        } catch (error) { 
-            console.error("Error saving home config:", error); 
-            notify('Lỗi khi lưu cấu hình trang chủ: ' + error.message, 'error'); 
-        }
-    },
-
-    async loadHomeConfig() {
-        const db = getDB();
-        if (!db) return;
-        try {
-            const docRef = doc(db, "declarations", "homeConfig");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const raw = docSnap.data();
-                const data = raw.data || raw.config || raw;
-                if (data) homeConfig.set(data);
-            }
-        } catch (error) { console.error("Error loading home config:", error); }
-    },
+    saveHomeConfig: configService.saveHomeConfig,
+    loadHomeConfig: configService.loadHomeConfig,
 
     // --- 3. CATEGORY & BRAND STRUCTURE ---
-    async saveCategoryDataToFirestore(data) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const categoryRef = doc(db, "declarations", "categoryStructure");
-            await setDoc(categoryRef, { data: sanitizeForFirestore(data.categories || []) });
-            const brandRef = doc(db, "declarations", "brandList");
-            await setDoc(brandRef, { data: sanitizeForFirestore(data.brands || []) });
-            notify('Đồng bộ dữ liệu khai báo thành công!', 'success');
-        } catch (error) { 
-            console.error("Error saving category data:", error); 
-            notify('Lỗi khi đồng bộ dữ liệu lên cloud.', 'error'); 
-        }
-    },
+    saveCategoryDataToFirestore: categoryService.saveCategoryDataToFirestore,
+    loadCategoryDataFromFirestore: categoryService.loadCategoryDataFromFirestore,
 
-    async loadCategoryDataFromFirestore() {
-        const db = getDB();
-        if (!db) return { categories: [], brands: [] };
-        
-        try {
-            const catRef = doc(db, "declarations", "categoryStructure");
-            const brandRef = doc(db, "declarations", "brandList");
-            const [catSnap, brandSnap] = await Promise.all([getDoc(catRef), getDoc(brandRef)]);
-            const getArray = (snap) => {
-                if (!snap.exists()) return [];
-                const d = snap.data();
-                return d.data || d.items || d.list || [];
-            };
-            const categories = getArray(catSnap);
-            const brands = getArray(brandSnap);
-            
-            categoryStructure.set(categories);
-            brandList.set(brands);
-            return { categories, brands };
-        } catch (error) {
-            console.error("Error loading category data:", error);
-            return { categories: [], brands: [] };
-        }
-    },
+    // --- 4. SYSTEM REVENUE TABLES ---
+    loadSystemRevenueTables: performanceService.loadSystemRevenueTables,
+    saveSystemRevenueTables: performanceService.saveSystemRevenueTables,
 
-    // --- 4. SYSTEM REVENUE TABLES (BẢNG DOANH THU) ---
-    async loadSystemRevenueTables() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "systemRevenueTables");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                const tables = d.tables || d.data || d.items || [];
-                console.log(`[AdminService] Loaded ${tables.length} system revenue tables.`);
-                return tables;
-            }
-            return [];
-        } catch (e) {
-            console.error("Lỗi tải bảng hệ thống:", e);
-            return [];
-        }
-    },
-
-    async saveSystemRevenueTables(tables) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
-        try {
-            const docRef = doc(db, "declarations", "systemRevenueTables");
-            await setDoc(docRef, { 
-                tables: systemTables,
-                updatedAt: serverTimestamp() 
-            });
-            notify(`Đã lưu ${systemTables.length} bảng doanh thu hệ thống lên Cloud!`, 'success');
-        } catch (error) { 
-            console.error("Firebase Error Full:", error); 
-            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
-        }
-    },
-
-    // --- 4.5. SYSTEM PERFORMANCE TABLES (BẢNG HIỆU QUẢ) ---
-    async loadSystemPerformanceTables() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "systemPerformanceTables");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                const tables = d.tables || d.data || [];
-                console.log(`[AdminService] Loaded ${tables.length} system performance tables.`);
-                return tables;
-            }
-            return [];
-        } catch (e) {
-            console.error("Lỗi tải bảng hiệu quả hệ thống:", e);
-            return [];
-        }
-    },
-
-    async saveSystemPerformanceTables(tables) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        
-        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
-        
-        try {
-            const docRef = doc(db, "declarations", "systemPerformanceTables");
-            await setDoc(docRef, { 
-                tables: systemTables,
-                updatedAt: serverTimestamp() 
-            });
-            notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
-        } catch (error) { 
-            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error);
-            notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error'); 
-        }
-    },
+    // --- 4.5. SYSTEM PERFORMANCE TABLES ---
+    loadSystemPerformanceTables: performanceService.loadSystemPerformanceTables,
+    saveSystemPerformanceTables: performanceService.saveSystemPerformanceTables,
 
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
-    async loadMappingsGlobal() {
-        const db = getDB();
-        if (!db) return;
-        try {
-            console.log("[admin.service] Đang tải cấu hình Mapping & Data từ Cloud...");
-            const safeGet = (docSnap, defaultVal = []) => {
-                if (!docSnap.exists()) return defaultVal;
-                const d = docSnap.data();
-                return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
-            };
+    loadMappingsGlobal: categoryService.loadMappingsGlobal,
+    
+    saveMacroCategoryConfig: categoryService.saveMacroCategoryConfig,
+    loadMacroCategoryConfig: categoryService.loadMacroCategoryConfig,
 
-            const docsToLoad = [
-                "macroCategoryConfig", 
-                "macroProductGroupConfig", 
-                "categoryNameMapping", 
-                "groupNameMapping", 
-                "brandNameMapping",
-                "efficiencyConfig", 
-                "qdcConfig",
-                "competitionNameMappings",
-                "categoryStructure",
-                "brandList"
-            ];
-            
-            const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
-            const results = await Promise.all(promises);
-            
-            macroCategoryConfig.set(safeGet(results[0]));
-            macroProductGroupConfig.set(safeGet(results[1]));
-            categoryNameMapping.set(safeGet(results[2], {}));
-            groupNameMapping.set(safeGet(results[3], {}));
-            brandNameMapping.set(safeGet(results[4], {}));
-            efficiencyConfig.set(safeGet(results[5])); 
-            qdcConfigStore.set(safeGet(results[6]));
-            competitionNameMappings.set(safeGet(results[7], {}));
-            categoryStructure.set(safeGet(results[8]));
-            brandList.set(safeGet(results[9]));
+    saveMacroProductGroupConfig: categoryService.saveMacroProductGroupConfig,
+    loadMacroProductGroupConfig: categoryService.loadMacroProductGroupConfig,
 
-            console.log("[admin.service] Đã tải xong Mapping & Configs (bao gồm Cấu trúc).");
-        } catch (error) {
-            console.error("Error loading mappings:", error);
-        }
-    },
-
-    async saveMacroCategoryConfig(data) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const docRef = doc(db, "declarations", "macroCategoryConfig");
-            await setDoc(docRef, { data: sanitizeForFirestore(data) });
-            notify('Đã lưu Cấu hình Nhóm Ngành Hàng lớn!', 'success');
-        } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
-    },
-
-    async loadMacroCategoryConfig() {
-        const db = getDB();
-        const defaultData = [
-            { id: 'macro_dt', name: 'ĐIỆN TỬ', items: ['dt_tivi', 'dt_loa', 'Tivi', 'Loa', 'Dàn âm thanh', 'Tivi - Loa - Dàn máy'] },
-            { id: 'macro_dl', name: 'ĐIỆN LẠNH', items: ['dl_maylanh', 'dl_tulanh', 'dl_maygiat', 'Tủ lạnh', 'Máy lạnh', 'Máy giặt', 'Tủ đông', 'Tủ mát'] },
-            { id: 'macro_gd', name: 'GIA DỤNG', items: ['gd_quat', 'gd_noi', 'Gia dụng', 'Quạt', 'Nồi cơm', 'Bếp', 'Máy xay', 'Máy ép'] },
-            { id: 'macro_ict', name: 'ICT', items: ['ict_laptop', 'ict_phone', 'Laptop', 'Điện thoại', 'Tablet', 'Phụ kiện', 'Máy tính bảng'] }
-        ];
-
-        if (!db) return defaultData;
-        try {
-            const docRef = doc(db, "declarations", "macroCategoryConfig");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                const data = d.data || d.items || d.config || [];
-                if (data.length > 0) return data;
-            }
-            return defaultData;
-        } catch (e) {
-            console.error("Lỗi tải macroCategoryConfig:", e);
-            return defaultData;
-        }
-    },
-
-    async saveMacroProductGroupConfig(data) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const docRef = doc(db, "declarations", "macroProductGroupConfig");
-            await setDoc(docRef, { data: sanitizeForFirestore(data) });
-            notify('Đã lưu Cấu hình Nhóm Hàng Lớn!', 'success');
-        } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
-    },
-
-    async loadMacroProductGroupConfig() {
-        const db = getDB();
-        const defaultData = [];
-
-        if (!db) return defaultData;
-        try {
-            const docRef = doc(db, "declarations", "macroProductGroupConfig");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                const data = d.data || d.items || d.config || [];
-                if (data.length > 0) return data;
-            }
-            return defaultData;
-        } catch (e) {
-            console.error("Lỗi tải macroProductGroupConfig:", e);
-            return defaultData;
-        }
-    },
-
-    async saveNameMapping(type, data) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        let docId = '';
-        if (type === 'category') docId = 'categoryNameMapping';
-        else if (type === 'group') docId = 'groupNameMapping';
-        else if (type === 'brand') docId = 'brandNameMapping';
-        try {
-            const docRef = doc(db, "declarations", docId);
-            await setDoc(docRef, { data: sanitizeForFirestore(data) });
-            notify(`Đã lưu Mapping tên ${type}!`, 'success');
-        } catch (error) { console.error(error); notify('Lỗi lưu mapping: ' + error.message, 'error'); }
-    },
-
-    async saveCompetitionNameMappings(mappings) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const docRef = doc(db, "declarations", "competitionNameMappings");
-            await setDoc(docRef, { mappings: sanitizeForFirestore(mappings) });
-            notify('Đã lưu Bảng Ánh Xạ Tên Thi Đua thành công!', 'success');
-        } catch (error) {
-            console.error("Lỗi khi lưu Bảng Ánh Xạ Tên Thi Đua:", error);
-            notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
-        }
-    },
+    saveNameMapping: categoryService.saveNameMapping,
+    saveCompetitionNameMappings: categoryService.saveCompetitionNameMappings,
 
     // --- 6. LOGIC & CALCULATION ---
-    async loadDeclarationsFromFirestore() {
-        const db = getDB();
-        if (!db) return {}; 
-        try {
-            const declarationIds = ['hinhThucXuat', 'hinhThucXuatGop', 'heSoQuyDoi'];
-            const declarations = {};
-            await Promise.all(declarationIds.map(async (id) => {
-                const docRef = doc(db, "declarations", id);
-                const docSnap = await getDoc(docRef);
-                declarations[id] = docSnap.exists() ? (docSnap.data().content || '') : '';
-            }));
-            return declarations;
-        } catch (error) { console.error("Error loading declarations:", error); return {}; }
-    },
-
-    async saveDeclarationsToFirestore(declarations) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            await Promise.all([
-                setDoc(doc(db, "declarations", "hinhThucXuat"), { content: declarations.ycx }),
-                setDoc(doc(db, "declarations", "hinhThucXuatGop"), { content: declarations.ycxGop }),
-                setDoc(doc(db, "declarations", "heSoQuyDoi"), { content: declarations.heSo })
-            ]);
-            notify('Đồng bộ khai báo tính toán thành công!', 'success');
-        } catch (error) { console.error("Error saving declarations:", error); notify('Lỗi khi đồng bộ khai báo tính toán.', 'error'); }
-    },
+    loadDeclarationsFromFirestore: performanceService.loadDeclarationsFromFirestore,
+    saveDeclarationsToFirestore: performanceService.saveDeclarationsToFirestore,
 
     // --- 7. COMPETITION CONFIGS ---
-    async saveGlobalCompetitionConfigs(configs) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const docRef = doc(db, "declarations", "globalCompetitionConfigs");
-            await setDoc(docRef, { configs: sanitizeForFirestore(configs) });
-        } catch (error) { console.error("Error saving global comps:", error); }
-    },
-
-    async loadGlobalCompetitionConfigs() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "globalCompetitionConfigs");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                return d.configs || d.data || [];
-            }
-            return [];
-        } catch (error) { return []; }
-    },
+    saveGlobalCompetitionConfigs: performanceService.saveGlobalCompetitionConfigs,
+    loadGlobalCompetitionConfigs: performanceService.loadGlobalCompetitionConfigs,
 
     // --- 8. SPECIAL PRODUCTS ---
-    async saveSpecialProductList(products) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        try {
-            const docRef = doc(db, "declarations", "specialProductList");
-            await setDoc(docRef, { products: sanitizeForFirestore(products) });
-            notify('Đã lưu Danh sách SPĐQ thành công!', 'success');
-        } catch (error) { console.error("Error saving special product list:", error); notify('Lỗi khi lưu danh sách SPĐQ.', 'error'); }
-    },
-
-    async loadSpecialProductList() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "specialProductList");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                return d.products || d.data || [];
-            }
-            return [];
-        } catch (error) { console.error("Error loading SPĐQ:", error); return []; }
-    },
-
-    async loadGlobalSpecialPrograms() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "globalSpecialPrograms");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                return d.programs || d.configs || d.data || [];
-            }
-            return [];
-        } catch (error) { return []; }
-    },
+    saveSpecialProductList: categoryService.saveSpecialProductList,
+    loadSpecialProductList: categoryService.loadSpecialProductList,
+    loadGlobalSpecialPrograms: categoryService.loadGlobalSpecialPrograms,
 
     // --- 9. EFFICIENCY & QDC CONFIGS ---
-    async saveEfficiencyConfig(config) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!get(isAdmin)) { notify("Bạn cần quyền Admin!", "error"); return; }
-        
-        try {
-            const docRef = doc(db, "declarations", "efficiencyConfig");
-            await setDoc(docRef, { 
-                data: sanitizeForFirestore(config),
-                updatedAt: serverTimestamp() 
-            });
-            efficiencyConfig.set(config);
-            notify('Đã lưu cấu hình Bảng Hiệu quả hệ thống!', 'success');
-        } catch (e) { 
-            console.error(e); 
-            notify('Lỗi lưu config: ' + e.message, 'error'); 
-        }
-    },
-
-    async loadEfficiencyConfig() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "efficiencyConfig");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                const data = d.data || d.items || d.config || [];
-                console.log(`[AdminService] Loaded efficiency config: ${data.length} items`);
-                return data;
-            }
-            return [];
-        } catch (e) { 
-            console.error("Lỗi tải efficiency config:", e);
-            return []; 
-        }
-    },
+    saveEfficiencyConfig: performanceService.saveEfficiencyConfig,
+    loadEfficiencyConfig: performanceService.loadEfficiencyConfig,
     
-    async saveQdcConfig(selectedGroups) {
-         const db = getDB();
-        if (!db || !get(isAdmin)) return;
-        try {
-            const docRef = doc(db, "declarations", "qdcConfig");
-            await setDoc(docRef, { data: sanitizeForFirestore(selectedGroups) });
-            qdcConfigStore.set(selectedGroups);
-        } catch (e) { console.error(e); }
-    },
-    
-    async loadQdcConfig() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "qdcConfig");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                return d.data || d.config || d.items || [];
-            }
-            return [];
-        } catch (e) { return []; }
-    },
+    saveQdcConfig: performanceService.saveQdcConfig,
+    loadQdcConfig: performanceService.loadQdcConfig,
 
-    // [MỚI] Hàm upload ảnh sử dụng Firebase Storage
-    async uploadImage(file, folder = 'slides') {
-        const fb = get(firebaseStore);
-        // Kiểm tra storage đã được khởi tạo trong firebaseStore chưa
-        if (!fb.storage) {
-            console.warn("Firebase Storage chưa được khởi tạo trong firebaseStore.");
-            // Fallback: Nếu không có storage, trả về null để code bên ngoài xử lý
-            return null;
-        }
-
-        try {
-            // Tạo tên file unique
-            const fileName = `${Date.now()}_${file.name}`;
-            const storageRef = ref(fb.storage, `${folder}/${fileName}`);
-            
-            const snapshot = await uploadBytes(storageRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            return downloadURL;
-        } catch (error) {
-            console.error("Upload failed:", error);
-            throw error;
-        }
-    }
+    // --- 10. UPLOAD ---
+    uploadImage: configService.uploadImage
 };
 
 ================================================================================
@@ -2680,72 +2205,684 @@ export const datasyncService = {
 };
 
 ================================================================================
+File: src/services/declarations/category.service.js
+================================================================================
+
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { 
+    macroCategoryConfig, 
+    macroProductGroupConfig, 
+    categoryNameMapping, 
+    groupNameMapping,
+    brandNameMapping,
+    categoryStructure, 
+    brandList,
+    efficiencyConfig,
+    qdcConfigStore,
+    competitionNameMappings
+} from '../../stores.js';
+import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
+
+export const categoryService = {
+    // --- CATEGORY & BRAND STRUCTURE ---
+    async saveCategoryDataToFirestore(data) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const categoryRef = doc(db, "declarations", "categoryStructure");
+            await setDoc(categoryRef, { data: sanitizeForFirestore(data.categories || []) });
+            const brandRef = doc(db, "declarations", "brandList");
+            await setDoc(brandRef, { data: sanitizeForFirestore(data.brands || []) });
+            notify('Đồng bộ dữ liệu khai báo thành công!', 'success');
+        } catch (error) { 
+            console.error("Error saving category data:", error);
+            notify('Lỗi khi đồng bộ dữ liệu lên cloud.', 'error'); 
+        }
+    },
+
+    async loadCategoryDataFromFirestore() {
+        const db = getDB();
+        if (!db) return { categories: [], brands: [] };
+        
+        try {
+            const catRef = doc(db, "declarations", "categoryStructure");
+            const brandRef = doc(db, "declarations", "brandList");
+            const [catSnap, brandSnap] = await Promise.all([getDoc(catRef), getDoc(brandRef)]);
+            const getArray = (snap) => {
+                if (!snap.exists()) return [];
+                const d = snap.data();
+                return d.data || d.items || d.list || [];
+            };
+            const categories = getArray(catSnap);
+            const brands = getArray(brandSnap);
+            
+            categoryStructure.set(categories);
+            brandList.set(brands);
+            return { categories, brands };
+        } catch (error) {
+            console.error("Error loading category data:", error);
+            return { categories: [], brands: [] };
+        }
+    },
+
+    // --- MAPPINGS & CONFIGS GLOBAL (LOAD ALL) ---
+    async loadMappingsGlobal() {
+        const db = getDB();
+        if (!db) return;
+        try {
+            console.log("[declarations.category] Đang tải cấu hình Mapping & Data từ Cloud...");
+            const safeGet = (docSnap, defaultVal = []) => {
+                if (!docSnap.exists()) return defaultVal;
+                const d = docSnap.data();
+                return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
+            };
+            const docsToLoad = [
+                "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping", 
+                "groupNameMapping", "brandNameMapping", "efficiencyConfig", 
+                "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList"
+            ];
+            const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
+            const results = await Promise.all(promises);
+            
+            macroCategoryConfig.set(safeGet(results[0]));
+            macroProductGroupConfig.set(safeGet(results[1]));
+            categoryNameMapping.set(safeGet(results[2], {}));
+            groupNameMapping.set(safeGet(results[3], {}));
+            brandNameMapping.set(safeGet(results[4], {}));
+            efficiencyConfig.set(safeGet(results[5])); 
+            qdcConfigStore.set(safeGet(results[6]));
+            competitionNameMappings.set(safeGet(results[7], {}));
+            categoryStructure.set(safeGet(results[8]));
+            brandList.set(safeGet(results[9]));
+
+            console.log("[declarations.category] Đã tải xong Mapping & Configs.");
+        } catch (error) {
+            console.error("Error loading mappings:", error);
+        }
+    },
+
+    // --- MACRO CONFIGS ---
+    async saveMacroCategoryConfig(data) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "macroCategoryConfig");
+            await setDoc(docRef, { data: sanitizeForFirestore(data) });
+            notify('Đã lưu Cấu hình Nhóm Ngành Hàng lớn!', 'success');
+        } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
+    },
+
+    async loadMacroCategoryConfig() {
+        const db = getDB();
+        const defaultData = [
+            { id: 'macro_dt', name: 'ĐIỆN TỬ', items: ['dt_tivi', 'dt_loa', 'Tivi', 'Loa', 'Dàn âm thanh', 'Tivi - Loa - Dàn máy'] },
+            { id: 'macro_dl', name: 'ĐIỆN LẠNH', items: ['dl_maylanh', 'dl_tulanh', 'dl_maygiat', 'Tủ lạnh', 'Máy lạnh', 'Máy giặt', 'Tủ đông', 'Tủ mát'] },
+            { id: 'macro_gd', name: 'GIA DỤNG', items: ['gd_quat', 'gd_noi', 'Gia dụng', 'Quạt', 'Nồi cơm', 'Bếp', 'Máy xay', 'Máy ép'] },
+            { id: 'macro_ict', name: 'ICT', items: ['ict_laptop', 'ict_phone', 'Laptop', 'Điện thoại', 'Tablet', 'Phụ kiện', 'Máy tính bảng'] }
+        ];
+        if (!db) return defaultData;
+        try {
+            const docRef = doc(db, "declarations", "macroCategoryConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const data = d.data || d.items || d.config || [];
+                if (data.length > 0) return data;
+            }
+            return defaultData;
+        } catch (e) { console.error("Lỗi tải macroCategoryConfig:", e); return defaultData; }
+    },
+
+    async saveMacroProductGroupConfig(data) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "macroProductGroupConfig");
+            await setDoc(docRef, { data: sanitizeForFirestore(data) });
+            notify('Đã lưu Cấu hình Nhóm Hàng Lớn!', 'success');
+        } catch (error) { console.error(error); notify('Lỗi lưu cấu hình: ' + error.message, 'error'); }
+    },
+
+    async loadMacroProductGroupConfig() {
+        const db = getDB();
+        const defaultData = [];
+        if (!db) return defaultData;
+        try {
+            const docRef = doc(db, "declarations", "macroProductGroupConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const data = d.data || d.items || d.config || [];
+                if (data.length > 0) return data;
+            }
+            return defaultData;
+        } catch (e) { console.error("Lỗi tải macroProductGroupConfig:", e); return defaultData; }
+    },
+
+    // --- NAME MAPPINGS ---
+    async saveNameMapping(type, data) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        let docId = '';
+        if (type === 'category') docId = 'categoryNameMapping';
+        else if (type === 'group') docId = 'groupNameMapping';
+        else if (type === 'brand') docId = 'brandNameMapping';
+        try {
+            const docRef = doc(db, "declarations", docId);
+            await setDoc(docRef, { data: sanitizeForFirestore(data) });
+            notify(`Đã lưu Mapping tên ${type}!`, 'success');
+        } catch (error) { console.error(error); notify('Lỗi lưu mapping: ' + error.message, 'error'); }
+    },
+
+    async saveCompetitionNameMappings(mappings) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "competitionNameMappings");
+            await setDoc(docRef, { mappings: sanitizeForFirestore(mappings) });
+            notify('Đã lưu Bảng Ánh Xạ Tên Thi Đua thành công!', 'success');
+        } catch (error) {
+            console.error("Lỗi khi lưu Bảng Ánh Xạ Tên Thi Đua:", error);
+            notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
+        }
+    },
+
+    // --- SPECIAL PRODUCTS ---
+    async saveSpecialProductList(products) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "specialProductList");
+            await setDoc(docRef, { products: sanitizeForFirestore(products) });
+            notify('Đã lưu Danh sách SPĐQ thành công!', 'success');
+        } catch (error) { console.error("Error saving special product list:", error); notify('Lỗi khi lưu danh sách SPĐQ.', 'error'); }
+    },
+
+    async loadSpecialProductList() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "specialProductList");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.products || d.data || [];
+            }
+            return [];
+        } catch (error) { console.error("Error loading SPĐQ:", error); return []; }
+    },
+
+    async loadGlobalSpecialPrograms() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "globalSpecialPrograms");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.programs || d.configs || d.data || [];
+            }
+            return [];
+        } catch (error) { return []; }
+    },
+};
+
+================================================================================
+File: src/services/declarations/config.service.js
+================================================================================
+
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { get } from 'svelte/store';
+import { firebaseStore, homeConfig } from '../../stores.js';
+import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
+
+export const configService = {
+    // --- HELP CONTENT ---
+    async saveHelpContent(contents) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+
+        try {
+            await Promise.all([
+                setDoc(doc(db, "help_content", "data"), { content: contents.data }),
+                setDoc(doc(db, "help_content", "luyke"), { content: contents.luyke }),
+                setDoc(doc(db, "help_content", "sknv"), { content: contents.sknv }),
+                setDoc(doc(db, "help_content", "realtime"), { content: contents.realtime })
+            ]);
+            notify('Đã cập nhật nội dung hướng dẫn thành công!', 'success');
+        } catch (error) { 
+            console.error("Error saving help content:", error);
+            notify('Lỗi khi lưu nội dung hướng dẫn.', 'error'); 
+        }
+    },
+
+    // --- HOME CONFIG ---
+    async saveHomeConfig(configData) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+
+        try {
+            const docRef = doc(db, "declarations", "homeConfig");
+            await setDoc(docRef, { data: sanitizeForFirestore(configData) });
+            homeConfig.set(configData);
+            notify('Đã lưu cấu hình Trang chủ thành công!', 'success');
+        } catch (error) { 
+            console.error("Error saving home config:", error);
+            notify('Lỗi khi lưu cấu hình trang chủ: ' + error.message, 'error');
+        }
+    },
+
+    async loadHomeConfig() {
+        const db = getDB();
+        if (!db) return;
+        try {
+            const docRef = doc(db, "declarations", "homeConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const raw = docSnap.data();
+                const data = raw.data || raw.config || raw;
+                if (data) homeConfig.set(data);
+            }
+        } catch (error) { console.error("Error loading home config:", error); }
+    },
+
+    // --- UPLOAD IMAGE ---
+    async uploadImage(file, folder = 'slides') {
+        const fb = get(firebaseStore);
+        if (!fb.storage) {
+            console.warn("Firebase Storage chưa được khởi tạo trong firebaseStore.");
+            return null;
+        }
+
+        try {
+            const fileName = `${Date.now()}_${file.name}`;
+            const storageRef = ref(fb.storage, `${folder}/${fileName}`);
+            
+            const snapshot = await uploadBytes(storageRef, file);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            return downloadURL;
+        } catch (error) {
+            console.error("Upload failed:", error);
+            throw error;
+        }
+    }
+};
+
+================================================================================
+File: src/services/declarations/performance.service.js
+================================================================================
+
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { efficiencyConfig, qdcConfigStore } from '../../stores.js';
+import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
+
+export const performanceService = {
+    // --- SYSTEM REVENUE TABLES ---
+    async loadSystemRevenueTables() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "systemRevenueTables");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const tables = d.tables || d.data || d.items || [];
+                console.log(`[PerformanceService] Loaded ${tables.length} system revenue tables.`);
+                return tables;
+            }
+            return [];
+        } catch (e) {
+            console.error("Lỗi tải bảng hệ thống:", e);
+            return [];
+        }
+    },
+
+    async saveSystemRevenueTables(tables) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
+        try {
+            const docRef = doc(db, "declarations", "systemRevenueTables");
+            await setDoc(docRef, { tables: systemTables, updatedAt: serverTimestamp() });
+            notify(`Đã lưu ${systemTables.length} bảng doanh thu hệ thống lên Cloud!`, 'success');
+        } catch (error) { 
+            console.error("Firebase Error Full:", error);
+            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
+        }
+    },
+
+    // --- SYSTEM PERFORMANCE TABLES ---
+    async loadSystemPerformanceTables() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "systemPerformanceTables");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const tables = d.tables || d.data || [];
+                console.log(`[PerformanceService] Loaded ${tables.length} system performance tables.`);
+                return tables;
+            }
+            return [];
+        } catch (e) {
+            console.error("Lỗi tải bảng hiệu quả hệ thống:", e);
+            return [];
+        }
+    },
+
+    async saveSystemPerformanceTables(tables) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        
+        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
+        try {
+            const docRef = doc(db, "declarations", "systemPerformanceTables");
+            await setDoc(docRef, { tables: systemTables, updatedAt: serverTimestamp() });
+            notify(`Đã lưu ${systemTables.length} bảng hiệu quả hệ thống lên Cloud!`, 'success');
+        } catch (error) { 
+            console.error("Lỗi lưu bảng hiệu quả hệ thống:", error);
+            notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error');
+        }
+    },
+
+    // --- LOGIC & CALCULATION ---
+    async loadDeclarationsFromFirestore() {
+        const db = getDB();
+        if (!db) return {}; 
+        try {
+            const declarationIds = ['hinhThucXuat', 'hinhThucXuatGop', 'heSoQuyDoi'];
+            const declarations = {};
+            await Promise.all(declarationIds.map(async (id) => {
+                const docRef = doc(db, "declarations", id);
+                const docSnap = await getDoc(docRef);
+                declarations[id] = docSnap.exists() ? (docSnap.data().content || '') : '';
+            }));
+            return declarations;
+        } catch (error) { console.error("Error loading declarations:", error); return {}; }
+    },
+
+    async saveDeclarationsToFirestore(declarations) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            await Promise.all([
+                setDoc(doc(db, "declarations", "hinhThucXuat"), { content: declarations.ycx }),
+                setDoc(doc(db, "declarations", "hinhThucXuatGop"), { content: declarations.ycxGop }),
+                setDoc(doc(db, "declarations", "heSoQuyDoi"), { content: declarations.heSo })
+            ]);
+            notify('Đồng bộ khai báo tính toán thành công!', 'success');
+        } catch (error) { console.error("Error saving declarations:", error); notify('Lỗi khi đồng bộ khai báo tính toán.', 'error'); }
+    },
+
+    // --- GLOBAL COMPETITION CONFIGS ---
+    async saveGlobalCompetitionConfigs(configs) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "globalCompetitionConfigs");
+            await setDoc(docRef, { configs: sanitizeForFirestore(configs) });
+        } catch (error) { console.error("Error saving global comps:", error); }
+    },
+
+    async loadGlobalCompetitionConfigs() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "globalCompetitionConfigs");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.configs || d.data || [];
+            }
+            return [];
+        } catch (error) { return []; }
+    },
+
+    // --- EFFICIENCY & QDC CONFIGS ---
+    async saveEfficiencyConfig(config) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "efficiencyConfig");
+            await setDoc(docRef, { data: sanitizeForFirestore(config), updatedAt: serverTimestamp() });
+            efficiencyConfig.set(config);
+            notify('Đã lưu cấu hình Bảng Hiệu quả hệ thống!', 'success');
+        } catch (e) { console.error(e); notify('Lỗi lưu config: ' + e.message, 'error'); }
+    },
+
+    async loadEfficiencyConfig() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "efficiencyConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                const data = d.data || d.items || d.config || [];
+                return data;
+            }
+            return [];
+        } catch (e) { console.error("Lỗi tải efficiency config:", e); return []; }
+    },
+    
+    async saveQdcConfig(selectedGroups) {
+         const db = getDB();
+        if (!db || !checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "qdcConfig");
+            await setDoc(docRef, { data: sanitizeForFirestore(selectedGroups) });
+            qdcConfigStore.set(selectedGroups);
+        } catch (e) { console.error(e); }
+    },
+    
+    async loadQdcConfig() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "qdcConfig");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.data || d.config || d.items || [];
+            }
+            return [];
+        } catch (e) { return []; }
+    },
+};
+
+================================================================================
+File: src/services/declarations/utils.js
+================================================================================
+
+import { get } from 'svelte/store';
+import { firebaseStore, isAdmin } from '../../stores.js'; // Lưu ý: ../../ vì đang ở trong services/declarations
+
+export const getDB = () => {
+    const fb = get(firebaseStore);
+    if (!fb.db) {
+        console.warn("Firestore chưa được khởi tạo.");
+        return null;
+    }
+    return fb.db;
+};
+
+export const notify = (msg, type='info') => {
+    console.log(`[${type.toUpperCase()}] ${msg}`);
+    if(type === 'success' || type === 'error') alert(msg);
+};
+
+export const sanitizeForFirestore = (obj) => {
+    return JSON.parse(JSON.stringify(obj, (key, value) => {
+        return value === undefined ? null : value;
+    }));
+};
+
+export const checkAdmin = () => {
+    if (!get(isAdmin)) {
+        notify("Bạn cần quyền Admin để thực hiện thao tác này!", "error");
+        return false;
+    }
+    return true;
+};
+
+
+================================================================================
 File: src/services/employeeService.js
 ================================================================================
 
-// src/services/employeeService.js
-// Version 1.1 - Fix Warehouse Selector auto-reset bug on F5
-// MỤC ĐÍCH: Chỉ quản lý state của nhân viên và kho.
 import { get } from 'svelte/store';
-import {
-    danhSachNhanVien,
-    employeeMaNVMap,
-    employeeNameToMaNVMap,
-    warehouseList,
-    selectedWarehouse
-} from '../stores.js';
+import { currentCluster } from '../stores.js';
+
+// ==========================================
+// CONFIGURATION
+// ==========================================
+const API_BASE_URL = 'http://localhost:3000/api'; 
+const NETWORK_DELAY = 500; // Giả lập độ trễ mạng (ms)
+
+// ==========================================
+// HELPER FUNCTIONS (Hàm hỗ trợ)
+// ==========================================
+
+// Hàm check an toàn: Luôn đảm bảo đã chọn Cluster trước khi gọi API
+const getClusterIdOrThrow = () => {
+    const cluster = get(currentCluster);
+    if (!cluster || !cluster.id) {
+        throw new Error("MISSING_CLUSTER_ID: Vui lòng chọn Cluster trước.");
+    }
+    return cluster.id;
+};
+
+// Hàm xử lý lỗi chung cho toàn bộ service
+const handleApiError = (error, context) => {
+    console.error(`[EmployeeService] Error in ${context}:`, error);
+    // Có thể thêm logic gửi log lên server hoặc hiển thị Toast thông báo lỗi ở đây
+    throw error;
+};
+
+// ==========================================
+// MAIN SERVICE FUNCTIONS (CRUD)
+// ==========================================
 
 /**
- * Logic "Tự động lắng nghe".
- * Tự động chạy mỗi khi store 'danhSachNhanVien' bị thay đổi.
+ * 1. GET ALL: Lấy danh sách nhân viên theo Cluster hiện tại
  */
-danhSachNhanVien.subscribe($danhSachNhanVien => {
-    const newMaNVMap = new Map();
-    const newNameMap = new Map();
-    const newWarehouseList = new Set(); 
+export const fetchEmployees = async () => {
+    try {
+        const clusterId = getClusterIdOrThrow();
+        console.log(`[GET] Fetching employees for Cluster ${clusterId}...`);
 
-    if (!$danhSachNhanVien || $danhSachNhanVien.length === 0) {
-        console.warn("[EmployeeService] DSNV rỗng, không thể tạo maps và danh sách kho.");
-    } else {
-        $danhSachNhanVien.forEach(nv => {
-            if (nv.maNV) newMaNVMap.set(String(nv.maNV).trim(), nv);
-            if (nv.hoTen) newNameMap.set(nv.hoTen.toLowerCase().replace(/\s+/g, ' '), String(nv.maNV).trim());
-            if (nv.maKho) newWarehouseList.add(String(nv.maKho).trim());
-        });
-  
-        console.log(`[EmployeeService] Đã tự động cập nhật Employee Maps: ${newMaNVMap.size} MSNV, ${newNameMap.size} Tên.`);
+        // --- REAL API CODE (Uncomment khi có Server) ---
+        // const res = await fetch(`${API_BASE_URL}/clusters/${clusterId}/employees`);
+        // if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+        // return await res.json();
+
+        // --- MOCK DATA (Dữ liệu giả) ---
+        await new Promise(r => setTimeout(r, NETWORK_DELAY));
+        return [
+            { id: 1, code: 'NV001', name: 'Nguyễn Văn A', position: 'Frontend Dev', clusterId },
+            { id: 2, code: 'NV002', name: 'Trần Thị B', position: 'Backend Dev', clusterId },
+            { id: 3, code: 'NV003', name: 'Lê Văn C', position: 'Tester', clusterId },
+            { id: 4, code: 'NV004', name: 'Phạm Thị D', position: 'Product Owner', clusterId },
+            { id: 5, code: 'NV005', name: 'Hoàng Văn E', position: 'Designer', clusterId },
+        ];
+    } catch (error) {
+        handleApiError(error, 'fetchEmployees');
+        return []; // Trả về mảng rỗng để UI không bị crash
     }
+};
 
-    // Cập nhật các stores
-    employeeMaNVMap.set(newMaNVMap);
-    employeeNameToMaNVMap.set(newNameMap);
-    
-    const sortedWarehouses = [...newWarehouseList].sort();
-    warehouseList.set(sortedWarehouses);
-    
-    // Tự động chọn kho đã lưu
-    const savedWarehouse = localStorage.getItem('selectedWarehouse');
-    const currentSelected = get(selectedWarehouse);
+/**
+ * 2. GET DETAILS: Lấy chi tiết 1 nhân viên
+ */
+export const getEmployeeById = async (employeeId) => {
+    try {
+        const clusterId = getClusterIdOrThrow();
+        console.log(`[GET] Fetching details for employee ${employeeId}...`);
 
-    if (savedWarehouse && newWarehouseList.has(savedWarehouse)) {
-        // Trường hợp 1: Có kho lưu trong LocalStorage và nó hợp lệ trong danh sách mới
-        if (currentSelected !== savedWarehouse) {
-            selectedWarehouse.set(savedWarehouse);
-            console.log(`[EmployeeService] Đã tự động chọn kho đã lưu: ${savedWarehouse}`);
-        }
-    } else if (currentSelected) {
-        // Trường hợp 2: Đang có kho được chọn trong Store
-        // [FIX] Chỉ reset nếu danh sách kho MỚI có dữ liệu (đã tải xong) nhưng không chứa kho hiện tại.
-        // Nếu danh sách rỗng (đang tải), GIỮ NGUYÊN để tránh reset nhầm khi F5.
-        if (newWarehouseList.size > 0 && !newWarehouseList.has(currentSelected)) {
-            selectedWarehouse.set(null);
-            localStorage.removeItem('selectedWarehouse');
-            console.warn(`[EmployeeService] Kho đã chọn (${currentSelected}) không còn tồn tại trong danh sách mới. Đã reset.`);
-        } else {
-             console.log(`[EmployeeService] Giữ nguyên kho ${currentSelected} (Danh sách kho đang tải hoặc kho hợp lệ).`);
-        }
+        // Call API...
+        await new Promise(r => setTimeout(r, NETWORK_DELAY));
+        return { 
+            id: employeeId, 
+            name: 'Nguyễn Văn A', 
+            email: 'a.nguyen@example.com', 
+            phone: '0909123456',
+            clusterId 
+        };
+    } catch (error) {
+        handleApiError(error, 'getEmployeeById');
     }
-});
+};
+
+/**
+ * 3. CREATE: Thêm nhân viên mới vào Cluster hiện tại
+ */
+export const createEmployee = async (payload) => {
+    try {
+        const clusterId = getClusterIdOrThrow();
+        const dataToSend = { ...payload, clusterId }; // Gắn ID cluster vào data
+
+        console.log(`[POST] Creating employee in Cluster ${clusterId}:`, dataToSend);
+
+        // Call API...
+        // const res = await fetch(`${API_BASE_URL}/employees`, {
+        //     method: 'POST',
+        //     headers: { 'Content-Type': 'application/json' },
+        //     body: JSON.stringify(dataToSend)
+        // });
+        
+        await new Promise(r => setTimeout(r, NETWORK_DELAY));
+        return { success: true, newId: Math.floor(Math.random() * 1000) };
+    } catch (error) {
+        handleApiError(error, 'createEmployee');
+    }
+};
+
+/**
+ * 4. UPDATE: Cập nhật thông tin nhân viên
+ */
+export const updateEmployee = async (id, payload) => {
+    try {
+        getClusterIdOrThrow(); // Vẫn check cluster cho chắc chắn
+        console.log(`[PUT] Updating employee ${id}:`, payload);
+
+        // Call API...
+        await new Promise(r => setTimeout(r, NETWORK_DELAY));
+        return { success: true };
+    } catch (error) {
+        handleApiError(error, 'updateEmployee');
+    }
+};
+
+/**
+ * 5. DELETE: Xóa nhân viên
+ */
+export const deleteEmployee = async (id) => {
+    try {
+        getClusterIdOrThrow();
+        console.log(`[DELETE] Removing employee ${id}...`);
+
+        // Call API...
+        await new Promise(r => setTimeout(r, NETWORK_DELAY));
+        return { success: true };
+    } catch (error) {
+        handleApiError(error, 'deleteEmployee');
+    }
+};
 
 ================================================================================
 File: src/services/excel.service.js
@@ -3662,6 +3799,149 @@ export const normalizers = {
         debugInfo.update(currentInfo => ({ ...currentInfo, [fileType]: newDebugInfo }));
         
         return { normalizedData, success: true, missingColumns: [] };
+    }
+};
+
+================================================================================
+File: src/services/processing/parsers/employee.parser.js
+================================================================================
+
+// src/services/processing/parsers/employee.parser.js
+import { excelService } from '../../excel.service.js';
+
+export const employeeParser = {
+    /**
+     * Parse file Excel nhân viên và trả về cấu trúc dữ liệu chuẩn hóa
+     * @param {File} file - File Excel upload
+     * @returns {Promise<{
+     * employees: Array, 
+     * warehouses: Array, 
+     * clusters: Object, 
+     * isClusterMode: boolean 
+     * }>}
+     */
+    async parse(file) {
+        try {
+            // 1. Đọc dữ liệu thô từ Excel
+            const rawData = await excelService.read(file);
+            if (!rawData || rawData.length === 0) {
+                throw new Error("File không có dữ liệu!");
+            }
+
+            // 2. Tìm dòng header (chứa 'MSNV' hoặc 'Mã nhân viên')
+            const headerRowIndex = this._findHeaderRow(rawData);
+            if (headerRowIndex === -1) {
+                throw new Error("Không tìm thấy dòng tiêu đề (cần cột MSNV, Họ tên, Mã kho...)");
+            }
+
+            // 3. Map cột
+            const headers = rawData[headerRowIndex].map(h => String(h).trim().toLowerCase());
+            const colMap = this._mapColumns(headers);
+
+            // 4. Duyệt qua dữ liệu và chuẩn hóa
+            const employees = [];
+            const warehouseSet = new Set();
+            const clusterMap = {}; // { "908": ["Kho1", "Kho2"] }
+            let hasClusterColumn = colMap.cluster !== -1;
+
+            for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                const row = rawData[i];
+                // Bỏ qua dòng trống
+                if (!row || row.length === 0) continue;
+
+                const msnv = this._getCell(row, colMap.msnv);
+                const ten = this._getCell(row, colMap.name);
+                const maKho = this._getCell(row, colMap.warehouse);
+                const rawCluster = hasClusterColumn ? this._getCell(row, colMap.cluster) : '';
+
+                // Chỉ lấy dòng có MSNV và Mã Kho
+                if (msnv && maKho) {
+                    const emp = {
+                        msnv: String(msnv).trim(),
+                        hoTen: String(ten).trim(),
+                        boPhan: this._getCell(row, colMap.dept) || 'Cửa hàng',
+                        maKho: String(maKho).trim(),
+                        maCum: this._parseClusterCode(rawCluster) // Xử lý "Cụm 908" -> "908"
+                    };
+
+                    employees.push(emp);
+                    warehouseSet.add(emp.maKho);
+
+                    // Logic gom nhóm Cụm
+                    if (emp.maCum) {
+                        if (!clusterMap[emp.maCum]) {
+                            clusterMap[emp.maCum] = new Set();
+                        }
+                        clusterMap[emp.maCum].add(emp.maKho);
+                    }
+                }
+            }
+
+            // 5. Chuyển Set thành Array để trả về
+            const finalWarehouses = Array.from(warehouseSet).sort();
+            
+            // Chuyển Cluster Map: Set -> Array
+            const finalClusters = {};
+            Object.keys(clusterMap).forEach(key => {
+                finalClusters[key] = Array.from(clusterMap[key]).sort();
+            });
+
+            // Xác định chế độ: Nếu có > 1 mã kho và có cột cụm -> Cluster Mode
+            const isClusterMode = finalWarehouses.length > 1 && Object.keys(finalClusters).length > 0;
+
+            return {
+                employees,
+                warehouses: finalWarehouses,
+                clusters: finalClusters,
+                isClusterMode
+            };
+
+        } catch (error) {
+            console.error("[EmployeeParser] Parsing error:", error);
+            throw error;
+        }
+    },
+
+    // --- Helpers ---
+
+    _findHeaderRow(data) {
+        // Quét 10 dòng đầu để tìm header
+        for (let i = 0; i < Math.min(data.length, 10); i++) {
+            const rowStr = JSON.stringify(data[i]).toLowerCase();
+            if (rowStr.includes('msnv') || rowStr.includes('mã nhân viên')) {
+                return i;
+            }
+        }
+        return -1;
+    },
+
+    _mapColumns(headers) {
+        return {
+            msnv: headers.findIndex(h => h.includes('msnv') || h.includes('mã nhân viên') || h.includes('mã nv')),
+            name: headers.findIndex(h => h.includes('họ tên') || h.includes('tên nhân viên') || h.includes('tên nv')),
+            dept: headers.findIndex(h => h.includes('bộ phận') || h.includes('phòng ban')),
+            warehouse: headers.findIndex(h => h.includes('mã kho') || h.includes('kho') || h.includes('cửa hàng')),
+            cluster: headers.findIndex(h => h.includes('mã cụm') || h.includes('cụm'))
+        };
+    },
+
+    _getCell(row, index) {
+        if (index === -1 || !row[index]) return '';
+        return row[index];
+    },
+
+    /**
+     * Tách mã cụm từ chuỗi
+     * VD: "Cụm 908" -> "908"
+     * VD: "Khu vực 908" -> "908"
+     * VD: "908" -> "908"
+     */
+    _parseClusterCode(rawStr) {
+        if (!rawStr) return '';
+        const str = String(rawStr).trim();
+        // Regex tìm chuỗi số liên tiếp cuối cùng hoặc đầu tiên
+        const match = str.match(/\d+/); 
+        return match ? match[0] : str;
     }
 };
 
