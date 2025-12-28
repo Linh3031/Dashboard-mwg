@@ -2,7 +2,6 @@
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
-  
   // [CODEGENESIS] Import Store & Logic màu sắc mới
   import { kpiStore } from '../../../stores.js';
   import { getCompletionColor } from '../../../utils/kpi.utils.js';
@@ -14,7 +13,6 @@
   let sortDirection = 'desc';
   let groupedData = {};
   let departmentOrder = [];
-
   // Reactive statement để nhóm dữ liệu
   $: {
       groupedData = {};
@@ -91,7 +89,7 @@
                   { id: 'hieuQuaQuyDoi', label: '% QĐ', group: 'bg-blue-50 text-blue-800' },
                   { id: 'doanhThuTraGop', label: 'DT Trả chậm', group: 'bg-green-50 text-green-800' },
                   { id: 'tyLeTraCham', label: '% Trả chậm', group: 'bg-green-50 text-green-800' },
-                  { id: 'doanhThuChuaXuat', label: 'DT Chưa xuất', group: 'bg-yellow-50 text-yellow-800' }
+                  { id: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa xuất', group: 'bg-yellow-50 text-yellow-800' }
                 ] as col}
                   <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition select-none {col.group}" on:click={() => handleSort(col.id)}>
                     <div class="flex items-center justify-end gap-1 whitespace-nowrap">
@@ -126,7 +124,7 @@
                   
                   <td class="px-4 py-2 text-right font-bold {tcClass}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
                   
-                  <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuChuaXuat)}</td>
+                  <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
                 </tr>
               {/each}
             </tbody>

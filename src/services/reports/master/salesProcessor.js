@@ -4,14 +4,15 @@ import { normalize } from './utils.js';
 import { dataProcessing } from '../../dataProcessing.js';
 import { parseIdentity } from '../../../utils.js';
 
-// [FIX] Hàm xử lý số an toàn cho định dạng tiền tệ VN (loại bỏ dấu chấm/phẩy phân cách)
-const parseSafeNumber = (value) => {
+// [FIX] Hàm xử lý số an toàn (COPY Y HỆT detail.report.js)
+const parseMoney = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
-    // Chuyển về chuỗi, loại bỏ mọi ký tự không phải số hoặc dấu trừ (cho số âm)
-    const cleanStr = String(value).replace(/[^0-9-]/g, '');
-    return parseFloat(cleanStr) || 0;
+    return parseFloat(String(value).replace(/,/g, '')) || 0;
 };
+
+// [HELPER] Hàm chuẩn hóa chuỗi
+const normalizeStr = (val) => (val || "").trim();
 
 export const salesProcessor = {
     // --- KHỞI TẠO DỮ LIỆU RỖNG ---
@@ -27,14 +28,14 @@ export const salesProcessor = {
             doanhThuGiaoXa: 0, 
             doanhThuQuyDoiGiaoXa: 0,
             
-            // Map chi tiết để tra cứu nhanh (O(1))
+            // Map chi tiết
             doanhThuTheoNganhHang: {}, 
             doanhThuTheoNhomHang: {}, 
             
             // Quy đổi chuẩn (QDC)
             qdc: {},
 
-            // [HARDCODED METRICS] - Các chỉ số cơ bản luôn phải có
+            // [HARDCODED METRICS]
             dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, 
             dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
             
@@ -59,31 +60,34 @@ export const salesProcessor = {
         const data = this.createEmptySalesData();
         const PG = config.PRODUCT_GROUPS;
         
-        // Lấy config hệ thống
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
         const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
 
+        // --- DEBUG CONFIG (BẪY LOG) ---
+        // Điền tên nhân viên cần soi vào đây, hoặc để rỗng "" để soi tất cả
+        const TARGET_DEBUG_NAME = ""; 
+        const isTargetUser = !TARGET_DEBUG_NAME || (employee.hoTen && employee.hoTen.includes(TARGET_DEBUG_NAME));
+
         if (sourceData && Array.isArray(sourceData)) {
-            sourceData.forEach(row => {
-                // Kiểm tra User ID
+            sourceData.forEach((row, index) => {
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
                 if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                     
                     const hinhThucXuat = row.hinhThucXuat;
-                    const trangThaiXuat = row.trangThaiXuat;
+                    const trangThaiXuat = normalizeStr(row.trangThaiXuat);
                     
-                    // Logic điều kiện hợp lệ
-                    const isDoanhThuHTX = !hinhThucXuat || hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
-                    const isDaXuat = !trangThaiXuat || trangThaiXuat.trim() === 'Đã xuất' || trangThaiXuat.trim() === 'Đã giao';
+                    // [STRICT FIX] Bắt buộc phải có HTX trong danh sách
+                    const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
+                    
+                    // --- LOGIC ĐÃ XUẤT ---
+                    const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
 
                     if (isDoanhThuHTX && isDaXuat) {
-                        // [FIX] Sử dụng parseSafeNumber thay vì parseFloat trực tiếp
-                        const thanhTien = parseSafeNumber(row.thanhTien);
+                        const thanhTien = parseMoney(row.thanhTien);
                         const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         
-                        // Parse ID Nhóm/Ngành
                         const nhomIdObj = row.maNhomHang 
                             ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } 
                             : parseIdentity(row.nhomHang);
@@ -91,10 +95,9 @@ export const salesProcessor = {
                             ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } 
                             : parseIdentity(row.nganhHang);
 
-                        // A. CỘNG DỒN VÀO MAP CHI TIẾT (Để dùng cho Dynamic Table / Modal)
+                        // A. Map chi tiết
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
-                            // Đảm bảo ID luôn là chuỗi để đồng nhất key
                             const key = String(idObj.id).trim();
                             if (!container[key]) {
                                 container[key] = { 
@@ -111,7 +114,6 @@ export const salesProcessor = {
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
 
-                        // B. CỘNG TỔNG DOANH THU CHUNG
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += thanhTien * heSo;
 
@@ -119,37 +121,20 @@ export const salesProcessor = {
                             data.doanhThuTraGop += thanhTien;
                         }
 
-                        // C. PHÂN LOẠI NHÓM
+                        // C. Phân loại nhóm
                         const nhomHangCode = String(nhomIdObj.id).trim();
                         
-                        // --- 1. Hardcode ID Logic (Mặc định MWG) ---
-                        // Nhóm ICT
-                        if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { 
-                            data.dtICT += thanhTien; 
-                        }
-                        
-                        // Nhóm CE
-                        if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || (PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode))) { 
-                            data.dtCE += thanhTien; 
-                        }
-                        
-                        // Nhóm Phụ Kiện
-                        if (PG.PHU_KIEN && PG.PHU_KIEN.includes(nhomHangCode)) { 
-                            data.dtPhuKien += thanhTien; 
-                        }
-                        
-                        // Nhóm Gia Dụng
-                        if (PG.GIA_DUNG && PG.GIA_DUNG.includes(nhomHangCode)) { 
-                            data.dtGiaDung += thanhTien; 
-                        }
-                        
-                        // Các nhóm khác
+                        // Hardcode Logic
+                        if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { data.dtICT += thanhTien; }
+                        if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || (PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode))) { data.dtCE += thanhTien; }
+                        if (PG.PHU_KIEN && PG.PHU_KIEN.includes(nhomHangCode)) { data.dtPhuKien += thanhTien; }
+                        if (PG.GIA_DUNG && PG.GIA_DUNG.includes(nhomHangCode)) { data.dtGiaDung += thanhTien; }
                         if (PG.MAY_LOC_NUOC && PG.MAY_LOC_NUOC.includes(nhomHangCode)) { data.dtMLN += thanhTien; }
                         if (PG.SIM && PG.SIM.includes(nhomHangCode)) { data.dtSim += thanhTien; }
                         if (PG.VAS && PG.VAS.includes(nhomHangCode)) { data.dtVAS += thanhTien; }
                         if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) { data.dtBaoHiem += thanhTien; }
 
-                        // --- 2. Dynamic Keyword Logic ---
+                        // Dynamic Keyword Logic
                         const rawNhomHang = normalize(row.nhomHang);
                         const rawNganhHang = normalize(row.nganhHang);
                         const cleanNhomId = normalize(nhomHangCode);
@@ -158,17 +143,9 @@ export const salesProcessor = {
                         const checkDynamic = (uiKey, hardcodeList = []) => {
                             const keywords = uiKeywords[uiKey];
                             if (!keywords || keywords.length === 0) return;
-
-                            const isMatch = keywords.some(k => 
-                                rawNhomHang.includes(k) || rawNganhHang.includes(k) || 
-                                cleanNhomId === k || cleanNganhId === k
-                            );
-
-                            if (isMatch) {
-                                const alreadyCounted = hardcodeList.includes(nhomHangCode);
-                                if (!alreadyCounted) {
-                                    data[uiKey] += thanhTien;
-                                }
+                            const isMatch = keywords.some(k => rawNhomHang.includes(k) || rawNganhHang.includes(k) || cleanNhomId === k || cleanNganhId === k);
+                            if (isMatch && !hardcodeList.includes(nhomHangCode)) {
+                                data[uiKey] += thanhTien;
                             }
                         };
                         
@@ -181,7 +158,6 @@ export const salesProcessor = {
                         checkDynamic('dtVAS', PG.VAS || []); 
                         checkDynamic('dtBaoHiem', PG.BAO_HIEM_VAS || []);
 
-                        // --- 3. Detailed Stats ---
                         if (PG.DIEN_THOAI.includes(nhomHangCode)) { data.dtDienThoai += thanhTien; data.slDienThoai += soLuong; }
                         if (PG.LAPTOP.includes(nhomHangCode)) { data.dtLaptop += thanhTien; data.slLaptop += soLuong; }
                         if (PG.TIVI.includes(nhomHangCode)) { data.dtTivi += thanhTien; data.slTivi += soLuong; }
@@ -189,7 +165,6 @@ export const salesProcessor = {
                         if (PG.MAY_GIAT.includes(nhomHangCode)) { data.dtMayGiat += thanhTien; data.slMayGiat += soLuong; }
                         if (PG.MAY_LANH.includes(nhomHangCode)) { data.dtMayLanh += thanhTien; data.slMayLanh += soLuong; }
 
-                        // QDC Groups
                         for (const key in PG.QDC_GROUPS) {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
@@ -198,12 +173,54 @@ export const salesProcessor = {
                             }
                         }
                     } 
-                    // Logic chưa xuất
-                    else if (trangThaiXuat === 'Chưa xuất') {
-                        const thanhTien = parseSafeNumber(row.thanhTien);
-                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                        data.doanhThuChuaXuat += thanhTien;
-                        data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
+                    
+                    // --- LOGIC CHƯA XUẤT (CÓ BẪY LOG) ---
+                    else if (isDoanhThuHTX && trangThaiXuat === 'Chưa xuất') {
+                        
+                        // [FIX] Sử dụng so sánh tuyệt đối (===)
+                        const valThuTien = normalizeStr(row.trangThaiThuTien);
+                        const valHuy = normalizeStr(row.trangThaiHuy);
+                        const valTra = normalizeStr(row.tinhTrangTra);
+
+                        const isThuTien = valThuTien === 'Đã thu';
+                        const isChuaHuy = valHuy === 'Chưa hủy';
+                        const isChuaTra = valTra === 'Chưa trả'; // Đúng tên biến trong Detail
+
+                        if (isThuTien && isChuaHuy && isChuaTra) {
+                            const thanhTien = parseMoney(row.thanhTien);
+                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            
+                            // [DEBUG TRAP - BẮT LOG KHI DỮ LIỆU ĐƯỢC CỘNG]
+                            if (isTargetUser) {
+                                console.log(
+                                    `%c[TRAP][CỘNG] Dòng ${index + 2} | ${row.tenSanPham}`, 
+                                    "color: green; font-weight: bold", 
+                                    { 
+                                        Tien: thanhTien, 
+                                        NhanVien: employee.hoTen,
+                                        RawData: row 
+                                    }
+                                );
+                            }
+
+                            data.doanhThuChuaXuat += thanhTien;
+                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
+                        } 
+                        // [DEBUG TRAP - BẮT LOG KHI DỮ LIỆU BỊ LOẠI]
+                        else if (isTargetUser) {
+                             console.log(
+                                 `%c[TRAP][LOẠI] Dòng ${index + 2} | ${row.tenSanPham}`, 
+                                 "color: orange", 
+                                 { 
+                                     NhanVien: employee.hoTen,
+                                     LyDo: {
+                                         Fail_ThuTien: !isThuTien ? valThuTien : 'OK',
+                                         Fail_Huy: !isChuaHuy ? valHuy : 'OK',
+                                         Fail_Tra: !isChuaTra ? valTra : 'OK'
+                                     } 
+                                 }
+                             );
+                        }
                     }
                 }
             });

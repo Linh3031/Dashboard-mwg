@@ -98,7 +98,7 @@ export const detailReportLogic = {
         const summary = {
             totalRealRevenue: 0,
             totalConvertedRevenue: 0,
-            unexportedRevenue: 0, 
+            unexportedRevenue: 0, // [FIX] Khởi tạo = 0 để cộng dồn chính xác
         };
         const byProductGroup = {};
         const byCustomer = {};
@@ -106,14 +106,13 @@ export const detailReportLogic = {
         const dailyStats = {}; 
         const unexportedDetails = {};
         
-        const $masterReportData = get(masterReportData);
-        const employeeMasterData = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeMaNV));
-        if (employeeMasterData) {
-            summary.unexportedRevenue = employeeMasterData.doanhThuChuaXuat || 0;
-        }
+        // [FIX] Đã loại bỏ đoạn code lấy doanh thu từ masterReportData gây sai lệch số liệu
+        // Nguyên tắc: Tính toán độc lập dựa trên dữ liệu thô đã lọc kỹ tại function này.
 
         employeeData.forEach(row => {
             const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
+            
+            // [QUAN TRỌNG] Bộ lọc này quyết định tính đúng đắn của dữ liệu (giống hệt Modal)
             const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
                                 (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
                                 (row.tinhTrangTra || "").trim() === 'Chưa trả';
@@ -169,6 +168,10 @@ export const detailReportLogic = {
                     }
 
                 } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
+                    // [FIX] Cộng dồn trực tiếp vào tổng Summary tại đây
+                    // Đảm bảo Tổng Summary = Tổng các mục trong UnexportedDetails
+                    summary.unexportedRevenue += convertedRevenue;
+
                     if (!unexportedDetails[groupName]) {
                         unexportedDetails[groupName] = { name: groupName, totalSL: 0, totalDTQD: 0, products: {} };
                     }
