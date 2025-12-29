@@ -9,7 +9,10 @@
       customPerformanceTables,
       isAdmin, 
       warehouseCustomMetrics,
-      selectedWarehouse
+      selectedWarehouse,
+      // [FIX] Thêm import store dữ liệu để xử lý bộ lọc kho
+      danhSachNhanVien,
+      warehouseList
   } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
@@ -40,7 +43,6 @@
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
-  
   // [FIX] Import 2 Modal chi tiết còn thiếu
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
@@ -146,6 +148,20 @@
 
   // Hàm đóng modal chung
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
+
+  // [FIX] Logic tự động cập nhật danh sách kho khi có dữ liệu nhân viên
+  $: {
+      if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
+          // Lọc danh sách mã kho duy nhất
+          const uniqueWarehouses = [...new Set($danhSachNhanVien
+              .map(nv => nv.maKho)
+              .filter(k => k && String(k).trim() !== '')
+          )].sort();
+          
+          warehouseList.set(uniqueWarehouses);
+          // console.log("[App] Warehouse list updated:", uniqueWarehouses);
+      }
+  }
 </script>
 
 <GlobalNotification />
