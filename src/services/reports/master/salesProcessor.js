@@ -4,7 +4,7 @@ import { normalize } from './utils.js';
 import { dataProcessing } from '../../dataProcessing.js';
 import { parseIdentity } from '../../../utils.js';
 
-// [FIX] Hàm xử lý số an toàn (COPY Y HỆT detail.report.js)
+// [FIX] Hàm xử lý số an toàn
 const parseMoney = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
@@ -64,20 +64,15 @@ export const salesProcessor = {
         const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
         const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
 
-        // --- DEBUG CONFIG (BẪY LOG) ---
-        // Điền tên nhân viên cần soi vào đây, hoặc để rỗng "" để soi tất cả
-        const TARGET_DEBUG_NAME = ""; 
-        const isTargetUser = !TARGET_DEBUG_NAME || (employee.hoTen && employee.hoTen.includes(TARGET_DEBUG_NAME));
-
         if (sourceData && Array.isArray(sourceData)) {
-            sourceData.forEach((row, index) => {
+            sourceData.forEach(row => {
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
                 if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
                     
                     const hinhThucXuat = row.hinhThucXuat;
                     const trangThaiXuat = normalizeStr(row.trangThaiXuat);
                     
-                    // [STRICT FIX] Bắt buộc phải có HTX trong danh sách
+                    // [STRICT] Bắt buộc phải có HTX trong danh sách
                     const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
                     
                     // --- LOGIC ĐÃ XUẤT ---
@@ -124,7 +119,6 @@ export const salesProcessor = {
                         // C. Phân loại nhóm
                         const nhomHangCode = String(nhomIdObj.id).trim();
                         
-                        // Hardcode Logic
                         if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { data.dtICT += thanhTien; }
                         if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || (PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode))) { data.dtCE += thanhTien; }
                         if (PG.PHU_KIEN && PG.PHU_KIEN.includes(nhomHangCode)) { data.dtPhuKien += thanhTien; }
@@ -174,53 +168,24 @@ export const salesProcessor = {
                         }
                     } 
                     
-                    // --- LOGIC CHƯA XUẤT (CÓ BẪY LOG) ---
+                    // --- LOGIC CHƯA XUẤT ---
                     else if (isDoanhThuHTX && trangThaiXuat === 'Chưa xuất') {
                         
-                        // [FIX] Sử dụng so sánh tuyệt đối (===)
                         const valThuTien = normalizeStr(row.trangThaiThuTien);
                         const valHuy = normalizeStr(row.trangThaiHuy);
                         const valTra = normalizeStr(row.tinhTrangTra);
 
                         const isThuTien = valThuTien === 'Đã thu';
                         const isChuaHuy = valHuy === 'Chưa hủy';
-                        const isChuaTra = valTra === 'Chưa trả'; // Đúng tên biến trong Detail
+                        const isChuaTra = valTra === 'Chưa trả';
 
                         if (isThuTien && isChuaHuy && isChuaTra) {
                             const thanhTien = parseMoney(row.thanhTien);
                             const heSo = heSoQuyDoi[row.nhomHang] || 1;
                             
-                            // [DEBUG TRAP - BẮT LOG KHI DỮ LIỆU ĐƯỢC CỘNG]
-                            if (isTargetUser) {
-                                console.log(
-                                    `%c[TRAP][CỘNG] Dòng ${index + 2} | ${row.tenSanPham}`, 
-                                    "color: green; font-weight: bold", 
-                                    { 
-                                        Tien: thanhTien, 
-                                        NhanVien: employee.hoTen,
-                                        RawData: row 
-                                    }
-                                );
-                            }
-
                             data.doanhThuChuaXuat += thanhTien;
                             data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
                         } 
-                        // [DEBUG TRAP - BẮT LOG KHI DỮ LIỆU BỊ LOẠI]
-                        else if (isTargetUser) {
-                             console.log(
-                                 `%c[TRAP][LOẠI] Dòng ${index + 2} | ${row.tenSanPham}`, 
-                                 "color: orange", 
-                                 { 
-                                     NhanVien: employee.hoTen,
-                                     LyDo: {
-                                         Fail_ThuTien: !isThuTien ? valThuTien : 'OK',
-                                         Fail_Huy: !isChuaHuy ? valHuy : 'OK',
-                                         Fail_Tra: !isChuaTra ? valTra : 'OK'
-                                     } 
-                                 }
-                             );
-                        }
                     }
                 }
             });

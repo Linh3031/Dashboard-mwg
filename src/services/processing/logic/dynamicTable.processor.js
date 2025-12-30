@@ -91,11 +91,8 @@ export const dynamicTableProcessor = {
                 
                 // Chỉ log những mục có giá trị để đỡ rối
                 if (logger && val !== 0) {
-                    logger.push(`      🔹 ${safeId}: ${formatters.formatNumber(val)}`);
+                    logger.push(`      🔹 ${safeId} (${type}): ${formatters.formatNumber(val)}`);
                 }
-            } else {
-                 // Log cả những mục không tìm thấy nếu cần debug kỹ
-                 // if (logger) logger.push(`      ⚠️ ${safeId}: Không có dữ liệu`);
             }
         };
 
@@ -137,22 +134,27 @@ export const dynamicTableProcessor = {
                     // Logic % (Bảng hiệu quả)
                     
                     // --- 🔍 TRACE DEBUG START ---
-                    // Chúng ta sẽ chạy thử tính toán với logger để xem nó cộng cái gì
                     let traceLog = [];
-                    // Chỉ debug cho nhân viên Tú Phương (hoặc nhân viên nào bị sai) để đỡ spam log
+                    // Chỉ debug cho một vài nhân viên mẫu để đỡ spam
                     const isTargetDebug = employee.hoTen.includes('Tú Phương') || employee.hoTen.includes('Tien'); 
                     
-                    const numVal = this.calculateGroupValue(employee, col.numerator, col.typeA || 'DT');
-                    // Nếu là nhân viên cần soi, truyền traceLog vào hàm tính mẫu số
-                    const denVal = this.calculateGroupValue(employee, col.denominator, col.typeB || 'DT', isTargetDebug ? traceLog : null);
+                    // [LOGIC MỚI] Lấy loại Metric từ cấu hình (Ưu tiên percentMetric -> mặc định DT)
+                    const metricType = col.percentMetric || 'DT';
 
-                    if (isTargetDebug && denVal > 0 && Math.round((numVal/denVal)*100) !== 2) { // Điều kiện lọc log
-                         console.group(`🕵️ [TRACE] ${employee.hoTen} - ${col.header}`);
-                         console.log(`%c Tử số: ${formatters.formatNumber(numVal)}`, 'color: green');
-                         console.log(`%c Mẫu số TÍNH ĐƯỢC: ${formatters.formatNumber(denVal)}`, 'color: red; font-weight: bold');
-                         console.log(`👇 CHI TIẾT CÁC MÓN CỘNG VÀO MẪU SỐ:`);
-                         traceLog.forEach(log => console.log(log));
-                         console.groupEnd();
+                    const numVal = this.calculateGroupValue(employee, col.numerator, metricType, isTargetDebug ? traceLog : null);
+                    // Mẫu số dùng chung loại Metric với Tử số (trừ khi có config riêng typeB - mà hiện tại UI chưa hỗ trợ separate config nên cứ dùng chung)
+                    const denVal = this.calculateGroupValue(employee, col.denominator, metricType, isTargetDebug ? traceLog : null);
+
+                    if (isTargetDebug) { 
+                         // Điều kiện lọc log: In ra nếu có mẫu số > 0 để kiểm tra
+                         if (denVal > 0) {
+                             console.groupCollapsed(`🕵️ [TRACE] ${employee.hoTen} - ${col.header} (% ${metricType})`);
+                             console.log(`%c Tử số (${metricType}): ${formatters.formatNumber(numVal)}`, 'color: green');
+                             console.log(`%c Mẫu số (${metricType}): ${formatters.formatNumber(denVal)}`, 'color: red; font-weight: bold');
+                             console.log(`👇 CHI TIẾT CÁC MÓN CỘNG VÀO:`);
+                             traceLog.forEach(log => console.log(log));
+                             console.groupEnd();
+                         }
                     }
                     // --- TRACE DEBUG END ---
 
@@ -167,7 +169,7 @@ export const dynamicTableProcessor = {
                     totalRow.cells[colId].den += denVal;
 
                 } else {
-                    // Logic Doanh thu
+                    // Logic Cột thường (DT, SL, DTQD)
                     cellData.sl = this.calculateGroupValue(employee, col.items, 'SL');
                     cellData.dt = this.calculateGroupValue(employee, col.items, 'DT');
                     cellData.dtqd = this.calculateGroupValue(employee, col.items, 'DTQD');
