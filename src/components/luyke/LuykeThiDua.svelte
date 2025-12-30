@@ -2,11 +2,10 @@
   import { afterUpdate } from 'svelte';
   import { competitionData } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
-
-  let viewType = 'summary'; // 'summary' | 'completion'
-  let sortedData = [];
   
-  // Stats calculation
+  // Logic dữ liệu (GIỮ NGUYÊN)
+  let viewType = 'completion'; 
+  let sortedData = [];
   let summary = {
       total: 0,
       achieved: 0,
@@ -39,7 +38,7 @@
     }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
 
     summary.overallRate = summary.total > 0 ? (summary.achieved / summary.total) * 100 : 0;
-    sortedData = data; 
+    sortedData = data;
   }
 
   function setViewType(newType) {
@@ -52,9 +51,28 @@
 
   function getRateColor(rate) {
       if (rate >= 80) return 'text-green-600'; 
-      if (rate >= 50) return 'text-yellow-600'; 
+      if (rate >= 50) return 'text-yellow-600';
       return 'text-red-600';
   }
+
+  // [FIX 1] Định nghĩa MAP màu sắc tường minh để tránh lỗi Tailwind Purge (mất màu vàng)
+  const COLOR_MAP = {
+    blue: {
+        text: 'text-blue-600',
+        bg: 'bg-blue-500',
+        border: 'border-blue-500'
+    },
+    yellow: {
+        text: 'text-yellow-600',
+        bg: 'bg-yellow-500',
+        border: 'border-yellow-500'
+    },
+    red: {
+        text: 'text-red-600',
+        bg: 'bg-red-500',
+        border: 'border-red-500'
+    }
+  };
 
   $: rateStyle = getRateColor(summary.overallRate);
 
@@ -67,7 +85,6 @@
 
 {#snippet flatKpiCard(title, value, subText, icon, colorClass, barPercent = 0)}
     <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all h-full min-h-[120px] flex items-stretch justify-between relative overflow-hidden group">
-        
         <div class="flex flex-col justify-between items-start z-10 mr-4 flex-grow">
             <div class="flex items-center gap-2.5">
                 <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 border border-gray-200 group-hover:bg-white group-hover:{colorClass} transition-colors">
@@ -87,7 +104,6 @@
                 </div>
             </div>
         </div>
-
         <div class="flex items-center justify-end z-10 flex-shrink-0">
             <span class="text-5xl font-black {colorClass} tracking-tighter leading-none drop-shadow-sm">{value}</span>
         </div>
@@ -97,30 +113,31 @@
 {#snippet competitionCard(item)}
     {@const isProjectedCompleted = item.hoanThanhValue >= 100}
     {@const isActualCompleted = item.luyKe >= item.target}
-    {@const colorBase = isProjectedCompleted ? 'green' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red')}
-    {@const textColor = `text-${colorBase}-600`}
-    {@const barColor = `bg-${colorBase}-500`}
-    {@const topBorderColor = `border-${colorBase}-500`}
+    
+    {@const colorKey = isProjectedCompleted ? 'blue' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red')}
+    
+    {@const colors = COLOR_MAP[colorKey]}
+    
     {@const targetRemaining = (item.target || 0) - (item.luyKe || 0)}
     {@const daysLeft = Math.max(30 - (new Date().getDate()), 1)}
     {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
 
-    <div class="bg-white border border-gray-200 border-t-4 {topBorderColor} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
+    <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
         <div class="flex justify-between items-start gap-3 mb-2">
             <h4 class="font-bold text-gray-800 text-sm leading-snug line-clamp-2 flex-grow" title={item.name}>
                 {item.name}
             </h4>
-            <span class="text-2xl font-extrabold {textColor} leading-none flex-shrink-0">
+            <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
                 {formatters.formatPercentage(item.hoanThanhValue / 100)}
             </span>
         </div>
 
-        <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3">
-            <div class="h-1.5 rounded-full {barColor} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
+        <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
+            <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
         </div>
 
         <div class="mt-auto pt-2 border-t border-dashed border-gray-100 grid grid-cols-2 gap-2 text-xs items-end">
-            <div>
+             <div>
                 <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
                 <div class="text-gray-700 font-bold whitespace-nowrap">
                     <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
@@ -130,23 +147,22 @@
             </div>
             <div class="text-right">
                 {#if !isActualCompleted}
-                    <div class="inline-block bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold border border-red-100">
+                    <div class="inline-block bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold border border-red-200">
                         Cần: {formatters.formatNumberOrDash(dailyTarget)}/ngày
                     </div>
                 {:else}
-                    <span class="text-green-600 font-bold text-[10px] flex items-center justify-end gap-1">
+                    <div class="inline-block bg-blue-50 text-blue-600 px-2 py-1 rounded text-[10px] font-bold border border-blue-200 flex items-center justify-end gap-1">
                         <i data-feather="check-circle" class="w-3 h-3"></i> Đã đạt
-                    </span>
+                    </div>
                 {/if}
             </div>
         </div>
     </div>
 {/snippet}
 
-<div class="luyke-dashboard-container">
+<div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
     
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-capture-group="kpi-thidua">
-        
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
         {@render flatKpiCard(
             'Tổng Chương trình', 
             summary.total, 
@@ -181,11 +197,9 @@
             'text-orange-600',
             summary.quantityTotal > 0 ? (summary.quantityAchieved / summary.quantityTotal) * 100 : 0
         )}
-
     </div>
 
     <div class="luyke-tier-2-container">
-        
         <div class="luyke-toolbar">
             <div class="luyke-toolbar-left">
                 <h3 class="text-lg font-bold uppercase flex items-center gap-2 text-gray-700">
@@ -197,18 +211,19 @@
             <div class="luyke-toolbar-right flex items-center gap-2">
                 <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
                     <button 
-                        class="view-mode-btn {viewType === 'summary' ? 'active' : ''}" 
-                        on:click={() => setViewType('summary')}
-                    >
-                        <i data-feather="grid" class="w-4 h-4"></i>
-                        <span class="hidden sm:inline text-xs ml-1">Theo Loại</span>
-                    </button>
-                    <button 
                         class="view-mode-btn {viewType === 'completion' ? 'active' : ''}" 
                         on:click={() => setViewType('completion')}
                     >
                         <i data-feather="check-circle" class="w-4 h-4"></i>
                         <span class="hidden sm:inline text-xs ml-1">Tiến độ</span>
+                    </button>
+
+                    <button 
+                        class="view-mode-btn {viewType === 'summary' ? 'active' : ''}" 
+                        on:click={() => setViewType('summary')}
+                    >
+                        <i data-feather="grid" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline text-xs ml-1">Theo Loại</span>
                     </button>
                 </div>
             </div>
@@ -221,7 +236,6 @@
                     <p class="text-xs text-gray-400">Vui lòng dán "Data lũy kế" ở tab Cập nhật dữ liệu.</p>
                 </div>
             {:else}
-                
                 <div class="flex flex-col gap-8">
                     {#if viewType === 'summary'}
                         {@const dataDoanhThu = sortData(sortedData.filter(d => d.type === 'doanhThu'))}
@@ -233,7 +247,7 @@
                                     <span class="bg-blue-100 p-1 rounded"><i data-feather="dollar-sign" class="w-4 h-4"></i></span>
                                     Thi Đua Doanh Thu ({dataDoanhThu.length})
                                 </h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {#each dataDoanhThu as item}
                                         {@render competitionCard(item)}
                                     {/each}
@@ -247,7 +261,7 @@
                                     <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span>
                                     Thi Đua Số Lượng ({dataSoLuong.length})
                                 </h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {#each dataSoLuong as item}
                                         {@render competitionCard(item)}
                                     {/each}
@@ -261,11 +275,11 @@
 
                         {#if completed.length > 0}
                             <div>
-                                <h4 class="text-sm font-bold text-green-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-green-100">
-                                    <span class="bg-green-100 p-1 rounded"><i data-feather="check" class="w-4 h-4"></i></span>
+                                <h4 class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
+                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="check" class="w-4 h-4"></i></span>
                                     Đã hoàn thành ({completed.length})
                                 </h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {#each completed as item}
                                         {@render competitionCard(item)}
                                     {/each}
@@ -279,7 +293,7 @@
                                     <span class="bg-red-100 p-1 rounded"><i data-feather="clock" class="w-4 h-4"></i></span>
                                     Cần nỗ lực thêm ({pending.length})
                                 </h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {#each pending as item}
                                         {@render competitionCard(item)}
                                     {/each}
@@ -292,3 +306,30 @@
         </div>
     </div>
 </div>
+
+<style>
+    /* CSS dành riêng cho chế độ chụp ảnh */
+    :global(.capture-container .luyke-dashboard-container) {
+        /* [ĐIỀU CHỈNH 1] Tăng độ rộng lên 1100px để khớp với chiều ngang điện thoại HD */
+        width: 1100px !important;    
+        min-width: 1100px !important;
+        background-color: white;
+        padding: 20px !important; /* Thêm chút lề cho đẹp */
+    }
+
+    /* [ĐIỀU CHỈNH 2] Tăng số cột lên 4 để giảm chiều dài ảnh */
+    :global(.capture-container .grid) {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important; 
+        gap: 16px !important;
+    }
+
+    /* Tăng kích thước chữ một chút khi chụp để đọc rõ hơn */
+    :global(.capture-container h4) {
+        font-size: 16px !important;
+    }
+
+    :global(.capture-container .luyke-toolbar-right) {
+        display: none !important;
+    }
+</style>

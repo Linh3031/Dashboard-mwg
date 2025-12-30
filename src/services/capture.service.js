@@ -85,7 +85,7 @@ const _injectCaptureStyles = () => {
             max-width: 450px !important;
             padding: 10px !important;
             margin: 0 auto;
-            transform: scale(5) !important;
+            transform: scale(2) !important;
         }
         .preset-mobile-portrait .capture-title {
             font-size: 18px !important;
@@ -174,7 +174,7 @@ export const captureService = {
         try {
             // 8. Chụp bằng html2canvas
             const canvas = await window.html2canvas(captureWrapper, {
-                scale: 5, 
+                scale: 2, 
                 useCORS: true,
                 backgroundColor: '#f3f4f6',
                 logging: false,
