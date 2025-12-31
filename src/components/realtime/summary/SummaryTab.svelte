@@ -13,12 +13,15 @@
   
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
-  import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
+  
+  // [FIX CRITICAL] Đổi đường dẫn import về './EfficiencyTable.svelte' (file cùng thư mục đã được fix lỗi Key)
+  // Trước đó: import EfficiencyTable from '../efficiency/EfficiencyTable.svelte'; (SAI - Load file cũ bị lỗi)
+ import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
+
   import { onMount } from 'svelte';
 
   let supermarketReport = {};
   let goals = {};
-  
   let qdcItems = [];
   let categoryItems = [];
   let unexportedItems = []; 

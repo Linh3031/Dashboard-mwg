@@ -1,11 +1,17 @@
 <script>
+  // File: src/components/realtime/summary/EfficiencyTable.svelte
+  import { onMount } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import SortableTh from '../../common/SortableTh.svelte';
 
-  export let items = []; 
-
+  export let items = [];
   let sortKey = 'label';
   let sortDirection = 'asc';
+
+  // [DEBUG] Xác nhận phiên bản Fix đã được nạp
+  onMount(() => {
+    console.log('✅ EfficiencyTable (Summary) - SAFE MODE ACTIVE');
+  });
 
   function handleSort(event) {
     const key = event.detail;
@@ -48,7 +54,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each sortedItems as item (item.id)}
+          {#each sortedItems as item, index (index)}
             {@const isBelow = item.value < ((item.target || 0) / 100)}
             <tr class="border-t hover:bg-gray-50">
               <td class="px-4 py-2 font-semibold text-gray-800">{item.label}</td>

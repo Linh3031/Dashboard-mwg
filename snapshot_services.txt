@@ -580,7 +580,7 @@ const _injectCaptureStyles = () => {
             max-width: 450px !important;
             padding: 10px !important;
             margin: 0 auto;
-            transform: scale(5) !important;
+            transform: scale(2) !important;
         }
         .preset-mobile-portrait .capture-title {
             font-size: 18px !important;
@@ -669,7 +669,7 @@ export const captureService = {
         try {
             // 8. Chụp bằng html2canvas
             const canvas = await window.html2canvas(captureWrapper, {
-                scale: 5, 
+                scale: 2, 
                 useCORS: true,
                 backgroundColor: '#f3f4f6',
                 logging: false,
@@ -3409,11 +3409,8 @@ export const dynamicTableProcessor = {
                 
                 // Chỉ log những mục có giá trị để đỡ rối
                 if (logger && val !== 0) {
-                    logger.push(`      🔹 ${safeId}: ${formatters.formatNumber(val)}`);
+                    logger.push(`      🔹 ${safeId} (${type}): ${formatters.formatNumber(val)}`);
                 }
-            } else {
-                 // Log cả những mục không tìm thấy nếu cần debug kỹ
-                 // if (logger) logger.push(`      ⚠️ ${safeId}: Không có dữ liệu`);
             }
         };
 
@@ -3455,22 +3452,27 @@ export const dynamicTableProcessor = {
                     // Logic % (Bảng hiệu quả)
                     
                     // --- 🔍 TRACE DEBUG START ---
-                    // Chúng ta sẽ chạy thử tính toán với logger để xem nó cộng cái gì
                     let traceLog = [];
-                    // Chỉ debug cho nhân viên Tú Phương (hoặc nhân viên nào bị sai) để đỡ spam log
+                    // Chỉ debug cho một vài nhân viên mẫu để đỡ spam
                     const isTargetDebug = employee.hoTen.includes('Tú Phương') || employee.hoTen.includes('Tien'); 
                     
-                    const numVal = this.calculateGroupValue(employee, col.numerator, col.typeA || 'DT');
-                    // Nếu là nhân viên cần soi, truyền traceLog vào hàm tính mẫu số
-                    const denVal = this.calculateGroupValue(employee, col.denominator, col.typeB || 'DT', isTargetDebug ? traceLog : null);
+                    // [LOGIC MỚI] Lấy loại Metric từ cấu hình (Ưu tiên percentMetric -> mặc định DT)
+                    const metricType = col.percentMetric || 'DT';
 
-                    if (isTargetDebug && denVal > 0 && Math.round((numVal/denVal)*100) !== 2) { // Điều kiện lọc log
-                         console.group(`🕵️ [TRACE] ${employee.hoTen} - ${col.header}`);
-                         console.log(`%c Tử số: ${formatters.formatNumber(numVal)}`, 'color: green');
-                         console.log(`%c Mẫu số TÍNH ĐƯỢC: ${formatters.formatNumber(denVal)}`, 'color: red; font-weight: bold');
-                         console.log(`👇 CHI TIẾT CÁC MÓN CỘNG VÀO MẪU SỐ:`);
-                         traceLog.forEach(log => console.log(log));
-                         console.groupEnd();
+                    const numVal = this.calculateGroupValue(employee, col.numerator, metricType, isTargetDebug ? traceLog : null);
+                    // Mẫu số dùng chung loại Metric với Tử số (trừ khi có config riêng typeB - mà hiện tại UI chưa hỗ trợ separate config nên cứ dùng chung)
+                    const denVal = this.calculateGroupValue(employee, col.denominator, metricType, isTargetDebug ? traceLog : null);
+
+                    if (isTargetDebug) { 
+                         // Điều kiện lọc log: In ra nếu có mẫu số > 0 để kiểm tra
+                         if (denVal > 0) {
+                             console.groupCollapsed(`🕵️ [TRACE] ${employee.hoTen} - ${col.header} (% ${metricType})`);
+                             console.log(`%c Tử số (${metricType}): ${formatters.formatNumber(numVal)}`, 'color: green');
+                             console.log(`%c Mẫu số (${metricType}): ${formatters.formatNumber(denVal)}`, 'color: red; font-weight: bold');
+                             console.log(`👇 CHI TIẾT CÁC MÓN CỘNG VÀO:`);
+                             traceLog.forEach(log => console.log(log));
+                             console.groupEnd();
+                         }
                     }
                     // --- TRACE DEBUG END ---
 
@@ -3485,7 +3487,7 @@ export const dynamicTableProcessor = {
                     totalRow.cells[colId].den += denVal;
 
                 } else {
-                    // Logic Doanh thu
+                    // Logic Cột thường (DT, SL, DTQD)
                     cellData.sl = this.calculateGroupValue(employee, col.items, 'SL');
                     cellData.dt = this.calculateGroupValue(employee, col.items, 'DT');
                     cellData.dtqd = this.calculateGroupValue(employee, col.items, 'DTQD');
@@ -5091,8 +5093,15 @@ import { normalize } from './utils.js';
 
 export const metricsProcessor = {
     calculateDynamicMetrics(data, goalSettings) {
-        // [DEBUG] Log xác nhận hàm đã chạy
-        console.log(`%c[MetricsProcessor] Bắt đầu tính toán...`, "color: blue; font-weight: bold");
+        // [INFO] Lấy tên nhân viên để log dễ theo dõi
+        const empName = data.info?.name || data.name || "Unknown Employee";
+        
+        // Chỉ log chi tiết nếu là Admin hoặc đang debug
+        const shouldLog = true; 
+
+        if (shouldLog) {
+            console.groupCollapsed(`%c🔍 [DEBUG-METRIC] Tính toán cho: ${empName}`, "color: #2563eb; font-weight: bold; background: #eff6ff; padding: 2px 5px; border-radius: 4px;");
+        }
 
         const $efficiencyConfig = get(efficiencyConfig) || [];
         const $warehouseCustomMetrics = get(warehouseCustomMetrics) || [];
@@ -5107,24 +5116,28 @@ export const metricsProcessor = {
                 try {
                     if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
 
-                    // [DEBUG] In ra cấu hình đang tính
-                    console.groupCollapsed(`[Metric] Đang tính: ${cfg.label}`);
-                    console.log("Cấu hình ID:", {
-                        TuSo_A: cfg.groupA,
-                        MauSo_B: cfg.groupB,
-                        ModeA: cfg.modeA || 'group (mặc định)',
-                        ModeB: cfg.modeB || 'group (mặc định)'
-                    });
-
-                    const numType = cfg.typeA || cfg.type || 'DTTL';
-                    const denType = cfg.typeB || (numType === 'SL' ? 'SL' : 'DTTL');
+                    // [LOGIC FIX] Ưu tiên lấy percentMetric (từ Modal mới) -> typeA -> type -> mặc định DTTL
+                    // Điều này đảm bảo khi bạn chọn "Số lượng" ở Modal, code sẽ tính theo SL
+                    const metricType = cfg.percentMetric || cfg.typeA || cfg.type || 'DTTL';
                     
+                    const numType = metricType; 
+                    const denType = cfg.typeB || metricType; // Nếu mẫu số không cấu hình riêng thì dùng chung loại
+
+                    if (shouldLog) {
+                        console.group(`📊 Cấu hình: ${cfg.label} (ID: ${cfg.id})`);
+                        console.log(`- Loại dữ liệu: %c${metricType}`, "color: red; font-weight: bold");
+                        console.log(`- IDs Tử số (A):`, cfg.groupA);
+                        console.log(`- IDs Mẫu số (B):`, cfg.groupB);
+                    }
+
                     const modeA = cfg.modeA || 'group';
                     const modeB = cfg.modeB || (cfg.modeA === 'category' ? 'category' : 'group'); 
 
                     const calcValue = (groupList, type, mode, contextName) => {
                         let total = 0;
                         if (!Array.isArray(groupList)) return 0;
+                        
+                        let logDetails = []; // Mảng chứa chi tiết để in bảng log
 
                         groupList.forEach(targetId => {
                             if (!targetId) return;
@@ -5137,39 +5150,56 @@ export const metricsProcessor = {
 
                             // Quét dữ liệu
                             for (const [key, val] of Object.entries(bucketToScan)) {
-                                // [QUAN TRỌNG] So sánh tuyệt đối (===)
                                 const cleanKey = normalize(key);
                                 
                                 if (cleanKey === cleanTargetId) {
                                     let valueToAdd = 0;
-                                    if (type === 'SL') valueToAdd = val.quantity;
-                                    else if (type === 'DTQD') valueToAdd = val.revenueQuyDoi;
-                                    else valueToAdd = val.revenue;
+                                    // Logic lấy giá trị chính xác theo type
+                                    if (type === 'SL') valueToAdd = val.quantity || 0;
+                                    else if (type === 'DTQD') valueToAdd = val.revenueQuyDoi || 0;
+                                    else valueToAdd = val.revenue || 0; // Mặc định là DTTL
 
                                     total += valueToAdd;
 
-                                    // [DEBUG] Log khi tìm thấy dữ liệu khớp
-                                    console.log(
-                                        `%c   ✅ MATCH [${contextName}]: ID cấu hình "${targetId}" == ID dữ liệu "${key}" (${val.name})`, 
-                                        "color: green", 
-                                        `-> Cộng: ${valueToAdd}`
-                                    );
+                                    // Lưu lại chi tiết để log
+                                    logDetails.push({
+                                        'Nguồn (Key)': key,
+                                        'Tên SP/Nhóm': val.name,
+                                        'Loại tính': type,
+                                        'Giá trị cộng': valueToAdd.toLocaleString('vi-VN')
+                                    });
                                 }
                             }
                         });
+
+                        // [DEBUG] In bảng chi tiết các thành phần cấu thành nên tổng số
+                        if (shouldLog && logDetails.length > 0) {
+                            console.log(`%c➤ Chi tiết ${contextName} (Tổng: ${total.toLocaleString()}):`, "color: green; font-weight: bold");
+                            console.table(logDetails);
+                        } else if (shouldLog) {
+                            console.log(`%c➤ Chi tiết ${contextName}: KHÔNG TÌM THẤY DỮ LIỆU KHỚP`, "color: orange");
+                        }
+
                         return total;
                     };
 
-                    // Tính Tử số
+                    // Tính toán
                     const num = calcValue(cfg.groupA, numType, modeA, 'TỬ SỐ');
-                    // Tính Mẫu số
                     const den = calcValue(cfg.groupB, denType, modeB, 'MẪU SỐ');
 
-                    console.log(`%c   => KẾT QUẢ: ${num} / ${den}`, "font-weight: bold");
-                    console.groupEnd();
+                    // Tính kết quả cuối cùng
+                    const resultPercent = den > 0 ? (num / den) * 100 : 0;
+
+                    if (shouldLog) {
+                        console.log(
+                            `%c🏁 KẾT QUẢ: ${num} / ${den} = ${resultPercent.toFixed(2)}%`, 
+                            "background: #333; color: #fff; padding: 4px; font-size: 12px; border-radius: 4px;"
+                        );
+                        console.groupEnd(); // End group Config
+                    }
 
                     dynamicMetrics[cfg.id] = {
-                        value: den > 0 ? num / den : 0,
+                        value: den > 0 ? num / den : 0, // Lưu dạng decimal (0.5) để component UI format sau
                         target: goalSettings && goalSettings[cfg.id] ? parseFloat(goalSettings[cfg.id]) : (cfg.target || 0),
                         label: cfg.label
                     };
@@ -5177,6 +5207,7 @@ export const metricsProcessor = {
                     console.error("Metric Calc Error:", e);
                 }
             });
+            if (shouldLog) console.groupEnd(); // End group Employee
         }
         return dynamicMetrics;
     }
