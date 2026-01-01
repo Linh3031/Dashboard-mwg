@@ -157,6 +157,7 @@ src/services/processing
 src/services/processing/parsers
 src/services/processing/parsers/employee.parser.js
 src/services/processing/parsers/erp.parser.js
+src/services/processing/parsers/cluster.parser.js
 src/services/processing/parsers/luyke.parser.js
 src/services/processing/parsers/thidua.parser.js
 src/services/processing/parsers.js
@@ -164,6 +165,7 @@ src/services/processing/normalizers.js
 src/services/processing/logic
 src/services/processing/logic/competition.processor.js
 src/services/processing/logic/timekeeping.processor.js
+src/services/processing/logic/cluster.processor.js
 src/services/processing/logic/dynamicTable.processor.js
 src/services/processing/logic/regional.processor.js
 src/services/processing/processors.js
@@ -178,6 +180,7 @@ src/services/declarations/utils.js
 src/services/declarations/performance.service.js
 src/services/capture.strategies.js
 src/services/dataProcessing.js
+src/services/cluster.service.js
 src/services/auth.service.js
 src/services/modal.service.js
 src/services/sknv.service.js

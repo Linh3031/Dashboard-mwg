@@ -4,16 +4,42 @@
     import { adminService } from '../../services/admin.service.js';
     import { config } from '../../config.js';
 
+    // Biến lưu trạng thái form
     let ycxValue = '';
     let ycxGopValue = '';
     let heSoValue = '';
+    let isSaving = false;
 
+    // --- LOGIC 1: TẢI DỮ LIỆU CHỦ ĐỘNG (FIX LỖI F5 MẤT) ---
+    onMount(async () => {
+        console.log("🚀 [AdminCalculation] Component Mounted via CodeGenesis");
+        try {
+            // Gọi trực tiếp service để lấy dữ liệu mới nhất từ Cloud, không chờ Store
+            const data = await adminService.loadDeclarationsFromFirestore();
+            console.log("📥 [Load] Dữ liệu tải về từ Firestore:", data);
+            
+            if (data) {
+                // Ép dữ liệu vào Store để cập nhật UI
+                declarations.set(data);
+            }
+        } catch (error) {
+            console.error("❌ [Load Error] Không thể tải dữ liệu:", error);
+        }
+    });
+
+    // --- LOGIC 2: ĐỒNG BỘ UI VỚI STORE ---
     $: if ($declarations) {
-        ycxValue = $declarations.hinhThucXuat || config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU.join('\n');
-        ycxGopValue = $declarations.hinhThucXuatGop || config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP.join('\n');
+        console.log("🔄 [Sync] Store đã cập nhật:", $declarations);
         
+        // Logic ưu tiên: Key Mới -> Key Cũ -> Mặc định
+        ycxValue = $declarations.hinhThucXuat || $declarations.ycx || config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU.join('\n');
+        ycxGopValue = $declarations.hinhThucXuatGop || $declarations.ycxGop || config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP.join('\n');
+        
+        // Xử lý hệ số (Object hoặc String)
         if ($declarations.heSoQuyDoi) {
             heSoValue = $declarations.heSoQuyDoi;
+        } else if ($declarations.heSo) {
+             heSoValue = $declarations.heSo;
         } else {
             heSoValue = Object.entries(config.DEFAULT_DATA.HE_SO_QUY_DOI)
                 .map(([k, v]) => `${k},${v}`)
@@ -21,14 +47,40 @@
         }
     }
 
+    // --- LOGIC 3: LƯU DỮ LIỆU (FIX LỖI LƯU ẢO) ---
     async function saveDeclarations() {
-        const dataToSave = { ycx: ycxValue, ycxGop: ycxGopValue, heSo: heSoValue };
-        await adminService.saveDeclarationsToFirestore(dataToSave);
-        declarations.set({ 
-            hinhThucXuat: ycxValue, 
-            hinhThucXuatGop: ycxGopValue, 
-            heSoQuyDoi: heSoValue 
-        });
+        if (isSaving) return;
+        isSaving = true;
+
+        // Chuẩn bị dữ liệu: Gửi cả key cũ và mới để đảm bảo tương thích
+        const dataToSave = {
+            // Key cho logic hiển thị mới
+            hinhThucXuat: ycxValue || '',
+            hinhThucXuatGop: ycxGopValue || '',
+            heSoQuyDoi: heSoValue || '',
+            
+            // Key cho logic cũ (Service/Legacy)
+            ycx: ycxValue || '',
+            ycxGop: ycxGopValue || '',
+            heSo: heSoValue || ''
+        };
+
+        console.log("📤 [Save] Đang gửi dữ liệu đi:", dataToSave);
+
+        try {
+            await adminService.saveDeclarationsToFirestore(dataToSave);
+            console.log("✅ [Save] Service báo thành công!");
+            
+            // Cập nhật lại Store ngay lập tức
+            declarations.set(dataToSave);
+            
+            alert("✅ Đã lưu cấu hình thành công!"); 
+        } catch (error) {
+            console.error("❌ [Save Error] Lỗi chi tiết:", error);
+            alert("❌ Lỗi hệ thống: " + (error.message || "Không thể lưu"));
+        } finally {
+            isSaving = false;
+        }
     }
 
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
@@ -77,9 +129,12 @@
             </div> 
             
             <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
-                <button on:click={saveDeclarations} class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 transition font-semibold shadow-sm flex items-center gap-2">
-                    <i data-feather="save" class="w-4 h-4"></i>
-                    Lưu Cấu Hình
+                <button on:click={saveDeclarations} disabled={isSaving} class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
+                    {#if isSaving}
+                        <span class="animate-spin">⏳</span> Đang lưu...
+                    {:else}
+                        <i data-feather="save" class="w-4 h-4"></i> Lưu Cấu Hình
+                    {/if}
                 </button> 
             </div> 
         </div>
