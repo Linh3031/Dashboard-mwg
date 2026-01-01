@@ -83,6 +83,10 @@ export const salesProcessor = {
                         const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         
+                        // [FIX] Lấy doanh thu quy đổi chính xác từ Normalizer (đã tính trả góp)
+                        // Fallback về cách tính cũ nếu row.revenueQuyDoi chưa tồn tại
+                        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
+                        
                         const nhomIdObj = row.maNhomHang 
                             ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } 
                             : parseIdentity(row.nhomHang);
@@ -103,14 +107,14 @@ export const salesProcessor = {
                             }
                             container[key].revenue += thanhTien;
                             container[key].quantity += soLuong;
-                            container[key].revenueQuyDoi += thanhTien * heSo;
+                            container[key].revenueQuyDoi += revenueQuyDoi; // [UPDATED]
                         }
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
 
                         data.doanhThu += thanhTien;
-                        data.doanhThuQuyDoi += thanhTien * heSo;
+                        data.doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
 
                         if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
                             data.doanhThuTraGop += thanhTien;
@@ -163,7 +167,7 @@ export const salesProcessor = {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
                                 data.qdc[key].dt += thanhTien; 
-                                data.qdc[key].dtqd += thanhTien * heSo;
+                                data.qdc[key].dtqd += revenueQuyDoi; // [UPDATED]
                             }
                         }
                     } 
@@ -182,9 +186,11 @@ export const salesProcessor = {
                         if (isThuTien && isChuaHuy && isChuaTra) {
                             const thanhTien = parseMoney(row.thanhTien);
                             const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            // [FIX] Lấy doanh thu quy đổi chính xác (Chưa xuất)
+                            const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
                             
                             data.doanhThuChuaXuat += thanhTien;
-                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
+                            data.doanhThuQuyDoiChuaXuat += revenueQuyDoi; // [UPDATED]
                         } 
                     }
                 }

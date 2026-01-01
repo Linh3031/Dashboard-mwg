@@ -36,7 +36,10 @@ export const detailReportLogic = {
                 const realRevenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
                 const quantity = parseInt(String(row.soLuong || "0"), 10) || 0;
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                const convertedRevenue = realRevenue * heSo;
+                
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+                
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách lẻ';
 
@@ -98,7 +101,7 @@ export const detailReportLogic = {
         const summary = {
             totalRealRevenue: 0,
             totalConvertedRevenue: 0,
-            unexportedRevenue: 0, // [FIX] Khởi tạo = 0 để cộng dồn chính xác
+            unexportedRevenue: 0, 
         };
         const byProductGroup = {};
         const byCustomer = {};
@@ -106,13 +109,9 @@ export const detailReportLogic = {
         const dailyStats = {}; 
         const unexportedDetails = {};
         
-        // [FIX] Đã loại bỏ đoạn code lấy doanh thu từ masterReportData gây sai lệch số liệu
-        // Nguyên tắc: Tính toán độc lập dựa trên dữ liệu thô đã lọc kỹ tại function này.
-
         employeeData.forEach(row => {
             const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
             
-            // [QUAN TRỌNG] Bộ lọc này quyết định tính đúng đắn của dữ liệu (giống hệt Modal)
             const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
                                 (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
                                 (row.tinhTrangTra || "").trim() === 'Chưa trả';
@@ -123,7 +122,10 @@ export const detailReportLogic = {
                 if(isNaN(realRevenue) || isNaN(quantity)) return;
 
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                const convertedRevenue = realRevenue * heSo;
+                
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+                
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách Lẻ';
                 const categoryName = utils.cleanCategoryName(row.nganhHang || 'Khác');
@@ -168,8 +170,6 @@ export const detailReportLogic = {
                     }
 
                 } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
-                    // [FIX] Cộng dồn trực tiếp vào tổng Summary tại đây
-                    // Đảm bảo Tổng Summary = Tổng các mục trong UnexportedDetails
                     summary.unexportedRevenue += convertedRevenue;
 
                     if (!unexportedDetails[groupName]) {

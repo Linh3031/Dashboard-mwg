@@ -126,7 +126,13 @@ export const normalizers = {
             return { normalizedData: [], success: false, missingColumns };
         }
 
-        const normalizedData = rawData.map(row => {
+        // [LOGIC PREP]
+        let heSoMap = {};
+        if (fileType === 'ycx') {
+            heSoMap = helpers.getHeSoQuyDoi(); 
+        }
+
+        const normalizedData = rawData.map((row, index) => {
             const newRow = {};
             for (const key in foundMapping) {
                 if (foundMapping[key]) {
@@ -147,6 +153,47 @@ export const normalizers = {
                     }
                 }
             }
+
+            // --- [NEW LOGIC FIXED] TÍNH TOÁN DOANH THU QUY ĐỔI ---
+            if (fileType === 'ycx') {
+                // 1. Chuẩn hóa doanh thu thực
+                let revenue = 0;
+                if (newRow.thanhTien) {
+                    revenue = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
+                }
+                newRow.revenue = revenue; 
+
+                // 2. Xác định Hệ số gốc (Base Rate)
+                const productKey = String(newRow.nhomHang || '').trim();
+                const baseRate = heSoMap[productKey] || 1;
+
+                // 3. Xác định thưởng Trả Góp (Bonus Rate) - Dùng includes thay vì Set
+                const exportModeRaw = String(newRow.hinhThucXuat || '');
+                const exportModeLower = exportModeRaw.toLowerCase();
+                
+                // Logic: Chỉ cần chứa từ khóa "trả góp" hoặc "trả chậm" là dính
+                const isInstallment = exportModeLower.includes('trả góp') || exportModeLower.includes('trả chậm');
+                const bonusRate = isInstallment ? 0.3 : 0;
+
+                // 4. Tính toán
+                newRow.heSoQuyDoi = baseRate + bonusRate; 
+                newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
+                
+                // [DEBUG LOG - CHỈ HIỆN 1 DÒNG ĐẦU TIÊN ĐỂ SOI]
+                if (index === 0) {
+                    console.group(`%c🔍 DEBUG LOGIC QUY ĐỔI (Dòng 1)`, "color: white; background: red; font-weight: bold; padding: 2px 5px");
+                    console.log(`- Sản phẩm: ${productKey}`);
+                    console.log(`- Hệ số gốc (Base): ${baseRate}`);
+                    console.log(`- Hình thức xuất: "${exportModeRaw}"`);
+                    console.log(`- Có phải trả góp không?: ${isInstallment ? '✅ CÓ (+30%)' : '❌ KHÔNG'}`);
+                    console.log(`- Tổng hệ số: ${baseRate} + ${bonusRate} = ${newRow.heSoQuyDoi}`);
+                    console.log(`- Doanh thu gốc: ${revenue.toLocaleString()}`);
+                    console.log(`- Doanh thu quy đổi: ${newRow.revenueQuyDoi.toLocaleString()}`);
+                    console.groupEnd();
+                }
+            }
+            // ------------------------------------------------------------------
+
             return newRow;
         });
 

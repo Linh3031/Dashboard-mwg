@@ -71,6 +71,8 @@ export const generalReportLogic = {
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
 
                 if (!report[nganhHangName]) {
                     report[nganhHangName] = {
@@ -83,7 +85,7 @@ export const generalReportLogic = {
 
                 report[nganhHangName].soLuong += soLuong;
                 report[nganhHangName].doanhThuThuc += thanhTien;
-                report[nganhHangName].doanhThuQuyDoi += thanhTien * heSo;
+                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
             }
         });
 
@@ -111,6 +113,8 @@ export const generalReportLogic = {
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
 
                 if (!report[nganhHangName]) {
                     report[nganhHangName] = {
@@ -123,7 +127,7 @@ export const generalReportLogic = {
 
                 report[nganhHangName].soLuong += soLuong;
                 report[nganhHangName].doanhThuThuc += thanhTien;
-                report[nganhHangName].doanhThuQuyDoi += thanhTien * heSo;
+                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
             }
         });
 
