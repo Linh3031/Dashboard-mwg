@@ -1,7 +1,8 @@
 /* global XLSX */
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
-import { declarations } from '../../stores.js';
+// [FIX] Import thêm efficiencyConfig
+import { declarations, efficiencyConfig } from '../../stores.js';
 
 export const helpers = {
     findColumnName(header, aliases) {
@@ -27,20 +28,58 @@ export const helpers = {
     },
 
     getHeSoQuyDoi: () => {
-        const declarationData = get(declarations).heSoQuyDoi;
         const heSoMap = {};
+        let sourceUsed = 'DEFAULT'; // Biến để debug xem đang lấy dữ liệu từ nguồn nào
+
+        // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
+        const dynamicConfig = get(efficiencyConfig);
+        if (dynamicConfig && dynamicConfig.length > 0) {
+            sourceUsed = 'ADMIN_CONFIG_STORE';
+            dynamicConfig.forEach(item => {
+                // item cấu trúc: { id: "1491 - Smartphone", heSo: 1.5, ... }
+                if (item.id && item.heSo !== undefined && item.heSo !== null) {
+                    heSoMap[item.id.trim()] = parseFloat(item.heSo);
+                }
+            });
+        }
+
+        // ƯU TIÊN 2: Lấy từ Khai báo Text (Cũ - nếu Priority 1 không đủ hoặc rỗng)
+        // Logic merge: Chỉ thêm nếu chưa có trong map
+        const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
                 const parts = line.split(',');
                 if (parts.length >= 2) {
                     const key = parts[0].trim();
                     const value = parseFloat(parts[1].trim());
-                    if (key && !isNaN(value)) heSoMap[key] = value;
+                    if (key && !isNaN(value)) {
+                         // Nếu chưa có thì mới thêm (Ưu tiên Config mới đè lên cũ)
+                         if (heSoMap[key] === undefined) {
+                             heSoMap[key] = value;
+                         }
+                    }
                 }
             });
-            return Object.keys(heSoMap).length > 0 ? heSoMap : config.DEFAULT_DATA.HE_SO_QUY_DOI;
         }
-        return config.DEFAULT_DATA.HE_SO_QUY_DOI;
+
+        // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
+        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI;
+        Object.entries(defaultData).forEach(([key, value]) => {
+             if (heSoMap[key] === undefined) {
+                 heSoMap[key] = value;
+             }
+        });
+
+        // --- [DEBUG LOG THEO YÊU CẦU] ---
+        // Chỉ log khi map có dữ liệu để tránh spam
+        if (Object.keys(heSoMap).length > 0) {
+            // console.log(`[Helpers] Đã nạp ${Object.keys(heSoMap).length} hệ số quy đổi. Nguồn chính: ${sourceUsed}`);
+            // Mở comment dòng dưới nếu muốn soi chi tiết map khi cần
+            // console.log("Chi tiết Map Quy Đổi:", heSoMap);
+        }
+        // -------------------------------
+
+        return heSoMap;
     },
 
     cleanCompetitionName(name) {

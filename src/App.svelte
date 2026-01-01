@@ -52,9 +52,29 @@
     const isLoggedIn = authService.initAuth();
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
     
+    // [FIX CRITICAL] Tải toàn bộ cấu hình hệ thống (Quy đổi, Ngành hàng) cho TẤT CẢ user
+    // Điều này đảm bảo user thường cũng nhận được logic tính toán mới nhất
+    await loadGlobalSystemConfig();
+
     // Load bảng hiệu quả khi khởi động
     loadInitialTables();
   });
+
+  // [FIX] Hàm tải cấu hình hệ thống dùng chung
+  async function loadGlobalSystemConfig() {
+      try {
+          console.log("[App] Đang tải cấu hình hệ thống...");
+          await Promise.all([
+              adminService.loadCategoryDataFromFirestore(), // Cấu trúc ngành hàng (Mới thêm)
+              adminService.loadEfficiencyConfig(),          // Hệ số quy đổi & Hiệu quả
+              adminService.loadSpecialProductList(),        // Sản phẩm đặc quyền
+              adminService.loadHomeConfig()                 // Cấu hình trang chủ
+          ]);
+          console.log("[App] Đã đồng bộ cấu hình hệ thống thành công.");
+      } catch (error) {
+          console.error("[App] Lỗi tải cấu hình hệ thống:", error);
+      }
+  }
 
   async function loadInitialTables() {
      const sysTables = await adminService.loadSystemPerformanceTables();
@@ -64,7 +84,6 @@
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
-
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
       if ($activeTab === 'declaration-section') {
@@ -148,7 +167,6 @@
 
   // Hàm đóng modal chung
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
-
   // [FIX] Logic tự động cập nhật danh sách kho khi có dữ liệu nhân viên
   $: {
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {

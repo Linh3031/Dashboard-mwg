@@ -151,6 +151,9 @@ export const performanceService = {
             if (docSnap.exists()) {
                 const d = docSnap.data();
                 const data = d.data || d.items || d.config || [];
+                // [FIX CRITICAL] Cập nhật store ngay sau khi tải về
+                efficiencyConfig.set(data);
+                console.log(`[PerformanceService] Đã cập nhật Store EfficiencyConfig với ${data.length} dòng.`);
                 return data;
             }
             return [];
