@@ -7,6 +7,45 @@
   export let reportData = []; 
   const dispatch = createEventDispatcher();
 
+ // --- [ĐOẠN LOG DEBUG MAPPING - MỚI] ---
+  $: if (reportData && reportData.length > 0) {
+      // Chỉ chạy log nếu store mapping đã được load
+      if ($competitionNameMappings) {
+         console.group('%c🔍 DEBUG MAPPING CHƯƠNG TRÌNH (EmployeeView.svelte)', 'background: #6f42c1; color: white; font-size: 14px; padding: 4px; border-radius: 4px;');
+         
+         const mappingKeys = Object.keys($competitionNameMappings);
+         console.log(`1. Store Mapping hiện có ${mappingKeys.length} quy tắc.`);
+         // Mở dòng dưới nếu muốn xem toàn bộ danh sách key đang có trong bộ nhớ
+         // console.log('► Danh sách key trong Store:', mappingKeys);
+         
+         // Lấy thử dữ liệu thi đua của người đầu tiên để soi
+         const itemDauTien = reportData[0];
+         if (itemDauTien && itemDauTien.competitions && itemDauTien.competitions.length > 0) {
+             // Lấy chương trình đầu tiên trong danh sách thi đua của nhân viên này
+             const compThuNghiem = itemDauTien.competitions[0];
+             const tenGoc = compThuNghiem.tenGoc; // Đây là tên lấy từ dữ liệu dán vào
+             
+             console.log(`2. Tên chương trình gốc (từ file Excel/Paste): "%c${tenGoc}%c"`, 'color: orange; font-weight: bold', 'color: inherit');
+             
+             // Thử tra cứu trong store xem có khớp không
+             const giaTriMap = $competitionNameMappings[tenGoc];
+             
+             if (giaTriMap) {
+                 console.log(`=> ✅ Đã tìm thấy mapping! Kết quả: "%c${giaTriMap}%c"`, 'color: green; font-weight: bold', 'color: inherit');
+             } else {
+                 console.log(`=> ❌ KHÔNG TÌM THẤY MAPPING CHO KEY NÀY!`);
+                 console.warn(`Lý do có thể:`);
+                 console.warn(`- Trong Admin bạn nhập chưa chuẩn 100% (thừa/thiếu dấu cách).`);
+                 console.warn(`- Key trong Admin khác với key "${tenGoc}" hiện tại.`);
+                 console.log('👉 Hãy copy dòng chữ màu cam ở mục 2 và dán vào Admin -> Mapping để chắc chắn khớp 100%.');
+             }
+         } else {
+             console.log('⚠️ Dòng dữ liệu đầu tiên không có thông tin cuộc thi (competitions array rỗng).');
+         }
+         console.groupEnd();
+      }
+  }
+
   // --- STATE ---
   let columnSettings = [];
   let sortKey = 'hoTen';
@@ -249,7 +288,7 @@
                                 on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
                             >
                                 <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
-                                    {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
+                                  {formatters.getShortEmployeeName(item.hoTen.replace(item.maNV, '').replace(/-\s*$/, '').trim(), item.maNV)}
                                 </td>
                                 
                                 <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 bg-white group-hover:bg-blue-50 border-r border-gray-200 text-[14px] sticky left-[150px] z-10">

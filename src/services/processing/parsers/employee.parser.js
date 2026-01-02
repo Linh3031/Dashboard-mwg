@@ -1,138 +1,114 @@
-// src/services/processing/parsers/employee.parser.js
-import { excelService } from '../../excel.service.js';
+import readXlsxFile from 'read-excel-file';
 
-export const employeeParser = {
-    /**
-     * Parse file Excel nhân viên và trả về cấu trúc dữ liệu chuẩn hóa
-     * @param {File} file - File Excel upload
-     * @returns {Promise<{
-     * employees: Array, 
-     * warehouses: Array, 
-     * clusters: Object, 
-     * isClusterMode: boolean 
-     * }>}
-     */
-    async parse(file) {
-        try {
-            // 1. Đọc dữ liệu thô từ Excel
-            const rawData = await excelService.read(file);
-            if (!rawData || rawData.length === 0) {
-                throw new Error("File không có dữ liệu!");
-            }
+// Cấu hình Schema để map cột từ Excel sang biến
+const SCHEMA = {
+  'Mã nhân viên': {
+    prop: 'ma_nv',
+    type: String,
+    required: true
+  },
+  'Tên nhân viên': {
+    prop: 'ten_nv',
+    type: String,
+    required: true
+  },
+  'Mã kho': {
+    prop: 'ma_kho',
+    type: String,
+    required: true
+  },
+  'Mã cụm': {
+    prop: 'ma_cum',
+    type: String,
+    // Không bắt buộc required: true nếu có nhân viên không thuộc cụm, 
+    // nhưng cần định nghĩa để map đúng cột
+  },
+  'Vị trí': {
+    prop: 'vi_tri',
+    type: String
+  },
+  'Ngày vào làm': {
+    prop: 'ngay_vao_lam',
+    type: Date
+  }
+  // Thêm các cột khác nếu cần thiết
+};
 
-            // 2. Tìm dòng header (chứa 'MSNV' hoặc 'Mã nhân viên')
-            const headerRowIndex = this._findHeaderRow(rawData);
-            if (headerRowIndex === -1) {
-                throw new Error("Không tìm thấy dòng tiêu đề (cần cột MSNV, Họ tên, Mã kho...)");
-            }
+export const parseEmployeeData = async (file) => {
+  try {
+    const { rows, errors } = await readXlsxFile(file, { schema: SCHEMA });
 
-            // 3. Map cột
-            const headers = rawData[headerRowIndex].map(h => String(h).trim().toLowerCase());
-            const colMap = this._mapColumns(headers);
-
-            // 4. Duyệt qua dữ liệu và chuẩn hóa
-            const employees = [];
-            const warehouseSet = new Set();
-            const clusterMap = {}; // { "908": ["Kho1", "Kho2"] }
-            let hasClusterColumn = colMap.cluster !== -1;
-
-            for (let i = headerRowIndex + 1; i < rawData.length; i++) {
-                const row = rawData[i];
-                // Bỏ qua dòng trống
-                if (!row || row.length === 0) continue;
-
-                const msnv = this._getCell(row, colMap.msnv);
-                const ten = this._getCell(row, colMap.name);
-                const maKho = this._getCell(row, colMap.warehouse);
-                const rawCluster = hasClusterColumn ? this._getCell(row, colMap.cluster) : '';
-
-                // Chỉ lấy dòng có MSNV và Mã Kho
-                if (msnv && maKho) {
-                    const emp = {
-                        msnv: String(msnv).trim(),
-                        hoTen: String(ten).trim(),
-                        boPhan: this._getCell(row, colMap.dept) || 'Cửa hàng',
-                        maKho: String(maKho).trim(),
-                        maCum: this._parseClusterCode(rawCluster) // Xử lý "Cụm 908" -> "908"
-                    };
-
-                    employees.push(emp);
-                    warehouseSet.add(emp.maKho);
-
-                    // Logic gom nhóm Cụm
-                    if (emp.maCum) {
-                        if (!clusterMap[emp.maCum]) {
-                            clusterMap[emp.maCum] = new Set();
-                        }
-                        clusterMap[emp.maCum].add(emp.maKho);
-                    }
-                }
-            }
-
-            // 5. Chuyển Set thành Array để trả về
-            const finalWarehouses = Array.from(warehouseSet).sort();
-            
-            // Chuyển Cluster Map: Set -> Array
-            const finalClusters = {};
-            Object.keys(clusterMap).forEach(key => {
-                finalClusters[key] = Array.from(clusterMap[key]).sort();
-            });
-
-            // Xác định chế độ: Nếu có > 1 mã kho và có cột cụm -> Cluster Mode
-            const isClusterMode = finalWarehouses.length > 1 && Object.keys(finalClusters).length > 0;
-
-            return {
-                employees,
-                warehouses: finalWarehouses,
-                clusters: finalClusters,
-                isClusterMode
-            };
-
-        } catch (error) {
-            console.error("[EmployeeParser] Parsing error:", error);
-            throw error;
-        }
-    },
-
-    // --- Helpers ---
-
-    _findHeaderRow(data) {
-        // Quét 10 dòng đầu để tìm header
-        for (let i = 0; i < Math.min(data.length, 10); i++) {
-            const rowStr = JSON.stringify(data[i]).toLowerCase();
-            if (rowStr.includes('msnv') || rowStr.includes('mã nhân viên')) {
-                return i;
-            }
-        }
-        return -1;
-    },
-
-    _mapColumns(headers) {
-        return {
-            msnv: headers.findIndex(h => h.includes('msnv') || h.includes('mã nhân viên') || h.includes('mã nv')),
-            name: headers.findIndex(h => h.includes('họ tên') || h.includes('tên nhân viên') || h.includes('tên nv')),
-            dept: headers.findIndex(h => h.includes('bộ phận') || h.includes('phòng ban')),
-            warehouse: headers.findIndex(h => h.includes('mã kho') || h.includes('kho') || h.includes('cửa hàng')),
-            cluster: headers.findIndex(h => h.includes('mã cụm') || h.includes('cụm'))
-        };
-    },
-
-    _getCell(row, index) {
-        if (index === -1 || !row[index]) return '';
-        return row[index];
-    },
-
-    /**
-     * Tách mã cụm từ chuỗi
-     * VD: "Cụm 908" -> "908"
-     * VD: "Khu vực 908" -> "908"
-     * VD: "908" -> "908"
-     */
-    _parseClusterCode(rawStr) {
-        if (!rawStr) return '';
-        const str = String(rawStr).trim();
-        // Regex tìm chuỗi số liên tiếp cuối cùng hoặc đầu tiên
-        const match = str.match(/\d+/); 
-        return match ? match[0] : str;
+    if (errors && errors.length > 0) {
+      console.error('Lỗi đọc file nhân viên:', errors);
+      // Có thể throw lỗi hoặc vẫn xử lý tiếp tùy logic business
     }
+
+    // Set để lưu các mã duy nhất
+    const warehouseSet = new Set();
+    const clusterSet = new Set();
+
+    // Duyệt qua từng dòng để xử lý dữ liệu và thu thập meta data
+    const processedData = rows.map((row) => {
+      // Chuẩn hóa dữ liệu (trim spaces, uppercase nếu cần)
+      const maKho = row.ma_kho ? row.ma_kho.toString().trim().toUpperCase() : '';
+      const maCum = row.ma_cum ? row.ma_cum.toString().trim().toUpperCase() : '';
+
+      // Thêm vào Set để đếm
+      if (maKho) warehouseSet.add(maKho);
+      if (maCum) clusterSet.add(maCum);
+
+      return {
+        ...row,
+        ma_kho: maKho,
+        ma_cum: maCum,
+        // Giữ lại giá trị gốc hoặc xử lý thêm các trường khác tại đây
+      };
+    });
+
+    // --- LOGIC XỬ LÝ ĐA KHO & BỘ LỌC ---
+    
+    // Chuyển Set thành Array
+    const uniqueWarehouses = Array.from(warehouseSet).sort();
+    const uniqueClusters = Array.from(clusterSet).sort();
+
+    // Logic kích hoạt chế độ đa kho: Nếu có từ 2 mã kho trở lên
+    const isMultiWarehouseMode = uniqueWarehouses.length >= 2;
+
+    // Chuẩn bị dữ liệu cho bộ lọc (Filter Options)
+    // 1. Options cho Kho (giữ nguyên mã)
+    const warehouseOptions = uniqueWarehouses.map(code => ({
+      value: code,
+      label: code,
+      type: 'warehouse'
+    }));
+
+    // 2. Options cho Cụm (Thêm chữ "Cụm" vào label để phân biệt)
+    const clusterOptions = uniqueClusters.map(code => ({
+      value: code, // Value vẫn giữ nguyên để filter dữ liệu chính xác
+      label: `Cụm ${code}`, // Label hiển thị: "Cụm AG01"
+      type: 'cluster'
+    }));
+
+    // Gộp tất cả option vào một mảng filter chung (nếu UI dùng chung 1 dropdown)
+    // Hoặc UI có thể dùng riêng lẻ từ meta
+    const allFilterOptions = [...warehouseOptions, ...clusterOptions];
+
+    // Trả về cấu trúc đầy đủ
+    return {
+      data: processedData,
+      meta: {
+        isMultiWarehouseMode, // Flag kích hoạt chế độ
+        uniqueWarehouses,     // Danh sách mã kho thô
+        uniqueClusters,       // Danh sách mã cụm thô
+        warehouseOptions,     // Danh sách options kho cho dropdown
+        clusterOptions,       // Danh sách options cụm cho dropdown (đã format tên)
+        allFilterOptions,     // Danh sách gộp
+        totalRows: processedData.length
+      }
+    };
+
+  } catch (error) {
+    console.error("Critical error parsing employee file:", error);
+    throw error;
+  }
 };

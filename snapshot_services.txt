@@ -2759,6 +2759,9 @@ export const performanceService = {
             if (docSnap.exists()) {
                 const d = docSnap.data();
                 const data = d.data || d.items || d.config || [];
+                // [FIX CRITICAL] Cập nhật store ngay sau khi tải về
+                efficiencyConfig.set(data);
+                console.log(`[PerformanceService] Đã cập nhật Store EfficiencyConfig với ${data.length} dòng.`);
                 return data;
             }
             return [];
@@ -3130,7 +3133,8 @@ File: src/services/processing/helpers.js
 /* global XLSX */
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
-import { declarations } from '../../stores.js';
+// [FIX] Import thêm efficiencyConfig
+import { declarations, efficiencyConfig } from '../../stores.js';
 
 export const helpers = {
     findColumnName(header, aliases) {
@@ -3156,20 +3160,58 @@ export const helpers = {
     },
 
     getHeSoQuyDoi: () => {
-        const declarationData = get(declarations).heSoQuyDoi;
         const heSoMap = {};
+        let sourceUsed = 'DEFAULT'; // Biến để debug xem đang lấy dữ liệu từ nguồn nào
+
+        // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
+        const dynamicConfig = get(efficiencyConfig);
+        if (dynamicConfig && dynamicConfig.length > 0) {
+            sourceUsed = 'ADMIN_CONFIG_STORE';
+            dynamicConfig.forEach(item => {
+                // item cấu trúc: { id: "1491 - Smartphone", heSo: 1.5, ... }
+                if (item.id && item.heSo !== undefined && item.heSo !== null) {
+                    heSoMap[item.id.trim()] = parseFloat(item.heSo);
+                }
+            });
+        }
+
+        // ƯU TIÊN 2: Lấy từ Khai báo Text (Cũ - nếu Priority 1 không đủ hoặc rỗng)
+        // Logic merge: Chỉ thêm nếu chưa có trong map
+        const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
                 const parts = line.split(',');
                 if (parts.length >= 2) {
                     const key = parts[0].trim();
                     const value = parseFloat(parts[1].trim());
-                    if (key && !isNaN(value)) heSoMap[key] = value;
+                    if (key && !isNaN(value)) {
+                         // Nếu chưa có thì mới thêm (Ưu tiên Config mới đè lên cũ)
+                         if (heSoMap[key] === undefined) {
+                             heSoMap[key] = value;
+                         }
+                    }
                 }
             });
-            return Object.keys(heSoMap).length > 0 ? heSoMap : config.DEFAULT_DATA.HE_SO_QUY_DOI;
         }
-        return config.DEFAULT_DATA.HE_SO_QUY_DOI;
+
+        // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
+        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI;
+        Object.entries(defaultData).forEach(([key, value]) => {
+             if (heSoMap[key] === undefined) {
+                 heSoMap[key] = value;
+             }
+        });
+
+        // --- [DEBUG LOG THEO YÊU CẦU] ---
+        // Chỉ log khi map có dữ liệu để tránh spam
+        if (Object.keys(heSoMap).length > 0) {
+            // console.log(`[Helpers] Đã nạp ${Object.keys(heSoMap).length} hệ số quy đổi. Nguồn chính: ${sourceUsed}`);
+            // Mở comment dòng dưới nếu muốn soi chi tiết map khi cần
+            // console.log("Chi tiết Map Quy Đổi:", heSoMap);
+        }
+        // -------------------------------
+
+        return heSoMap;
     },
 
     cleanCompetitionName(name) {
@@ -3895,7 +3937,13 @@ export const normalizers = {
             return { normalizedData: [], success: false, missingColumns };
         }
 
-        const normalizedData = rawData.map(row => {
+        // [LOGIC PREP]
+        let heSoMap = {};
+        if (fileType === 'ycx') {
+            heSoMap = helpers.getHeSoQuyDoi(); 
+        }
+
+        const normalizedData = rawData.map((row, index) => {
             const newRow = {};
             for (const key in foundMapping) {
                 if (foundMapping[key]) {
@@ -3916,6 +3964,47 @@ export const normalizers = {
                     }
                 }
             }
+
+            // --- [NEW LOGIC FIXED] TÍNH TOÁN DOANH THU QUY ĐỔI ---
+            if (fileType === 'ycx') {
+                // 1. Chuẩn hóa doanh thu thực
+                let revenue = 0;
+                if (newRow.thanhTien) {
+                    revenue = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
+                }
+                newRow.revenue = revenue; 
+
+                // 2. Xác định Hệ số gốc (Base Rate)
+                const productKey = String(newRow.nhomHang || '').trim();
+                const baseRate = heSoMap[productKey] || 1;
+
+                // 3. Xác định thưởng Trả Góp (Bonus Rate) - Dùng includes thay vì Set
+                const exportModeRaw = String(newRow.hinhThucXuat || '');
+                const exportModeLower = exportModeRaw.toLowerCase();
+                
+                // Logic: Chỉ cần chứa từ khóa "trả góp" hoặc "trả chậm" là dính
+                const isInstallment = exportModeLower.includes('trả góp') || exportModeLower.includes('trả chậm');
+                const bonusRate = isInstallment ? 0.3 : 0;
+
+                // 4. Tính toán
+                newRow.heSoQuyDoi = baseRate + bonusRate; 
+                newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
+                
+                // [DEBUG LOG - CHỈ HIỆN 1 DÒNG ĐẦU TIÊN ĐỂ SOI]
+                if (index === 0) {
+                    console.group(`%c🔍 DEBUG LOGIC QUY ĐỔI (Dòng 1)`, "color: white; background: red; font-weight: bold; padding: 2px 5px");
+                    console.log(`- Sản phẩm: ${productKey}`);
+                    console.log(`- Hệ số gốc (Base): ${baseRate}`);
+                    console.log(`- Hình thức xuất: "${exportModeRaw}"`);
+                    console.log(`- Có phải trả góp không?: ${isInstallment ? '✅ CÓ (+30%)' : '❌ KHÔNG'}`);
+                    console.log(`- Tổng hệ số: ${baseRate} + ${bonusRate} = ${newRow.heSoQuyDoi}`);
+                    console.log(`- Doanh thu gốc: ${revenue.toLocaleString()}`);
+                    console.log(`- Doanh thu quy đổi: ${newRow.revenueQuyDoi.toLocaleString()}`);
+                    console.groupEnd();
+                }
+            }
+            // ------------------------------------------------------------------
+
             return newRow;
         });
 
@@ -4884,7 +4973,10 @@ export const detailReportLogic = {
                 const realRevenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
                 const quantity = parseInt(String(row.soLuong || "0"), 10) || 0;
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                const convertedRevenue = realRevenue * heSo;
+                
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+                
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách lẻ';
 
@@ -4946,7 +5038,7 @@ export const detailReportLogic = {
         const summary = {
             totalRealRevenue: 0,
             totalConvertedRevenue: 0,
-            unexportedRevenue: 0, // [FIX] Khởi tạo = 0 để cộng dồn chính xác
+            unexportedRevenue: 0, 
         };
         const byProductGroup = {};
         const byCustomer = {};
@@ -4954,13 +5046,9 @@ export const detailReportLogic = {
         const dailyStats = {}; 
         const unexportedDetails = {};
         
-        // [FIX] Đã loại bỏ đoạn code lấy doanh thu từ masterReportData gây sai lệch số liệu
-        // Nguyên tắc: Tính toán độc lập dựa trên dữ liệu thô đã lọc kỹ tại function này.
-
         employeeData.forEach(row => {
             const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
             
-            // [QUAN TRỌNG] Bộ lọc này quyết định tính đúng đắn của dữ liệu (giống hệt Modal)
             const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
                                 (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
                                 (row.tinhTrangTra || "").trim() === 'Chưa trả';
@@ -4971,7 +5059,10 @@ export const detailReportLogic = {
                 if(isNaN(realRevenue) || isNaN(quantity)) return;
 
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                const convertedRevenue = realRevenue * heSo;
+                
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+                
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách Lẻ';
                 const categoryName = utils.cleanCategoryName(row.nganhHang || 'Khác');
@@ -5016,8 +5107,6 @@ export const detailReportLogic = {
                     }
 
                 } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
-                    // [FIX] Cộng dồn trực tiếp vào tổng Summary tại đây
-                    // Đảm bảo Tổng Summary = Tổng các mục trong UnexportedDetails
                     summary.unexportedRevenue += convertedRevenue;
 
                     if (!unexportedDetails[groupName]) {
@@ -5146,6 +5235,8 @@ export const generalReportLogic = {
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
 
                 if (!report[nganhHangName]) {
                     report[nganhHangName] = {
@@ -5158,7 +5249,7 @@ export const generalReportLogic = {
 
                 report[nganhHangName].soLuong += soLuong;
                 report[nganhHangName].doanhThuThuc += thanhTien;
-                report[nganhHangName].doanhThuQuyDoi += thanhTien * heSo;
+                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
             }
         });
 
@@ -5186,6 +5277,8 @@ export const generalReportLogic = {
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                // [FIX] Dùng revenueQuyDoi từ normalizer
+                const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
 
                 if (!report[nganhHangName]) {
                     report[nganhHangName] = {
@@ -5198,7 +5291,7 @@ export const generalReportLogic = {
 
                 report[nganhHangName].soLuong += soLuong;
                 report[nganhHangName].doanhThuThuc += thanhTien;
-                report[nganhHangName].doanhThuQuyDoi += thanhTien * heSo;
+                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
             }
         });
 
@@ -5406,16 +5499,6 @@ import { normalize } from './utils.js';
 
 export const metricsProcessor = {
     calculateDynamicMetrics(data, goalSettings) {
-        // [INFO] Lấy tên nhân viên để log dễ theo dõi
-        const empName = data.info?.name || data.name || "Unknown Employee";
-        
-        // Chỉ log chi tiết nếu là Admin hoặc đang debug
-        const shouldLog = true; 
-
-        if (shouldLog) {
-            console.groupCollapsed(`%c🔍 [DEBUG-METRIC] Tính toán cho: ${empName}`, "color: #2563eb; font-weight: bold; background: #eff6ff; padding: 2px 5px; border-radius: 4px;");
-        }
-
         const $efficiencyConfig = get(efficiencyConfig) || [];
         const $warehouseCustomMetrics = get(warehouseCustomMetrics) || [];
         
@@ -5436,22 +5519,13 @@ export const metricsProcessor = {
                     const numType = metricType; 
                     const denType = cfg.typeB || metricType; // Nếu mẫu số không cấu hình riêng thì dùng chung loại
 
-                    if (shouldLog) {
-                        console.group(`📊 Cấu hình: ${cfg.label} (ID: ${cfg.id})`);
-                        console.log(`- Loại dữ liệu: %c${metricType}`, "color: red; font-weight: bold");
-                        console.log(`- IDs Tử số (A):`, cfg.groupA);
-                        console.log(`- IDs Mẫu số (B):`, cfg.groupB);
-                    }
-
                     const modeA = cfg.modeA || 'group';
                     const modeB = cfg.modeB || (cfg.modeA === 'category' ? 'category' : 'group'); 
 
-                    const calcValue = (groupList, type, mode, contextName) => {
+                    const calcValue = (groupList, type, mode) => {
                         let total = 0;
                         if (!Array.isArray(groupList)) return 0;
                         
-                        let logDetails = []; // Mảng chứa chi tiết để in bảng log
-
                         groupList.forEach(targetId => {
                             if (!targetId) return;
                             const cleanTargetId = normalize(targetId); 
@@ -5473,43 +5547,16 @@ export const metricsProcessor = {
                                     else valueToAdd = val.revenue || 0; // Mặc định là DTTL
 
                                     total += valueToAdd;
-
-                                    // Lưu lại chi tiết để log
-                                    logDetails.push({
-                                        'Nguồn (Key)': key,
-                                        'Tên SP/Nhóm': val.name,
-                                        'Loại tính': type,
-                                        'Giá trị cộng': valueToAdd.toLocaleString('vi-VN')
-                                    });
                                 }
                             }
                         });
-
-                        // [DEBUG] In bảng chi tiết các thành phần cấu thành nên tổng số
-                        if (shouldLog && logDetails.length > 0) {
-                            console.log(`%c➤ Chi tiết ${contextName} (Tổng: ${total.toLocaleString()}):`, "color: green; font-weight: bold");
-                            console.table(logDetails);
-                        } else if (shouldLog) {
-                            console.log(`%c➤ Chi tiết ${contextName}: KHÔNG TÌM THẤY DỮ LIỆU KHỚP`, "color: orange");
-                        }
 
                         return total;
                     };
 
                     // Tính toán
-                    const num = calcValue(cfg.groupA, numType, modeA, 'TỬ SỐ');
-                    const den = calcValue(cfg.groupB, denType, modeB, 'MẪU SỐ');
-
-                    // Tính kết quả cuối cùng
-                    const resultPercent = den > 0 ? (num / den) * 100 : 0;
-
-                    if (shouldLog) {
-                        console.log(
-                            `%c🏁 KẾT QUẢ: ${num} / ${den} = ${resultPercent.toFixed(2)}%`, 
-                            "background: #333; color: #fff; padding: 4px; font-size: 12px; border-radius: 4px;"
-                        );
-                        console.groupEnd(); // End group Config
-                    }
+                    const num = calcValue(cfg.groupA, numType, modeA);
+                    const den = calcValue(cfg.groupB, denType, modeB);
 
                     dynamicMetrics[cfg.id] = {
                         value: den > 0 ? num / den : 0, // Lưu dạng decimal (0.5) để component UI format sau
@@ -5520,7 +5567,6 @@ export const metricsProcessor = {
                     console.error("Metric Calc Error:", e);
                 }
             });
-            if (shouldLog) console.groupEnd(); // End group Employee
         }
         return dynamicMetrics;
     }
@@ -5696,6 +5742,10 @@ export const salesProcessor = {
                         const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         
+                        // [FIX] Lấy doanh thu quy đổi chính xác từ Normalizer (đã tính trả góp)
+                        // Fallback về cách tính cũ nếu row.revenueQuyDoi chưa tồn tại
+                        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
+                        
                         const nhomIdObj = row.maNhomHang 
                             ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } 
                             : parseIdentity(row.nhomHang);
@@ -5716,14 +5766,14 @@ export const salesProcessor = {
                             }
                             container[key].revenue += thanhTien;
                             container[key].quantity += soLuong;
-                            container[key].revenueQuyDoi += thanhTien * heSo;
+                            container[key].revenueQuyDoi += revenueQuyDoi; // [UPDATED]
                         }
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
 
                         data.doanhThu += thanhTien;
-                        data.doanhThuQuyDoi += thanhTien * heSo;
+                        data.doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
 
                         if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
                             data.doanhThuTraGop += thanhTien;
@@ -5776,7 +5826,7 @@ export const salesProcessor = {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
                                 data.qdc[key].dt += thanhTien; 
-                                data.qdc[key].dtqd += thanhTien * heSo;
+                                data.qdc[key].dtqd += revenueQuyDoi; // [UPDATED]
                             }
                         }
                     } 
@@ -5795,9 +5845,11 @@ export const salesProcessor = {
                         if (isThuTien && isChuaHuy && isChuaTra) {
                             const thanhTien = parseMoney(row.thanhTien);
                             const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                            // [FIX] Lấy doanh thu quy đổi chính xác (Chưa xuất)
+                            const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
                             
                             data.doanhThuChuaXuat += thanhTien;
-                            data.doanhThuQuyDoiChuaXuat += thanhTien * heSo;
+                            data.doanhThuQuyDoiChuaXuat += revenueQuyDoi; // [UPDATED]
                         } 
                     }
                 }

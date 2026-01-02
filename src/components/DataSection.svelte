@@ -17,7 +17,8 @@
   
   // Import Services
   import { dataService } from '../services/dataService.js';
-  import { clusterService } from '../services/cluster.service.js'; // [NEW] Service xử lý cụm
+  // [CODE MỚI] Import Service xử lý cụm
+  import { clusterService } from '../services/cluster.service.js'; 
   
   // Import để mở Popup chi tiết phiên bản
   import { showVersionDetails } from './common/VersionManager.svelte';
@@ -26,11 +27,11 @@
   let isSyncing = false;
   let dsnvUnsubscribe; 
 
-  // --- LOGIC MỚI: CLUSTER MODE (CHẾ ĐỘ CỤM) ---
+  // --- [LOGIC MỚI] CLUSTER MODE (CHẾ ĐỘ CỤM) ---
   let isClusterMode = false;
   let currentClusterCode = '';
 
-  // Theo dõi sự thay đổi của danh sách nhân viên để kích hoạt chế độ Cụm
+  // Reactive: Tự động check chế độ Cụm khi store nhân viên thay đổi
   $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
       checkClusterStatus($danhSachNhanVien);
   } else {
@@ -39,75 +40,88 @@
   }
 
   function checkClusterStatus(employees) {
-      // 1. Lấy danh sách các mã cụm duy nhất
-      const clusters = [...new Set(employees.map(e => e.maCum).filter(c => c))];
+      // 1. Lấy danh sách các mã cụm duy nhất (từ parser mới)
+      // Lưu ý: Parser cũ trả về field 'maCum' hoặc 'clusterId' tùy mapping
+      // Ta check an toàn cả 2 trường hợp
+      const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
+      
       // 2. Lấy danh sách kho duy nhất
-      const warehouses = [...new Set(employees.map(e => e.maKho).filter(w => w))];
+      const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
 
-      // Điều kiện kích hoạt: Có cột Mã Cụm VÀ (Có > 1 kho HOẶC user đang chọn xem Cụm)
+      // Điều kiện kích hoạt: Có cột Mã Cụm VÀ (Có >= 2 kho HOẶC user đang chọn xem Cụm)
       if (clusters.length > 0 && (warehouses.length > 1 || clusters.includes($selectedWarehouse))) {
           isClusterMode = true;
-          currentClusterCode = clusters[0]; // Mặc định lấy cụm đầu tiên tìm thấy
+          currentClusterCode = clusters[0]; // Mặc định lấy cụm đầu tiên
           
-          // [REQ 3] Cập nhật bộ lọc kho hiển thị Mã Cụm
-          // Nếu danh sách kho hiện tại chưa có mã cụm, ta thêm vào hoặc thay thế
-          if (!$warehouseList.includes(currentClusterCode)) {
-               // Logic: Nếu là chế độ cụm, danh sách chọn chỉ cần hiện Mã Cụm là chính
-               warehouseList.update(list => {
-                   const newList = list.filter(item => !warehouses.includes(item)); // Bỏ các kho lẻ
-                   if (!newList.includes(currentClusterCode)) newList.unshift(currentClusterCode);
-                   return newList;
-               });
-               
-               // Tự động chọn mã cụm nếu chưa chọn
-               if ($selectedWarehouse !== currentClusterCode) {
-                   selectedWarehouse.set(currentClusterCode);
+          // Cập nhật Select box: Thêm mã cụm vào danh sách chọn nếu chưa có
+          warehouseList.update(list => {
+               // Nếu chưa có mã cụm trong list, thêm nó vào đầu
+               if (!list.includes(currentClusterCode)) {
+                   return [currentClusterCode, ...list];
                }
+               return list;
+          });
+          
+          // Tự động switch sang mã cụm nếu đang chưa chọn gì
+          if (!$selectedWarehouse || $selectedWarehouse !== currentClusterCode) {
+               // Logic tùy chọn: Có thể tự động chọn hoặc để user chọn
+               // Ở đây tôi để log check thôi, tránh force user quá gắt
+               console.log(`[Cluster] Detected cluster: ${currentClusterCode}`);
           }
           
-          // Load dữ liệu cũ của cụm (nếu có)
+          // Load dữ liệu đã lưu của cụm này (để hiển thị biểu đồ nếu F5)
           clusterService.loadSavedData(currentClusterCode);
-          console.log(`[DataSection] Cluster Mode Activated: ${currentClusterCode}`);
       } else {
           isClusterMode = false;
           currentClusterCode = '';
+          // Reset service nếu về chế độ thường
           clusterService.reset();
       }
   }
 
-  // --- XỬ LÝ PASTE DỮ LIỆU (LOGIC MỚI) ---
+  // --- [LOGIC MỚI] XỬ LÝ PASTE DỮ LIỆU ---
   
-  // 1. Xử lý "Thi đua siêu thị lũy kế" (Chỉ hiện khi isClusterMode = true)
+  // 1. Handler cho ô "Thi đua siêu thị lũy kế" (Chỉ hiện khi Cluster Mode)
   function handlePasteCompetition(event) {
-      const text = event.detail; // Nội dung text paste
+      const text = event.detail;
       if (isClusterMode && currentClusterCode) {
           try {
               clusterService.processCompetitionInput(text, currentClusterCode);
-              notificationStore.set(`Đã cập nhật thi đua cho Cụm ${currentClusterCode}!`, 'success');
+              notificationStore.set({ 
+                  message: `✅ Đã cập nhật thi đua cho Cụm ${currentClusterCode}!`, 
+                  type: 'success' 
+              });
           } catch (e) {
               console.error(e);
-              notificationStore.set('Lỗi xử lý dữ liệu thi đua! Vui lòng kiểm tra format.', 'error');
+              notificationStore.set({ 
+                  message: 'Lỗi xử lý dữ liệu thi đua! Kiểm tra format.', 
+                  type: 'error' 
+              });
           }
       }
   }
 
-  // 2. Xử lý "Data lũy kế" (Rẽ nhánh: Cụm vs Kho lẻ)
+  // 2. Handler cho ô "Data lũy kế" (Rẽ nhánh thông minh)
   function handlePasteCumulative(event) {
       const text = event.detail;
       
       if (isClusterMode && currentClusterCode) {
-          // [REQ 4] Cơ chế lấy dữ liệu khác cho Cụm
+          // A. CHẾ ĐỘ CỤM: Xử lý bằng Cluster Service (Logic 16 cột tổng hợp)
           try {
               clusterService.processCumulativeInput(text, currentClusterCode);
-              notificationStore.set(`Đã cập nhật Lũy kế cho Cụm ${currentClusterCode}!`, 'success');
+              notificationStore.set({ 
+                  message: `✅ Đã cập nhật Lũy kế cho Cụm ${currentClusterCode}!`, 
+                  type: 'success' 
+              });
           } catch (e) {
               console.error(e);
-              notificationStore.set('Lỗi xử lý Data Lũy kế Cụm!', 'error');
+              notificationStore.set({ message: 'Lỗi xử lý Data Lũy kế Cụm!', type: 'error' });
           }
       } else {
-          // Logic cũ: Data Section không cần làm gì vì PasteInput đã lưu vào LocalStorage
-          // và dataService/luykeParser sẽ tự động detect change qua 'saveKeyPaste'.
-          console.log('[DataSection] Paste Lũy kế (Chế độ đơn kho) - Handled by reactive store.');
+          // B. CHẾ ĐỘ KHO ĐƠN (CŨ):
+          // Không làm gì cả -> Để mặc định cho PasteInput tự save vào localStorage
+          // và dataService sẽ tự detect qua key 'daily_paste_luyke' như cũ.
+          console.log('[DataSection] Mode Kho đơn: Dữ liệu đã được lưu vào Storage.');
       }
   }
 
@@ -134,10 +148,10 @@
 
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
             if (data && data.length > 0) {
-                // Kiểm tra lại cluster status khi load xong
+                // Check cluster status ngay khi load data
                 checkClusterStatus(data);
                 
-                // Nếu không phải cluster mode thì sync bình thường
+                // Chỉ sync từ cloud nếu KHÔNG PHẢI là cụm (vì cụm ko có cloud sync)
                 if (!isClusterMode) {
                     console.log(`[DataSection] Đồng bộ kho đơn: ${savedWh}`);
                     await triggerSync(savedWh);
@@ -180,10 +194,12 @@
           localStorage.setItem('selectedWarehouse', newWarehouse);
           
           if (isClusterMode && newWarehouse === currentClusterCode) {
-               notificationStore.set(`Đã chuyển sang chế độ quản lý Cụm ${newWarehouse}`, 'info');
+               // Nếu chọn vào Mã Cụm -> Load data cụm
+               notificationStore.set({ message: `Chế độ Cụm: ${newWarehouse}`, type: 'info' });
                clusterService.loadSavedData(newWarehouse);
           } else {
-               notificationStore.set(`Đang đồng bộ dữ liệu cho ${newWarehouse}...`, 'info');
+               // Nếu chọn vào Mã Kho lẻ -> Sync bình thường
+               notificationStore.set({ message: `Đang đồng bộ ${newWarehouse}...`, type: 'info' });
                await triggerSync(newWarehouse);
           }
       } else {
@@ -300,16 +316,20 @@
             />
             
             {#if isClusterMode}
-                <div class="animate-fade-in p-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative">
+                     <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
                      <PasteInput
-                        label="Thi đua siêu thị lũy kế (Mới)"
+                        label="Thi đua siêu thị lũy kế"
                         icon="layers"
                         link="#"
                         placeholder="Paste dữ liệu thi đua cụm..."
                         saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`}
                         on:paste={handlePasteCompetition}
                     />
-                    <p class="text-xs text-indigo-600 mt-1 italic pl-1">* Dành cho quản lý cụm {currentClusterCode}</p>
+                    <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1">
+                        <i data-feather="info" class="w-3 h-3"></i>
+                        Dành cho quản lý Cụm {currentClusterCode}
+                    </p>
                 </div>
             {/if}
             
@@ -400,11 +420,12 @@
         100% { transform: translateX(-100%); }
     }
     
+    /* Animation cho ô nhập liệu Cụm mới xuất hiện */
     .animate-fade-in {
-        animation: fadeIn 0.3s ease-in-out;
+        animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
     @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-5px); }
+        from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
 </style>
