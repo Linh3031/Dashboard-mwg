@@ -8,10 +8,12 @@
     ycxDataThangTruoc, thuongNongDataThangTruoc,
     fileSyncState 
   } from '../../stores.js';
-
+  
   export let label = "Chưa có nhãn";
   export let icon = "file";
-  export let saveKey = ""; 
+  export let saveKey = "";
+  // [ADD] Thêm prop link để nhận đường dẫn từ cha
+  export let link = "";
 
   let fileName = "Chưa thêm file";
   let statusHTML = ""; 
@@ -31,7 +33,6 @@
 
   $: syncState = $fileSyncState[saveKey];
   $: dataCount = $dataStore ? $dataStore.length : 0;
-
   // Logic hiển thị trạng thái (Reactive)
   $: {
       if (isLoading) {
@@ -49,6 +50,7 @@
                   <button class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 border border-blue-300 font-bold btn-download-cloud pointer-events-auto">
                       Tải & Xử lý
                   </button>
+      
               `;
           } else if (syncState.status === 'downloading') {
               statusClass = "text-blue-600";
@@ -79,15 +81,12 @@
   async function handleChange(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
     isLoading = true;
     localError = ""; // Reset lỗi cũ
     fileName = file.name;
-
     try {
       // Gọi service
       const result = await dataService.handleFileChange(file, saveKey);
-      
       if (!result.success) {
           localError = result.message;
       }
@@ -101,8 +100,11 @@
   }
 
   function handleContainerClick(e) {
+      // Nếu click vào thẻ a (link) thì không làm gì cả, để trình duyệt mở tab mới
+      if (e.target.closest('a')) return;
+
       if (e.target.closest('.btn-download-cloud')) {
-          e.preventDefault(); 
+          e.preventDefault();
           e.stopPropagation();
           dataService.downloadFileFromCloud(saveKey);
       }
@@ -114,14 +116,29 @@
 </script>
 
 <div class="data-input-group input-group--yellow" on:click={handleContainerClick}> 
-    <div class="data-input-group__label"> 
+    <div class="data-input-group__label relative z-10"> 
        <i data-feather={icon} class="h-5 w-5 feather"></i>
-        <span>{label}:</span>
+       
+       {#if link}
+            <a 
+                href={link} 
+                target="_blank" 
+                class="text-blue-700 underline font-bold cursor-pointer relative z-50 hover:text-blue-900 pointer-events-auto"
+                on:click|stopPropagation={() => console.log('Link clicked')}
+                title="Mở báo cáo nguồn"
+            >
+                {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
+            </a>
+       {:else}
+            <span>{label}:</span>
+       {/if}
     </div> 
+    
     <div class="data-input-group__content"> 
         <div class="flex items-center gap-2"> 
             <label for="file-{saveKey}" class="data-input-group__file-trigger" class:opacity-50={isLoading}>
-                {isLoading ? 'Đang chạy...' : 'Thêm file'}
+                {isLoading ?
+                'Đang chạy...' : 'Thêm file'}
             </label>
             <span class="data-input-group__file-name" title={fileName}>{fileName}</span> 
         </div> 
@@ -130,13 +147,15 @@
             <button on:click={() => dataService.handleTemplateDownload()} class="data-input-group__link text-left">Tải file mẫu</button> 
         {/if}
 
-        <input type="file" id="file-{saveKey}" class="hidden" accept=".xlsx, .xls, .csv" on:change={handleChange} disabled={isLoading}> 
+        <input type="file" id="file-{saveKey}" class="hidden" accept=".xlsx, 
+        .xls, .csv" on:change={handleChange} disabled={isLoading}> 
         
         <div class="data-input-group__status-wrapper"> 
             <span class="data-input-group__status-text {statusClass}">{@html statusHTML}</span> 
         </div> 
         
-        {#if isLoading || (syncState && syncState.status === 'downloading')}
+        {#if isLoading ||
+        (syncState && syncState.status === 'downloading')}
             <div class="progress-bar-container">
                 <div class="progress-bar" style="width: 100%; background-color: #3b82f6;"></div>
             </div>

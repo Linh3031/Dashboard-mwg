@@ -304,6 +304,7 @@
             <FileInput 
                 label="Yêu cầu xuất lũy kế"
                 icon="file-text"
+                link="https://report.mwgroup.vn/home/dashboard/077"
                 saveKey="saved_ycx"
             />
             
@@ -351,12 +352,14 @@
             <FileInput
                 label="Giờ công"
                 icon="clock"
+                link="https://reports.thegioididong.com/#/viewreport/168754"
                 saveKey="saved_giocong"
              />
              
             <FileInput
                  label="Thưởng nóng"
                 icon="gift"
+                link="https://report.mwgroup.vn/home/dashboard/105"
                 saveKey="saved_thuongnong"
             />
              
@@ -385,6 +388,7 @@
                 <FileInput
                     label="YCX Lũy Kế tháng trước"
                     icon="file-text"
+                    link="https://report.mwgroup.vn/home/dashboard/077"
                     saveKey="saved_ycx_thangtruoc"
                 />
             </div> 
@@ -392,6 +396,7 @@
                   <FileInput
                     label="Thưởng nóng tháng trước"
                     icon="gift"
+                     link="https://report.mwgroup.vn/home/dashboard/105"
                      saveKey="saved_thuongnong_thangtruoc"
                 />
              </div> 

@@ -1,49 +1,31 @@
 <script>
   import { createEventDispatcher, afterUpdate } from 'svelte';
-  import { pastedThiDuaReportData, competitionNameMappings } from '../../../stores.js'; 
+  // Import ycxData để map tên nhân viên chuẩn xác
+  import { pastedThiDuaReportData, competitionNameMappings, ycxData } from '../../../stores.js'; 
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   
   export let reportData = []; 
   const dispatch = createEventDispatcher();
 
- // --- [ĐOẠN LOG DEBUG MAPPING - MỚI] ---
-  $: if (reportData && reportData.length > 0) {
-      // Chỉ chạy log nếu store mapping đã được load
-      if ($competitionNameMappings) {
-         console.group('%c🔍 DEBUG MAPPING CHƯƠNG TRÌNH (EmployeeView.svelte)', 'background: #6f42c1; color: white; font-size: 14px; padding: 4px; border-radius: 4px;');
-         
-         const mappingKeys = Object.keys($competitionNameMappings);
-         console.log(`1. Store Mapping hiện có ${mappingKeys.length} quy tắc.`);
-         // Mở dòng dưới nếu muốn xem toàn bộ danh sách key đang có trong bộ nhớ
-         // console.log('► Danh sách key trong Store:', mappingKeys);
-         
-         // Lấy thử dữ liệu thi đua của người đầu tiên để soi
-         const itemDauTien = reportData[0];
-         if (itemDauTien && itemDauTien.competitions && itemDauTien.competitions.length > 0) {
-             // Lấy chương trình đầu tiên trong danh sách thi đua của nhân viên này
-             const compThuNghiem = itemDauTien.competitions[0];
-             const tenGoc = compThuNghiem.tenGoc; // Đây là tên lấy từ dữ liệu dán vào
-             
-             console.log(`2. Tên chương trình gốc (từ file Excel/Paste): "%c${tenGoc}%c"`, 'color: orange; font-weight: bold', 'color: inherit');
-             
-             // Thử tra cứu trong store xem có khớp không
-             const giaTriMap = $competitionNameMappings[tenGoc];
-             
-             if (giaTriMap) {
-                 console.log(`=> ✅ Đã tìm thấy mapping! Kết quả: "%c${giaTriMap}%c"`, 'color: green; font-weight: bold', 'color: inherit');
-             } else {
-                 console.log(`=> ❌ KHÔNG TÌM THẤY MAPPING CHO KEY NÀY!`);
-                 console.warn(`Lý do có thể:`);
-                 console.warn(`- Trong Admin bạn nhập chưa chuẩn 100% (thừa/thiếu dấu cách).`);
-                 console.warn(`- Key trong Admin khác với key "${tenGoc}" hiện tại.`);
-                 console.log('👉 Hãy copy dòng chữ màu cam ở mục 2 và dán vào Admin -> Mapping để chắc chắn khớp 100%.');
-             }
-         } else {
-             console.log('⚠️ Dòng dữ liệu đầu tiên không có thông tin cuộc thi (competitions array rỗng).');
-         }
-         console.groupEnd();
-      }
+  // --- HÀM TÌM MAPPING THÔNG MINH (Bỏ qua lỗi dấu cách) ---
+  function findSmartMapping(tenGoc, mappings) {
+      if (!mappings) return tenGoc;
+      
+      // 1. Tìm chính xác 100% (Nhanh nhất)
+      if (mappings[tenGoc]) return mappings[tenGoc];
+
+      // 2. Tìm kiểu "làm sạch" (Xóa khoảng trắng thừa 2 đầu để so sánh)
+      const cleanName = String(tenGoc).trim();
+      
+      // Quét toàn bộ danh sách key trong Admin để tìm cái nào giống
+      const allKeys = Object.keys(mappings);
+      const matchedKey = allKeys.find(k => String(k).trim() === cleanName);
+      
+      if (matchedKey) return mappings[matchedKey];
+
+      // 3. Không tìm thấy thì trả về tên gốc
+      return tenGoc;
   }
 
   // --- STATE ---
@@ -76,21 +58,63 @@
   // --- REACTIVE PROCESSING ---
   $: {
       if (reportData && reportData.length > 0) {
+          
+          // --- [LOGIC 1] MAP TÊN NHÂN VIÊN TỪ DANH SÁCH GỐC (Fix lỗi sai tên) --- 
+          const nameMap = {};
+          if ($ycxData && $ycxData.length) {
+              $ycxData.forEach(nv => {
+                  if (nv.nguoiTao) {
+                      const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
+                      if (msnvMatch) {
+                           nameMap[msnvMatch[1].trim()] = nv.nguoiTao; 
+                           if(nv.hoTen) nameMap[msnvMatch[1].trim()] = nv.hoTen;
+                      }
+                  } else if (nv.maNV) {
+                       nameMap[String(nv.maNV).trim()] = nv.hoTen;
+                  }
+              });
+          }
+
+          const mappedReportData = reportData.map(item => {
+             // Ưu tiên lấy maNV nếu có, hoặc lấy từ name nếu name là số
+             let rawCode = item.maNV;
+             if (!rawCode && item.name && /^\d+$/.test(item.name)) {
+                 rawCode = item.name;
+             }
+
+             // Tra cứu tên thật
+             let realName = item.hoTen || item.name;
+             if (rawCode && nameMap[String(rawCode).trim()]) {
+                 realName = nameMap[String(rawCode).trim()];
+                 // Nếu tên trong map là dạng "Tên - Mã", cắt bỏ phần mã
+                 if (realName.includes('-')) {
+                     const parts = realName.split('-');
+                     if (parts.length > 1) realName = parts[0].trim();
+                 }
+             }
+             
+             return {
+                 ...item,
+                 maNV: rawCode || item.maNV, 
+                 hoTen: realName 
+             };
+          });
+
+          // --- [LOGIC 2] CẤU HÌNH CỘT & MAPPING TÊN CỘT ---
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          // Nếu chưa có setting lưu, load mặc định (logic loadPastedCompetitionViewSettings đã handle việc tạo default từ dữ liệu)
           if (!savedSettings || savedSettings.length === 0) {
               savedSettings = settingsService.loadPastedCompetitionViewSettings();
           }
           columnSettings = savedSettings;
 
-          // Map tên hiển thị
+          // Áp dụng hàm mapping thông minh tại đây
           columnSettings = columnSettings.map(col => ({
               ...col,
-              label: $competitionNameMappings[col.tenGoc] || col.label || col.tenGoc
+              label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
 
           const groups = {};
-          reportData.forEach(item => {
+          mappedReportData.forEach(item => {
               const dept = item.boPhan || 'Chưa phân loại';
               if (!groups[dept]) groups[dept] = [];
               groups[dept].push(item);
@@ -116,8 +140,8 @@
               avgs[deptName] = deptAvg;
           });
           deptAverages = avgs;
-
-          allEmployees = [...reportData];
+          
+          allEmployees = [...mappedReportData];
       } else {
           allEmployees = [];
       }
@@ -288,7 +312,7 @@
                                 on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
                             >
                                 <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
-                                  {formatters.getShortEmployeeName(item.hoTen.replace(item.maNV, '').replace(/-\s*$/, '').trim(), item.maNV)}
+                                    {formatters.getShortEmployeeName(item.hoTen.replace(item.maNV, '').replace(/-\s*$/, '').trim(), item.maNV)}
                                 </td>
                                 
                                 <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 bg-white group-hover:bg-blue-50 border-r border-gray-200 text-[14px] sticky left-[150px] z-10">
