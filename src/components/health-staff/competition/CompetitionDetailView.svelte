@@ -1,7 +1,8 @@
 <script>
-    import { createEventDispatcher, afterUpdate } from 'svelte'; // [QUAN TRỌNG] Thêm afterUpdate
+    import { createEventDispatcher, afterUpdate } from 'svelte';
     import { formatters } from '../../../utils/formatters.js';
-    import { competitionNameMappings } from '../../../stores.js';
+    // [FIX GENESIS] Import ycxData để tra cứu thông tin chuẩn
+    import { competitionNameMappings, ycxData } from '../../../stores.js';
     import { settingsService } from '../../../services/settings.service.js';
 
     export let employeeId;
@@ -11,6 +12,13 @@
 
     // --- LOGIC TÍNH TOÁN ---
     let employee = null;
+    // [FIX GENESIS] Biến hiển thị đã được làm sạch
+    let displayInfo = {
+        name: '',
+        code: '',
+        dept: ''
+    };
+
     let stats = {
         dat: [],
         ganDat: [],
@@ -18,11 +26,51 @@
         summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
     };
 
+    // [FIX GENESIS] Thêm $ycxData vào dependency
     $: {
         if (employeeId && allReportData.length > 0) {
-            employee = allReportData.find(e => e.maNV === employeeId);
+            let rawEmp = allReportData.find(e => e.maNV === employeeId);
 
-            if (employee) {
+            if (rawEmp) {
+                // Clone object để xử lý hiển thị
+                employee = { ...rawEmp };
+                
+                // --- LOGIC FIX TÊN & BỘ PHẬN ---
+                const cleanCode = String(employeeId).trim();
+                let realName = employee.hoTen || employee.name || '';
+                let realDept = employee.boPhan || '';
+
+                // 1. Tra cứu ngược trong danh sách nhân viên chuẩn (ycxData)
+                if ($ycxData && $ycxData.length) {
+                    const dbEmp = $ycxData.find(e => 
+                        String(e.ma_nv || e.maNV || '').trim() === cleanCode ||
+                        (e.nguoiTao && String(e.nguoiTao).includes(cleanCode))
+                    );
+                    if (dbEmp) {
+                        realName = dbEmp.ten_nv || dbEmp.hoTen || realName;
+                        // Ưu tiên lấy bộ phận từ DB nếu báo cáo bị thiếu hoặc lỗi
+                        if (!realDept || realDept === 'Chưa phân loại' || realDept === 'Nhân viên không tìm thấy') {
+                            realDept = dbEmp.ma_kho || dbEmp.boPhan || dbEmp.vi_tri || '';
+                        }
+                    }
+                }
+
+                // 2. Làm sạch tên (Loại bỏ mã nhân viên thừa trong tên)
+                // VD: "Phan Mai Thị Ái Trâm - 12277" -> Xóa "12277"
+                if (realName.includes(cleanCode)) {
+                    realName = realName.replace(cleanCode, '');
+                }
+                // Xóa dấu gạch ngang/khoảng trắng thừa ở cuối chuỗi
+                realName = realName.replace(/[-–—\s]+$/, '').trim();
+
+                // Cập nhật biến hiển thị
+                displayInfo = {
+                    name: realName,
+                    code: cleanCode,
+                    dept: realDept
+                };
+                // -------------------------------
+
                 // Lấy cấu hình tên cột hiển thị
                 let columnSettings = settingsService.loadPastedCompetitionViewSettings();
                 if (!columnSettings || columnSettings.length === 0) {
@@ -37,7 +85,7 @@
                     }));
 
                 // Tính Trung bình bộ phận
-                const deptEmployees = allReportData.filter(e => e.boPhan === employee.boPhan);
+                const deptEmployees = allReportData.filter(e => e.boPhan === rawEmp.boPhan);
                 const deptAvgs = {};
                 
                 activeColumns.forEach(col => {
@@ -55,7 +103,6 @@
 
                 // Phân loại chỉ số
                 let datList = [], ganDatList = [], canCoGangList = [];
-
                 activeColumns.forEach(col => {
                     const compData = employee.competitions.find(c => c.tenGoc === col.tenGoc);
                     const val = compData ? compData.giaTri : 0;
@@ -110,6 +157,7 @@
 </script>
 
 <div class="animate-fade-in pb-10 bg-gray-50 min-h-screen p-4 sm:p-6">
+  
     <button on:click={goBack} class="mb-4 flex items-center gap-2 text-gray-500 hover:text-blue-600 transition-colors font-semibold">
         <i data-feather="arrow-left" class="w-5 h-5"></i> Quay lại bảng tổng hợp
     </button>
@@ -120,10 +168,13 @@
                 <i data-feather="user" class="w-8 h-8"></i>
             </div>
             <div>
-                <h2 class="text-2xl font-bold text-gray-800">{employee.hoTen} <span class="text-gray-400 font-medium text-lg">- {employee.maNV}</span></h2>
-                <span class="inline-block mt-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100">
-                    {employee.boPhan}
-                </span>
+                <h2 class="text-2xl font-bold text-gray-800">{displayInfo.name} <span class="text-gray-400 font-medium text-lg">- {displayInfo.code}</span></h2>
+                
+                {#if displayInfo.dept}
+                    <span class="inline-block mt-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100">
+                        {displayInfo.dept}
+                    </span>
+                {/if}
             </div>
         </div>
 

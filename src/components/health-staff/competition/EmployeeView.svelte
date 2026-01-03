@@ -1,29 +1,25 @@
 <script>
   import { createEventDispatcher, afterUpdate } from 'svelte';
   // Import ycxData để map tên nhân viên chuẩn xác
-  import { pastedThiDuaReportData, competitionNameMappings, ycxData } from '../../../stores.js'; 
+  import { pastedThiDuaReportData, competitionNameMappings, ycxData } from '../../../stores.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   
-  export let reportData = []; 
+  export let reportData = [];
   const dispatch = createEventDispatcher();
 
   // --- HÀM TÌM MAPPING THÔNG MINH (Bỏ qua lỗi dấu cách) ---
   function findSmartMapping(tenGoc, mappings) {
       if (!mappings) return tenGoc;
-      
       // 1. Tìm chính xác 100% (Nhanh nhất)
       if (mappings[tenGoc]) return mappings[tenGoc];
-
       // 2. Tìm kiểu "làm sạch" (Xóa khoảng trắng thừa 2 đầu để so sánh)
       const cleanName = String(tenGoc).trim();
-      
       // Quét toàn bộ danh sách key trong Admin để tìm cái nào giống
       const allKeys = Object.keys(mappings);
       const matchedKey = allKeys.find(k => String(k).trim() === cleanName);
       
       if (matchedKey) return mappings[matchedKey];
-
       // 3. Không tìm thấy thì trả về tên gốc
       return tenGoc;
   }
@@ -32,11 +28,9 @@
   let columnSettings = [];
   let sortKey = 'hoTen';
   let sortDirection = 'asc';
-  
   // Dữ liệu phẳng
   let allEmployees = [];
-  let deptAverages = {}; 
-
+  let deptAverages = {};
   // Palette màu cho header
   const headerColors = [
       'bg-red-100 text-red-900 border-red-200',
@@ -50,7 +44,6 @@
       'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200',
       'bg-rose-100 text-rose-900 border-rose-200'
   ];
-
   function getHeaderColor(index) {
       return headerColors[index % headerColors.length];
   }
@@ -59,18 +52,32 @@
   $: {
       if (reportData && reportData.length > 0) {
           
-          // --- [LOGIC 1] MAP TÊN NHÂN VIÊN TỪ DANH SÁCH GỐC (Fix lỗi sai tên) --- 
-          const nameMap = {};
+          // --- [LOGIC 1] MAP TÊN NHÂN VIÊN TỪ DANH SÁCH GỐC (FIX GENESIS) --- 
+          // Tạo map chứa cả Tên và Bộ phận (Kho)
+          const infoMap = {};
           if ($ycxData && $ycxData.length) {
               $ycxData.forEach(nv => {
+                  // Xử lý linh hoạt các trường dữ liệu (ma_nv/maNV, ten_nv/hoTen, ma_kho/boPhan)
+                  const code = String(nv.ma_nv || nv.maNV || '').trim();
+                  const name = nv.ten_nv || nv.hoTen || '';
+                  const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
+
+                  if (code) {
+                      infoMap[code] = { name, dept };
+                  }
+                  
+                  // Fallback: map theo tên người tạo nếu có dạng "Tên - Mã"
                   if (nv.nguoiTao) {
                       const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
                       if (msnvMatch) {
-                           nameMap[msnvMatch[1].trim()] = nv.nguoiTao; 
-                           if(nv.hoTen) nameMap[msnvMatch[1].trim()] = nv.hoTen;
+                          const extractedCode = msnvMatch[1].trim();
+                          if (!infoMap[extractedCode]) {
+                               infoMap[extractedCode] = { 
+                                   name: nv.hoTen || nv.nguoiTao, 
+                                   dept: dept 
+                               };
+                          }
                       }
-                  } else if (nv.maNV) {
-                       nameMap[String(nv.maNV).trim()] = nv.hoTen;
                   }
               });
           }
@@ -81,22 +88,37 @@
              if (!rawCode && item.name && /^\d+$/.test(item.name)) {
                  rawCode = item.name;
              }
+             
+             // Chuẩn hóa mã nhân viên để tra cứu
+             const lookupCode = String(rawCode || '').trim();
+             const info = infoMap[lookupCode];
 
-             // Tra cứu tên thật
+             // Tra cứu tên thật và bộ phận
              let realName = item.hoTen || item.name;
-             if (rawCode && nameMap[String(rawCode).trim()]) {
-                 realName = nameMap[String(rawCode).trim()];
-                 // Nếu tên trong map là dạng "Tên - Mã", cắt bỏ phần mã
-                 if (realName.includes('-')) {
-                     const parts = realName.split('-');
-                     if (parts.length > 1) realName = parts[0].trim();
+             let realDept = item.boPhan; // Giữ bộ phận gốc nếu có
+
+             if (info) {
+                 if (info.name) realName = info.name;
+                 // Nếu dữ liệu gốc chưa có bộ phận hoặc bộ phận bị rỗng, lấy từ danh sách nhân viên (ma_kho)
+                 if (!realDept || realDept === 'Chưa phân loại' || realDept === lookupCode) {
+                     realDept = info.dept;
                  }
              }
              
+             // Làm sạch tên: Nếu tên là dạng "Tên - Mã", cắt bỏ phần mã
+             if (realName && realName.includes('-')) {
+                  const parts = realName.split('-');
+                  // Nếu phần sau là số (MSNV), lấy phần đầu
+                  if (parts.length > 1 && /\d/.test(parts[parts.length-1])) {
+                       realName = parts[0].trim();
+                  }
+             }
+
              return {
                  ...item,
                  maNV: rawCode || item.maNV, 
-                 hoTen: realName 
+                 hoTen: realName,
+                 boPhan: realDept || 'Chưa phân loại'
              };
           });
 
@@ -106,7 +128,6 @@
               savedSettings = settingsService.loadPastedCompetitionViewSettings();
           }
           columnSettings = savedSettings;
-
           // Áp dụng hàm mapping thông minh tại đây
           columnSettings = columnSettings.map(col => ({
               ...col,
@@ -181,7 +202,6 @@
             valA = getScore(a);
             valB = getScore(b);
             return sortDirection === 'asc' ? valA - valB : valB - valA;
-
       } else {
             valA = a[sortKey] || '';
             valB = b[sortKey] || '';
@@ -312,7 +332,7 @@
                                 on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
                             >
                                 <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
-                                    {formatters.getShortEmployeeName(item.hoTen.replace(item.maNV, '').replace(/-\s*$/, '').trim(), item.maNV)}
+                                    {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
                                 
                                 <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 bg-white group-hover:bg-blue-50 border-r border-gray-200 text-[14px] sticky left-[150px] z-10">

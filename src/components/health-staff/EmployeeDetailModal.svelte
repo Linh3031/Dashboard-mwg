@@ -1,59 +1,121 @@
 <script>
     import { createEventDispatcher } from 'svelte';
-    
+    // Đảm bảo đường dẫn import đúng cấp
+    import { ycxData } from '../../stores.js';
+
     // Props nhận vào từ cha
     export let isOpen = false;
     export let employeeCode = '';
     export let employeeName = '';
     export let employeeDept = '';
-    export let rawData = []; // Dữ liệu gốc (reportData) để lọc
+    export let rawData = [];
 
     const dispatch = createEventDispatcher();
-
+    
     // Biến nội bộ
     let history = [];
     let summary = {
         totalErrors: 0,
         totalDeducted: 0,
         totalBonus: 0,
-        finalScore: 100 // Giả sử điểm gốc là 100, hoặc tính theo logic dự án
+        finalScore: 100 
     };
 
-    // Reactive: Khi employeeCode hoặc rawData thay đổi, tính toán lại
-    $: if (isOpen && employeeCode && rawData.length > 0) {
-        analyzeEmployeeData();
+    let displayInfo = {
+        name: '',
+        dept: ''
+    };
+
+    // Reactive: Chạy khi mở modal
+    $: if (isOpen && employeeCode) {
+        debugGenesis(); // Gọi hàm debug tách biệt cho gọn
+        
+        const cleanCode = String(employeeCode).trim();
+        let found = false;
+
+        // 1. LOGIC TRA CỨU
+        if ($ycxData && $ycxData.length) {
+             const emp = $ycxData.find(e => {
+                // Check kỹ cả String/Number
+                const codeInDb = String(e.ma_nv || e.maNV || '').trim();
+                const codeInCreator = e.nguoiTao ? String(e.nguoiTao) : '';
+                return codeInDb === cleanCode || codeInCreator.includes(cleanCode);
+             });
+             
+             if (emp) {
+                 const fullName = emp.ten_nv || emp.hoTen || employeeName;
+                 const dept = emp.ma_kho || emp.boPhan || emp.vi_tri || employeeDept;
+                 
+                 displayInfo.name = fullName;
+                 displayInfo.dept = dept;
+                 found = true;
+                 console.log('[GENESIS] -> Tìm thấy trong DB:', { fullName, dept });
+             } 
+        } 
+        
+        if (!found) {
+             displayInfo.name = employeeName || '';
+             displayInfo.dept = employeeDept || '';
+             console.log('[GENESIS] -> Không tìm thấy, dùng Fallback:', displayInfo);
+        }
+
+        // 2. LOGIC LÀM SẠCH (Cải tiến)
+        if (displayInfo.name && cleanCode) {
+             let rawName = displayInfo.name;
+             
+             // Log trước khi clean
+             console.log(`[GENESIS] -> Trước khi Clean: "${rawName}" (Code: "${cleanCode}")`);
+
+             // Thay thế Code bằng rỗng
+             if (rawName.includes(cleanCode)) {
+                 rawName = rawName.replace(cleanCode, '');
+             }
+             
+             // Xóa dấu gạch ngang ở cuối chuỗi (lặp lại nhiều lần để chắc ăn)
+             // VD: "Tên - - " -> "Tên"
+             rawName = rawName.replace(/[-–—\s]+$/, '');
+
+             displayInfo.name = rawName.trim();
+             console.log(`[GENESIS] -> Sau khi Clean: "${displayInfo.name}"`);
+        }
+        
+        if (displayInfo.dept === 'Nhân viên không tìm thấy') {
+            displayInfo.dept = '';
+        }
+
+        if (rawData.length > 0) {
+            analyzeEmployeeData();
+        } else {
+            history = [];
+            summary = { totalErrors: 0, totalDeducted: 0, totalBonus: 0, finalScore: 100 };
+        }
+    }
+    
+    // Hàm Debug riêng để in log
+    function debugGenesis() {
+        console.log("=== 🔍 DEBUG MODAL GENESIS ===");
+        console.log("1. Props đầu vào:", { employeeCode, employeeName, employeeDept });
+        console.log("2. Store ycxData:", { 
+            exists: !!$ycxData, 
+            length: $ycxData ? $ycxData.length : 0,
+            sample: $ycxData && $ycxData.length > 0 ? $ycxData[0] : 'Empty'
+        });
     }
 
     function analyzeEmployeeData() {
-        // 1. Lọc dữ liệu của nhân viên này
         const records = rawData.filter(item => item.maNV === employeeCode);
-
-        // 2. Sắp xếp theo ngày mới nhất -> cũ nhất
         history = records.sort((a, b) => {
             const dateA = new Date(a.ngayViPham.split('/').reverse().join('-'));
             const dateB = new Date(b.ngayViPham.split('/').reverse().join('-'));
             return dateB - dateA;
         });
-
-        // 3. Tính toán tổng hợp
+        
         let errors = 0;
         let deducted = 0;
         let bonus = 0;
 
         history.forEach(item => {
             const point = parseFloat(item.diemTru) || 0;
-            if (point < 0) {
-                // Điểm âm là điểm trừ (tuỳ quy ước data gốc của bạn, ở đây giả sử < 0 là trừ)
-                // Hoặc nếu data gốc lưu số dương cho cột điểm trừ:
-                // Cần check logic gốc. Thường là cột 'diemTru' lưu số điểm bị trừ.
-                // Ở đây tôi giả định theo logic thông thường:
-                
-                // Nếu item.loai === 'Điểm cộng' hoặc diemTru > 0 trong ngữ cảnh cộng...
-                // Dựa vào file gốc: thường có phân loại hoặc check dấu
-            }
-            
-            // Logic bám sát dự án gốc: 
-            // Dự án gốc thường cộng dồn điểm. Giả sử diemTru là số điểm tác động.
             if (item.loaiViPham === 'Điểm cộng' || (item.ghiChu && item.ghiChu.includes('Điểm cộng'))) {
                  bonus += Math.abs(point);
             } else {
@@ -61,12 +123,11 @@
                  deducted += Math.abs(point);
             }
         });
-
         summary = {
             totalErrors: errors,
             totalDeducted: deducted,
             totalBonus: bonus,
-            finalScore: 100 - deducted + bonus // Công thức ví dụ
+            finalScore: 100 - deducted + bonus 
         };
     }
 
@@ -76,13 +137,18 @@
 </script>
 
 {#if isOpen}
+<div class="fixed top-0 left-0 z-[9999] bg-red-600 text-white p-5 text-2xl font-bold">
+        CODE MỚI ĐÃ CHẠY!
+    </div>
     <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" on:click={close}>
         <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" on:click|stopPropagation>
             
             <div class="bg-blue-600 text-white p-4 flex justify-between items-center">
                 <div>
-                    <h3 class="text-xl font-bold uppercase">Chi tiết thi đua: {employeeName}</h3>
-                    <p class="text-sm opacity-90">{employeeCode} - {employeeDept}</p>
+                    <h3 class="text-xl font-bold uppercase">{displayInfo.name} - {employeeCode}</h3>
+                    {#if displayInfo.dept}
+                        <p class="text-sm opacity-90">{displayInfo.dept}</p>
+                    {/if}
                 </div>
                 <button on:click={close} class="text-white hover:text-gray-200">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
