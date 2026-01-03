@@ -1,0 +1,3063 @@
+CONTEXT GROUP: SNAP_04_ADMIN.txt
+GENERATED AT: 1/3/2026, 2:59:56 PM
+
+
+>>> FILE_START: src/components/admin/AdminCalculation.svelte
+<script>
+    import { onMount, afterUpdate } from 'svelte';
+    import { declarations } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    import { config } from '../../config.js';
+
+    // Biến lưu trạng thái form
+    let ycxValue = '';
+    let ycxGopValue = '';
+    let heSoValue = '';
+    let isSaving = false;
+
+    // --- LOGIC 1: TẢI DỮ LIỆU CHỦ ĐỘNG (FIX LỖI F5 MẤT) ---
+    onMount(async () => {
+        console.log("🚀 [AdminCalculation] Component Mounted via CodeGenesis");
+        try {
+            // Gọi trực tiếp service để lấy dữ liệu mới nhất từ Cloud, không chờ Store
+            const data = await adminService.loadDeclarationsFromFirestore();
+            console.log("📥 [Load] Dữ liệu tải về từ Firestore:", data);
+            
+            if (data) {
+                // Ép dữ liệu vào Store để cập nhật UI
+                declarations.set(data);
+            }
+        } catch (error) {
+            console.error("❌ [Load Error] Không thể tải dữ liệu:", error);
+        }
+    });
+
+    // --- LOGIC 2: ĐỒNG BỘ UI VỚI STORE ---
+    $: if ($declarations) {
+        console.log("🔄 [Sync] Store đã cập nhật:", $declarations);
+        
+        // Logic ưu tiên: Key Mới -> Key Cũ -> Mặc định
+        ycxValue = $declarations.hinhThucXuat || $declarations.ycx || config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU.join('\n');
+        ycxGopValue = $declarations.hinhThucXuatGop || $declarations.ycxGop || config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP.join('\n');
+        
+        // Xử lý hệ số (Object hoặc String)
+        if ($declarations.heSoQuyDoi) {
+            heSoValue = $declarations.heSoQuyDoi;
+        } else if ($declarations.heSo) {
+             heSoValue = $declarations.heSo;
+        } else {
+            heSoValue = Object.entries(config.DEFAULT_DATA.HE_SO_QUY_DOI)
+                .map(([k, v]) => `${k},${v}`)
+                .join('\n');
+        }
+    }
+
+    // --- LOGIC 3: LƯU DỮ LIỆU (FIX LỖI LƯU ẢO) ---
+    async function saveDeclarations() {
+        if (isSaving) return;
+        isSaving = true;
+
+        // Chuẩn bị dữ liệu: Gửi cả key cũ và mới để đảm bảo tương thích
+        const dataToSave = {
+            // Key cho logic hiển thị mới
+            hinhThucXuat: ycxValue || '',
+            hinhThucXuatGop: ycxGopValue || '',
+            heSoQuyDoi: heSoValue || '',
+            
+            // Key cho logic cũ (Service/Legacy)
+            ycx: ycxValue || '',
+            ycxGop: ycxGopValue || '',
+            heSo: heSoValue || ''
+        };
+
+        console.log("📤 [Save] Đang gửi dữ liệu đi:", dataToSave);
+
+        try {
+            await adminService.saveDeclarationsToFirestore(dataToSave);
+            console.log("✅ [Save] Service báo thành công!");
+            
+            // Cập nhật lại Store ngay lập tức
+            declarations.set(dataToSave);
+            
+            alert("✅ Đã lưu cấu hình thành công!"); 
+        } catch (error) {
+            console.error("❌ [Save Error] Lỗi chi tiết:", error);
+            alert("❌ Lỗi hệ thống: " + (error.message || "Không thể lưu"));
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <details class="group">
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                    <i data-feather="sliders"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-700 text-lg">Dữ liệu tính toán & Logic</h3>
+                    <p class="text-xs text-slate-500">Cấu hình Hình thức xuất, Hệ số quy đổi...</p>
+                </div>
+            </div>
+            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                <i data-feather="chevron-down"></i>
+            </span>
+        </summary>
+        
+        <div class="p-6 border-t border-slate-100 bg-slate-50/50">
+            <div class="grid md:grid-cols-2 gap-6"> 
+                <div>
+                    <label for="decl-ycx" class="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        Hình thức xuất (Tính doanh thu)
+                        <span class="text-xs font-normal text-slate-400 bg-white border px-2 py-0.5 rounded-full">Mỗi loại 1 dòng</span>
+                    </label> 
+                    <textarea id="decl-ycx" rows="8" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs bg-white text-slate-600 leading-relaxed shadow-sm" placeholder="Nhập dữ liệu..." bind:value={ycxValue}></textarea> 
+                </div>
+                <div> 
+                    <label for="decl-ycx-gop" class="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        Hình thức xuất (Trả góp)
+                         <span class="text-xs font-normal text-slate-400 bg-white border px-2 py-0.5 rounded-full">Mỗi loại 1 dòng</span>
+                    </label> 
+                    <textarea id="decl-ycx-gop" rows="8" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs bg-white text-slate-600 leading-relaxed shadow-sm" placeholder="Nhập dữ liệu..." bind:value={ycxGopValue}></textarea> 
+                </div>
+                <div class="md:col-span-2"> 
+                    <label for="decl-heso" class="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        Hệ số quy đổi
+                        <span class="text-xs font-normal text-slate-400 bg-white border px-2 py-0.5 rounded-full">Format: Tên nhóm hàng, Hệ số</span>
+                    </label> 
+                    <textarea id="decl-heso" rows="8" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs bg-white text-slate-600 leading-relaxed shadow-sm" placeholder="VD: Điện thoại, 1" bind:value={heSoValue}></textarea> 
+                </div>
+            </div> 
+            
+            <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
+                <button on:click={saveDeclarations} disabled={isSaving} class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
+                    {#if isSaving}
+                        <span class="animate-spin">⏳</span> Đang lưu...
+                    {:else}
+                        <i data-feather="save" class="w-4 h-4"></i> Lưu Cấu Hình
+                    {/if}
+                </button> 
+            </div> 
+        </div>
+    </details>
+</div>
+<<< FILE_END: src/components/admin/AdminCalculation.svelte
+
+>>> FILE_START: src/components/admin/AdminCategory.svelte
+<script>
+    import { onMount, afterUpdate } from 'svelte';
+    import { adminService } from '../../services/admin.service.js';
+    
+    // Import các component con
+    import CategoryUploader from './category/CategoryUploader.svelte';
+    import NameMappingEditor from './category/NameMappingEditor.svelte';
+    import MacroGroupEditor from './category/MacroGroupEditor.svelte';
+    import MacroProductGroupEditor from './category/MacroProductGroupEditor.svelte';
+
+    // [MỚI] Prop điều khiển chế độ hiển thị: 'full' | 'upload' | 'config'
+    export let viewMode = 'full';
+
+    onMount(() => {
+        // Tải dữ liệu cần thiết khi vào component
+        adminService.loadCategoryDataFromFirestore();
+    });
+
+    afterUpdate(() => {
+        if (typeof feather !== 'undefined') feather.replace();
+    });
+</script>
+
+<div class="space-y-6">
+    {#if viewMode === 'full' || viewMode === 'upload'}
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+            <details class="group declaration-group">
+                <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-blue-50 rounded-lg text-blue-600">
+                            <i data-feather="upload-cloud"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg">Nạp dữ liệu Cấu trúc</h3>
+                            <p class="text-xs text-slate-500">Tải lên file Excel cấu trúc (Ngành hàng, Nhóm hàng, Hãng)</p>
+                        </div>
+                    </div>
+                    <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                        <i data-feather="chevron-down"></i>
+                    </span>
+                </summary>
+                <div class="declaration-content bg-white border-t border-slate-100 p-6">
+                    <CategoryUploader />
+                </div>
+            </details>
+        </div>
+    {/if}
+
+    {#if viewMode === 'full' || viewMode === 'config'}
+        
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+            <details class="group declaration-group">
+                <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-purple-50 rounded-lg text-purple-600">
+                            <i data-feather="layers"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg">Khai báo Nhóm Ngành Hàng Lớn</h3>
+                            <p class="text-xs text-slate-500">Tạo nhóm gộp (VD: ICT, CE) từ các nhóm hàng con</p>
+                        </div>
+                    </div>
+                    <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                        <i data-feather="chevron-down"></i>
+                    </span>
+                </summary>
+                <div class="declaration-content bg-white border-t border-slate-100 p-6">
+                    <MacroGroupEditor />
+                </div>
+            </details>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+            <details class="group declaration-group">
+                <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-teal-50 rounded-lg text-teal-600">
+                            <i data-feather="package"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg">Khai báo Nhóm Hàng Lớn</h3>
+                            <p class="text-xs text-slate-500">Tạo nhóm gộp (VD: Gia dụng lớn) từ các nhóm hàng nhỏ</p>
+                        </div>
+                    </div>
+                    <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                        <i data-feather="chevron-down"></i>
+                    </span>
+                </summary>
+                <div class="declaration-content bg-white border-t border-slate-100 p-6">
+                    <MacroProductGroupEditor />
+                </div>
+            </details>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+            <details class="group declaration-group">
+                <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-green-50 rounded-lg text-green-600">
+                            <i data-feather="tag"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg">Khai báo Tên Ngành Hàng</h3>
+                            <p class="text-xs text-slate-500">Chỉnh sửa tên hiển thị cho Ngành Hàng</p>
+                        </div>
+                    </div>
+                    <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                        <i data-feather="chevron-down"></i>
+                    </span>
+                </summary>
+                <div class="declaration-content bg-white border-t border-slate-100 p-6">
+                    <NameMappingEditor type="category" />
+                </div>
+            </details>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+            <details class="group declaration-group">
+                <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-orange-50 rounded-lg text-orange-600">
+                            <i data-feather="package"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg">Khai báo Tên Nhóm Hàng</h3>
+                            <p class="text-xs text-slate-500">Chỉnh sửa tên hiển thị cho Nhóm Hàng</p>
+                        </div>
+                    </div>
+                    <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                        <i data-feather="chevron-down"></i>
+                    </span>
+                </summary>
+                <div class="declaration-content bg-white border-t border-slate-100 p-6">
+                    <NameMappingEditor type="group" />
+                </div>
+            </details>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+            <details class="group declaration-group">
+                <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-red-50 rounded-lg text-red-600">
+                            <i data-feather="briefcase"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-700 text-lg">Khai báo Tên Hãng</h3>
+                            <p class="text-xs text-slate-500">Chỉnh sửa tên hiển thị cho Nhà sản xuất</p>
+                        </div>
+                    </div>
+                    <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                        <i data-feather="chevron-down"></i>
+                    </span>
+                </summary>
+                <div class="declaration-content bg-white border-t border-slate-100 p-6">
+                    <NameMappingEditor type="brand" />
+                </div>
+            </details>
+        </div>
+    {/if}
+</div>
+<<< FILE_END: src/components/admin/AdminCategory.svelte
+
+>>> FILE_START: src/components/admin/AdminCompetition.svelte
+<script>
+    import { onMount, afterUpdate } from 'svelte';
+    import { globalCompetitionConfigs, brandList, categoryStructure } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+
+    let isFormOpen = false;
+    let editingIndex = -1;
+    let isLoading = false;
+
+    // Biến tìm kiếm
+    let searchBrand = '';
+    let searchGroup = '';
+
+    let formData = { id: '', name: '', brands: [], groups: [], type: 'doanhthu', minPrice: '', maxPrice: '', excludeApple: false };
+
+    $: availableBrands = $brandList || [];
+    $: availableGroups = [...new Set(($categoryStructure || []).map(c => c.nhomHang).filter(Boolean))].sort();
+
+    // Lọc danh sách dựa trên từ khóa tìm kiếm
+    $: filteredBrands = availableBrands.filter(b => b.toLowerCase().includes(searchBrand.toLowerCase()));
+    $: filteredGroups = availableGroups.filter(g => g.toLowerCase().includes(searchGroup.toLowerCase()));
+
+    function resetForm() {
+        formData = { id: '', name: '', brands: [], groups: [], type: 'doanhthu', minPrice: '', maxPrice: '', excludeApple: false };
+        editingIndex = -1;
+        searchBrand = '';
+        searchGroup = '';
+    }
+    function openAddForm() { resetForm(); isFormOpen = true; }
+    function openEditForm(index) {
+        const config = $globalCompetitionConfigs[index];
+        editingIndex = index;
+        formData = {
+            id: config.id, name: config.name, brands: [...(config.brands || [])], groups: [...(config.groups || [])],
+            type: config.type || 'doanhthu',
+            minPrice: config.minPrice ? config.minPrice / 1000000 : '',
+            maxPrice: config.maxPrice ? config.maxPrice / 1000000 : '',
+            excludeApple: config.excludeApple || false
+        };
+        isFormOpen = true;
+    }
+    function closeForm() { isFormOpen = false; resetForm(); }
+    function toggleSelection(list, item) { return list.includes(item) ? list.filter(i => i !== item) : [...list, item]; }
+
+    async function saveCompetition() {
+        if (!formData.name) return alert("Vui lòng nhập tên chương trình!");
+        if (formData.brands.length === 0) return alert("Vui lòng chọn ít nhất một Hãng!");
+        isLoading = true;
+        const configToSave = {
+            id: formData.id || `comp_${Date.now()}`,
+            name: formData.name, brands: formData.brands, groups: formData.groups,
+            type: formData.type,
+            minPrice: formData.minPrice ? parseFloat(formData.minPrice) * 1000000 : 0,
+            maxPrice: formData.maxPrice ? parseFloat(formData.maxPrice) * 1000000 : 0,
+            excludeApple: formData.excludeApple
+        };
+
+        let newConfigs = [...$globalCompetitionConfigs];
+        if (editingIndex >= 0) newConfigs[editingIndex] = configToSave; else newConfigs.push(configToSave);
+
+        // Cập nhật UI ngay lập tức
+        globalCompetitionConfigs.set(newConfigs);
+        localStorage.setItem('temp_globalCompetitionConfigs', JSON.stringify(newConfigs)); // Backup LocalStorage
+
+        try {
+            await adminService.saveGlobalCompetitionConfigs(newConfigs);
+        } catch (error) { 
+            console.error("Lỗi Cloud:", error);
+            alert(`Lưu Cloud thất bại (${error.code}). Dữ liệu đã được lưu vào trình duyệt để bạn test.`);
+        } finally { 
+            isLoading = false; 
+            closeForm();
+        }
+    }
+
+    async function deleteCompetition(index) {
+        if (!confirm("Xóa chương trình này?")) return;
+        let newConfigs = [...$globalCompetitionConfigs];
+        newConfigs.splice(index, 1);
+        
+        globalCompetitionConfigs.set(newConfigs);
+        localStorage.setItem('temp_globalCompetitionConfigs', JSON.stringify(newConfigs));
+
+        try {
+            await adminService.saveGlobalCompetitionConfigs(newConfigs);
+        } catch (error) { 
+             console.error("Lỗi Cloud:", error);
+             // Không alert lỗi xóa để trải nghiệm mượt hơn, vì đã xóa ở local
+        }
+    }
+
+    onMount(() => {
+        if ($globalCompetitionConfigs.length === 0) {
+            const backup = localStorage.getItem('temp_globalCompetitionConfigs');
+            if (backup) globalCompetitionConfigs.set(JSON.parse(backup));
+        }
+    });
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="p-2.5 bg-red-50 rounded-lg text-red-600 shadow-sm">
+                <i data-feather="flag" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-slate-800 text-lg">Quản lý Thi Đua (Global)</h3>
+                    <span class="bg-red-100 text-red-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-red-200">Quan trọng</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-0.5">Cấu hình các chương trình thi đua áp dụng cho toàn hệ thống</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="p-6 bg-slate-50/30"> 
+        {#if !isFormOpen}
+            <div class="space-y-3">
+                {#if $globalCompetitionConfigs.length === 0}
+                    <div class="text-center py-10 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                        <p class="text-slate-400 italic mb-4">Chưa có chương trình thi đua nào.</p>
+                        <button on:click={openAddForm} class="px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded-lg hover:border-blue-500 hover:text-blue-600 font-medium transition shadow-sm">
+                            + Tạo chương trình đầu tiên
+                        </button>
+                    </div>
+                {:else}
+                    {#each $globalCompetitionConfigs as config, index}
+                        <div class="flex justify-between items-center p-4 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition group/item">
+                            <div>
+                                <div class="flex items-center gap-3">
+                                    <h4 class="font-bold text-slate-800 text-base">{config.name}</h4>
+                                    <span class="text-[10px] uppercase px-2 py-0.5 rounded-full font-bold border {config.type === 'doanhthu' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-yellow-50 text-yellow-700 border-yellow-100'}">
+                                        {config.type === 'doanhthu' ? 'Doanh thu' : 'Số lượng'}
+                                    </span>
+                                </div>
+                                <div class="text-xs text-slate-500 mt-1.5 flex items-center gap-4">
+                                    <span class="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded"><i data-feather="briefcase" class="w-3 h-3"></i> {config.brands.join(', ')}</span>
+                                    <span class="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded"><i data-feather="layers" class="w-3 h-3"></i> {config.groups.length > 0 ? config.groups.join(', ') : 'Tất cả nhóm'}</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 opacity-100 sm:opacity-0 sm:group-hover/item:opacity-100 transition-opacity">
+                                <button on:click={() => openEditForm(index)} class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Sửa"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                                <button on:click={() => deleteCompetition(index)} class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Xóa"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>
+                    {/each}
+                    <button on:click={openAddForm} class="w-full py-3 mt-4 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50/50 font-semibold transition flex justify-center items-center gap-2">
+                        <i data-feather="plus-circle" class="w-5 h-5"></i> Thêm chương trình mới
+                    </button>
+                {/if}
+            </div>
+        {:else}
+            <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-lg animate-fade-in relative">
+                <button on:click={closeForm} class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+
+                <h3 class="font-bold text-lg mb-6 text-slate-800 flex items-center gap-2">
+                    <span class="bg-blue-100 text-blue-600 p-1.5 rounded-lg"><i data-feather={editingIndex >= 0 ? "edit" : "plus"} class="w-4 h-4"></i></span>
+                    {editingIndex >= 0 ? 'Chỉnh sửa chương trình' : 'Thêm chương trình mới'}
+                </h3>
+                
+                <div class="space-y-5">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">Tên chương trình</label>
+                        <input type="text" bind:value={formData.name} class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="VD: Thi đua Tivi Sony T9...">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Hãng sản xuất (Bắt buộc)</label>
+                            <input type="text" bind:value={searchBrand} class="w-full mb-2 p-2 border rounded text-xs" placeholder="🔍 Tìm hãng..." />
+                            <div class="h-40 overflow-y-auto p-3 border border-slate-200 rounded-lg bg-slate-50 grid grid-cols-2 gap-2 custom-scrollbar">
+                                {#each filteredBrands as brand}
+                                    <label class="flex items-center space-x-2 text-sm cursor-pointer hover:bg-white p-1.5 rounded-md transition border border-transparent hover:border-slate-200">
+                                        <input type="checkbox" checked={formData.brands.includes(brand)} on:change={() => formData.brands = toggleSelection(formData.brands, brand)} class="rounded text-blue-600 focus:ring-blue-500 border-slate-300">
+                                        <span class="text-slate-700 truncate" title={brand}>{brand}</span>
+                                    </label>
+                                {/each}
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Nhóm hàng</label>
+                            <input type="text" bind:value={searchGroup} class="w-full mb-2 p-2 border rounded text-xs" placeholder="🔍 Tìm nhóm hàng..." />
+                            <div class="h-40 overflow-y-auto p-3 border border-slate-200 rounded-lg bg-slate-50 grid grid-cols-1 gap-2 custom-scrollbar">
+                                {#each filteredGroups as group}
+                                    <label class="flex items-center space-x-2 text-sm cursor-pointer hover:bg-white p-1.5 rounded-md transition border border-transparent hover:border-slate-200">
+                                        <input type="checkbox" checked={formData.groups.includes(group)} on:change={() => formData.groups = toggleSelection(formData.groups, group)} class="rounded text-blue-600 focus:ring-blue-500 border-slate-300">
+                                        <span class="text-slate-700 truncate" title={group}>{group}</span>
+                                    </label>
+                                {/each}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Loại đo lường</label>
+                            <select bind:value={formData.type} class="w-full p-2 border border-slate-300 rounded-md text-sm bg-white focus:ring-1 focus:ring-blue-500">
+                                <option value="doanhthu">Theo Doanh thu</option>
+                                <option value="soluong">Theo Số lượng</option>
+                            </select>
+                        </div>
+                        {#if formData.type === 'soluong'}
+                            <div class="animate-fade-in">
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Giá từ (Tr)</label>
+                                <input type="number" bind:value={formData.minPrice} class="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-1 focus:ring-blue-500" placeholder="VD: 3">
+                            </div>
+                            <div class="animate-fade-in">
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Giá đến (Tr)</label>
+                                <input type="number" bind:value={formData.maxPrice} class="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-1 focus:ring-blue-500" placeholder="VD: 10">
+                            </div>
+                        {/if}
+                    </div>
+                    <div class="flex items-center gap-2 pl-1">
+                        <input type="checkbox" id="exclude-apple" bind:checked={formData.excludeApple} class="rounded text-blue-600 focus:ring-blue-500 border-slate-300 w-4 h-4">
+                        <label for="exclude-apple" class="text-sm text-slate-700 cursor-pointer font-medium select-none">Trừ hãng Apple khỏi dữ liệu</label>
+                    </div>
+                    <div class="flex justify-end gap-3 mt-8 pt-4 border-t border-slate-100">
+                        <button on:click={closeForm} class="px-5 py-2.5 text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition font-medium" disabled={isLoading}>Hủy bỏ</button>
+                        <button on:click={saveCompetition} class="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition flex items-center gap-2 shadow-md disabled:opacity-70" disabled={isLoading}>
+                            {#if isLoading}<span class="animate-spin">↻</span>{/if}
+                            {!isLoading ? 'Lưu Chương trình' : 'Đang lưu...'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        {/if}
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminCompetition.svelte
+
+>>> FILE_START: src/components/admin/AdminConfig.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { declarations } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+
+    let config = {
+        ycx: '',
+        ycxGop: '',
+        heSo: ''
+    };
+
+    onMount(async () => {
+        const data = await adminService.loadDeclarationsFromFirestore();
+        config.ycx = data.hinhThucXuat || '';
+        config.ycxGop = data.hinhThucXuatGop || '';
+        config.heSo = data.heSoQuyDoi || '';
+    });
+
+    async function handleSave() {
+        await adminService.saveDeclarationsToFirestore(config);
+    }
+</script>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+        <h4 class="font-bold text-slate-800 mb-2">Hình thức xuất (YCX)</h4>
+        <textarea bind:value={config.ycx} class="w-full h-32 p-2 border rounded text-sm" placeholder="Nhập các hình thức xuất, cách nhau dấu phẩy..."></textarea>
+    </div>
+
+    <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+        <h4 class="font-bold text-slate-800 mb-2">Hình thức xuất gộp (YCX Gộp)</h4>
+        <textarea bind:value={config.ycxGop} class="w-full h-32 p-2 border rounded text-sm" placeholder="Nhập các hình thức gộp..."></textarea>
+    </div>
+
+    <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm md:col-span-2">
+        <h4 class="font-bold text-slate-800 mb-2">Hệ số quy đổi</h4>
+        <textarea bind:value={config.heSo} class="w-full h-32 p-2 border rounded text-sm font-mono" placeholder="JSON hệ số quy đổi..."></textarea>
+    </div>
+
+    <div class="md:col-span-2 flex justify-end">
+        <button on:click={handleSave} class="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Lưu Cấu Hình</button>
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminConfig.svelte
+
+>>> FILE_START: src/components/admin/AdminEfficiency.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { efficiencyConfig, modalState } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    
+    // Load config khi mount
+    onMount(async () => {
+        const configs = await adminService.loadEfficiencyConfig();
+        efficiencyConfig.set(configs);
+    });
+
+    function openAddModal() {
+        // Mở modal thêm chỉ số (Tận dụng modal đã có)
+        modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
+    }
+
+    function editItem(item) {
+        modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: item }));
+    }
+
+    async function deleteItem(id) {
+        if (!confirm("Bạn có chắc muốn xóa chỉ số hệ thống này? Nó sẽ biến mất khỏi bảng của tất cả người dùng.")) return;
+        
+        const newConfig = $efficiencyConfig.filter(i => i.id !== id);
+        efficiencyConfig.set(newConfig);
+        await adminService.saveEfficiencyConfig(newConfig);
+    }
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="p-2.5 bg-orange-50 rounded-lg text-orange-600 shadow-sm">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-slate-800 text-lg">Khai báo chỉ số hiệu quả</h3>
+                    <span class="bg-orange-100 text-orange-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-orange-200">Global</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-0.5">Các chỉ số này sẽ hiển thị mặc định cho toàn bộ nhân viên/siêu thị</p>
+            </div>
+        </div>
+        <button on:click={openAddModal} class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-bold shadow-sm flex items-center gap-2 text-sm transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            Thêm chỉ số
+        </button>
+    </div>
+    
+    <div class="p-6 bg-slate-50/50">
+        {#if $efficiencyConfig.length === 0}
+            <div class="text-center py-8 border-2 border-dashed border-slate-300 rounded-xl">
+                <p class="text-slate-500 italic">Chưa có chỉ số hệ thống nào.</p>
+            </div>
+        {:else}
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {#each $efficiencyConfig as item}
+                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col hover:border-orange-300 transition-colors group relative">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-bold text-slate-800">{item.label}</h4>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 bg-white/90 p-1 rounded border border-gray-100 shadow-sm">
+                                <button class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Sửa" on:click={() => editItem(item)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Xóa" on:click={() => deleteItem(item.id)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="text-xs text-slate-500 space-y-1 mt-auto">
+                            <p><strong>Loại:</strong> {item.type === 'SL' ? 'Số lượng' : (item.type === 'DTQD' ? 'Doanh thu QĐ' : 'Doanh thu Thực')}</p>
+                            <p><strong>Mục tiêu:</strong> {item.target}%</p>
+                            <p class="truncate" title={item.groupA.join(', ')}><strong>Tử số:</strong> {item.groupA.length} mục đã chọn</p>
+                            <p class="truncate" title={item.groupB.join(', ')}><strong>Mẫu số:</strong> {item.groupB.length} mục đã chọn</p>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminEfficiency.svelte
+
+>>> FILE_START: src/components/admin/AdminGoalSettings.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { warehouseList, luykeGoalSettings } from '../../stores.js';
+    import { datasyncService } from '../../services/datasync.service.js';
+
+    let selectedKho = '';
+    let currentGoals = {};
+    let isLoading = false;
+
+    // Khi chọn kho, load dữ liệu mục tiêu của kho đó
+    async function handleWarehouseChange() {
+        if (!selectedKho) {
+            currentGoals = {};
+            return;
+        }
+        isLoading = true;
+        try {
+            const settings = await datasyncService.loadGoalSettings(selectedKho);
+            currentGoals = settings.luyke || {};
+        } catch (error) {
+            console.error(error);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function saveGoals() {
+        if (!selectedKho) return alert("Vui lòng chọn Kho.");
+        isLoading = true;
+        try {
+            await datasyncService.saveGoalSettings(selectedKho, 'luyke', currentGoals);
+            alert(`Đã lưu mục tiêu cho kho ${selectedKho} thành công!`);
+        } catch (error) {
+            alert("Lỗi khi lưu: " + error.message);
+        } finally {
+            isLoading = false;
+        }
+    }
+</script>
+
+<div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+    <div class="mb-6">
+        <label class="block text-sm font-bold text-slate-700 mb-2">Chọn Kho thiết lập:</label>
+        <select 
+            bind:value={selectedKho} 
+            on:change={handleWarehouseChange}
+            class="w-full md:w-1/3 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+        >
+            <option value="">-- Chọn kho --</option>
+            {#each $warehouseList as kho}
+                <option value={kho}>{kho}</option>
+            {/each}
+        </select>
+    </div>
+
+    {#if selectedKho}
+        <div class="space-y-4">
+            <div class="p-4 bg-yellow-50 text-yellow-800 text-sm rounded border border-yellow-200">
+                <i data-feather="info" class="w-4 h-4 inline mr-1"></i>
+                Hệ thống đang cập nhật giao diện thiết lập mục tiêu chi tiết. Hiện tại vui lòng sử dụng file Excel hoặc chức năng import.
+            </div>
+            
+            <div class="border-t pt-4">
+                <h4 class="font-bold text-gray-700 mb-2">Cấu hình JSON (Nâng cao)</h4>
+                <textarea 
+                    class="w-full h-64 p-3 border border-gray-300 rounded font-mono text-sm"
+                    value={JSON.stringify(currentGoals, null, 2)}
+                    on:input={(e) => {
+                        try { currentGoals = JSON.parse(e.target.value); } catch(err){}
+                    }}
+                ></textarea>
+            </div>
+
+            <button 
+                on:click={saveGoals} 
+                disabled={isLoading}
+                class="px-6 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700 transition disabled:opacity-50"
+            >
+                {isLoading ? 'Đang lưu...' : 'Lưu Cấu Hình'}
+            </button>
+        </div>
+    {/if}
+</div>
+<<< FILE_END: src/components/admin/AdminGoalSettings.svelte
+
+>>> FILE_START: src/components/admin/AdminHelp.svelte
+<script>
+    import { afterUpdate } from 'svelte';
+    import { helpContent } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+
+    let localHelpContent = { ...$helpContent };
+
+    $: if ($helpContent) {
+        if (!localHelpContent.data && $helpContent.data) localHelpContent = { ...$helpContent };
+    }
+
+    async function saveHelp() {
+        await adminService.saveHelpContent(localHelpContent);
+        helpContent.set({ ...localHelpContent });
+    }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <details class="group"> 
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-green-50 rounded-lg text-green-600">
+                    <i data-feather="book-open"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-700 text-lg">Nội dung Hướng dẫn</h3>
+                    <p class="text-xs text-slate-500">Chỉnh sửa popup hướng dẫn (?) tại các tab</p>
+                </div>
+            </div>
+            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                <i data-feather="chevron-down"></i>
+            </span>
+        </summary> 
+        
+        <div class="p-6 border-t border-slate-100 bg-slate-50/50"> 
+            <div class="grid grid-cols-1 gap-6"> 
+                {#each [
+                    { id: 'data', label: 'Tab Cập nhật dữ liệu' },
+                    { id: 'luyke', label: 'Tab Lũy kế' },
+                    { id: 'sknv', label: 'Tab Sức khỏe NV' },
+                    { id: 'realtime', label: 'Tab Realtime' }
+                ] as tab}
+                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                        <label for="help-{tab.id}" class="block text-sm font-bold text-slate-700 mb-2">{tab.label}</label>
+                        <textarea 
+                            id="help-{tab.id}" 
+                            rows="4" 
+                            class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-slate-600" 
+                            bind:value={localHelpContent[tab.id]}
+                            placeholder="Nhập nội dung hướng dẫn (hỗ trợ HTML cơ bản)..."
+                        ></textarea>
+                    </div>
+                {/each}
+            </div> 
+            <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
+                <button on:click={saveHelp} class="bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 transition font-semibold shadow-sm flex items-center gap-2">
+                    <i data-feather="save" class="w-4 h-4"></i>
+                    Lưu Hướng Dẫn
+                </button> 
+            </div> 
+        </div>
+    </details>
+</div>
+<<< FILE_END: src/components/admin/AdminHelp.svelte
+
+>>> FILE_START: src/components/admin/AdminHomeConfig.svelte
+<script>
+    import { onMount, afterUpdate } from 'svelte';
+    import { homeConfig } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+
+    let localConfig = {
+        videoUrl: '',
+        timeline: [],
+        sliderImages: [], // { url, title, fileName, fileRaw }
+        changelogs: []
+    };
+
+    let activeTab = 'video'; 
+    let isSaving = false;
+    let isUploading = false;
+    let fileInput; 
+
+    // --- BIẾN CHO TRÌNH SOẠN THẢO MỚI ---
+    let mainTitle = ''; // Tiêu đề chính (VD: Cập nhật tháng 12)
+    let editorSections = []; // Danh sách các mục nhỏ
+
+    $: if ($homeConfig) {
+        localConfig = JSON.parse(JSON.stringify($homeConfig));
+    }
+
+    // --- LOGIC TIMELINE VIDEO ---
+    function addTimelineItem() { localConfig.timeline = [...localConfig.timeline, { time: '00:00', label: 'Mốc mới' }]; }
+    function removeTimelineItem(index) { localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index); }
+
+    // --- LOGIC UPLOAD ẢNH CLOUD ---
+    function triggerUpload() { fileInput.click(); }
+    
+    async function handleFilesSelect(event) {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        isUploading = true;
+        const newImages = [];
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            newImages.push({ url: URL.createObjectURL(file), fileName: file.name, title: '', fileRaw: file });
+        }
+        localConfig.sliderImages = [...localConfig.sliderImages, ...newImages];
+        event.target.value = '';
+        isUploading = false;
+    }
+    function removeSlide(index) {
+        if(!confirm("Xóa ảnh này?")) return;
+        localConfig.sliderImages = localConfig.sliderImages.filter((_, i) => i !== index);
+    }
+
+    // --- LOGIC CHANGELOG (NÂNG CẤP - KHÔNG CẦN HTML) ---
+    function addChangelogItem() {
+        const today = new Date().toLocaleDateString('vi-VN');
+        // Tạo bản ghi mới
+        localConfig.changelogs = [{ version: '', date: today, content: '' }, ...localConfig.changelogs];
+        
+        // Mở trình soạn thảo ngay
+        mainTitle = 'Cập nhật tính năng mới';
+        editorSections = [{ title: 'Thay đổi chính', content: '' }];
+    }
+
+    function removeChangelogItem(index) {
+        localConfig.changelogs = localConfig.changelogs.filter((_, i) => i !== index);
+    }
+    
+    // Thêm một mục soạn thảo
+    function addEditorSection() {
+        editorSections = [...editorSections, { title: '', content: '' }];
+    }
+
+    function removeEditorSection(idx) {
+        editorSections = editorSections.filter((_, i) => i !== idx);
+    }
+
+    // [QUAN TRỌNG] Chuyển đổi từ Form nhập liệu -> HTML để lưu
+    function applyEditorContent(logIndex) {
+        let html = '';
+        
+        // 1. Tiêu đề chính (Màu xanh đậm, in hoa)
+        if (mainTitle) {
+            html += `<h3 style="color:#1d4ed8; font-size:1.1em; font-weight:800; margin-bottom:10px; text-transform:uppercase;">${mainTitle}</h3>`;
+        }
+
+        // 2. Các mục con
+        editorSections.forEach(sec => {
+            if (sec.title) {
+                // Tiêu đề phụ (Màu xám đậm)
+                html += `<h4 style="color:#334155; font-weight:700; margin-top:8px; margin-bottom:4px;">${sec.title}:</h4>`;
+            }
+            if (sec.content) {
+                html += '<ul style="margin-bottom:12px;">';
+                // Tách dòng
+                const lines = sec.content.split('\n').map(l => l.trim()).filter(l => l);
+                lines.forEach(line => {
+                    html += `<li>${line}</li>`;
+                });
+                html += '</ul>';
+            }
+        });
+        
+        localConfig.changelogs[logIndex].content = html;
+        
+        // Xóa editor sau khi apply (để tránh nhầm lẫn)
+        mainTitle = '';
+        editorSections = [];
+        
+        alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
+    }
+
+    // --- HÀM LƯU CHUNG ---
+    async function saveAllConfig() {
+        console.log("Đang lưu...", localConfig);
+        isSaving = true;
+        try {
+            // 1. Fix link Youtube
+            if (localConfig.videoUrl) {
+                let url = localConfig.videoUrl;
+                if (url.includes('watch?v=')) {
+                    url = url.replace('watch?v=', 'embed/');
+                    const ampersandIndex = url.indexOf('&');
+                    if (ampersandIndex !== -1) url = url.substring(0, ampersandIndex);
+                } else if (url.includes('youtu.be/')) {
+                    url = url.replace('youtu.be/', 'www.youtube.com/embed/');
+                }
+                localConfig.videoUrl = url;
+            }
+
+            // 2. Upload ảnh mới lên Cloud
+            const uploadPromises = localConfig.sliderImages.map(async (img) => {
+                if (img.fileRaw) {
+                    try {
+                        const cloudUrl = await adminService.uploadImage(img.fileRaw, 'slides');
+                        return { ...img, url: cloudUrl, fileRaw: null };
+                    } catch (err) {
+                        console.error("Lỗi upload:", err);
+                        return img; 
+                    }
+                }
+                return img;
+            });
+            localConfig.sliderImages = await Promise.all(uploadPromises);
+
+            // 3. Lưu Firestore
+            await adminService.saveHomeConfig(localConfig);
+            alert("Đã lưu thành công! Dữ liệu đã được đồng bộ.");
+            
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi khi lưu: " + e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <details class="group" open> 
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-pink-50 rounded-lg text-pink-600">
+                    <i data-feather="layout"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-700 text-lg">Quản lý Trang chủ</h3>
+                    <p class="text-xs text-slate-500">Cấu hình Video, Slide ảnh & Lịch sử cập nhật</p>
+                </div>
+            </div>
+            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                <i data-feather="chevron-down"></i>
+            </span>
+        </summary>
+        
+        <div class="p-6 border-t border-slate-100 bg-slate-50/50">
+            
+            <div class="flex space-x-2 mb-6 border-b border-gray-200 pb-1">
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'video' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'video'}>Video & Timeline</button>
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'slider' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'slider'}>Slide Ảnh (Cloud)</button>
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'changelog' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'changelog'}>Lịch sử cập nhật</button>
+            </div>
+
+            {#if activeTab === 'video'}
+                <div class="space-y-4 animate-fade-in">
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-2">
+                        <label class="block text-sm font-bold text-blue-800 mb-1">Youtube Link</label>
+                        <input type="text" bind:value={localConfig.videoUrl} class="w-full p-2 border border-blue-300 rounded-md text-sm outline-none" placeholder="Dán link Youtube...">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Timeline</label>
+                        <div class="space-y-2">
+                            {#each localConfig.timeline as item, index}
+                                <div class="flex items-center gap-2">
+                                    <input type="text" bind:value={item.time} class="w-20 p-2 border rounded-md text-sm text-center" placeholder="00:00">
+                                    <input type="text" bind:value={item.label} class="flex-grow p-2 border rounded-md text-sm" placeholder="Mô tả...">
+                                    <button on:click={() => removeTimelineItem(index)} class="text-red-500 hover:bg-red-50 p-2 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                                </div>
+                            {/each}
+                        </div>
+                        <button on:click={addTimelineItem} class="mt-2 text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-feather="plus" class="w-3 h-3"></i> Thêm mốc</button>
+                    </div>
+                </div>
+            {/if}
+
+            {#if activeTab === 'slider'}
+                <div class="space-y-6 animate-fade-in">
+                    <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/50 hover:bg-blue-50 transition-colors">
+                        <input type="file" multiple accept="image/*" class="hidden" bind:this={fileInput} on:change={handleFilesSelect} />
+                        <button on:click={triggerUpload} class="flex flex-col items-center gap-2 group/btn" disabled={isUploading}>
+                            <div class="p-3 bg-white rounded-full shadow-md text-blue-600 group-hover/btn:scale-110 transition-transform"><i data-feather="cloud-upload" class="w-8 h-8"></i></div>
+                            <span class="text-blue-700 font-bold text-sm">{isUploading ? 'Đang xử lý...' : 'Nhấn để chọn ảnh từ máy tính'}</span>
+                        </button>
+                    </div>
+                    {#if localConfig.sliderImages.length > 0}
+                        <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
+                            <div class="bg-slate-100 px-4 py-3 border-b flex justify-between items-center">
+                                <h4 class="font-bold text-slate-700 text-sm uppercase">Danh sách ảnh ({localConfig.sliderImages.length})</h4>
+                                <button class="text-xs text-red-500 hover:underline" on:click={() => localConfig.sliderImages = []}>Xóa tất cả</button>
+                            </div>
+                            <div class="divide-y divide-slate-100">
+                                {#each localConfig.sliderImages as img, index}
+                                    <div class="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors">
+                                        <div class="w-24 h-16 bg-slate-200 rounded-lg border overflow-hidden flex-shrink-0 relative flex items-center justify-center">
+                                            <img src={img.url} alt="Thumbnail" class="w-full h-full object-contain" />
+                                        </div>
+                                        <div class="flex-grow flex flex-col gap-2">
+                                            <input type="text" bind:value={img.title} class="w-full p-2 border border-slate-200 rounded text-sm outline-none" placeholder="Ghi chú...">
+                                        </div>
+                                        <button on:click={() => removeSlide(index)} class="p-2 text-slate-300 hover:text-red-500 rounded-lg"><i data-feather="trash-2" class="w-5 h-5"></i></button>
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+
+            {#if activeTab === 'changelog'}
+                <div class="space-y-4 animate-fade-in">
+                    <button on:click={addChangelogItem} class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-md font-bold flex justify-center items-center gap-2">
+                        <i data-feather="plus-circle" class="w-5 h-5"></i> Soạn bản cập nhật mới
+                    </button>
+                    
+                    <div class="space-y-6 max-h-[600px] overflow-y-auto pr-2">
+                        {#each localConfig.changelogs as log, index}
+                            <div class="flex flex-col gap-3 p-4 border rounded-xl bg-white shadow-sm relative group">
+                                <button on:click={() => removeChangelogItem(index)} class="absolute top-4 right-4 text-slate-300 hover:text-red-500 p-1.5 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
+                                
+                                <div class="flex gap-4 pr-10 border-b border-gray-100 pb-3 mb-2">
+                                    <div class="flex flex-col gap-1 w-1/3">
+                                        <label class="text-xs font-bold text-gray-500 uppercase">Phiên bản (VD: 2.5)</label>
+                                        <input type="text" bind:value={log.version} class="w-full p-2 border rounded text-sm font-bold text-blue-700 font-mono" placeholder="2.5">
+                                    </div>
+                                    <div class="flex flex-col gap-1 w-1/3">
+                                        <label class="text-xs font-bold text-gray-500 uppercase">Ngày</label>
+                                        <input type="text" bind:value={log.date} class="w-full p-2 border rounded text-sm" placeholder="dd/mm/yyyy">
+                                    </div>
+                                </div>
+
+                                {#if index === 0 && editorSections.length > 0}
+                                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
+                                        <div class="mb-4">
+                                            <label class="block text-xs font-bold text-blue-800 mb-1 uppercase">Tiêu đề chính phiên bản</label>
+                                            <input type="text" bind:value={mainTitle} class="w-full p-2 border border-blue-200 rounded text-sm font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-300" placeholder="VD: Cập nhật tháng 12">
+                                        </div>
+
+                                        <div class="space-y-3">
+                                            <label class="block text-xs font-bold text-slate-500 uppercase">Nội dung chi tiết</label>
+                                            {#each editorSections as sec, secIdx}
+                                                <div class="bg-white p-3 rounded border border-slate-200 relative shadow-sm">
+                                                    <button on:click={() => removeEditorSection(secIdx)} class="absolute -top-2 -right-2 bg-white text-red-400 hover:text-red-600 rounded-full border border-gray-200 p-1 shadow-sm"><i data-feather="x" class="w-3 h-3"></i></button>
+                                                    
+                                                    <input type="text" bind:value={sec.title} class="w-full p-1.5 border-b border-gray-100 text-sm font-bold text-slate-700 outline-none placeholder-slate-400 mb-2" placeholder="Tiêu đề phụ (VD: Tính năng mới)">
+                                                    <textarea bind:value={sec.content} rows="3" class="w-full p-1.5 text-sm text-slate-600 outline-none resize-none placeholder-slate-300" placeholder="- Gạch đầu dòng 1&#10;- Gạch đầu dòng 2..."></textarea>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                        
+                                        <div class="flex justify-between items-center pt-4">
+                                            <button on:click={addEditorSection} class="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"><i data-feather="plus" class="w-3 h-3"></i> Thêm mục</button>
+                                            <button on:click={() => applyEditorContent(index)} class="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700 shadow-sm flex items-center gap-2">
+                                                <i data-feather="check" class="w-3 h-3"></i> Áp dụng & Đóng gói
+                                            </button>
+                                        </div>
+                                    </div>
+                                {:else}
+                                    <div class="flex flex-col gap-1">
+                                        <div class="flex justify-between items-end">
+                                            <label class="text-xs font-bold text-gray-400 italic">Nội dung (HTML đã đóng gói)</label>
+                                            {#if index === 0}
+                                                <button class="text-xs text-blue-500 hover:underline" on:click={() => { mainTitle='Sửa đổi'; editorSections=[{title:'',content:''}] }}>Sửa lại bằng bộ soạn thảo</button>
+                                            {/if}
+                                        </div>
+                                        <textarea bind:value={log.content} rows="4" class="w-full p-3 border rounded text-xs font-mono bg-slate-50 text-slate-500 leading-relaxed outline-none"></textarea>
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+
+            <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
+                <button on:click={saveAllConfig} disabled={isSaving} class="bg-pink-600 text-white px-5 py-2.5 rounded-lg hover:bg-pink-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
+                    {#if isSaving}
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        Đang lưu & Upload...
+                    {:else}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Lưu Cấu Hình
+                    {/if}
+                </button>
+            </div>
+        </div>
+    </details>
+</div>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+</style>
+<<< FILE_END: src/components/admin/AdminHomeConfig.svelte
+
+>>> FILE_START: src/components/admin/AdminMappings.svelte
+<script>
+    import { afterUpdate } from 'svelte';
+    import { competitionNameMappings } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+
+    let mappingSearch = '';
+    let isSaving = false;
+    let debounceTimer;
+    
+    // Subscribe store
+    $: mappings = $competitionNameMappings || {};
+
+    // Chuyển object mappings thành array để render bảng
+    $: mappingList = Object.entries(mappings).map(([original, short], index) => ({
+        originalName: original,
+        shortName: short || original, // Mặc định hiển thị tên gốc nếu chưa có tên rút gọn
+        index: index + 1
+    }));
+
+    // Lọc danh sách
+    $: filteredList = mappingList.filter(item => {
+        const term = mappingSearch.toLowerCase();
+        return item.originalName.toLowerCase().includes(term) || 
+               item.shortName.toLowerCase().includes(term);
+    });
+
+    function handleMappingInput(originalName, event) {
+        const newShortName = event.target.value;
+        
+        // Cập nhật store local ngay lập tức để UI phản hồi nhanh
+        competitionNameMappings.update(current => {
+            return { ...current, [originalName]: newShortName };
+        });
+    }
+
+    async function saveAllMappings() {
+        isSaving = true;
+        try {
+            await adminService.saveCompetitionNameMappings($competitionNameMappings);
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi khi lưu mapping.");
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <details class="group" open> 
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-teal-50 rounded-lg text-teal-600">
+                    <i data-feather="git-merge"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-slate-700 text-lg">Tên Rút Gọn Thi Đua</h3>
+                    <p class="text-xs text-slate-500">Đặt tên ngắn gọn cho các cột thi đua trên bảng báo cáo</p>
+                </div>
+            </div>
+            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
+                <i data-feather="chevron-down"></i>
+            </span>
+        </summary> 
+        
+        <div class="p-6 border-t border-slate-100 bg-slate-50/50"> 
+            
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                <div class="relative flex-grow w-full sm:w-auto">
+                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <i data-feather="search" class="w-4 h-4"></i>
+                    </span>
+                    <input 
+                        type="text" 
+                        class="w-full pl-10 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none bg-white" 
+                        placeholder="Tìm kiếm tên thi đua..." 
+                        bind:value={mappingSearch}
+                    >
+                </div>
+                <button 
+                    class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
+                    on:click={saveAllMappings}
+                    disabled={isSaving}
+                >
+                    {#if isSaving}
+                        <span class="animate-spin">↻</span> Đang lưu...
+                    {:else}
+                        <i data-feather="save" class="w-4 h-4"></i> Lưu Thay Đổi
+                    {/if}
+                </button>
+            </div>
+
+            <div class="border border-slate-200 rounded-lg bg-white shadow-inner overflow-hidden">
+                <div class="max-h-[500px] overflow-y-auto custom-scrollbar"> 
+                    {#if filteredList.length === 0}
+                        <div class="flex flex-col items-center justify-center p-12 text-slate-400">
+                            <i data-feather="inbox" class="w-10 h-10 mb-3 opacity-50"></i>
+                            <p class="text-sm font-medium">Chưa có dữ liệu thi đua.</p>
+                            <p class="text-xs mt-1">Vui lòng dán dữ liệu "Thi đua nhân viên" ở tab Cập nhật dữ liệu để hệ thống tự động trích xuất tên.</p>
+                        </div>
+                    {:else}
+                        <table class="min-w-full text-sm border-collapse">
+                            <thead class="text-xs text-slate-600 uppercase bg-slate-100 font-bold sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="px-4 py-3 border-b text-center w-16">STT</th>
+                                    <th class="px-4 py-3 border-b text-left w-1/2">Tên Gốc (Từ dữ liệu dán)</th>
+                                    <th class="px-4 py-3 border-b text-left w-1/2 text-teal-700">Tên Rút Gọn (Hiển thị)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                {#each filteredList as item}
+                                    <tr class="hover:bg-slate-50 transition-colors group">
+                                        <td class="px-4 py-3 text-center text-slate-400 text-xs font-mono">{item.index}</td>
+                                        <td class="px-4 py-3 text-slate-700 text-xs leading-relaxed font-medium break-words select-all">
+                                            {item.originalName}
+                                        </td>
+                                        <td class="px-4 py-2">
+                                            <input 
+                                                type="text" 
+                                                class="w-full p-2 border border-slate-200 rounded-md text-sm font-semibold text-teal-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 focus:bg-white transition-all placeholder-slate-300" 
+                                                value={item.shortName} 
+                                                on:input={(e) => handleMappingInput(item.originalName, e)}
+                                                placeholder={item.originalName}
+                                            >
+                                        </td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    {/if}
+                </div> 
+            </div>
+            
+            <p class="text-xs text-slate-500 mt-3 italic flex items-center gap-1">
+                <i data-feather="info" class="w-3 h-3"></i>
+                Mẹo: Tên rút gọn mặc định sẽ giống tên gốc. Bạn hãy sửa lại cho ngắn gọn để bảng hiển thị đẹp hơn.
+            </p>
+        </div>
+    </details>
+</div>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
+<<< FILE_END: src/components/admin/AdminMappings.svelte
+
+>>> FILE_START: src/components/admin/AdminPerformanceTables.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { customPerformanceTables, modalState } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    
+    // Load bảng hệ thống khi mount
+    onMount(async () => {
+        const tables = await adminService.loadSystemPerformanceTables();
+        // Cập nhật store hiển thị
+        customPerformanceTables.update(current => {
+            // Giữ lại bảng cá nhân (nếu có), thay thế bảng hệ thống cũ bằng bảng mới tải về
+            const userTables = current.filter(t => !t.isSystem);
+            // Gán cờ isSystem cho chắc chắn
+            const sysTables = tables.map(t => ({ ...t, isSystem: true }));
+            return [...sysTables, ...userTables];
+        });
+    });
+
+    // Chỉ hiển thị bảng hệ thống trong trang Admin
+    $: systemTables = $customPerformanceTables.filter(t => t.isSystem);
+
+    function openAddModal() {
+        // Mở modal với cờ isSystem = true (Admin tạo)
+        modalState.update(s => ({ 
+            ...s, 
+            activeModal: 'add-performance-table-modal', 
+            payload: null,
+            isSystem: true 
+        }));
+    }
+
+    function editTable(table) {
+        modalState.update(s => ({ 
+            ...s, 
+            activeModal: 'add-performance-table-modal', 
+            payload: table,
+            isSystem: true 
+        }));
+    }
+
+    async function deleteTable(id) {
+        if(!confirm("Bạn có chắc muốn xóa bảng hiệu quả hệ thống này? Hành động này sẽ ảnh hưởng đến toàn bộ người dùng.")) return;
+        
+        const newTables = $customPerformanceTables.filter(t => t.id !== id);
+        // Cập nhật Store local
+        customPerformanceTables.set(newTables);
+        
+        // Lọc lấy danh sách system mới để lưu Cloud
+        const systemTablesToSave = newTables.filter(t => t.isSystem);
+        await adminService.saveSystemPerformanceTables(systemTablesToSave);
+    }
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="p-2.5 bg-teal-50 rounded-lg text-teal-600 shadow-sm">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-slate-800 text-lg">Cấu hình Bảng Hiệu quả (Hệ thống)</h3>
+                    <span class="bg-teal-100 text-teal-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-teal-200">Global</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-0.5">Tạo bảng mẫu (Tỷ lệ %, Doanh thu, SL) hiển thị ở tab "Hiệu quả NV"</p>
+            </div>
+        </div>
+        <button on:click={openAddModal} class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold shadow-sm flex items-center gap-2 text-sm transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            Tạo bảng mới
+        </button>
+    </div>
+    
+    <div class="p-6 bg-slate-50/50">
+        {#if systemTables.length === 0}
+            <div class="text-center py-8 border-2 border-dashed border-slate-300 rounded-xl">
+                <p class="text-slate-500 italic">Chưa có bảng hiệu quả hệ thống nào.</p>
+            </div>
+        {:else}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {#each systemTables as table}
+                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col hover:border-teal-300 transition-colors group">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-bold text-slate-800 text-lg">{table.title}</h4>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Sửa" on:click={() => editTable(table)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Xóa" on:click={() => deleteTable(table.id)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-auto">
+                            <p class="text-xs text-slate-500 font-semibold uppercase mb-2">Cấu trúc:</p>
+                            <div class="flex flex-wrap gap-2">
+                                {#each table.columns as col}
+                                    <span class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200 flex items-center gap-1">
+                                        {col.header} 
+                                        {#if col.type === 'PERCENT'}
+                                            <span class="text-[9px] bg-red-100 text-red-600 px-1 rounded font-bold">%</span>
+                                        {:else if col.type === 'SL'}
+                                            <span class="text-[9px] bg-gray-200 text-gray-600 px-1 rounded font-bold">SL</span>
+                                        {:else}
+                                            <span class="text-[9px] bg-blue-100 text-blue-600 px-1 rounded font-bold">DT</span>
+                                        {/if}
+                                    </span>
+                                {/each}
+                            </div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminPerformanceTables.svelte
+
+>>> FILE_START: src/components/admin/AdminRevenueTables.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { customRevenueTables, modalState } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    
+    // Load bảng hệ thống khi mount
+    onMount(async () => {
+        const tables = await adminService.loadSystemRevenueTables();
+        // Merge với local để hiển thị đủ (nhưng ở màn hình Admin này ta ưu tiên hiển thị System Table để quản lý)
+        // Tuy nhiên, để nhất quán store, ta update store chính
+        customRevenueTables.update(current => {
+            // Lọc bỏ system cũ, thêm system mới từ cloud
+            const userTables = current.filter(t => !t.isSystem);
+            return [...tables, ...userTables];
+        });
+    });
+
+    $: systemTables = $customRevenueTables.filter(t => t.isSystem);
+
+    function openAddModal() {
+        // Mặc định tạo bảng System khi ở trong trang Admin
+        modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: { isSystem: true } }));
+    }
+
+    function editTable(table) {
+        modalState.update(s => ({ ...s, activeModal: 'add-revenue-table-modal', payload: table }));
+    }
+
+    async function deleteTable(id) {
+        if(!confirm("Bạn có chắc muốn xóa bảng hệ thống này? Hành động này sẽ ảnh hưởng đến toàn bộ người dùng.")) return;
+        
+        const newTables = $customRevenueTables.filter(t => t.id !== id);
+        customRevenueTables.set(newTables);
+        
+        // Lưu lại danh sách mới lên Cloud
+        await adminService.saveSystemRevenueTables(newTables);
+    }
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <div class="p-2.5 bg-indigo-50 rounded-lg text-indigo-600 shadow-sm">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-3">
+                    <h3 class="font-bold text-slate-800 text-lg">Cấu hình Bảng Doanh thu (Hệ thống)</h3>
+                    <span class="bg-indigo-100 text-indigo-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide border border-indigo-200">Global</span>
+                </div>
+                <p class="text-sm text-slate-500 mt-0.5">Tạo các bảng mẫu hiển thị ở tab "SKNV - DT Ngành hàng" và "Realtime"</p>
+            </div>
+        </div>
+        <button on:click={openAddModal} class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold shadow-sm flex items-center gap-2 text-sm transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            Tạo bảng mới
+        </button>
+    </div>
+    
+    <div class="p-6 bg-slate-50/50">
+        {#if systemTables.length === 0}
+            <div class="text-center py-8 border-2 border-dashed border-slate-300 rounded-xl">
+                <p class="text-slate-500 italic">Chưa có bảng hệ thống nào.</p>
+            </div>
+        {:else}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {#each systemTables as table}
+                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col hover:border-indigo-300 transition-colors group">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-bold text-slate-800 text-lg">{table.title}</h4>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Sửa" on:click={() => editTable(table)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Xóa" on:click={() => deleteTable(table.id)}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-auto">
+                            <p class="text-xs text-slate-500 font-semibold uppercase mb-2">Cấu trúc:</p>
+                            <div class="flex flex-wrap gap-2">
+                                {#each table.subColumns as col}
+                                    <span class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200">
+                                        {col.header} 
+                                        <span class="text-slate-400 text-[10px] ml-1">
+                                            ({[col.metrics.sl?'SL':'', col.metrics.dt?'DT':'', col.metrics.dtqd?'QĐ':''].filter(Boolean).join('/')})
+                                        </span>
+                                    </span>
+                                {/each}
+                            </div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminRevenueTables.svelte
+
+>>> FILE_START: src/components/admin/AdminSpecialProducts.svelte
+<script>
+    import { specialProductList } from '../../stores.js';
+    import { adminService } from '../../services/admin.service.js';
+    // [FIX] Sửa import * as thành import { } để lấy đúng object dataService
+    import { dataService } from '../../services/dataService.js';
+    import { onMount } from 'svelte';
+
+    let isLoading = false;
+    let showList = false;
+
+    // Subscribe to store
+    $: products = $specialProductList || [];
+
+    async function handleFileUpload(event) {
+        isLoading = true;
+        try {
+            // Bây giờ hàm này sẽ được gọi đúng từ object dataService
+            await dataService.handleSpecialProductFileUpload(event);
+            // Auto-save to localStorage for testing persistence
+            localStorage.setItem('temp_specialProductList', JSON.stringify($specialProductList));
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function saveToCloud() {
+        if (products.length === 0) return alert("Chưa có dữ liệu để lưu!");
+        isLoading = true;
+        try {
+            await adminService.saveSpecialProductList(products);
+            // Backup to localStorage
+            localStorage.setItem('temp_specialProductList', JSON.stringify(products));
+        } catch (error) {
+            console.error(error);
+            alert("Lỗi lưu: " + error.message);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    // Load backup on mount if store is empty (Test mode)
+    onMount(() => {
+        if (products.length === 0) {
+            const backup = localStorage.getItem('temp_specialProductList');
+            if (backup) specialProductList.set(JSON.parse(backup));
+        }
+    });
+</script>
+
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mt-6 transition-all hover:shadow-md">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <div class="p-2 bg-purple-50 rounded-lg text-purple-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
+            </div>
+            Sản Phẩm Đặc Quyền
+        </h2>
+   
+        <div class="flex gap-2">
+            <button 
+                class="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+                on:click={() => dataService.handleTemplateDownload()}
+            >
+                Tải File Mẫu
+            </button>
+            <button 
+                class="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                on:click={saveToCloud}
+                disabled={isLoading}
+            >
+                {#if isLoading}
+                    <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" /></svg>
+                {/if}
+                Lưu Lên Cloud
+            </button>
+        </div>
+    </div>
+
+    <div class="mb-8 p-6 bg-purple-50/50 rounded-xl border-2 border-dashed border-purple-200 hover:border-purple-400 transition-colors text-center group">
+        <input 
+            type="file" 
+            id="special-product-upload" 
+            class="hidden" 
+            accept=".xlsx, .xls"
+            on:change={handleFileUpload}
+        />
+        <label for="special-product-upload" class="cursor-pointer flex flex-col items-center gap-3">
+            <div class="p-3 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+            </div>
+            <div>
+                <span class="text-purple-600 font-bold hover:underline">Nhấn để tải file Excel</span>
+                <span class="text-slate-500 block text-sm mt-1">Yêu cầu cột: Mã SP, Tên SP, Nhóm hàng</span>
+            </div>
+        </label>
+    </div>
+
+    {#if products.length > 0}
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+            <div class="bg-slate-50 px-4 py-3 border-b flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <span class="bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full text-xs font-bold flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                        Đã tải {products.length} sản phẩm
+                    </span>
+                </div>
+                <button 
+                    class="text-xs font-medium text-purple-600 hover:text-purple-800 hover:underline"
+                    on:click={() => showList = !showList}
+                >
+                    {showList ? 'Thu gọn danh sách' : 'Xem chi tiết danh sách'}
+                </button>
+            </div>
+
+            {#if showList}
+                <div class="overflow-x-auto max-h-96">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 w-32">Mã SP</th>
+                                <th class="px-4 py-2">Tên Sản Phẩm</th>
+                                <th class="px-4 py-2 w-48">Nhóm Hàng</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            {#each products as item}
+                                <tr class="bg-white hover:bg-purple-50 transition-colors">
+                                    <td class="px-4 py-2 font-mono text-xs text-slate-500">{item.maSanPham}</td>
+                                    <td class="px-4 py-2 font-medium text-slate-700">{item.tenSanPham}</td>
+                                    <td class="px-4 py-2 text-slate-500 text-xs">{item.nhomHang}</td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+            {/if}
+        </div>
+    {/if}
+</div>
+<<< FILE_END: src/components/admin/AdminSpecialProducts.svelte
+
+>>> FILE_START: src/components/admin/AdminSpecialProgram.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { adminService } from '../../services/admin.service.js';
+    
+    let programs = [];
+    
+    onMount(async () => {
+        programs = await adminService.loadGlobalSpecialPrograms();
+    });
+</script>
+
+<div class="bg-white p-6 rounded-lg border border-slate-200 text-center">
+    <p class="text-slate-500 mb-4">Danh sách chương trình độc quyền (Global).</p>
+    <div class="p-4 bg-slate-50 rounded border border-slate-200 inline-block text-left w-full">
+        <pre class="text-xs overflow-auto max-h-60">{JSON.stringify(programs, null, 2)}</pre>
+    </div>
+    <div class="mt-4">
+        <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm font-bold cursor-not-allowed">Chỉnh sửa (Sắp ra mắt)</button>
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminSpecialProgram.svelte
+
+>>> FILE_START: src/components/admin/AdminUserStats.svelte
+<script>
+    import { onMount, afterUpdate } from 'svelte';
+    import { userStats } from '../../stores.js';
+    import { analyticsService } from '../../services/analytics.service.js';
+
+    let userList = [];
+    let sortKey = 'lastLogin';
+    let sortDirection = 'desc';
+    let isLoading = false;
+
+    onMount(async () => {
+        isLoading = true;
+        try {
+            userList = await analyticsService.getAllUsers();
+            userStats.set(userList);
+        } catch (error) { console.error(error); } 
+        finally { isLoading = false; }
+    });
+
+    function sortUsers(key) {
+        if (sortKey === key) { sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'; } 
+        else { sortKey = key; sortDirection = 'desc'; }
+    }
+
+    $: sortedUsers = [...userList].sort((a, b) => {
+        let valA = a[sortKey];
+        let valB = b[sortKey];
+        if (sortKey === 'lastLogin') {
+            valA = valA ? new Date(valA).getTime() : 0;
+            valB = valB ? new Date(valB).getTime() : 0;
+        } else if (sortKey === 'loginCount' || sortKey === 'actionsTaken') {
+            valA = Number(valA) || 0;
+            valB = Number(valB) || 0;
+        } else {
+            valA = String(valA || '').toLowerCase();
+            valB = String(valB || '').toLowerCase();
+        }
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    function formatDate(dateVal) {
+        if (!dateVal) return '-';
+        const date = dateVal.toDate ? dateVal.toDate() : new Date(dateVal);
+        return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')} ${date.getDate()}/${date.getMonth()+1}`;
+    }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
+    <div class="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-orange-50 rounded-lg text-orange-600">
+                <i data-feather="users"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-slate-700 text-lg">Thống kê Người dùng</h3>
+                <p class="text-xs text-slate-500">Theo dõi truy cập và tần suất sử dụng hệ thống</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="p-0"> 
+        <div class="overflow-x-auto max-h-[500px]"> 
+            {#if isLoading}
+                <div class="p-10 flex flex-col justify-center items-center text-slate-400 gap-3">
+                    <svg class="animate-spin h-8 w-8 text-orange-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <span class="text-sm">Đang tải dữ liệu...</span>
+                </div>
+            {:else if userList.length === 0}
+                <div class="p-10 text-center text-slate-400 italic bg-slate-50/50">
+                    <i data-feather="user-x" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                    Chưa có dữ liệu người dùng.
+                </div>
+            {:else}
+                <table class="min-w-full text-sm border-collapse">
+                    <thead class="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
+                        <tr>
+                            <th class="px-6 py-3 text-left font-semibold cursor-pointer hover:bg-slate-100" on:click={() => sortUsers('email')}>Email</th>
+                            <th class="px-6 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" on:click={() => sortUsers('loginCount')}>Truy cập</th>
+                            <th class="px-6 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" on:click={() => sortUsers('actionsTaken')}>Thao tác</th>
+                            <th class="px-6 py-3 text-right font-semibold cursor-pointer hover:bg-slate-100" on:click={() => sortUsers('lastLogin')}>Lần cuối</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {#each sortedUsers as user}
+                            <tr class="hover:bg-orange-50/30 transition-colors group/row">
+                                <td class="px-6 py-3 font-medium text-slate-700 group-hover/row:text-orange-700">{user.email}</td>
+                                <td class="px-6 py-3 text-right font-mono text-slate-600 bg-slate-50/50">{user.loginCount || 0}</td>
+                                <td class="px-6 py-3 text-right font-mono text-slate-600">{user.actionsTaken || 0}</td>
+                                <td class="px-6 py-3 text-right text-xs text-slate-400">{formatDate(user.lastLogin)}</td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            {/if}
+        </div> 
+    </div>
+</div>
+<<< FILE_END: src/components/admin/AdminUserStats.svelte
+
+>>> FILE_START: src/components/admin/category/CategoryUploader.svelte
+<script>
+    import { categoryStructure, brandList } from '../../../stores.js';
+    import { dataService } from '../../../services/dataService.js';
+    // [NEW] Import adminService để lưu
+    import { adminService } from '../../../services/admin.service.js';
+
+    let isLoading = false;
+    let isSaving = false;
+    let showRawData = false;
+
+    // Tính toán số liệu thống kê từ Store
+    $: uniqueCategories = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nganhHang).filter(Boolean))] : [];
+    $: uniqueGroups = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nhomHang).filter(Boolean))] : [];
+    $: totalBrands = $brandList ? $brandList.length : 0;
+    
+    // Check xem có dữ liệu không để hiển thị bảng
+    $: hasData = $categoryStructure.length > 0;
+
+    async function handleCategoryUpload(event) {
+        isLoading = true;
+        try {
+            await dataService.handleCategoryFile(event);
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    // [NEW] Hàm lưu dữ liệu lên Cloud
+    async function saveToCloud() {
+        if (!hasData) return;
+        isSaving = true;
+        try {
+            await adminService.saveCategoryDataToFirestore({
+                categories: $categoryStructure,
+                brands: $brandList
+            });
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi khi lưu: " + e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
+</script>
+
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <div class="text-sm text-gray-500 italic">
+            Bước 1: Tải lên file Excel cấu trúc (Bắt buộc 3 cột: Ngành hàng, Nhóm hàng, Nhà sản xuất).
+        </div>
+        <div class="flex gap-2">
+            <button 
+                class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
+                on:click={() => dataService.handleTemplateDownload()}
+            >
+                Tải File Mẫu
+            </button>
+            
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                on:click={saveToCloud}
+                disabled={!hasData || isSaving || isLoading}
+            >
+                {#if isSaving}
+                    <svg class="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Đang lưu...
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                    Lưu Lên Cloud
+                {/if}
+            </button>
+        </div>
+    </div>
+
+    <div class="p-6 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 transition-colors text-center">
+        <input 
+            type="file" 
+            id="category-upload-input" 
+            class="hidden" 
+            accept=".xlsx, .xls"
+            on:change={handleCategoryUpload}
+            disabled={isLoading}
+        />
+        <label for="category-upload-input" class="cursor-pointer flex flex-col items-center gap-3">
+            <div class="p-3 bg-white rounded-full shadow-sm">
+                {#if isLoading}
+                    <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                {/if}
+            </div>
+            <div>
+                <span class="text-blue-600 font-medium hover:underline">Tải lên file Excel</span>
+                <span class="text-slate-500"> cấu trúc ngành hàng</span>
+            </div>
+        </label>
+    </div>
+
+    {#if hasData}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="p-3 bg-blue-50 rounded-lg border border-blue-100 flex justify-between items-center">
+                <span class="text-sm text-blue-700 font-medium">Tổng Ngành Hàng</span>
+                <span class="text-xl font-bold text-blue-700">{uniqueCategories.length}</span>
+            </div>
+            <div class="p-3 bg-green-50 rounded-lg border border-green-100 flex justify-between items-center">
+                <span class="text-sm text-green-700 font-medium">Tổng Nhóm Hàng</span>
+                <span class="text-xl font-bold text-green-700">{uniqueGroups.length}</span>
+            </div>
+            <div class="p-3 bg-purple-50 rounded-lg border border-purple-100 flex justify-between items-center">
+                <span class="text-sm text-purple-700 font-medium">Tổng Hãng</span>
+                <span class="text-xl font-bold text-purple-700">{totalBrands}</span>
+            </div>
+        </div>
+
+        <div class="border rounded-lg overflow-hidden">
+            <div class="bg-slate-100 px-4 py-2 border-b flex justify-between items-center">
+                <h3 class="font-bold text-slate-700 text-xs uppercase">Dữ liệu thô (Preview)</h3>
+                <button 
+                    class="text-xs text-blue-600 hover:underline"
+                    on:click={() => showRawData = !showRawData}
+                >
+                    {showRawData ? 'Ẩn chi tiết' : 'Xem chi tiết'}
+                </button>
+            </div>
+            
+            {#if showRawData}
+            <div class="overflow-x-auto max-h-60">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2">Ngành Hàng</th>
+                            <th class="px-4 py-2">Nhóm Hàng</th>
+                            <th class="px-4 py-2">Nhà Sản Xuất</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        {#each $categoryStructure.slice(0, 100) as item}
+                            <tr class="bg-white hover:bg-slate-50">
+                                <td class="px-4 py-1 text-slate-600">{item.nganhHang}</td>
+                                <td class="px-4 py-1 font-medium text-slate-700">{item.nhomHang}</td>
+                                <td class="px-4 py-1 text-slate-500 italic">{item.nhaSanXuat}</td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+            {/if}
+        </div>
+    {/if}
+</div>
+<<< FILE_END: src/components/admin/category/CategoryUploader.svelte
+
+>>> FILE_START: src/components/admin/category/MacroGroupEditor.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { categoryStructure, macroCategoryConfig } from '../../../stores.js';
+    import { adminService } from '../../../services/admin.service.js';
+    import { parseIdentity } from '../../../utils.js';
+
+    let localConfigs = []; 
+    let isSaving = false;
+    let editingId = null; 
+    let itemSearch = '';
+
+    // Lấy danh sách Ngành Hàng (Category) kèm ID
+    $: rawCategoriesWithId = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nganhHang) return;
+            const parsed = parseIdentity(c.nganhHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
+    
+    $: if ($macroCategoryConfig) {
+        localConfigs = JSON.parse(JSON.stringify($macroCategoryConfig));
+    }
+
+    function addGroup() {
+        const name = prompt("Nhập tên Nhóm Ngành Hàng lớn (VD: ICT, CE...):");
+        if (name && name.trim()) {
+            const id = 'macro_' + Date.now();
+            localConfigs = [...localConfigs, { id, name: name.trim(), items: [] }];
+            editingId = id; 
+        }
+    }
+
+    function removeGroup(id) {
+        if (!confirm("Bạn có chắc muốn xóa nhóm này?")) return;
+        localConfigs = localConfigs.filter(g => g.id !== id);
+    }
+
+    function toggleItem(groupId, itemId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+
+        const currentItems = new Set(localConfigs[groupIndex].items || []);
+        if (currentItems.has(itemId)) {
+            currentItems.delete(itemId);
+        } else {
+            currentItems.add(itemId);
+        }
+        localConfigs[groupIndex].items = [...currentItems];
+    }
+
+    // [MỚI] Hàm xóa sạch lựa chọn (fix lỗi dữ liệu ma)
+    function clearSelection(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        
+        if (confirm(`Bạn muốn xóa sạch danh sách chọn của nhóm "${localConfigs[groupIndex].name}" để chọn lại từ đầu?`)) {
+            localConfigs[groupIndex].items = [];
+        }
+    }
+
+    async function handleSave() {
+        isSaving = true;
+        try {
+            await adminService.saveMacroCategoryConfig(localConfigs);
+            macroCategoryConfig.set(localConfigs);
+        } catch (e) {
+            alert(e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    // Filter items cho việc chọn
+    $: filteredRawCategories = rawCategoriesWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
+</script>
+
+<div class="space-y-4">
+    <div class="flex justify-between items-center mb-4">
+        <p class="text-sm text-gray-500">
+            Định nghĩa các nhóm lớn (VD: Gom "Điện thoại", "Laptop" vào nhóm "ICT").
+            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
+        </p>
+        <div class="flex gap-2">
+            <button 
+                class="px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded hover:bg-green-100 transition"
+                on:click={addGroup}
+            >
+                + Thêm Nhóm Lớn
+            </button>
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-700 transition shadow-sm disabled:opacity-50"
+                on:click={handleSave}
+                disabled={isSaving}
+            >
+                {#if isSaving}Lưu...{:else}Lưu Cấu Hình{/if}
+            </button>
+        </div>
+    </div>
+
+    {#if localConfigs.length === 0}
+        <div class="p-8 text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
+            <p class="text-gray-400">Chưa có nhóm nào. Hãy bấm "Thêm Nhóm Lớn".</p>
+        </div>
+    {:else}
+        <div class="grid gap-4">
+            {#each localConfigs as group (group.id)}
+                <div class="border border-gray-200 rounded-lg bg-white overflow-hidden shadow-sm">
+                    <div 
+                        class="p-3 bg-gray-50 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition"
+                        on:click={() => editingId = (editingId === group.id ? null : group.id)}
+                    >
+                        <div class="flex items-center gap-2">
+                            <span class="transform transition-transform {editingId === group.id ? 'rotate-90' : ''}">▶</span>
+                            <h4 class="font-bold text-slate-700">{group.name}</h4>
+                            <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                                {group.items?.length || 0} mục
+                            </span>
+                        </div>
+                        <button 
+                            class="text-red-500 hover:text-red-700 p-1"
+                            on:click|stopPropagation={() => removeGroup(group.id)}
+                            title="Xóa nhóm"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
+
+                    {#if editingId === group.id}
+                        <div class="p-4 border-t border-gray-200 bg-white animate-fade-in">
+                            <div class="mb-2 flex gap-2">
+                                <input 
+                                    type="text" 
+                                    class="flex-1 p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-blue-500" 
+                                    placeholder="🔍 Tìm kiếm ngành hàng..." 
+                                    bind:value={itemSearch}
+                                />
+                                <button 
+                                    class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1"
+                                    on:click={() => clearSelection(group.id)}
+                                    title="Xóa sạch mục đã chọn để chọn lại"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Làm sạch ({group.items?.length || 0})
+                                </button>
+                            </div>
+                            
+                            <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
+                                {#each filteredRawCategories as item}
+                                    {@const isChecked = group.items.includes(item.id)}
+                                    <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isChecked} 
+                                            on:change={() => toggleItem(group.id, item.id)}
+                                            class="rounded text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
+                                            {item.display}
+                                        </span>
+                                    </label>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+            {/each}
+        </div>
+    {/if}
+</div>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+<<< FILE_END: src/components/admin/category/MacroGroupEditor.svelte
+
+>>> FILE_START: src/components/admin/category/MacroProductGroupEditor.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
+    import { adminService } from '../../../services/admin.service.js';
+    import { parseIdentity } from '../../../utils.js';
+
+    let localConfigs = []; 
+    let isSaving = false;
+    let editingId = null; 
+    let itemSearch = '';
+
+    // Lấy danh sách Nhóm Hàng (Product Group) kèm ID để tick chọn
+    $: rawProductGroupsWithId = (() => {
+        const map = new Map();
+        ($categoryStructure || []).forEach(c => {
+            if(!c.nhomHang) return;
+            const parsed = parseIdentity(c.nhomHang);
+            if (parsed.id && parsed.id !== 'unknown') {
+                map.set(parsed.id, { 
+                    id: parsed.id, 
+                    display: `${parsed.id} - ${parsed.name}` 
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a,b) => a.display.localeCompare(b.display));
+    })();
+    
+    $: if ($macroProductGroupConfig) {
+        localConfigs = JSON.parse(JSON.stringify($macroProductGroupConfig));
+    }
+
+    function addGroup() {
+        const name = prompt("Nhập tên Nhóm Hàng Lớn (VD: Điện thoại & Laptop, Gia dụng lớn...):");
+        if (name && name.trim()) {
+            const id = 'macro_pg_' + Date.now();
+            localConfigs = [...localConfigs, { id, name: name.trim(), items: [] }];
+            editingId = id; 
+        }
+    }
+
+    function removeGroup(id) {
+        if (!confirm("Bạn có chắc muốn xóa nhóm này?")) return;
+        localConfigs = localConfigs.filter(g => g.id !== id);
+    }
+
+    function toggleItem(groupId, itemId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+
+        const currentItems = new Set(localConfigs[groupIndex].items || []);
+        if (currentItems.has(itemId)) {
+            currentItems.delete(itemId);
+        } else {
+            currentItems.add(itemId);
+        }
+        localConfigs[groupIndex].items = [...currentItems];
+    }
+
+    // [MỚI] Hàm xóa sạch lựa chọn
+    function clearSelection(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        
+        if (confirm(`Bạn muốn xóa sạch danh sách chọn của nhóm "${localConfigs[groupIndex].name}" để chọn lại từ đầu?`)) {
+            localConfigs[groupIndex].items = [];
+        }
+    }
+
+    async function handleSave() {
+        isSaving = true;
+        try {
+            await adminService.saveMacroProductGroupConfig(localConfigs);
+            macroProductGroupConfig.set(localConfigs);
+        } catch (e) {
+            alert(e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    // Filter items cho việc chọn
+    $: filteredRawGroups = rawProductGroupsWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
+</script>
+
+<div class="space-y-4">
+    <div class="flex justify-between items-center mb-4">
+        <p class="text-sm text-gray-500">
+            Định nghĩa các nhóm hàng lớn (VD: Gom "Nồi cơm", "Bếp ga" vào nhóm "Gia dụng nhà bếp").
+            <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
+        </p>
+        <div class="flex gap-2">
+            <button 
+                class="px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded hover:bg-teal-100 transition"
+                on:click={addGroup}
+            >
+                + Thêm Nhóm Hàng Lớn
+            </button>
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-700 transition shadow-sm disabled:opacity-50"
+                on:click={handleSave}
+                disabled={isSaving}
+            >
+                {#if isSaving}Lưu...{:else}Lưu Cấu Hình{/if}
+            </button>
+        </div>
+    </div>
+
+    {#if localConfigs.length === 0}
+        <div class="p-8 text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
+            <p class="text-gray-400">Chưa có nhóm nào. Hãy bấm "Thêm Nhóm Hàng Lớn".</p>
+        </div>
+    {:else}
+        <div class="grid gap-4">
+            {#each localConfigs as group (group.id)}
+                <div class="border border-gray-200 rounded-lg bg-white overflow-hidden shadow-sm">
+                    <div 
+                        class="p-3 bg-gray-50 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition"
+                        on:click={() => editingId = (editingId === group.id ? null : group.id)}
+                    >
+                        <div class="flex items-center gap-2">
+                            <span class="transform transition-transform {editingId === group.id ? 'rotate-90' : ''}">▶</span>
+                            <h4 class="font-bold text-slate-700">{group.name}</h4>
+                            <span class="bg-teal-100 text-teal-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                                {group.items?.length || 0} mục
+                            </span>
+                        </div>
+                        <button 
+                            class="text-red-500 hover:text-red-700 p-1"
+                            on:click|stopPropagation={() => removeGroup(group.id)}
+                            title="Xóa nhóm"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
+
+                    {#if editingId === group.id}
+                        <div class="p-4 border-t border-gray-200 bg-white animate-fade-in">
+                            <div class="mb-2 flex gap-2">
+                                <input 
+                                    type="text" 
+                                    class="flex-1 p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" 
+                                    placeholder="🔍 Tìm kiếm nhóm hàng..." 
+                                    bind:value={itemSearch}
+                                />
+                                <button 
+                                    class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1"
+                                    on:click={() => clearSelection(group.id)}
+                                    title="Xóa sạch mục đã chọn để chọn lại"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    Làm sạch ({group.items?.length || 0})
+                                </button>
+                            </div>
+                            
+                            <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
+                                {#each filteredRawGroups as item}
+                                    {@const isChecked = group.items.includes(item.id)}
+                                    <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-teal-50 border-teal-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isChecked} 
+                                            on:change={() => toggleItem(group.id, item.id)}
+                                            class="rounded text-teal-600 focus:ring-teal-500"
+                                        />
+                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
+                                            {item.display}
+                                        </span>
+                                    </label>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+            {/each}
+        </div>
+    {/if}
+</div>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+<<< FILE_END: src/components/admin/category/MacroProductGroupEditor.svelte
+
+>>> FILE_START: src/components/admin/category/NameMappingEditor.svelte
+<script>
+    import { onMount } from 'svelte';
+    import { categoryStructure, categoryNameMapping, groupNameMapping, brandNameMapping } from '../../../stores.js';
+    import { adminService } from '../../../services/admin.service.js';
+    // [FIX] Import hàm cleanNameRaw
+    import { cleanNameRaw } from '../../../utils.js';
+
+    export let type = 'category'; // 'category' | 'group' | 'brand'
+
+    let searchText = '';
+    let isSaving = false;
+    let localMapping = {}; 
+
+    $: sourceData = $categoryStructure || [];
+    
+    let mappingStore, rawKey;
+    
+    $: if (type === 'category') {
+        mappingStore = categoryNameMapping;
+        rawKey = 'nganhHang';
+    } else if (type === 'group') {
+        mappingStore = groupNameMapping;
+        rawKey = 'nhomHang';
+    } else { // brand
+        mappingStore = brandNameMapping;
+        rawKey = 'nhaSanXuat';
+    }
+    
+    $: uniqueRawNames = [...new Set(sourceData.map(item => item[rawKey]).filter(Boolean))].sort();
+
+    $: {
+        localMapping = { ...$mappingStore };
+    }
+
+    $: filteredList = uniqueRawNames.filter(name => 
+        name.toLowerCase().includes(searchText.toLowerCase()) || 
+        (localMapping[name] || '').toLowerCase().includes(searchText.toLowerCase())
+    );
+
+    // Hàm lấy tên gợi ý hiển thị trên giao diện (cột giữa)
+    function getSuggestedName(rawName) {
+        return cleanNameRaw(rawName);
+    }
+
+    async function handleSave() {
+        isSaving = true;
+        try {
+            await adminService.saveNameMapping(type, localMapping);
+            mappingStore.set(localMapping);
+        } catch (e) {
+            console.error(e);
+            alert(e.message);
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    // [FIX] Hàm điền tự động giờ sẽ dùng logic làm sạch xịn
+    function autoFillAll() {
+        if (!confirm("Hành động này sẽ điền tên gợi ý (đã làm sạch) vào tất cả các ô trống. Tiếp tục?")) return;
+        uniqueRawNames.forEach(raw => {
+            if (!localMapping[raw]) {
+                localMapping[raw] = cleanNameRaw(raw);
+            }
+        });
+        localMapping = { ...localMapping };
+    }
+</script>
+
+<div class="space-y-4">
+    <div class="flex justify-between items-center bg-white p-2 rounded border border-gray-200">
+        <input 
+            type="text" 
+            placeholder="🔍 Tìm tên gốc hoặc tên hiển thị..." 
+            class="flex-grow p-2 text-sm outline-none"
+            bind:value={searchText}
+        />
+        <div class="flex gap-2">
+            <button 
+                class="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition"
+                on:click={autoFillAll}
+            >
+                ✨ Điền tự động
+            </button>
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-700 transition shadow-sm flex items-center gap-1 disabled:opacity-50"
+                on:click={handleSave}
+                disabled={isSaving}
+            >
+                {#if isSaving}Lưu...{:else}Lưu Cấu Hình{/if}
+            </button>
+        </div>
+    </div>
+
+    {#if uniqueRawNames.length === 0}
+        <div class="p-8 text-center border-2 border-dashed border-gray-200 rounded-lg">
+            <p class="text-gray-500">Chưa có dữ liệu gốc. Vui lòng tải file Excel ở mục trên trước.</p>
+        </div>
+    {:else}
+        <div class="border rounded-lg overflow-hidden bg-white shadow-sm max-h-[500px] overflow-y-auto custom-scrollbar">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-100 text-xs uppercase font-bold text-gray-600 sticky top-0 z-10 shadow-sm">
+                    <tr>
+                        <th class="px-4 py-3 text-left w-1/3">Tên Gốc (Trong Excel)</th>
+                        <th class="px-4 py-3 text-left w-1/3 text-gray-400">Tên Gợi Ý (Auto)</th>
+                        <th class="px-4 py-3 text-left w-1/3 text-indigo-700">Tên Hiển Thị (Chỉnh sửa)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {#each filteredList as rawName}
+                        {@const suggested = getSuggestedName(rawName)}
+                        <tr class="hover:bg-slate-50 transition-colors group">
+                            <td class="px-4 py-2 font-mono text-xs text-gray-600 select-all">{rawName}</td>
+                            <td class="px-4 py-2 text-gray-400 italic text-xs select-all">{suggested}</td>
+                            <td class="px-4 py-1">
+                                <input 
+                                    type="text" 
+                                    class="w-full p-1.5 border border-gray-200 rounded text-sm font-medium text-indigo-800 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none placeholder-gray-300"
+                                    placeholder={suggested}
+                                    bind:value={localMapping[rawName]}
+                                />
+                            </td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+        <p class="text-xs text-gray-500 mt-2 italic text-right">
+            * Các ô để trống sẽ tự động hiển thị theo "Tên Gợi Ý".
+        </p>
+    {/if}
+</div>
+<<< FILE_END: src/components/admin/category/NameMappingEditor.svelte
+
+>>> FILE_START: src/components/DeclarationSection.svelte
+<script>
+    import { fade } from 'svelte/transition';
+    
+    // --- IMPORT TỪ FILE A (TÍNH NĂNG MỚI) ---
+    // [QUAN TRỌNG] Component quản lý bảng hiệu quả mà bạn đã xây dựng
+    import AdminPerformanceTables from './admin/AdminPerformanceTables.svelte';
+
+    // --- IMPORT TỪ FILE B (LOGIC CỐT LÕI) ---
+    import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
+    import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
+    import AdminEfficiency from './admin/AdminEfficiency.svelte';
+    import AdminCategory from './admin/AdminCategory.svelte';
+    import AdminMappings from './admin/AdminMappings.svelte';
+    import AdminCompetition from './admin/AdminCompetition.svelte';
+    import AdminSpecialProducts from './admin/AdminSpecialProducts.svelte';
+    import AdminCalculation from './admin/AdminCalculation.svelte';
+    import AdminUserStats from './admin/AdminUserStats.svelte';
+    import AdminHelp from './admin/AdminHelp.svelte';
+
+    export let activeTab;
+
+    // Menu Item đã được sắp xếp lại hợp lý
+    let activeMenu = 'home'; 
+
+    const menuItems = [
+        { id: 'home', label: 'Quản lý trang chủ', icon: 'layout' },
+        { id: 'config', label: 'Cấu hình Bảng & Chỉ số', icon: 'sliders' },
+        { id: 'competition', label: 'Khai báo Thi đua', icon: 'award' },
+        { id: 'structure', label: 'Nạp dữ liệu Cấu trúc', icon: 'database' },
+        { id: 'logic', label: 'Thiết lập Logic', icon: 'cpu' },
+        { id: 'users', label: 'Quản lý Người dùng', icon: 'users' }
+    ];
+
+    function switchMenu(id) {
+        activeMenu = id;
+    }
+</script>
+
+<section id="declaration-section" class="page-section {activeTab === 'declaration-section' ? '' : 'hidden'}">
+    <div class="content-card !p-0 min-h-[600px] flex flex-col md:flex-row overflow-hidden">
+        
+        <div class="w-full md:w-64 bg-slate-50 border-r border-slate-200 flex-shrink-0">
+            <div class="p-4 border-b border-slate-200">
+                <h2 class="font-bold text-slate-700 uppercase text-xs tracking-wider flex items-center gap-2">
+                    Hệ thống Quản trị
+                </h2>
+            </div>
+            <nav class="p-2 space-y-1">
+                {#each menuItems as item}
+                    <button 
+                        class="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all
+                        {activeMenu === item.id ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}"
+                        on:click={() => switchMenu(item.id)}
+                    >
+                        <div class="{activeMenu === item.id ? 'text-blue-600' : 'text-slate-400'}">
+                            {#if item.icon === 'layout'}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
+                            {:else if item.icon === 'sliders'}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                            {:else if item.icon === 'award'}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            {:else if item.icon === 'database'}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+                            {:else if item.icon === 'cpu'}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>
+                            {:else if item.icon === 'users'}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                            {/if}
+                        </div>
+                        {item.label}
+                    </button>
+                {/each}
+            </nav>
+        </div>
+
+        <div class="flex-1 bg-white p-6 md:p-8 overflow-y-auto h-[800px] custom-scrollbar">
+            
+            {#if activeMenu === 'home'}
+                <div in:fade={{ duration: 200 }}>
+                    <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Quản lý Trang Chủ</h3>
+                    <div class="space-y-8">
+                        <AdminHomeConfig />
+                        <AdminHelp />
+                    </div>
+                </div>
+            {/if}
+
+            {#if activeMenu === 'config'}
+                <div in:fade={{ duration: 200 }}>
+                    <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Cấu hình Bảng & Chỉ số</h3>
+                    <div class="space-y-8">
+                        <AdminRevenueTables />
+
+                        <AdminPerformanceTables />
+
+                        <AdminEfficiency />
+                        
+                        <AdminCategory viewMode="config" />
+                    </div>
+                </div>
+            {/if}
+
+            {#if activeMenu === 'competition'}
+                <div in:fade={{ duration: 200 }}>
+                    <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Khai báo Thi đua</h3>
+                    <div class="space-y-8">
+                        <AdminMappings />
+                        <AdminCompetition />
+                    </div>
+                </div>
+            {/if}
+
+            {#if activeMenu === 'structure'}
+                <div in:fade={{ duration: 200 }}>
+                    <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Nạp dữ liệu Cấu trúc</h3>
+                    <div class="space-y-8">
+                        <AdminCategory viewMode="upload" />
+                        <AdminSpecialProducts />
+                    </div>
+                </div>
+            {/if}
+
+            {#if activeMenu === 'logic'}
+                <div in:fade={{ duration: 200 }}>
+                    <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Thiết lập Logic & Tính toán</h3>
+                    <div class="space-y-8">
+                        <AdminCalculation />
+                    </div>
+                </div>
+            {/if}
+
+            {#if activeMenu === 'users'}
+                <div in:fade={{ duration: 200 }}>
+                    <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Quản lý Người dùng</h3>
+                    <div class="space-y-8">
+                        <AdminUserStats />
+                    </div>
+                </div>
+            {/if}
+
+        </div>
+    </div>
+</section>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
+<<< FILE_END: src/components/DeclarationSection.svelte
+
+>>> FILE_START: src/components/DataSection.svelte
+<script>
+  /* global feather */
+  import { onMount, onDestroy } from 'svelte';
+  
+  // Import các component con
+  import FileInput from './common/FileInput.svelte';
+  import PasteInput from './common/PasteInput.svelte';
+  
+  // Import Stores
+  import { 
+      warehouseList,
+      selectedWarehouse,
+      notificationStore,
+      danhSachNhanVien,
+      homeConfig
+  } from '../stores.js';
+  
+  // Import Services
+  import { dataService } from '../services/dataService.js';
+  // [CODE MỚI] Import Service xử lý cụm
+  import { clusterService } from '../services/cluster.service.js'; 
+  
+  // Import để mở Popup chi tiết phiên bản
+  import { showVersionDetails } from './common/VersionManager.svelte';
+
+  export let activeTab;
+  let isSyncing = false;
+  let dsnvUnsubscribe; 
+
+  // --- [LOGIC MỚI] CLUSTER MODE (CHẾ ĐỘ CỤM) ---
+  let isClusterMode = false;
+  let currentClusterCode = '';
+
+  // Reactive: Tự động check chế độ Cụm khi store nhân viên thay đổi
+  $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
+      checkClusterStatus($danhSachNhanVien);
+  } else {
+      isClusterMode = false;
+      currentClusterCode = '';
+  }
+
+  function checkClusterStatus(employees) {
+      // 1. Lấy danh sách các mã cụm duy nhất (từ parser mới)
+      // Lưu ý: Parser cũ trả về field 'maCum' hoặc 'clusterId' tùy mapping
+      // Ta check an toàn cả 2 trường hợp
+      const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
+      
+      // 2. Lấy danh sách kho duy nhất
+      const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
+
+      // Điều kiện kích hoạt: Có cột Mã Cụm VÀ (Có >= 2 kho HOẶC user đang chọn xem Cụm)
+      if (clusters.length > 0 && (warehouses.length > 1 || clusters.includes($selectedWarehouse))) {
+          isClusterMode = true;
+          currentClusterCode = clusters[0]; // Mặc định lấy cụm đầu tiên
+          
+          // Cập nhật Select box: Thêm mã cụm vào danh sách chọn nếu chưa có
+          warehouseList.update(list => {
+               // Nếu chưa có mã cụm trong list, thêm nó vào đầu
+               if (!list.includes(currentClusterCode)) {
+                   return [currentClusterCode, ...list];
+               }
+               return list;
+          });
+          
+          // Tự động switch sang mã cụm nếu đang chưa chọn gì
+          if (!$selectedWarehouse || $selectedWarehouse !== currentClusterCode) {
+               // Logic tùy chọn: Có thể tự động chọn hoặc để user chọn
+               // Ở đây tôi để log check thôi, tránh force user quá gắt
+               console.log(`[Cluster] Detected cluster: ${currentClusterCode}`);
+          }
+          
+          // Load dữ liệu đã lưu của cụm này (để hiển thị biểu đồ nếu F5)
+          clusterService.loadSavedData(currentClusterCode);
+      } else {
+          isClusterMode = false;
+          currentClusterCode = '';
+          // Reset service nếu về chế độ thường
+          clusterService.reset();
+      }
+  }
+
+  // --- [LOGIC MỚI] XỬ LÝ PASTE DỮ LIỆU ---
+  
+  // 1. Handler cho ô "Thi đua siêu thị lũy kế" (Chỉ hiện khi Cluster Mode)
+  function handlePasteCompetition(event) {
+      const text = event.detail;
+      if (isClusterMode && currentClusterCode) {
+          try {
+              clusterService.processCompetitionInput(text, currentClusterCode);
+              notificationStore.set({ 
+                  message: `✅ Đã cập nhật thi đua cho Cụm ${currentClusterCode}!`, 
+                  type: 'success' 
+              });
+          } catch (e) {
+              console.error(e);
+              notificationStore.set({ 
+                  message: 'Lỗi xử lý dữ liệu thi đua! Kiểm tra format.', 
+                  type: 'error' 
+              });
+          }
+      }
+  }
+
+  // 2. Handler cho ô "Data lũy kế" (Rẽ nhánh thông minh)
+  function handlePasteCumulative(event) {
+      const text = event.detail;
+      
+      if (isClusterMode && currentClusterCode) {
+          // A. CHẾ ĐỘ CỤM: Xử lý bằng Cluster Service (Logic 16 cột tổng hợp)
+          try {
+              clusterService.processCumulativeInput(text, currentClusterCode);
+              notificationStore.set({ 
+                  message: `✅ Đã cập nhật Lũy kế cho Cụm ${currentClusterCode}!`, 
+                  type: 'success' 
+              });
+          } catch (e) {
+              console.error(e);
+              notificationStore.set({ message: 'Lỗi xử lý Data Lũy kế Cụm!', type: 'error' });
+          }
+      } else {
+          // B. CHẾ ĐỘ KHO ĐƠN (CŨ):
+          // Không làm gì cả -> Để mặc định cho PasteInput tự save vào localStorage
+          // và dataService sẽ tự detect qua key 'daily_paste_luyke' như cũ.
+          console.log('[DataSection] Mode Kho đơn: Dữ liệu đã được lưu vào Storage.');
+      }
+  }
+
+  // --- LOGIC PHIÊN BẢN (GIỮ NGUYÊN) ---
+  let latestVersion = '';
+  let tickerStatus = 'none';
+
+  $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
+      const serverVer = $homeConfig.changelogs[0].version;
+      const clientVer = localStorage.getItem('app_client_version') || '';
+      latestVersion = serverVer;
+      tickerStatus = (serverVer && serverVer !== clientVer) ? 'new' : 'current';
+  }
+
+  // --- LOGIC ĐỒNG BỘ CŨ (GIỮ NGUYÊN) ---
+  onMount(async () => {
+    if (typeof feather !== 'undefined') feather.replace();
+
+    const savedWh = localStorage.getItem('selectedWarehouse');
+    if (savedWh) {
+        console.log(`[DataSection] Phát hiện kho đã lưu: ${savedWh}.`);
+        selectedWarehouse.set(savedWh);
+        await dataService.loadWarehouseSettings(savedWh); 
+
+        dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
+            if (data && data.length > 0) {
+                // Check cluster status ngay khi load data
+                checkClusterStatus(data);
+                
+                // Chỉ sync từ cloud nếu KHÔNG PHẢI là cụm (vì cụm ko có cloud sync)
+                if (!isClusterMode) {
+                    console.log(`[DataSection] Đồng bộ kho đơn: ${savedWh}`);
+                    await triggerSync(savedWh);
+                }
+                
+                if (dsnvUnsubscribe) {
+                    dsnvUnsubscribe();
+                    dsnvUnsubscribe = null;
+                }
+            }
+        });
+    }
+  });
+
+  onDestroy(() => {
+      if (dsnvUnsubscribe) dsnvUnsubscribe();
+  });
+
+  async function triggerSync(warehouse) {
+      if (!warehouse) return;
+      isSyncing = true;
+      try {
+          await Promise.all([
+              dataService.syncDownFromCloud(warehouse),
+              dataService.loadWarehouseSettings(warehouse)
+          ]);
+          notificationStore.set({ message: 'Đồng bộ thành công!', type: 'success' });
+      } catch (error) {
+            console.error("SYNC ERROR:", error);
+      } finally {
+            isSyncing = false;
+      }
+  }
+
+  async function handleWarehouseChange(event) {
+      const newWarehouse = event.target.value;
+      selectedWarehouse.set(newWarehouse);
+      
+      if (newWarehouse) {
+          localStorage.setItem('selectedWarehouse', newWarehouse);
+          
+          if (isClusterMode && newWarehouse === currentClusterCode) {
+               // Nếu chọn vào Mã Cụm -> Load data cụm
+               notificationStore.set({ message: `Chế độ Cụm: ${newWarehouse}`, type: 'info' });
+               clusterService.loadSavedData(newWarehouse);
+          } else {
+               // Nếu chọn vào Mã Kho lẻ -> Sync bình thường
+               notificationStore.set({ message: `Đang đồng bộ ${newWarehouse}...`, type: 'info' });
+               await triggerSync(newWarehouse);
+          }
+      } else {
+          localStorage.removeItem('selectedWarehouse');
+      }
+  }
+
+  $: if (activeTab === 'data-section') {
+    Promise.resolve().then(() => {
+      if (typeof window.feather !== 'undefined') window.feather.replace();
+    });
+  }
+</script>
+
+<section id="data-section" class="page-section {activeTab === 'data-section' ? '' : 'hidden'}"> 
+    <div class="page-header">
+         <div class="flex flex-wrap items-center gap-4 w-full">
+            <div class="flex items-center gap-x-3">
+                <h2 class="page-header__title">Cập nhật dữ liệu</h2>
+                <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
+                     <i data-feather="help-circle" class="feather"></i>
+                </button>
+            </div>
+            
+            <div id="data-warehouse-selector-container" class="flex-shrink-0 flex items-center gap-2">
+                  <label for="data-warehouse-selector" class="text-sm font-semibold text-gray-700">
+                      {isClusterMode ? 'Cụm/Kho:' : 'Kho:'}
+                  </label>
+              
+                  <div class="relative">
+                    <select 
+                      id="data-warehouse-selector" 
+                      class="p-2 border rounded-lg text-sm shadow-sm min-w-[200px] 
+                            font-semibold text-indigo-800 bg-indigo-50 border-indigo-200 
+                            focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50" 
+                      disabled={$warehouseList.length === 0 || isSyncing}
+                      value={$selectedWarehouse}
+                      on:change={handleWarehouseChange}
+                    >
+                        {#if $warehouseList.length === 0}
+                              <option>Vui lòng tải file DSNV...</option>
+                        {:else}
+                            <option value="">-- Chọn --</option>
+                             {#each $warehouseList as kho}
+                                 <option value={kho}>{kho}</option>
+                            {/each}
+                        {/if}
+                    </select>
+                    {#if isSyncing}
+                        <div class="absolute right-8 top-1/2 -translate-y-1/2">
+                             <svg class="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                             </svg>
+                         </div>
+                    {/if}
+                </div>
+            </div>
+
+            {#if tickerStatus !== 'none'}
+                <div 
+                    id="version-marquee-container" 
+                    class="flex-grow min-w-[200px] rounded-lg px-4 py-2 cursor-pointer shadow-sm border transition-all flex items-center overflow-hidden relative group
+                    {tickerStatus === 'new' 
+                        ? 'bg-red-50 border-red-200 hover:bg-red-100' 
+                        : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}"
+                    on:click={() => showVersionDetails.set(true)}
+                    role="button"
+                    tabindex="0"
+                >
+                    <div class="marquee-content whitespace-nowrap text-sm flex items-center gap-4">
+                        {#if tickerStatus === 'new'}
+                            <span class="flex items-center gap-1 bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-extrabold uppercase tracking-wider animate-pulse border border-red-200">
+                                <i data-feather="zap" class="w-3 h-3"></i> Mới
+                            </span>
+                            <span class="text-red-900 font-bold">
+                               Đã có phiên bản <span class="bg-red-200 text-red-800 px-1.5 rounded font-bold mx-1">{latestVersion}</span> - Bấm cập nhật ngay!
+                            </span>
+                        {:else}
+                             <span class="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-green-200">
+                                <i data-feather="check-circle" class="w-3 h-3"></i> Đã cập nhật
+                             </span>
+                            <span class="text-indigo-900 font-bold flex items-center gap-1">
+                                Hệ thống đang chạy phiên bản 
+                                <span class="text-base font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-100 shadow-sm">
+                                    {latestVersion}
+                                </span>
+                             </span>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
+        </div>
+    </div>
+   
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
+        <div class="content-card data-card--blue flex flex-col gap-4"> 
+             <h3 class="content-card__header data-header--blue">
+                <i data-feather="zap" class="h-5 w-5 feather"></i>SỬ DỤNG NHANH MỖI NGÀY
+            </h3>
+            
+            <FileInput 
+                label="Yêu cầu xuất lũy kế"
+                icon="file-text"
+                link="https://report.mwgroup.vn/home/dashboard/077"
+                saveKey="saved_ycx"
+            />
+            
+            <PasteInput
+                label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"}
+                icon="clipboard"
+                link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1"
+                saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"}
+                on:paste={handlePasteCumulative}
+            />
+            
+            {#if isClusterMode}
+                <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative">
+                     <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
+                     <PasteInput
+                        label="Thi đua siêu thị lũy kế"
+                        icon="layers"
+                        link="#"
+                        placeholder="Paste dữ liệu thi đua cụm..."
+                        saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`}
+                        on:paste={handlePasteCompetition}
+                    />
+                    <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1">
+                        <i data-feather="info" class="w-3 h-3"></i>
+                        Dành cho quản lý Cụm {currentClusterCode}
+                    </p>
+                </div>
+            {/if}
+            
+            <PasteInput
+                label="Thi đua nhân viên"
+                icon="clipboard"
+                link="https://bi.thegioididong.com/sieu-thi-con?id=16758&tab=bcdtnv&rt=2&dm=1"
+                saveKeyPaste="daily_paste_thiduanv"
+                saveKeyRaw="raw_paste_thiduanv"
+                saveKeyProcessed="daily_paste_thiduanv"
+            />
+        </div>
+        
+         <div class="content-card data-card--green flex flex-col gap-4"> 
+            <h3 class="content-card__header data-header--green">
+                  <i data-feather="users" class="h-5 w-5 feather"></i>CHI TIẾT NĂNG SUẤT NHÂN VIÊN
+            </h3>
+           
+            <FileInput
+                label="Giờ công"
+                icon="clock"
+                link="https://reports.thegioididong.com/#/viewreport/168754"
+                saveKey="saved_giocong"
+             />
+             
+            <FileInput
+                 label="Thưởng nóng"
+                icon="gift"
+                link="https://report.mwgroup.vn/home/dashboard/105"
+                saveKey="saved_thuongnong"
+            />
+             
+            <PasteInput
+                label="Thưởng ERP"
+                icon="clipboard"
+                link="https://bi.thegioididong.com/reward?id=-1&tab=1"
+                saveKeyPaste="daily_paste_thuongerp"
+             />
+        </div>
+    </div>
+    
+    <div class="content-card data-card--yellow"> 
+         <h3 class="content-card__header data-header--yellow">
+            <i data-feather="calendar" class="h-5 w-5 feather"></i>DỮ LIỆU CẬP NHẬT 1 THÁNG 1 LẦN
+         </h3>
+        <p class="text-sm text-yellow-800 bg-yellow-100 p-3 rounded-lg mb-4">Lưu ý: Dữ liệu trong phần này sẽ được lưu vào trình duyệt của bạn. Dữ liệu sẽ tồn tại cho đến khi bạn cập nhật lại.</p> 
+        
+        <div class="grid md:grid-cols-3 gap-4"> 
+             <div class="space-y-4"> 
+                 <FileInput
+                    label="Danh sách nhân viên"
+                    icon="users"
+                    saveKey="saved_danhsachnv"
+                />
+                <FileInput
+                    label="YCX Lũy Kế tháng trước"
+                    icon="file-text"
+                    link="https://report.mwgroup.vn/home/dashboard/077"
+                    saveKey="saved_ycx_thangtruoc"
+                />
+            </div> 
+             <div class="space-y-4"> 
+                  <FileInput
+                    label="Thưởng nóng tháng trước"
+                    icon="gift"
+                     link="https://report.mwgroup.vn/home/dashboard/105"
+                     saveKey="saved_thuongnong_thangtruoc"
+                />
+             </div> 
+             <div class="space-y-4"> 
+                 <PasteInput
+                    label="Thưởng ERP tháng trước"
+                    icon="clipboard"
+                    link="https://bi.thegioididong.com/reward?id=-1&tab=1"
+                     saveKeyPaste="saved_thuongerp_thangtruoc"
+                 />
+            </div> 
+        </div> 
+    </div> 
+</section>
+
+<style>
+    /* Animation cho dòng chữ chạy */
+    .marquee-content {
+        animation: marquee 12s linear infinite;
+    }
+    .group:hover .marquee-content {
+        animation-play-state: paused;
+    }
+    @keyframes marquee {
+        0% { transform: translateX(100%); }
+        100% { transform: translateX(-100%); }
+    }
+    
+    /* Animation cho ô nhập liệu Cụm mới xuất hiện */
+    .animate-fade-in {
+        animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+<<< FILE_END: src/components/DataSection.svelte

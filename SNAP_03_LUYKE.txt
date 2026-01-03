@@ -1,0 +1,2453 @@
+CONTEXT GROUP: SNAP_03_LUYKE.txt
+GENERATED AT: 1/3/2026, 2:59:56 PM
+
+
+>>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
+<script>
+  import { onMount, afterUpdate } from 'svelte';
+  import { formatters } from '../../utils/formatters.js';
+  import { cleanCategoryName } from '../../utils.js';
+  import { macroCategoryConfig } from '../../stores.js'; 
+  import { adminService } from '../../services/admin.service.js';
+  
+  import LuykeCategoryCharts from './sub/LuykeCategoryCharts.svelte';
+  import LuykeCategoryToolbar from './sub/LuykeCategoryToolbar.svelte';
+
+  export let items = []; 
+  export let unexportedItems = []; 
+  export let rawSource = []; 
+  export let numDays = 1;
+
+  // --- STATE ---
+  let showUnexported = false;
+  let viewMode = 'grid'; 
+  let searchText = '';
+  let sortMode = 'revenue_desc';
+  
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let hiddenCategories = new Set(); 
+
+  const STORAGE_KEY = 'luyke_category_direct_v1';
+
+  onMount(async () => {
+      // 1. Load Filter State
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+          try { hiddenCategories = new Set(JSON.parse(saved)); } 
+          catch (e) { console.error(e); }
+      }
+
+      // 2. Load Config
+      if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
+          try {
+              if (typeof adminService.loadMacroCategoryConfig === 'function') {
+                  const configs = await adminService.loadMacroCategoryConfig();
+                  macroCategoryConfig.set(configs);
+              }
+          } catch (e) { console.error("Lỗi load config:", e); }
+      }
+  });
+
+  function saveHiddenState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenCategories]));
+  }
+
+  // --- THEME ---
+  $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT (QĐ)" : (viewMode === 'grid' ? "CHI TIẾT NGÀNH HÀNG" : "TỶ TRỌNG NGÀNH HÀNG");
+  $: titleIcon = showUnexported ? "alert-circle" : (viewMode === 'grid' ? "grid" : "pie-chart");
+  $: titleClass = showUnexported ? "text-orange-700" : "text-gray-700";
+  $: iconClass = showUnexported ? "text-orange-600" : "text-blue-600";
+
+  function getCategoryTheme(name) {
+      const n = name ? name.toLowerCase() : '';
+      if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
+      if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
+      if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
+      if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', theme: 'theme-blue' };
+      if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
+      if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', theme: 'theme-teal' };
+      if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
+      if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', theme: 'theme-orange' };
+      if (n.includes('phụ kiện')) return { icon: 'headphones', theme: 'theme-purple' };
+      if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
+      return { icon: 'tag', theme: 'theme-gray' };
+  }
+
+  // --- LOGIC MỚI: TRỰC TIẾP & SONG SONG ---
+  $: sourceData = showUnexported ? unexportedItems : items;
+
+  // 1. Tạo danh sách Filter (Gộp cả Macro và Simple)
+  $: allGroups = (() => {
+      // Macro Items
+      const macroItems = ($macroCategoryConfig || []).map(m => ({
+          key: m.name, // Key là tên nhóm lớn
+          label: m.name,
+          type: 'macro'
+      })).sort((a, b) => a.label.localeCompare(b.label));
+
+      // Simple Items
+      const simpleItemsMap = new Map();
+      sourceData.forEach((i, index) => {
+          const name = i.name || i.nganhHang;
+          const safeKey = i.id || name || `unknown_${index}`;
+          if (name) {
+              simpleItemsMap.set(safeKey, { key: safeKey, label: name, type: 'simple' });
+          }
+      });
+      const simpleItems = Array.from(simpleItemsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+
+      return [...macroItems, ...simpleItems];
+  })();
+
+  $: filterList = allGroups.filter(g => 
+      g.label.toLowerCase().includes(filterSearch.toLowerCase())
+  );
+
+  function toggleCategoryVisibility(event) {
+      const key = event.detail;
+      if (hiddenCategories.has(key)) hiddenCategories.delete(key);
+      else hiddenCategories.add(key);
+      hiddenCategories = new Set(hiddenCategories);
+      saveHiddenState();
+  }
+
+  function toggleAllVisibility(event) {
+      const show = event.detail;
+      hiddenCategories = show ? new Set() : new Set(allGroups.map(g => g.key));
+      saveHiddenState();
+  }
+
+  // 2. Logic Aggregation: KHÔNG BÙ TRỪ. Có gì hiện nấy.
+  $: aggregatedItems = (() => {
+      const result = [];
+      const macroConfigs = $macroCategoryConfig || [];
+
+      // A. Tính toán Nhóm Lớn (Macro) - Luôn tính toán và thêm vào nếu không bị ẩn
+      macroConfigs.forEach(macro => {
+          if (!hiddenCategories.has(macro.name)) {
+              // Tìm con khớp
+              const keywords = (macro.items || []).map(k => k.toLowerCase());
+              const childItems = sourceData.filter(item => {
+                  const iName = (item.name || item.nganhHang || '').toLowerCase();
+                  const iId = (item.id || '').toLowerCase();
+                  return keywords.some(k => iName.includes(k) || iId === k);
+              });
+
+              if (childItems.length > 0) {
+                  result.push({
+                      id: `MACRO_${macro.name}`, // ID riêng
+                      name: macro.name,
+                      isMacro: true,
+                      revenue: childItems.reduce((sum, i) => sum + (i.revenue || 0), 0),
+                      doanhThuQuyDoi: childItems.reduce((sum, i) => sum + (i.doanhThuQuyDoi || 0), 0),
+                      quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.soLuong || 0), 0),
+                      soLuong: childItems.reduce((sum, i) => sum + (i.soLuong || 0), 0)
+                  });
+              }
+          }
+      });
+
+      // B. Thêm Ngành Hàng Lẻ (Simple) - Luôn thêm vào nếu không bị ẩn
+      sourceData.forEach((item, index) => {
+          const name = item.name || item.nganhHang || 'Chưa đặt tên';
+          const safeId = item.id || name || `ITEM_${index}`;
+          
+          if (!hiddenCategories.has(safeId) && !hiddenCategories.has(name)) {
+              result.push({
+                  ...item,
+                  id: safeId,
+                  name: name,
+                  isMacro: false
+              });
+          }
+      });
+
+      return result;
+  })();
+
+  $: gridDisplayItems = aggregatedItems.filter(item => {
+      const name = item.name || '';
+      return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
+  });
+
+  $: sortedItems = [...gridDisplayItems].sort((a, b) => {
+      const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
+      const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
+      
+      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
+      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
+      if (sortMode === 'name_asc') return (a.name || '').localeCompare(b.name || '');
+      return 0;
+  });
+
+  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
+  $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
+
+  // --- CHART DATA (Sửa lại logic Top Hãng theo Filter) ---
+  $: pieData = (() => {
+      const sorted = aggregatedItems
+          .filter(i => (showUnexported ? i.doanhThuQuyDoi : i.revenue) > 0)
+          .sort((a, b) => (showUnexported ? b.doanhThuQuyDoi - a.doanhThuQuyDoi : b.revenue - a.revenue));
+      if (sorted.length <= 14) return sorted;
+      const top13 = sorted.slice(0, 13);
+      const others = sorted.slice(13);
+      const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
+      return [...top13, { name: 'Khác', revenue: otherRevenue }];
+  })();
+
+  // [FIX CHART] Truyền config vào để bung nhóm lớn ra khi lọc
+  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig); 
+
+  function calculateBrandData(source, visibleItems, configs) {
+      if (!source || source.length === 0) return [];
+      
+      // 1. Xây dựng tập hợp các tên ngành hàng con "được phép hiện"
+      const allowedNames = new Set();
+      
+      visibleItems.forEach(item => {
+          if (item.isMacro) {
+              // Nếu là nhóm lớn, tìm config và thêm tất cả các con của nó vào list cho phép
+              const conf = (configs || []).find(c => c.name === item.name);
+              if (conf && conf.items) {
+                  conf.items.forEach(k => allowedNames.add(cleanCategoryName(k)));
+              }
+          } else {
+              // Nếu là ngành lẻ, thêm chính nó
+              allowedNames.add(cleanCategoryName(item.name || item.nganhHang));
+          }
+      });
+
+      // 2. Lọc Source và tính Brand
+      const brands = {};
+      source.forEach(row => {
+          const rowCatName = cleanCategoryName(row.nganhHang || '');
+          // Chỉ lấy nếu ngành hàng của row này nằm trong danh sách cho phép
+          if (allowedNames.has(rowCatName)) {
+              const brandName = row.nhaSanXuat || 'Khác';
+              const revenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+              if (!brands[brandName]) brands[brandName] = { name: brandName, revenue: 0 };
+              brands[brandName].revenue += revenue;
+          }
+      });
+      
+      return Object.values(brands).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
+  }
+
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          isSettingsOpen = false;
+      }
+  }
+  
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<svelte:window on:click={handleWindowClick} />
+
+<div class="luyke-tier-2-container">
+    <LuykeCategoryToolbar
+        {titleText} {titleIcon} {titleClass} {iconClass}
+        bind:viewMode
+        bind:showUnexported
+        bind:sortMode
+        bind:searchText
+        bind:isSettingsOpen
+        bind:filterSearch
+        {filterList} 
+        {hiddenCategories}
+        on:toggleCategory={toggleCategoryVisibility}
+        on:toggleAll={toggleAllVisibility}
+    />
+
+    <style>
+        /* Tăng max-height và thêm scroll cho body của dropdown */
+        :global(.filter-dropdown) {
+            display: flex;
+            flex-direction: column;
+            max-height: 400px; /* Giới hạn chiều cao tổng */
+        }
+        :global(.filter-body) {
+            flex: 1;
+            overflow-y: auto; /* Cho phép cuộn nội dung */
+            min-height: 0;
+        }
+        :global(.filter-actions) {
+            flex-shrink: 0; /* Nút bottom không bị co lại */
+            border-top: 1px solid #eee;
+        }
+    </style>
+
+    {#if viewMode === 'grid'}
+        {#if sortedItems.length === 0}
+            <div class="p-12 text-center bg-white border border-gray-200 border-t-0 rounded-b-xl">
+                <p class="text-gray-500">{showUnexported ? 'Không có đơn hàng chưa xuất.' : 'Không có dữ liệu hiển thị.'}</p>
+            </div>
+        {:else}
+            <div class="luyke-cat-grid p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl">
+                {#each sortedItems as item (item.id)}
+                    {@const name = item.name}
+                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
+                    {@const style = getCategoryTheme(name)}
+                    {@const marketSharePercent = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0}
+                    {@const barPercent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
+                    
+                    {@const finalTheme = showUnexported ? 'theme-warning' : (item.isMacro ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-100' : style.theme)}
+                    {@const iconName = item.isMacro ? 'layers' : style.icon}
+                    {@const textColor = item.isMacro ? 'text-indigo-800' : ''}
+
+                    <div class="cat-card-colorful {finalTheme}">
+                        <div class="cat-top-row">
+                            <div class="cat-icon-box {item.isMacro ? 'bg-indigo-100 text-indigo-600' : ''}">
+                                <i data-feather={iconName} class="w-5 h-5"></i>
+                            </div>
+                            {#if !showUnexported}
+                                <span class="cat-percent-text text-xs {item.isMacro ? 'text-indigo-600' : ''}">
+                                    {formatters.formatPercentage(marketSharePercent/100)}
+                                </span>
+                            {/if}
+                        </div>
+                        
+                        <h4 class="cat-name-text {textColor}" title={name}>
+                            {name} 
+                            {#if item.isMacro}<span class="text-[10px] bg-white border px-1 rounded text-gray-500 ml-1 font-normal">GỘP</span>{/if}
+                        </h4>
+                        
+                        <div class="cat-value-text {textColor}">{formatters.formatRevenue(revenue,0)}</div>
+                        
+                        <div class="cat-footer-row">
+                            <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
+                            {#if !showUnexported}
+                                <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 0)}</strong>/ngày</span>
+                            {/if}
+                        </div>
+                        
+                        <div class="cat-bar-bg">
+                            <div class="cat-bar-fill {item.isMacro ? 'bg-indigo-500' : ''}" style="width: {barPercent}%"></div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+    {:else}
+        <LuykeCategoryCharts 
+            {pieData} 
+            {barData} 
+            {showUnexported} 
+        />
+    {/if}
+</div>
+<<< FILE_END: src/components/luyke/LuykeCategoryTable.svelte
+
+>>> FILE_START: src/components/luyke/LuykeEfficiencyTable.svelte
+<script>
+  // File: src/components/luyke/LuykeEfficiencyTable.svelte
+  import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
+  import { formatters } from '../../utils/formatters.js';
+
+  export let items = []; 
+  export let dynamicItems = [];
+  export let supermarketData = {}; 
+  
+  const dispatch = createEventDispatcher();
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let hiddenIds = new Set(); 
+
+  const STORAGE_KEY = 'luyke_efficiency_hidden_ids';
+  onMount(() => {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+          try { hiddenIds = new Set(JSON.parse(saved)); } catch (e) {}
+      }
+  });
+
+  function saveHiddenState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenIds]));
+  }
+
+  const iconMap = {
+      'pctPhuKien': 'headphones', 'pctGiaDung': 'home', 'pctMLN': 'droplet',
+      'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
+  };
+
+  // --- [FIX DUPLICATE] Lọc trùng lặp ID ---
+  $: displayItems = (() => {
+      const uniqueMap = new Map();
+
+      // 1. Thêm items thường (User config/Hardcoded)
+      (items || []).forEach(item => {
+          uniqueMap.set(item.id, { ...item, isDynamic: false });
+      });
+
+      // 2. Thêm items động (Admin config) - Sẽ ghi đè nếu trùng ID (hoặc giữ nguyên tùy logic)
+      // Ở đây tôi chọn logic: Nếu đã có rồi thì cập nhật, chưa có thì thêm mới.
+      (dynamicItems || []).forEach(cfg => {
+          const metric = supermarketData.dynamicMetrics?.[cfg.id];
+          const existing = uniqueMap.get(cfg.id);
+          
+          uniqueMap.set(cfg.id, {
+              ...existing, // Giữ lại thuộc tính cũ nếu có
+              id: cfg.id,
+              label: cfg.label,
+              value: metric ? metric.value : (existing?.value || 0),
+              target: cfg.target || existing?.target || 0,
+              isDynamic: true, // Đánh dấu là dynamic để hiện nút sửa/xóa
+              rawConfig: cfg
+          });
+      });
+
+      return Array.from(uniqueMap.values());
+  })();
+  // ------------------------------------------
+
+  $: filterList = displayItems.filter(item => item.label.toLowerCase().includes(filterSearch.toLowerCase()));
+  $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
+
+  function toggleVisibility(id) {
+      if (hiddenIds.has(id)) hiddenIds.delete(id); else hiddenIds.add(id);
+      hiddenIds = new Set(hiddenIds);
+      saveHiddenState();
+  }
+
+  function toggleAllVisibility(show) {
+      hiddenIds = show ? new Set() : new Set(displayItems.map(i => i.id));
+      saveHiddenState();
+  }
+
+  function getProgressColor(val, target) {
+      const t = (target || 0) / 100;
+      if (t <= 0) return '#3b82f6'; 
+      return val >= t ? '#2563eb' : '#ef4444'; 
+  }
+
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) 
+        isSettingsOpen = false;
+  }
+  
+  function handleDelete(id) {
+      if(confirm('Bạn có chắc muốn xóa chỉ số này?')) dispatch('delete', id);
+  }
+
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<svelte:window on:click={handleWindowClick} />
+<div class="luyke-widget h-full">
+  <div class="luyke-widget-header">
+    <div class="luyke-widget-title">
+      <div class="p-1.5 bg-blue-100 rounded text-blue-600 mr-2">
+          <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+      </div>
+      <span>Hiệu Quả Khai Thác</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <button class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200" on:click={() => dispatch('add')} title="Thêm chỉ số mới">
+            <i data-feather="plus" class="w-3 h-3"></i> Thêm
+        </button>
+        <div class="relative filter-wrapper">
+            <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen}><i data-feather="filter" class="w-4 h-4"></i></button>
+            {#if isSettingsOpen}
+                <div class="filter-dropdown">
+                    <div class="filter-header"><input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} /></div>
+                    <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+                        {#each filterList as item, index (index)}
+                            <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
+                                <input type="checkbox" checked={!hiddenIds.has(item.id)} /> <label>{item.label}</label>
+                            </div>
+                        {/each}
+                    </div>
+                    <div class="filter-actions">
+                        <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                        <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                    </div>
+                </div>
+            {/if}
+        </div>
+    </div>
+  </div>
+
+  <div class="luyke-widget-body custom-scrollbar">
+    {#if visibleItems.length === 0}
+       <div class="flex flex-col items-center justify-center h-full text-gray-400"><p class="text-sm">Đã ẩn hết dữ liệu.</p></div>
+    {:else}
+      <div class="flex flex-col gap-0">
+        {#each visibleItems as item, index (index)}
+          {@const color = getProgressColor(item.value, item.target)}
+          {@const percent = Math.min((item.value * 100), 100)}
+          
+          <div class="eff-item-compact group relative hover:bg-gray-50 transition-colors">
+            <div class="eff-icon-compact"><i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i></div>
+            <div class="eff-content-compact">
+                <div class="eff-row-top">
+                    <span class="eff-label-text">{item.label}</span>
+                    <div class="flex items-center gap-2">
+                        {#if item.target > 0}
+                            <span class="text-[10px] text-gray-400 font-medium whitespace-nowrap">- Mục tiêu : {item.target}%</span>
+                        {/if}
+                        <span class="eff-value-text" style="color: {color}">{formatters.formatPercentage(item.value)}</span>
+                    </div>
+                </div>
+                <div class="eff-row-bottom">
+                    <div class="eff-bar-container">
+                        <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
+                    </div>
+                </div>
+            </div>
+            {#if item.isDynamic}
+                <div class="absolute right-2 top-2 hidden group-hover:flex gap-1 bg-white shadow-sm border border-gray-200 rounded p-1 z-10">
+                    <button on:click|stopPropagation={() => dispatch('edit', item.rawConfig)} class="text-gray-500 hover:text-blue-600 p-1"><i data-feather="edit-2" class="w-3 h-3"></i></button>
+                    <button on:click|stopPropagation={() => handleDelete(item.id)} class="text-gray-500 hover:text-red-600 p-1"><i data-feather="trash-2" class="w-3 h-3"></i></button>
+                </div>
+            {/if}
+         </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+</div>
+<<< FILE_END: src/components/luyke/LuykeEfficiencyTable.svelte
+
+>>> FILE_START: src/components/luyke/LuykeQdcTable.svelte
+<script>
+  import { onMount, afterUpdate } from 'svelte';
+  import { formatters } from '../../utils/formatters.js';
+  import { cleanCategoryName } from '../../utils.js';
+  import { 
+      categoryStructure, 
+      macroProductGroupConfig, 
+      selectedWarehouse 
+  } from '../../stores.js';
+  import { datasyncService } from '../../services/datasync.service.js';
+  import { adminService } from '../../services/admin.service.js';
+
+  export let items = []; 
+  export let numDays = 1;
+
+  let isSettingsOpen = false;
+  let filterSearch = '';
+  let saveTimer;
+  let localConfig = []; 
+
+  // [MỚI] Bảng màu rực rỡ cho thanh tiến trình
+  const BAR_COLORS = [
+      'bg-red-500',       // Đỏ
+      'bg-orange-500',    // Cam
+      'bg-amber-500',     // Vàng hổ phách
+      'bg-yellow-400',    // Vàng chanh
+      'bg-lime-500',      // Xanh chanh
+      'bg-green-500',     // Xanh lá
+      'bg-emerald-500',   // Xanh ngọc
+      'bg-teal-500',      // Xanh cổ vịt
+      'bg-cyan-500',      // Xanh da trời nhạt
+      'bg-sky-500',       // Xanh bầu trời
+      'bg-blue-500',      // Xanh dương
+      'bg-indigo-500',    // Chàm
+      'bg-violet-500',    // Tím
+      'bg-fuchsia-500',   // Hồng tím
+      'bg-pink-500',      // Hồng
+      'bg-rose-500'       // Hồng đỏ
+  ];
+
+  // 1. Load config
+  onMount(async () => {
+      if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
+          try {
+              const configs = await adminService.loadMacroProductGroupConfig();
+              macroProductGroupConfig.set(configs);
+          } catch (e) {
+              console.error("Lỗi load Macro Product Groups:", e);
+          }
+      }
+  });
+
+  // 2. Tạo danh sách Filter
+  $: allGroups = (() => {
+      const macroNames = ($macroProductGroupConfig || []).map(m => ({
+          name: m.name,
+          type: 'macro'
+      })).sort((a, b) => a.name.localeCompare(b.name));
+
+      const structureNames = new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean));
+      const presentNames = new Set(items.map(i => i.name).filter(Boolean));
+      
+      const simpleNames = [...new Set([...structureNames, ...presentNames])]
+          .sort()
+          .map(name => ({
+              name: name,
+              type: 'simple'
+          }));
+
+      return [...macroNames, ...simpleNames];
+  })();
+
+  $: filterList = allGroups.filter(g => 
+      g.name.toLowerCase().includes(filterSearch.toLowerCase())
+  );
+
+  // 3. Logic Load/Save Config
+  $: if ($selectedWarehouse) {
+      loadConfigForWarehouse($selectedWarehouse);
+  } else {
+      localConfig = allGroups.map(g => g.name);
+  }
+
+  async function loadConfigForWarehouse(kho) {
+      try {
+          const savedConfig = await datasyncService.loadQdcConfig(kho);
+          if (savedConfig && Array.isArray(savedConfig)) {
+              localConfig = savedConfig;
+          } else {
+              localConfig = allGroups.map(g => g.name);
+          }
+      } catch (e) {
+          localConfig = allGroups.map(g => g.name);
+      }
+  }
+
+  function toggleQdcSelection(name) {
+      if (localConfig.includes(name)) {
+          localConfig = localConfig.filter(n => n !== name);
+      } else {
+          localConfig = [...localConfig, name];
+      }
+      
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+          if ($selectedWarehouse) {
+              datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
+          }
+      }, 500); 
+  }
+
+  function toggleAllVisibility(show) {
+      if (show) {
+          localConfig = allGroups.map(g => g.name);
+      } else {
+          localConfig = [];
+      }
+      if ($selectedWarehouse) {
+         datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
+      }
+  }
+
+  // 4. Aggregation Logic
+  $: sortedItems = (() => {
+      if (localConfig.length === 0) return [];
+
+      let finalResults = [];
+      const macroConfigs = $macroProductGroupConfig || [];
+      
+      const selectedMacros = localConfig.filter(name => macroConfigs.some(m => m.name === name));
+      const selectedSimples = localConfig.filter(name => !macroConfigs.some(m => m.name === name));
+
+      selectedMacros.forEach(macroName => {
+          const config = macroConfigs.find(m => m.name === macroName);
+          if (!config) return;
+
+          const childIds = new Set(config.items || []);
+          const childItems = items.filter(i => childIds.has(i.id));
+
+          if (childItems.length > 0) {
+              const aggregatedItem = {
+                  id: config.id, 
+                  name: config.name,
+                  isMacro: true, 
+                  dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || 0), 0),
+                  dt: childItems.reduce((sum, i) => sum + (i.dt || 0), 0),
+                  quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.sl || 0), 0),
+                  _children: childItems 
+              };
+              finalResults.push(aggregatedItem);
+          } 
+      });
+
+      selectedSimples.forEach(simpleName => {
+          const item = items.find(i => i.name === simpleName);
+          if (item) {
+              finalResults.push({ ...item, isMacro: false });
+          }
+      });
+
+      return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
+  })();
+
+  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
+
+  function handleWindowClick(e) {
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
+          isSettingsOpen = false;
+      }
+  }
+
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') feather.replace();
+  });
+</script>
+
+<svelte:window on:click={handleWindowClick} />
+
+<div class="luyke-widget h-full flex flex-col">
+  <div class="luyke-widget-header">
+    <div class="luyke-widget-title">
+      <div class="p-1.5 bg-yellow-100 rounded text-yellow-600 mr-2">
+          <i data-feather="star" class="w-4 h-4"></i>
+      </div>
+      <span>TOP NHÓM HÀNG</span>
+    </div>
+
+    <div class="relative filter-wrapper">
+        <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Chọn nhóm hàng">
+             <i data-feather="filter" class="w-4 h-4"></i>
+        </button>
+        {#if isSettingsOpen}
+            <div class="filter-dropdown">
+                <div class="filter-header">
+                    <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
+                </div>
+                <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+                    {#if filterList.length === 0}
+                         <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                    {:else}
+                        {#each filterList as group}
+                            {@const isChecked = localConfig.includes(group.name)}
+                            <div class="filter-item" on:click={() => toggleQdcSelection(group.name)}>
+                                 <input type="checkbox" checked={isChecked} />
+                                 {#if group.type === 'macro'}
+                                    <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
+                                        <i data-feather="layers" class="w-3 h-3"></i>
+                                        {group.name}
+                                    </label>
+                                 {:else}
+                                    <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{group.name}</label>
+                                 {/if}
+                            </div>
+                        {/each}
+                    {/if}
+                 </div>
+                <div class="filter-actions">
+                    <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                    <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+                </div>
+            </div>
+        {/if}
+    </div>
+  </div>
+
+  <div class="luyke-widget-body custom-scrollbar">
+    {#if sortedItems.length === 0}
+        <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
+          <p class="text-sm">Không có dữ liệu hiển thị.</p>
+          {#if items.length > 0}
+             <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
+          {/if}
+       </div>
+    {:else}
+      <div class="flex flex-col gap-0">
+        {#each sortedItems as item, index (item.name)}
+          {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
+          
+          {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
+          
+          <div class="py-2 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1 
+                      {item.isMacro ? 'bg-teal-50/30 hover:bg-teal-50/50' : 'hover:bg-gray-50'}">
+            
+            <div class="flex items-center gap-3">
+               <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
+                <div class="flex-grow min-w-0">
+                   <div class="flex justify-between items-center mb-1">
+                       <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1 {item.isMacro ? 'text-teal-800' : 'text-gray-700'}" title={item.name}>
+                           {#if item.isMacro}
+                                <i data-feather="layers" class="w-3 h-3 text-teal-600"></i>
+                           {/if}
+                           {item.name}
+                       </span>
+                       <span class="text-sm font-bold whitespace-nowrap text-gray-800">
+                           {formatters.formatRevenue(item.dtqd)}
+                       </span>
+                   </div>
+                   
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner">
+                        <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
+                   </div>
+                   
+                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
+                       <div class="flex gap-2">
+                           <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
+                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                       </div>
+                       <div class="flex gap-2">
+                           <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
+                           <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
+                       </div>
+                    </div>
+               </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+</div>
+<<< FILE_END: src/components/luyke/LuykeQdcTable.svelte
+
+>>> FILE_START: src/components/luyke/LuykeSieuThi.svelte
+<script>
+  import { onMount, afterUpdate } from 'svelte';
+  import { 
+    competitionData, 
+    selectedWarehouse,
+    interfaceSettings,
+    macroCategoryConfig,
+    macroProductGroupConfig, 
+    efficiencyConfig,
+    qdcConfigStore,
+    modalState,
+    categoryNameMapping,
+    warehouseCustomMetrics
+  } from '../../stores.js';
+  import { formatters } from '../../utils/formatters.js';
+  import { reportService } from '../../services/reportService.js';
+  import { settingsService } from '../../services/settings.service.js';
+  import { dataProcessing } from '../../services/dataProcessing.js';
+  import { adminService } from '../../services/admin.service.js';
+  import { datasyncService } from '../../services/datasync.service.js';
+  import * as utils from '../../utils.js';
+  
+  import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
+  import LuykeQdcTable from './LuykeQdcTable.svelte';
+  import LuykeCategoryTable from './LuykeCategoryTable.svelte';
+
+  export let supermarketReport = {};
+  export let filteredYCXData = []; 
+  export let goals = {};
+  export let numDays = 1;
+
+  let localSupermarketReport = {};
+  let localGoals = {};
+  let luykeCardData = {};
+  let competitionSummary = { dat: 0, total: 0 };
+  let comparisonData = { value: 0, percentage: 'N/A' };
+  let luotKhachData = { value: 0, percentage: 'N/A' };
+  
+  let chuaXuatReport = [];
+  let categoryItems = []; 
+  let qdcItems = []; 
+
+  let channelStats = {
+      dxm: { val: 0, pct: 0 },
+      tgdd: { val: 0, pct: 0 }
+  };
+
+  let combinedEfficiencyItems = [];
+
+  onMount(async () => {
+      const savedEffConfig = await adminService.loadEfficiencyConfig();
+      if(savedEffConfig.length > 0) efficiencyConfig.set(savedEffConfig);
+      
+      const savedQdcConfig = await adminService.loadQdcConfig();
+      if(savedQdcConfig.length > 0) qdcConfigStore.set(savedQdcConfig);
+  });
+
+  $: if ($selectedWarehouse) {
+      loadLocalMetrics($selectedWarehouse);
+  }
+
+  async function loadLocalMetrics(kho) {
+      const localData = await datasyncService.loadCustomMetrics(kho);
+      warehouseCustomMetrics.set(localData);
+  }
+
+  $: combinedEfficiencyItems = [
+      ...($efficiencyConfig || []).map(i => ({ 
+          ...i, 
+          isSystem: true,
+          target: goals?.[i.id] || i.target 
+      })),
+      ...($warehouseCustomMetrics || []).map(i => ({ 
+          ...i, 
+          isSystem: false,
+          target: goals?.[i.id] || i.target 
+      }))
+  ];
+
+  const cleanValue = (str) => {
+      if (typeof str === 'number') return str;
+      if (!str || typeof str !== 'string') return 0;
+      const cleanStr = str.replace(/,|%/g, '').trim();
+      const val = parseFloat(cleanStr);
+      return isNaN(val) ? 0 : val;
+  };
+
+  $: {
+    const _triggerMacroCat = $macroCategoryConfig;
+    const _triggerMacroProd = $macroProductGroupConfig;
+    const _triggerEff = $efficiencyConfig;
+    const _triggerMap = $categoryNameMapping;
+    const _triggerLocalEff = $warehouseCustomMetrics;
+
+    localSupermarketReport = supermarketReport || {};
+    localGoals = goals || {};
+
+    const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
+    const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
+    const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
+    
+    const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
+
+    comparisonData = pastedData.comparisonData || { value: 0, percentage: 'N/A' };
+    luotKhachData = pastedData.luotKhachData || { value: 0, percentage: 'N/A' };
+
+    const excelData = {
+        dtThuc: localSupermarketReport.doanhThu || 0,
+        dtQd: localSupermarketReport.doanhThuQuyDoi || 0,
+        dtGop: localSupermarketReport.doanhThuTraGop || 0,
+        tyLeGop: localSupermarketReport.tyLeTraCham || 0,
+        tyLeQd: localSupermarketReport.hieuQuaQuyDoi || 0,
+        chuaXuatQd: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0
+    };
+
+    let finalDtThuc, finalDtQd, finalDtGop, finalTyLeGop, finalTyLeQd;
+
+    if (hasPasteData) {
+        finalDtThuc = cleanValue(mainKpis['Thực hiện DT thực']) * 1000000;
+        finalDtQd = cleanValue(mainKpis['Thực hiện DTQĐ']) * 1000000;
+        finalDtGop = dtTraCham * 1000000;
+        finalTyLeGop = tyLeTraCham / 100;
+        finalTyLeQd = finalDtThuc > 0 ? ((finalDtQd / finalDtThuc) - 1) : 0;
+    } else {
+        finalDtThuc = excelData.dtThuc;
+        finalDtQd = excelData.dtQd;
+        finalDtGop = excelData.dtGop;
+        finalTyLeGop = excelData.tyLeGop;
+        finalTyLeQd = excelData.tyLeQd;
+    }
+
+    const targetThuc = parseFloat(localGoals?.doanhThuThuc || 0) * 1000000;
+    const targetQD = parseFloat(localGoals?.doanhThuQD || 0) * 1000000;
+    
+    let phanTramTargetQd = 0;
+    if (hasPasteData && mainKpis['% HT Target Dự Kiến (QĐ)']) {
+         phanTramTargetQd = cleanValue(mainKpis['% HT Target Dự Kiến (QĐ)']) / 100;
+    } else {
+          phanTramTargetQd = targetQD > 0 ? ((dtqdDuKien * 1000000) / targetQD) : 0;
+    }
+
+    const phanTramTargetThuc = targetThuc > 0 ? ((dtDuKien * 1000000) / targetThuc) : 0;
+    
+    const compData = $competitionData || [];
+    competitionSummary.total = compData.length;
+    competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanh).replace('%','')) || 0) >= 100).length;
+    const tyLeThiDuaDat = competitionSummary.total > 0 ? competitionSummary.dat / competitionSummary.total : 0;
+
+    luykeCardData = {
+      dtThucLK: finalDtThuc,
+      dtQdLK: finalDtQd,
+      phanTramQd: finalTyLeQd,
+      dtGop: finalDtGop,
+      phanTramGop: finalTyLeGop,
+      dtThucDuKien: dtDuKien * 1000000, 
+      dtQdDuKien: dtqdDuKien * 1000000, 
+      phanTramTargetQd: phanTramTargetQd, 
+      phanTramTargetThuc: phanTramTargetThuc, 
+      chuaXuatQuyDoi: excelData.chuaXuatQd,
+      tyLeThiDuaDat: tyLeThiDuaDat
+    };
+
+    // [FIX] Cập nhật logic tính Tỷ trọng kênh theo ID
+    const calcChannelStat = (keywords) => {
+        // Tìm nhóm cấu hình (Macro Group) dựa trên tên (VD: ĐMX, TGDD)
+        const groupConfig = ($macroCategoryConfig || []).find(g => {
+            if (!g.name) return false;
+            const normName = g.name.trim().toLowerCase().normalize("NFC");
+            return keywords.some(k => normName.includes(k));
+        });
+
+        if (!groupConfig || !groupConfig.items) return 0;
+
+        const details = localSupermarketReport.nganhHangChiTiet || {};
+        let totalVal = 0;
+
+        // groupConfig.items bây giờ chứa ID (ví dụ '1491', '42'...)
+        groupConfig.items.forEach(itemId => {
+            // Tra cứu trực tiếp trong details bằng ID
+            // (Vì data đã được xử lý trong salesProcessor.js với key là ID)
+            if (details[itemId]) {
+                totalVal += (details[itemId].revenueQuyDoi || 0);
+            }
+        });
+        return totalVal;
+    };
+
+    const valDXM = calcChannelStat(['đmx', 'dmx', 'dien may xanh']);
+    const valTGDD = calcChannelStat(['tgdd', 'the gioi di dong']);
+    const totalChannelRevenue = (valDXM + valTGDD) || 1; 
+
+    channelStats = {
+        dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
+        tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
+    };
+
+    chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
+    
+    qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
+      .map(([id, values]) => ({ 
+          id: id,
+          name: values.name, // Lấy tên từ object value
+          dtqd: values.revenueQuyDoi, 
+          sl: values.quantity, 
+          dt: values.revenue, 
+          ...values 
+      }));
+
+    categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
+      .map(([id, values]) => ({ 
+          id: id,
+          name: values.name, // Lấy tên từ object value
+          dtqd: values.revenueQuyDoi, 
+          ...values 
+      }));
+  }
+
+  function openAddEffModal() {
+      modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
+  }
+
+  function handleEditEffConfig(event) {
+      modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
+  }
+
+  async function handleDeleteEffConfig(event) {
+      const id = event.detail;
+      const isSystem = $efficiencyConfig.some(i => i.id === id);
+      
+      if (isSystem) {
+          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          return;
+      }
+
+      if (confirm("Xóa chỉ số cá nhân này?")) {
+          const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
+          warehouseCustomMetrics.set(newLocalMetrics);
+          if ($selectedWarehouse) {
+              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
+          }
+      }
+  }
+
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') feather.replace();
+  });
+</script>
+
+<div class="luyke-dashboard-container">
+  
+  <div>
+      <h2 id="luyke-supermarket-title" class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+        <i data-feather="bar-chart" class="text-blue-600"></i>
+        Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
+      </h2>
+
+      <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
+      
+        <div class="kpi-card-solid card-1">
+            <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
+            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
+                <span>MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-2">
+            <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
+            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>DK: {formatters.formatNumber((luykeCardData.dtQdDuKien || 0) / 1000000, 0)}</span>
+                <span>MT: {formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-3">
+            <div class="kpi-solid-header">% HT Target (QĐ) <i data-feather="target"></i></div>
+            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramTargetQd || 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>% HT DT Thực: {formatters.formatPercentage(luykeCardData.phanTramTargetThuc || 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="target"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-4">
+            <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
+            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-5">
+            <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
+            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
+            <div class="kpi-solid-sub">
+                <span>Doanh số: {formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-6">
+            <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
+            <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
+            <div class="kpi-solid-sub">
+                <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="award"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-7">
+            <div class="kpi-solid-header">Tăng trưởng CK <i data-feather="activity"></i></div>
+            <div class="kpi-solid-value">{comparisonData.percentage || 'N/A'}</div>
+            <div class="kpi-solid-sub">
+                <span>Lượt khách: {luotKhachData.percentage || 'N/A'}</span>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="activity"></i></div>
+        </div>
+
+        <div class="kpi-card-solid card-8">
+           <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
+            <div class="flex flex-col gap-1 mt-1">
+                <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
+                    <span class="text-sm font-semibold opacity-90">ĐMX</span>
+                    <div class="text-right">
+                        <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.dxm.val, 0)}</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
+                    </div>
+                </div>
+                <div class="flex justify-between items-baseline pt-1">
+                    <span class="text-sm font-semibold opacity-90">TGDD</span>
+                    <div class="text-right">
+                        <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.tgdd.val, 0)}</span>
+                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
+                    </div>
+                </div>
+            </div>
+            <div class="kpi-bg-icon"><i data-feather="pie-chart"></i></div>
+        </div>
+
+      </div>
+  </div>
+
+  <div class="luyke-tier-1-grid" data-capture-group="tier1">
+      <LuykeEfficiencyTable 
+          items={[]} 
+          dynamicItems={combinedEfficiencyItems} 
+          supermarketData={localSupermarketReport}
+          goals={localGoals} 
+          on:add={openAddEffModal}
+          on:edit={handleEditEffConfig}
+          on:delete={handleDeleteEffConfig}
+      />
+      <LuykeQdcTable 
+          items={qdcItems} 
+          numDays={numDays} 
+      />
+  </div>
+
+  <div data-capture-group="tier2">
+      <LuykeCategoryTable 
+          items={categoryItems} 
+          unexportedItems={chuaXuatReport}
+          rawSource={filteredYCXData} 
+          {numDays} 
+      />
+  </div>
+
+</div>
+<<< FILE_END: src/components/luyke/LuykeSieuThi.svelte
+
+>>> FILE_START: src/components/luyke/LuykeThiDua.svelte
+<script>
+  import { afterUpdate } from 'svelte';
+  import { competitionData } from '../../stores.js';
+  import { formatters } from '../../utils/formatters.js';
+  
+  // Logic dữ liệu (GIỮ NGUYÊN)
+  let viewType = 'completion'; 
+  let sortedData = [];
+  let summary = {
+      total: 0,
+      achieved: 0,
+      revenueTotal: 0,
+      revenueAchieved: 0,
+      quantityTotal: 0,
+      quantityAchieved: 0,
+      overallRate: 0
+  };
+
+  $: {
+    const data = ($competitionData || []).map(item => { 
+      const hoanThanhValue = (parseFloat(String(item.hoanThanh).replace('%','')) || 0); 
+      return { ...item, hoanThanhValue: hoanThanhValue }; 
+    });
+
+    summary = data.reduce((acc, d) => {
+      acc.total++;
+      if (d.hoanThanhValue >= 100) acc.achieved++;
+      
+      if (d.type === 'doanhThu') {
+          acc.revenueTotal++;
+          if (d.hoanThanhValue >= 100) acc.revenueAchieved++;
+      }
+      if (d.type === 'soLuong') {
+          acc.quantityTotal++;
+          if (d.hoanThanhValue >= 100) acc.quantityAchieved++;
+      }
+      return acc;
+    }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
+
+    summary.overallRate = summary.total > 0 ? (summary.achieved / summary.total) * 100 : 0;
+    sortedData = data;
+  }
+
+  function setViewType(newType) {
+    viewType = newType;
+  }
+  
+  function sortData(items) {
+    return [...items].sort((a, b) => b.hoanThanhValue - a.hoanThanhValue); 
+  };
+
+  function getRateColor(rate) {
+      if (rate >= 80) return 'text-green-600'; 
+      if (rate >= 50) return 'text-yellow-600';
+      return 'text-red-600';
+  }
+
+  // [FIX 1] Định nghĩa MAP màu sắc tường minh để tránh lỗi Tailwind Purge (mất màu vàng)
+  const COLOR_MAP = {
+    blue: {
+        text: 'text-blue-600',
+        bg: 'bg-blue-500',
+        border: 'border-blue-500'
+    },
+    yellow: {
+        text: 'text-yellow-600',
+        bg: 'bg-yellow-500',
+        border: 'border-yellow-500'
+    },
+    red: {
+        text: 'text-red-600',
+        bg: 'bg-red-500',
+        border: 'border-red-500'
+    }
+  };
+
+  $: rateStyle = getRateColor(summary.overallRate);
+
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') {
+      feather.replace();
+    }
+  });
+</script>
+
+{#snippet flatKpiCard(title, value, subText, icon, colorClass, barPercent = 0)}
+    <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all h-full min-h-[120px] flex items-stretch justify-between relative overflow-hidden group">
+        <div class="flex flex-col justify-between items-start z-10 mr-4 flex-grow">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 border border-gray-200 group-hover:bg-white group-hover:{colorClass} transition-colors">
+                    <i data-feather={icon} class="w-4 h-4"></i>
+                </div>
+                <span class="text-xs font-extrabold uppercase text-gray-600 tracking-wider leading-tight">{title}</span>
+            </div>
+
+            <div class="w-full mt-auto pt-3">
+                {#if barPercent > 0}
+                    <div class="w-full bg-gray-100 rounded-full h-1.5 mb-2 max-w-[100px]">
+                        <div class="h-1.5 rounded-full {colorClass.replace('text-', 'bg-')}" style="width: {Math.min(barPercent, 100)}%"></div>
+                    </div>
+                {/if}
+                <div class="text-[11px] font-semibold text-gray-400 leading-snug">
+                    {@html subText}
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center justify-end z-10 flex-shrink-0">
+            <span class="text-5xl font-black {colorClass} tracking-tighter leading-none drop-shadow-sm">{value}</span>
+        </div>
+    </div>
+{/snippet}
+
+{#snippet competitionCard(item)}
+    {@const isProjectedCompleted = item.hoanThanhValue >= 100}
+    {@const isActualCompleted = item.luyKe >= item.target}
+    
+    {@const colorKey = isProjectedCompleted ? 'blue' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red')}
+    
+    {@const colors = COLOR_MAP[colorKey]}
+    
+    {@const targetRemaining = (item.target || 0) - (item.luyKe || 0)}
+    {@const daysLeft = Math.max(30 - (new Date().getDate()), 1)}
+    {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
+
+    <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
+        <div class="flex justify-between items-start gap-3 mb-2">
+            <h4 class="font-bold text-gray-800 text-sm leading-snug line-clamp-2 flex-grow" title={item.name}>
+                {item.name}
+            </h4>
+            <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
+                {formatters.formatPercentage(item.hoanThanhValue / 100)}
+            </span>
+        </div>
+
+        <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
+            <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
+        </div>
+
+        <div class="mt-auto pt-2 border-t border-dashed border-gray-100 grid grid-cols-2 gap-2 text-xs items-end">
+             <div>
+                <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
+                <div class="text-gray-700 font-bold whitespace-nowrap">
+                    <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
+                    <span class="text-gray-300 font-normal mx-0.5">/</span>
+                    <span>{formatters.formatNumberOrDash(item.target)}</span>
+                </div>
+            </div>
+            <div class="text-right">
+                {#if !isActualCompleted}
+                    <div class="inline-block bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold border border-red-200">
+                        Cần: {formatters.formatNumberOrDash(dailyTarget)}/ngày
+                    </div>
+                {:else}
+                    <div class="inline-block bg-blue-50 text-blue-600 px-2 py-1 rounded text-[10px] font-bold border border-blue-200 flex items-center justify-end gap-1">
+                        <i data-feather="check-circle" class="w-3 h-3"></i> Đã đạt
+                    </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+{/snippet}
+
+<div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
+    
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+        {@render flatKpiCard(
+            'Tổng Chương trình', 
+            summary.total, 
+            `DT: <strong class="text-blue-600">${summary.revenueTotal}</strong> • SL: <strong class="text-orange-600">${summary.quantityTotal}</strong>`,
+            'layers',
+            'text-gray-700'
+        )}
+
+        {@render flatKpiCard(
+            'Tỷ lệ Đạt', 
+            formatters.formatPercentage(summary.overallRate / 100), 
+            `Đã đạt: <strong class="${getRateColor(summary.overallRate)}">${summary.achieved}</strong> / ${summary.total}`,
+            'target',
+            getRateColor(summary.overallRate),
+            summary.overallRate
+        )}
+
+        {@render flatKpiCard(
+            'Thi đua Doanh thu', 
+            `${summary.revenueAchieved}/${summary.revenueTotal}`, 
+            `Tỷ lệ đạt: <strong>${summary.revenueTotal > 0 ? formatters.formatPercentage(summary.revenueAchieved / summary.revenueTotal) : '0%'}</strong>`,
+            'dollar-sign',
+            'text-blue-600',
+            summary.revenueTotal > 0 ? (summary.revenueAchieved / summary.revenueTotal) * 100 : 0
+        )}
+
+        {@render flatKpiCard(
+            'Thi đua Số lượng', 
+            `${summary.quantityAchieved}/${summary.quantityTotal}`, 
+            `Tỷ lệ đạt: <strong>${summary.quantityTotal > 0 ? formatters.formatPercentage(summary.quantityAchieved / summary.quantityTotal) : '0%'}</strong>`,
+            'box',
+            'text-orange-600',
+            summary.quantityTotal > 0 ? (summary.quantityAchieved / summary.quantityTotal) * 100 : 0
+        )}
+    </div>
+
+    <div class="luyke-tier-2-container">
+        <div class="luyke-toolbar">
+            <div class="luyke-toolbar-left">
+                <h3 class="text-lg font-bold uppercase flex items-center gap-2 text-gray-700">
+                    <i data-feather="list" class="text-blue-600"></i>
+                    Chi tiết ({summary.total})
+                </h3>
+            </div>
+
+            <div class="luyke-toolbar-right flex items-center gap-2">
+                <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                    <button 
+                        class="view-mode-btn {viewType === 'completion' ? 'active' : ''}" 
+                        on:click={() => setViewType('completion')}
+                    >
+                        <i data-feather="check-circle" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline text-xs ml-1">Tiến độ</span>
+                    </button>
+
+                    <button 
+                        class="view-mode-btn {viewType === 'summary' ? 'active' : ''}" 
+                        on:click={() => setViewType('summary')}
+                    >
+                        <i data-feather="grid" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline text-xs ml-1">Theo Loại</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl min-h-[400px]">
+            {#if sortedData.length === 0}
+                <div class="p-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                    <p class="text-gray-500 font-bold mb-2">Chưa có dữ liệu hiển thị.</p>
+                    <p class="text-xs text-gray-400">Vui lòng dán "Data lũy kế" ở tab Cập nhật dữ liệu.</p>
+                </div>
+            {:else}
+                <div class="flex flex-col gap-8">
+                    {#if viewType === 'summary'}
+                        {@const dataDoanhThu = sortData(sortedData.filter(d => d.type === 'doanhThu'))}
+                        {@const dataSoLuong = sortData(sortedData.filter(d => d.type === 'soLuong'))}
+
+                        {#if dataDoanhThu.length > 0}
+                            <div>
+                                <h4 class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
+                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="dollar-sign" class="w-4 h-4"></i></span>
+                                    Thi Đua Doanh Thu ({dataDoanhThu.length})
+                                </h4>
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {#each dataDoanhThu as item}
+                                        {@render competitionCard(item)}
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+
+                        {#if dataSoLuong.length > 0}
+                            <div>
+                                <h4 class="text-sm font-bold text-orange-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-orange-100">
+                                    <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span>
+                                    Thi Đua Số Lượng ({dataSoLuong.length})
+                                </h4>
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {#each dataSoLuong as item}
+                                        {@render competitionCard(item)}
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+
+                    {:else if viewType === 'completion'}
+                        {@const completed = sortData(sortedData.filter(d => d.hoanThanhValue >= 100))}
+                        {@const pending = sortData(sortedData.filter(d => d.hoanThanhValue < 100))}
+
+                        {#if completed.length > 0}
+                            <div>
+                                <h4 class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
+                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="check" class="w-4 h-4"></i></span>
+                                    Đã hoàn thành ({completed.length})
+                                </h4>
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {#each completed as item}
+                                        {@render competitionCard(item)}
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+
+                        {#if pending.length > 0}
+                            <div>
+                                <h4 class="text-sm font-bold text-red-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-red-100">
+                                    <span class="bg-red-100 p-1 rounded"><i data-feather="clock" class="w-4 h-4"></i></span>
+                                    Cần nỗ lực thêm ({pending.length})
+                                </h4>
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {#each pending as item}
+                                        {@render competitionCard(item)}
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+                    {/if}
+                </div>
+            {/if}
+        </div>
+    </div>
+</div>
+
+<style>
+    /* CSS dành riêng cho chế độ chụp ảnh */
+    :global(.capture-container .luyke-dashboard-container) {
+        /* [ĐIỀU CHỈNH 1] Tăng độ rộng lên 1100px để khớp với chiều ngang điện thoại HD */
+        width: 1100px !important;    
+        min-width: 1100px !important;
+        background-color: white;
+        padding: 20px !important; /* Thêm chút lề cho đẹp */
+    }
+
+    /* [ĐIỀU CHỈNH 2] Tăng số cột lên 4 để giảm chiều dài ảnh */
+    :global(.capture-container .grid) {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important; 
+        gap: 16px !important;
+    }
+
+    /* Tăng kích thước chữ một chút khi chụp để đọc rõ hơn */
+    :global(.capture-container h4) {
+        font-size: 16px !important;
+    }
+
+    :global(.capture-container .luyke-toolbar-right) {
+        display: none !important;
+    }
+</style>
+<<< FILE_END: src/components/luyke/LuykeThiDua.svelte
+
+>>> FILE_START: src/components/luyke/LuykeThiDuaVung.svelte
+<script>
+  /* global XLSX, feather */
+  import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { 
+    thiDuaVungChiTiet, 
+    thiDuaVungTong, 
+    choices 
+  } from '../../stores.js';
+  import { dataProcessing } from '../../services/dataProcessing.js';
+  import { reportService } from '../../services/reportService.js';
+  import TdvInfographic from './TdvInfographic.svelte';
+
+  let fileStatus = "";
+  let isLoading = false;
+  let supermarketNames = [];
+  let selectedSupermarket = "";
+  let reportData = null;
+  let choicesInstance = null;
+  let selectElement = null; 
+
+  async function _handleFileRead(file) {
+      return new Promise((resolve, reject) => {
+          if (!file) return reject(new Error("No file provided."));
+          const reader = new FileReader();
+          reader.onload = (event) => {
+              try {
+                  const data = new Uint8Array(event.target.result);
+                  const workbook = XLSX.read(data, { type: 'array', cellDates: true, cellText: true });
+                 resolve(workbook);
+              } catch (err) { reject(err); }
+          };
+          reader.onerror = (err) => reject(new Error("Could not read the file: " + err));
+          reader.readAsArrayBuffer(file);
+      });
+  }
+
+  async function handleFileInput(event) {
+    const file = event.target.files[0];
+    const fileNameEl = document.getElementById('file-name-thidua-vung');
+    if (!file) {
+      if (fileNameEl) fileNameEl.textContent = "Chưa thêm file";
+      fileStatus = "";
+      return;
+    }
+
+    isLoading = true;
+    if (fileNameEl) fileNameEl.textContent = file.name;
+    fileStatus = "Đang xử lý file...";
+
+    try {
+      const workbook = await _handleFileRead(file);
+      const { chiTietData, tongData } = dataProcessing.processThiDuaVungFile(workbook);
+      
+      if (!tongData || tongData.length === 0) {
+        throw new Error('Không tìm thấy dữ liệu hợp lệ trong file.');
+      }
+
+      thiDuaVungChiTiet.set(chiTietData);
+      thiDuaVungTong.set(tongData);
+ 
+      const supermarketKey = Object.keys(tongData[0]).find(k => k.trim().toLowerCase().includes('siêu thị'));
+      supermarketNames = [...new Set(tongData.map(row => row[supermarketKey]).filter(Boolean))].sort();
+
+      if (choicesInstance) {
+        choicesInstance.clearStore();
+        choicesInstance.setChoices(
+          supermarketNames.map(name => ({ value: name, label: name })),
+          'value',
+          'label',
+          true
+        );
+      }
+      
+      fileStatus = `✅ Đã xử lý ${supermarketNames.length} siêu thị.`;
+    } catch (error) {
+      console.error("Lỗi xử lý file Thi Đua Vùng:", error);
+      fileStatus = `❌ Lỗi: ${error.message}`;
+    } finally {
+      isLoading = false;
+      event.target.value = null; 
+    }
+  }
+
+  function handleFilterChange() {
+    if (!choicesInstance) return;
+    const selectedValue = choicesInstance.getValue(true);
+    selectedSupermarket = selectedValue;
+ 
+    if (selectedValue) {
+      reportData = reportService.generateThiDuaVungReport(selectedValue);
+    } else {
+      reportData = null;
+    }
+  }
+
+  onMount(() => {
+    if (typeof Choices !== 'undefined' && selectElement) {
+      choicesInstance = new Choices(selectElement, {
+        searchEnabled: true,
+        removeItemButton: false,
+        itemSelectText: 'Chọn',
+        searchPlaceholderValue: 'Tìm kiếm siêu thị...'
+      });
+      choices.update(c => ({ ...c, thiDuaVung_sieuThi: choicesInstance }));
+    }
+    
+    if (typeof feather !== 'undefined') {
+      feather.replace();
+    }
+  });
+</script>
+
+<div class="content-card"> 
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-end"> 
+        <div class="data-input-group input-group--blue"> 
+            <div class="flex flex-col sm:flex-row sm:items-center sm:gap-4"> 
+                <label class="data-input-group__label !mb-2 sm:!mb-0 flex-shrink-0">File Thi Đua Vùng:</label> 
+                <div class="flex items-center gap-2"> 
+                    <label 
+                        for="file-thidua-vung" 
+                        class="data-input-group__file-trigger"
+                        class:opacity-50={isLoading}
+                    >
+                        {isLoading ? 'Đang xử lý...' : 'Thêm file'}
+                    </label> 
+                    <span id="file-name-thidua-vung" class="data-input-group__file-name">Chưa thêm file</span> 
+                </div>
+            </div> 
+            <input 
+                type="file" 
+                id="file-thidua-vung" 
+                class="hidden" 
+                data-name="Thi đua vùng" 
+                accept=".xlsx, .xls, .csv"
+                on:change={handleFileInput}
+                disabled={isLoading}
+            > 
+            <div class="data-input-group__status-wrapper mt-2">
+                <span 
+                    class="data-input-group__status-text"
+                    class:text-green-600={fileStatus.startsWith('✅')}
+                    class:text-red-600={fileStatus.startsWith('❌')}
+                >
+                    {fileStatus}
+                </span>
+            </div> 
+        </div>
+        
+        <div class="data-input-group input-group--yellow h-full" style="min-height: 104px;"> 
+             <label class="data-input-group__label">Chọn Siêu thị:</label> 
+             <div class="data-input-group__content">
+                <select 
+                    id="thidua-vung-filter-supermarket" 
+                    bind:this={selectElement}
+                    on:change={handleFilterChange}
+                >
+                    <option value="">Vui lòng tải file...</option>
+                </select> 
+             </div>
+        </div> 
+    </div>
+</div> 
+
+<div id="thidua-vung-infographic-container" class="mt-6"> 
+    {#if reportData}
+        <TdvInfographic {reportData} />
+    {:else}
+        <div class="placeholder-message">Vui lòng tải file và chọn một siêu thị để xem báo cáo.</div> 
+    {/if}
+</div>
+<<< FILE_END: src/components/luyke/LuykeThiDuaVung.svelte
+
+>>> FILE_START: src/components/luyke/LuykeUnexportedTable.svelte
+<script>
+  import { afterUpdate } from 'svelte';
+  import { sortState } from '../../stores.js';
+  import { formatters } from '../../utils/formatters.js';
+  // FIX: Đường dẫn đúng
+  import SortableTh from '../common/SortableTh.svelte';
+
+  export let items = [];
+
+  const tableType = 'luyke_chuaxuat';
+  
+  let totals = { soLuong: 0, doanhThuThuc: 0, doanhThuQuyDoi: 0 };
+
+  function handleSort(event) {
+    const sortKey = event.detail;
+    const currentState = $sortState[tableType] || { key: 'doanhThuQuyDoi', direction: 'desc' };
+    let newDirection;
+    if (currentState.key === sortKey) {
+      newDirection = currentState.direction === 'desc' ? 'asc' : 'desc';
+    } else {
+      newDirection = 'desc';
+    }
+    sortState.update(current => {
+      current[tableType] = { key: sortKey, direction: newDirection };
+      return current;
+    });
+  }
+
+  $: currentSortKey = $sortState[tableType]?.key || 'doanhThuQuyDoi';
+  $: currentSortDirection = $sortState[tableType]?.direction || 'desc';
+
+  $: sortedItems = [...items].sort((a, b) => {
+    const key = currentSortKey;
+    const direction = currentSortDirection;
+    let valA, valB;
+     if (key === 'nganhHang') {
+      valA = a.nganhHang || ''; valB = b.nganhHang || '';
+      return direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    } else {
+      valA = a[key] || 0; valB = b[key] || 0;
+    }
+    return direction === 'asc' ? valA - valB : valB - valA;
+  });
+
+  $: totals = items.reduce((acc, item) => {
+      acc.soLuong += item.soLuong; 
+      acc.doanhThuThuc += item.doanhThuThuc; 
+      acc.doanhThuQuyDoi += item.doanhThuQuyDoi; 
+      return acc; 
+  }, { soLuong: 0, doanhThuThuc: 0, doanhThuQuyDoi: 0 });
+</script>
+
+<div data-capture-group="2" class="bg-white rounded-xl shadow-md p-4 sm:p-6 border border-gray-200 h-full flex flex-col">
+  <h3 class="text-xl font-bold uppercase mb-4 border-b pb-2">Doanh thu chưa xuất</h3>
+  
+  {#if sortedItems.length === 0}
+     <div class="flex-grow flex items-center justify-center">
+        <p class="text-gray-500 font-bold p-4 text-center">Không có đơn hàng nào chưa xuất.</p>
+     </div>
+  {:else}
+    <div id="luyke-unexported-revenue-content" class="overflow-x-auto flex-grow">
+        <table class="min-w-full text-sm table-bordered table-striped" data-table-type={tableType}>
+        <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-10 shadow-sm">
+            <tr>
+            <SortableTh key="nganhHang" label="Ngành hàng" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            <SortableTh key="soLuong" label="Số lượng" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            <SortableTh key="doanhThuThuc" label="Doanh thu thực" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            <SortableTh key="doanhThuQuyDoi" label="Doanh thu QĐ" align="right" sortKey={currentSortKey} sortDirection={currentSortDirection} on:sort={handleSort} />
+            </tr>
+        </thead>
+        <tbody>
+            {#each sortedItems as item (item.nganhHang)}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-2 font-semibold">{item.nganhHang}</td>
+                <td class="px-4 py-2 text-right font-bold">{formatters.formatNumber(item.soLuong)}</td>
+                <td class="px-4 py-2 text-right font-bold">{formatters.formatRevenue(item.doanhThuThuc)}</td> 
+                <td class="px-4 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td> 
+            </tr>
+            {/each}
+        </tbody>
+        <tfoot class="table-footer font-bold bg-gray-100 border-t-2 border-gray-300 sticky bottom-0">
+            <tr>
+                <td class="px-4 py-2">Tổng</td>
+                <td class="px-4 py-2 text-right">{formatters.formatNumber(totals.soLuong)}</td>
+                <td class="px-4 py-2 text-right">{formatters.formatRevenue(totals.doanhThuThuc)}</td> 
+                <td class="px-4 py-2 text-right">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</td> 
+            </tr>
+        </tfoot>
+        </table>
+    </div>
+  {/if}
+</div>
+<<< FILE_END: src/components/luyke/LuykeUnexportedTable.svelte
+
+>>> FILE_START: src/components/luyke/TdvInfographic.svelte
+<script>
+  // Component này nhận dữ liệu đã được xử lý và chỉ render ra HTML.
+  import { formatters } from '../../utils/formatters.js';
+
+  export let reportData;
+
+  // --- Logic render được di chuyển từ ui-thidua-vung.js ---
+  let summary, coGiai, sapCoGiai, tiemNang, canCoGangNhieu;
+  let keyMap = {};
+  let soonPrizeTitleText = '';
+  let tyLeDatClass = '';
+
+  // Helper function (giữ nguyên từ file gốc)
+  const findKey = (item, keyword) => {
+      if (!item) return keyword; 
+      return Object.keys(item).find(k => k.trim().toLowerCase().includes(keyword.toLowerCase())) || keyword;
+  }
+
+  // $: là một khối reactive. Nó sẽ tự động chạy lại khi 'reportData' thay đổi.
+  $: {
+    if (!reportData) {
+      // Nếu không có data, reset
+      summary = null;
+      coGiai = [];
+      sapCoGiai = [];
+      tiemNang = [];
+      canCoGangNhieu = [];
+} else {
+      // Destructure dữ liệu
+      ({ summary, coGiai, sapCoGiai, tiemNang, canCoGangNhieu } = reportData);
+
+      // Tìm keys (giống hệt logic cũ)
+      const firstItem = coGiai[0] || sapCoGiai[0] || tiemNang[0] || canCoGangNhieu[0];
+      keyMap = {
+          sieuThi: findKey(summary, 'siêu thị'),
+          tongThuongTamTinh: findKey(summary, 'tổng thưởng tạm tỉnh'),
+          slThiDua: findKey(summary, 'sl nh thi đua'),
+          slDat: findKey(summary, 'sl nh >100%'),
+          tyLeDat: findKey(summary, 'tỷ lệ nh đạt >100%'),
+          slCoGiai: findKey(summary, 'sl nh dự kiến đạt giải'),
+          nganhHang: findKey(firstItem, 'ngành hàng'),
+          phanTramDuKien: findKey(firstItem, '% dự kiến'),
+          duKienVuot: findKey(firstItem, 'dự kiến d.thu'),
+          hangVuotTroi: findKey(firstItem, 'hạng vượt trội'),
+          hangTarget: findKey(firstItem, 'hạng % target'),
+          tongThuong: findKey(firstItem, 'tổng thưởng'),
+          hangCoGiaiKenh: 'hangCoGiaiKenh'
+      };
+
+      // Tính toán text/class (giống hệt logic cũ)
+      const totalSoonPrize = sapCoGiai.reduce((sum, item) => sum + (item.thuongTiemNang || 0), 0);
+      soonPrizeTitleText = totalSoonPrize > 0 ? ` - DK: ${formatters.formatNumber(totalSoonPrize)}đ` : '';
+
+      const tyLeDatValue = summary[keyMap.tyLeDat] || 0;
+      tyLeDatClass = tyLeDatValue >= 0.6 ? 'tdv-tyledat-high' : 'tdv-tyledat-low';
+    }
+  }
+</script>
+
+{#if reportData}
+<div class="tdv-infographic-card" data-capture-group="thidua-vung">
+    <div class="tdv-header">
+        <h2 class="tdv-supermarket-name">{summary[keyMap.sieuThi]}</h2>
+        <div class="tdv-total-prize-container">
+            <span class="tdv-total-prize-label">Tổng thưởng tạm tính:</span>
+            <span class="tdv-total-prize-value">{formatters.formatNumber(summary[keyMap.tongThuongTamTinh])}đ</span>
+        </div>
+    </div>
+
+    <div class="tdv-summary-grid">
+        <div class="tdv-summary-item">
+            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slThiDua])}</span>
+            <span class="tdv-summary-label">Ngành thi đua</span>
+        </div>
+        <div class="tdv-summary-item">
+            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slDat])}</span>
+            <span class="tdv-summary-label">Ngành >100%</span>
+        </div>
+        <div class="tdv-summary-item">
+            <span class="tdv-summary-value {tyLeDatClass}">{formatters.formatPercentage(summary[keyMap.tyLeDat] || 0)}</span>
+            <span class="tdv-summary-label">Tỷ lệ đạt</span>
+        </div>
+         <div class="tdv-summary-item">
+            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slCoGiai])}</span>
+            <span class="tdv-summary-label">Ngành dự kiến có giải</span>
+        </div>
+        <div class="tdv-summary-item">
+            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.hangCoGiaiKenh])}</span>
+            <span class="tdv-summary-label">Hạng có giải (Kênh)</span>
+        </div>
+    </div>
+
+    <div class="tdv-rows-container">
+        <div class="tdv-row">
+            <h3 class="tdv-row-title tdv-row-title--prize">Ngành hàng có giải ({coGiai.length})</h3>
+            <div class="tdv-row-body grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {#if coGiai.length > 0}
+                    {#each coGiai as item (item[keyMap.nganhHang])}
+                        <div class="tdv-item-card">
+                            <p class="tdv-item-card__title">{item[keyMap.nganhHang]}</p>
+                            <div class="tdv-progress-bar-container">
+                                <div class="tdv-progress-bar tdv-progress-bar--blue" style="width: {Math.min(item[keyMap.phanTramDuKien] * 100, 100)}%;"></div>
+                                <span class="tdv-progress-bar__text">{formatters.formatPercentage(item[keyMap.phanTramDuKien])}</span>
+                            </div>
+                            <div class="tdv-item-card__details">
+                                <span>Vượt: <strong>{formatters.formatNumber(item[keyMap.duKienVuot])}</strong></span>
+                                <span>Hạng DT/SL: <strong>{item[keyMap.hangVuotTroi]}</strong></span>
+                                <span>Hạng %: <strong>{item[keyMap.hangTarget]}</strong></span>
+                                <span class="tdv-item-card__prize">Thưởng: <strong>{formatters.formatNumber(item[keyMap.tongThuong])}</strong></span>
+                            </div>
+                        </div>
+                    {/each}
+                {:else}
+                    <p class="text-xs text-gray-500 col-span-full">Không có.</p>
+                {/if}
+            </div>
+        </div>
+
+        <div class="tdv-row">
+            <h3 class="tdv-row-title tdv-row-title--soon-prize">Sắp có giải ({sapCoGiai.length})<span class="tdv-row-subtitle">{soonPrizeTitleText}</span></h3>
+            <div class="tdv-row-body grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {#if sapCoGiai.length > 0}
+                    {#each sapCoGiai as item (item[keyMap.nganhHang])}
+                        <div class="tdv-item-card">
+                            <p class="tdv-item-card__title">{item[keyMap.nganhHang]}</p>
+                            <div class="tdv-progress-bar-container">
+                                <div class="tdv-progress-bar tdv-progress-bar--yellow" style="width: {Math.min(item[keyMap.phanTramDuKien] * 100, 100)}%;"></div>
+                                <span class="tdv-progress-bar__text">{formatters.formatPercentage(item[keyMap.phanTramDuKien])}</span>
+                            </div>
+                            <div class="tdv-item-card__details">
+                                <span>Cách giải: <strong>{item.khoangCach} hạng</strong></span>
+                                <span>Hạng DT/SL: <strong>{item[keyMap.hangVuotTroi]}</strong></span>
+                                <span>Hạng %: <strong>{item[keyMap.hangTarget]}</strong></span>
+                                <span class="tdv-item-card__prize">Thưởng DK: <strong>{formatters.formatNumber(item.thuongTiemNang)}</strong></span>
+                            </div>
+                        </div>
+                    {/each}
+                {:else}
+                    <p class="text-xs text-gray-500 col-span-full">Không có.</p>
+                {/if}
+            </div>
+        </div>
+
+        <div class="tdv-row">
+            <h3 class="tdv-row-title tdv-row-title--effort">Nhóm còn lại ({tiemNang.length + canCoGangNhieu.length})</h3>
+            <div class="tdv-row-body tdv-row-body--effort">
+                {#if tiemNang.length > 0}
+                    <div class="tdv-effort-subgroup">
+                        <h4 class="tdv-effort-subgroup__title tdv-effort-subgroup__title--potential">Tiềm năng (cách 21-40 hạng)</h4>
+                        <div class="tdv-effort-list">
+                            {#each tiemNang as item (item[keyMap.nganhHang])}
+                                <div class="tdv-effort-item">{item[keyMap.nganhHang]} (cách {item.khoangCach})</div>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+
+                {#if canCoGangNhieu.length > 0}
+                     <div class="tdv-effort-subgroup">
+                        <h4 class="tdv-effort-subgroup__title tdv-effort-subgroup__title--major">Cần cố gắng nhiều</h4>
+                        <div class="tdv-effort-list">
+                            {#each canCoGangNhieu as item (item[keyMap.nganhHang])}
+                                <div class="tdv-effort-item">{item[keyMap.nganhHang]}</div>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+
+                {#if tiemNang.length === 0 && canCoGangNhieu.length === 0}
+                    <p class="text-xs text-gray-500">Không có.</p>
+                {/if}
+            </div>
+        </div>
+    </div>
+</div>
+{/if}
+<<< FILE_END: src/components/luyke/TdvInfographic.svelte
+
+>>> FILE_START: src/components/luyke/sub/LuykeCategoryCharts.svelte
+<script>
+    import { tick, afterUpdate } from 'svelte';
+    import { formatters } from '../../../utils/formatters.js';
+    import { getRandomBrightColor } from '../../../utils.js';
+
+    export let pieData = [];
+    export let barData = [];
+    export let showUnexported = false;
+
+    let chartInstancePie = null;
+    let chartInstanceBar = null;
+
+    async function renderCharts() {
+        if (typeof Chart === 'undefined') return;
+        await tick();
+
+        // 1. Pie Chart
+        const ctxPie = document.getElementById('luyke-cat-pie-chart');
+        if (ctxPie) {
+            if (chartInstancePie) chartInstancePie.destroy();
+            const totalPieRevenue = pieData.reduce((sum, item) => sum + item.revenue, 0);
+
+            chartInstancePie = new Chart(ctxPie, {
+                type: 'doughnut',
+                data: {
+                    labels: pieData.map(d => d.name),
+                    datasets: [{
+                        data: pieData.map(d => d.revenue),
+                        backgroundColor: pieData.map(() => getRandomBrightColor()),
+                        borderWidth: 1
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { 
+                            position: 'right', 
+                            labels: { 
+                                boxWidth: 10,
+                                font: { size: 11 },
+                                generateLabels: (chart) => {
+                                    const data = chart.data;
+                                    if (data.labels.length && data.datasets.length) {
+                                        return data.labels.map((label, i) => {
+                                            const value = data.datasets[0].data[i];
+                                            const formattedValue = formatters.formatRevenue(value, 0);
+                                            const pct = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
+                                            return {
+                                                text: `${label} (${pct}) - ${formattedValue}`,
+                                                fillStyle: data.datasets[0].backgroundColor[i],
+                                                hidden: isNaN(data.datasets[0].data[i]),
+                                                index: i
+                                            };
+                                        });
+                                    }
+                                    return [];
+                                }
+                            } 
+                        },
+                        datalabels: {
+                            formatter: (value, ctx) => {
+                                const percentage = totalPieRevenue > 0 ? (value / totalPieRevenue * 100).toFixed(1) + "%" : "0%";
+                                if ((value / totalPieRevenue) < 0.03) return "";
+                                return percentage;
+                            },
+                            color: '#fff',
+                            font: { weight: 'bold', size: 10 }
+                        }
+                    } 
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+
+        // 2. Bar Chart
+        const ctxBar = document.getElementById('luyke-brand-bar-chart');
+        if (ctxBar) {
+            if (chartInstanceBar) chartInstanceBar.destroy();
+            chartInstanceBar = new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: barData.map(d => d.name),
+                    datasets: [{
+                        label: 'Doanh thu',
+                        data: barData.map(d => d.revenue / 1000000),
+                        backgroundColor: barData.map(() => getRandomBrightColor()),
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            formatter: (value) => formatters.formatNumber(value, 0),
+                            color: '#4b5563',
+                            font: { weight: 'bold', size: 10 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => formatters.formatRevenue(ctx.raw * 1000000)
+                            }
+                        }
+                    },
+                    scales: { x: { beginAtZero: true } }
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+    }
+
+    // Tự động render khi data thay đổi
+    $: if (pieData.length > 0 || barData.length > 0) {
+        setTimeout(renderCharts, 0);
+    }
+
+    afterUpdate(() => {
+        // Đảm bảo render lại khi chuyển tab hoặc resize
+        setTimeout(renderCharts, 0);
+    });
+</script>
+
+<div class="luyke-charts-container p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl">
+    <div class="chart-box">
+        <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Tỷ trọng Doanh Thu (ĐVT: Triệu)</h4>
+        <div class="relative h-full w-full"><canvas id="luyke-cat-pie-chart"></canvas></div>
+    </div>
+    <div class="chart-box">
+        <h4 class="text-sm font-bold text-gray-700 mb-2 text-center">Top 15 Hãng (ĐVT: Triệu)</h4>
+        <div class="relative h-full w-full"><canvas id="luyke-brand-bar-chart"></canvas></div>
+    </div>
+</div>
+<<< FILE_END: src/components/luyke/sub/LuykeCategoryCharts.svelte
+
+>>> FILE_START: src/components/luyke/sub/LuykeCategoryToolbar.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    export let titleText = '';
+    export let titleIcon = '';
+    export let titleClass = '';
+    export let iconClass = '';
+    
+    // Binding props
+    export let viewMode = 'grid';
+    export let showUnexported = false;
+    export let sortMode = 'revenue_desc';
+    export let searchText = '';
+    
+    // Filter props
+    export let isSettingsOpen = false;
+    export let filterSearch = '';
+    export let filterList = []; // Array of { key, label, type } [FIX]
+    export let hiddenCategories = new Set();
+    export let isLoadingConfig = false;
+
+    const dispatch = createEventDispatcher();
+
+    function toggleCategory(key) {
+        dispatch('toggleCategory', key);
+    }
+
+    function toggleAll(show) {
+        dispatch('toggleAll', show);
+    }
+</script>
+
+<div class="luyke-toolbar" style="flex-wrap: nowrap; gap: 8px;">
+    <div class="luyke-toolbar-left" style="flex-grow: 1; min-width: 0;">
+        <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
+            <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
+            <span class="truncate">{titleText}</span>
+        </h3>
+    </div>
+
+    <div class="luyke-toolbar-right" style="flex-shrink: 0; display: flex; align-items: center; gap: 8px;">
+        
+        <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+            <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ"><i data-feather="grid" class="w-4 h-4"></i></button>
+            <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ"><i data-feather="pie-chart" class="w-4 h-4"></i></button>
+        </div>
+
+        {#if viewMode === 'grid'}
+            <div class="toggle-wrapper {showUnexported ? 'active' : ''}" on:click={() => showUnexported = !showUnexported} style="padding: 4px 8px;">
+                <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
+                <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
+            </div>
+        {/if}
+
+        <div class="relative filter-wrapper">
+            <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen} title="Lọc hiển thị">
+                {#if isLoadingConfig}<div class="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>{:else}<i data-feather="filter" class="w-4 h-4"></i>{/if}
+            </button>
+
+            {#if isSettingsOpen}
+                <div class="filter-dropdown">
+                    <div class="filter-header">
+                        <input type="text" class="filter-search" placeholder="Tìm kiếm..." bind:value={filterSearch} />
+                    </div>
+                    <div class="filter-body custom-scrollbar">
+                        {#if filterList.length === 0}
+                            <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
+                        {:else}
+                            {#each filterList as group (group.key)}
+                                <div class="filter-item" on:click={() => toggleCategory(group.key)}>
+                                    <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
+                                    {#if group.type === 'macro'}
+                                        <label class="text-teal-700 font-bold text-xs flex items-center gap-1 flex-1">
+                                            <i data-feather="layers" class="w-3 h-3"></i> {group.label}
+                                        </label>
+                                    {:else}
+                                        <label class="text-gray-700 text-xs flex-1 truncate" title={group.label}>{group.label}</label>
+                                    {/if}
+                                </div>
+                            {/each}
+                        {/if}
+                    </div>
+                    <div class="filter-actions">
+                        <button class="filter-btn-link" on:click={() => toggleAll(true)}>Hiện tất cả</button>
+                        <button class="filter-btn-link text-red-600" on:click={() => toggleAll(false)}>Ẩn tất cả</button>
+                    </div>
+                </div>
+            {/if}
+        </div>
+
+        {#if viewMode === 'grid'}
+            <div class="hidden sm:block">
+                <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
+            </div>
+            <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
+                <option value="revenue_desc">DT ↓</option>
+                <option value="quantity_desc">SL ↓</option>
+            </select>
+        {/if}
+    </div>
+</div>
+<<< FILE_END: src/components/luyke/sub/LuykeCategoryToolbar.svelte
+
+>>> FILE_START: src/styles/dashboard-luyke.css
+/* src/styles/dashboard-luyke.css */
+/* Version 3.3 - Add CSS Variables support for KPI Cards */
+
+/* =========================================
+   1. LAYOUT & SCROLLING
+   ========================================= */
+.luyke-dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.luyke-tier-1-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    height: auto;
+}
+
+@media (min-width: 1024px) {
+    .luyke-tier-1-grid {
+        grid-template-columns: repeat(2, 1fr);
+        height: 480px;
+    }
+}
+
+.luyke-widget {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.luyke-widget-body {
+    padding: 0.75rem;
+    flex-grow: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.luyke-widget-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #ffffff;
+    flex-shrink: 0;
+}
+
+.luyke-widget-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #374151;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* =========================================
+   2. KPI CARDS (SOLID STYLE - CSS VARIABLES)
+   ========================================= */
+.kpi-grid-fixed {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+}
+@media (min-width: 768px) { .kpi-grid-fixed { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1280px) { .kpi-grid-fixed { grid-template-columns: repeat(4, 1fr); } }
+
+.kpi-card-solid {
+    border-radius: 1rem;
+    padding: 1.25rem;
+    color: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s; /* Thêm transition bg */
+    min-height: 140px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* [MỚI] Mapping biến CSS cho các thẻ KPI */
+.kpi-card-solid.card-1 { background-color: var(--kpi-card-1-bg, #38bdf8); }
+.kpi-card-solid.card-2 { background-color: var(--kpi-card-2-bg, #34d399); }
+.kpi-card-solid.card-3 { background-color: var(--kpi-card-3-bg, #fbbf24); }
+.kpi-card-solid.card-4 { background-color: var(--kpi-card-4-bg, #2dd4bf); }
+.kpi-card-solid.card-5 { background-color: var(--kpi-card-5-bg, #a78bfa); }
+.kpi-card-solid.card-6 { background-color: var(--kpi-card-6-bg, #f472b6); }
+.kpi-card-solid.card-7 { background-color: var(--kpi-card-7-bg, #818cf8); }
+.kpi-card-solid.card-8 { background-color: var(--kpi-card-8-bg, #f87171); }
+
+.kpi-card-solid:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+}
+
+.kpi-bg-icon {
+    position: absolute;
+    right: -10px;
+    bottom: -10px;
+    opacity: 0.15;
+    transform: rotate(-15deg);
+    pointer-events: none;
+}
+.kpi-bg-icon svg { width: 5rem; height: 5rem; }
+
+.kpi-solid-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.9;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--kpi-title-color, #ffffff); /* Dùng biến */
+}
+
+.kpi-solid-value {
+    font-size: var(--kpi-main-font-size, 2rem); /* Dùng biến */
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 0.75rem;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    color: var(--kpi-main-color, #ffffff); /* Dùng biến */
+}
+
+.kpi-solid-sub {
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    padding-top: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    color: var(--kpi-sub-color, #ffffff); /* Dùng biến */
+}
+
+/* ... (Phần còn lại của file giữ nguyên: EFFICIENCY LIST, CATEGORY CARDS, TOOLBAR, FILTER DROPDOWN) ... */
+.eff-item-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px dashed #f3f4f6;
+    width: 100%;
+}
+.eff-item-compact:last-child { border-bottom: none; }
+.eff-icon-compact {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.5rem;
+    background-color: #f3f4f6;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.eff-content-compact {
+    flex-grow: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.eff-row-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+    width: 100%;
+}
+.eff-label-text { font-size: 0.9rem; font-weight: 600; color: #374151; }
+.eff-value-text { font-size: 1rem; font-weight: 800; }
+.eff-row-bottom { display: flex; align-items: center; gap: 0.75rem; width: 100%; }
+.eff-bar-container { flex-grow: 1; height: 8px; background-color: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.eff-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease-out; }
+.eff-target-text { font-size: 0.75rem; color: #6b7280; font-weight: 500; white-space: nowrap; min-width: 65px; text-align: right; }
+.luyke-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.cat-card-colorful { border-radius: 0.75rem; padding: 0.75rem; transition: all 0.2s; border: 1px solid transparent; display: flex; flex-direction: column; justify-content: space-between; min-height: 110px; }
+.cat-card-colorful:hover { transform: translateY(-3px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+.theme-blue { background-color: #eff6ff; border-color: #bfdbfe; }
+.theme-blue .cat-icon-box { background-color: #dbeafe; color: #2563eb; }
+.theme-blue .cat-value-text { color: #1e40af; }
+.theme-green { background-color: #ecfdf5; border-color: #a7f3d0; }
+.theme-green .cat-icon-box { background-color: #d1fae5; color: #059669; }
+.theme-green .cat-value-text { color: #065f46; }
+.theme-orange { background-color: #fff7ed; border-color: #fed7aa; }
+.theme-orange .cat-icon-box { background-color: #ffedd5; color: #ea580c; }
+.theme-orange .cat-value-text { color: #9a3412; }
+.theme-purple { background-color: #f5f3ff; border-color: #ddd6fe; }
+.theme-purple .cat-icon-box { background-color: #ede9fe; color: #7c3aed; }
+.theme-purple .cat-value-text { color: #5b21b6; }
+.theme-teal { background-color: #f0fdfa; border-color: #99f6e4; }
+.theme-teal .cat-icon-box { background-color: #ccfbf1; color: #0f766e; }
+.theme-teal .cat-value-text { color: #115e59; }
+.theme-gray { background-color: #f9fafb; border-color: #e5e7eb; }
+.theme-gray .cat-icon-box { background-color: #f3f4f6; color: #4b5563; }
+.theme-gray .cat-value-text { color: #1f2937; }
+.theme-warning { background-color: #fffbeb; border-color: #fde047; background-image: repeating-linear-gradient(45deg, #fffbeb, #fffbeb 10px, #fef3c7 10px, #fef3c7 20px); }
+.theme-warning .cat-icon-box { background-color: #fff7ed; color: #d97706; }
+.theme-warning .cat-value-text { color: #b45309; }
+.cat-top-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+.cat-icon-box { width: 2rem; height: 2rem; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; }
+.cat-name-text { font-size: 0.85rem; font-weight: 700; color: #374151; margin-bottom: 0.25rem; line-height: 1.2; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cat-value-text { font-size: 1.25rem; font-weight: 800; line-height: 1; margin-bottom: 0.5rem; }
+.cat-footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: #6b7280; padding-top: 0.5rem; border-top: 1px solid rgba(0,0,0,0.05); }
+.cat-percent-text { font-weight: 600; opacity: 0.8; }
+.luyke-toolbar { background-color: #ffffff; padding: 0.5rem 1rem; border-bottom: 1px solid #e5e7eb; border-radius: 0.75rem 0.75rem 0 0; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
+.luyke-toolbar + .luyke-cat-grid, .luyke-toolbar + .luyke-charts-container { background-color: white; padding: 1rem; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 0.75rem 0.75rem; }
+.toggle-wrapper { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; padding: 6px 12px; border-radius: 999px; background-color: #f3f4f6; border: 1px solid #e5e7eb; transition: all 0.2s; }
+.toggle-wrapper:hover { background-color: #e5e7eb; }
+.toggle-wrapper.active { background-color: #fff7ed; border-color: #fdba74; }
+.toggle-switch { position: relative; width: 36px; height: 20px; background-color: #d1d5db; border-radius: 9999px; transition: background-color 0.3s; flex-shrink: 0; }
+.toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background-color: white; border-radius: 50%; transition: transform 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.toggle-wrapper.active .toggle-switch { background-color: #f97316; }
+.toggle-wrapper.active .toggle-switch::after { transform: translateX(16px); }
+.toggle-label { font-size: 0.8rem; font-weight: 600; color: #4b5563; }
+.toggle-wrapper.active .toggle-label { color: #c2410c; }
+.view-mode-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; color: #6b7280; background-color: transparent; border: 1px solid transparent; transition: all 0.2s; }
+.view-mode-btn:hover { background-color: #f3f4f6; }
+.view-mode-btn.active { background-color: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+.luyke-charts-container { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+@media (min-width: 1024px) { .luyke-charts-container { grid-template-columns: 4fr 6fr; } }
+.chart-box { display: flex; flex-direction: column; height: 350px; position: relative; }
+.filter-dropdown { position: absolute; top: 100%; right: 0; margin-top: 0.5rem; width: 280px; background-color: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); z-index: 50; display: flex; flex-direction: column; max-height: 400px; }
+.filter-header { padding: 0.75rem; border-bottom: 1px solid #f3f4f6; background-color: #f9fafb; border-radius: 0.5rem 0.5rem 0 0; }
+.filter-search { width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid #d1d5db; border-radius: 0.375rem; outline: none; }
+.filter-search:focus { border-color: #3b82f6; }
+.filter-body { overflow-y: auto; padding: 0.5rem; }
+.filter-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; cursor: pointer; border-radius: 0.25rem; transition: background-color 0.1s; }
+.filter-item:hover { background-color: #f3f4f6; }
+.filter-item input[type="checkbox"] { width: 1rem; height: 1rem; border-radius: 0.25rem; cursor: pointer; accent-color: #3b82f6; }
+.filter-item label { flex-grow: 1; font-size: 0.85rem; color: #374151; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filter-actions { padding: 0.5rem; border-top: 1px solid #f3f4f6; display: flex; justify-content: space-between; background-color: #f9fafb; border-radius: 0 0 0.5rem 0.5rem; }
+.filter-btn-link { font-size: 0.75rem; color: #2563eb; background: none; border: none; cursor: pointer; font-weight: 600; }
+.filter-btn-link:hover { text-decoration: underline; }
+.luyke-icon-btn { padding: 0.4rem; border-radius: 0.375rem; color: #6b7280; background-color: white; border: 1px solid #d1d5db; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+.luyke-icon-btn:hover { color: #3b82f6; border-color: #3b82f6; background-color: #eff6ff; }
+.luyke-icon-btn.active { background-color: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.luyke-search-input { padding: 0.4rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; outline: none; transition: border-color 0.2s; width: 200px; }
+.luyke-search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+<<< FILE_END: src/styles/dashboard-luyke.css

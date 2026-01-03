@@ -9,11 +9,9 @@
     warehouseList,
     modalState
   } from '../stores.js';
-  
   import { sknvService } from '../services/sknv.service.js';
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
-  
   import * as XLSX from 'xlsx';
 
   import SummaryView from './health-staff/summary/SummaryView.svelte';
@@ -24,23 +22,26 @@
   import PerformanceView from './health-staff/performance/PerformanceView.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
-  
-  // [CODEGENESIS FIX] Import component mới đã được tách riêng để bảo vệ layout
   import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
+  
+  // [CODEGENESIS] Import Component Trả Góp mới
+  import InstallmentView from './health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
 
   let activeSubTab = 'sknv';
   let viewingDetailId = null;
   let processedReport = [];
-
+  
+  // [CODEGENESIS] Cập nhật danh sách Tab
   const tabs = [
       { id: 'sknv', label: 'SKNV', icon: 'users', title: 'SucKhoeNhanVien' },
       { id: 'doanhthu', label: 'Doanh thu LK', icon: 'dollar-sign', title: 'DoanhThuLuyKe' },
       { id: 'thunhap', label: 'Thu nhập', icon: 'briefcase', title: 'ThuNhapNhanVien' },
       { id: 'hieuqua', label: 'Hiệu quả NV LK', icon: 'bar-chart-2', title: 'HieuQuaKhaiThac' },
       { id: 'nganhhang', label: 'DT ngành hàng', icon: 'layers', title: 'DoanhThuNganhHang' },
-      { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' }
+      { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' },
+      { id: 'tragop', label: 'Trả góp', icon: 'credit-card', title: 'ThongKeTraGop' } // Tab Mới
   ];
 
   let lastDataHash = '';
@@ -56,6 +57,7 @@
       }
   }
 
+  // Đây là biến quan trọng nhất: processedReport chứa danh sách nhân viên ĐÃ CÓ orders
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -79,9 +81,6 @@
   function handleCapture() { 
       actionService.handleCapture('sknv');
   }
-
-  // [CODEGENESIS CLEANUP] Đã xóa các hàm xử lý bảng thi đua cũ (exportToExcel, handleTargetInput, checkTargetColor)
-  // Logic này hiện đã được chuyển sang file ProgramGoalTables.svelte để tránh lỗi layout.
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
@@ -206,17 +205,21 @@
                         
                         <div class="mt-8">
                              {#if $luykeGoalSettings && $luykeGoalSettings.programTables}
-        <ProgramGoalTables 
-            programTables={$luykeGoalSettings.programTables} 
-            on:update={(e) => {
-                // Nhận dữ liệu từ con và lưu vào Store
-                luykeGoalSettings.update(s => ({ ...s, programTables: e.detail }));
-            }}
-        />
-     {/if}
+                                <ProgramGoalTables 
+                                    programTables={$luykeGoalSettings.programTables} 
+                                    on:update={(e) => {
+                                        luykeGoalSettings.update(s => ({ ...s, programTables: e.detail }));
+                                    }}
+                                />
+                             {/if}
                         </div>
                         
                         <div id="pasted-competition-report-container" class="hidden"></div>
+                    </div>
+
+                {:else if activeSubTab === 'tragop'}
+                    <div id="subtab-tragop" class="sub-tab-content">
+                        <InstallmentView reportData={processedReport} />
                     </div>
 
                 {:else}
