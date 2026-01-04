@@ -95,6 +95,9 @@ src/components/health-staff/detail/MetricGrid.svelte
 src/components/health-staff/detail/DetailHeader.svelte
 src/components/health-staff/detail/CardFilter.svelte
 src/components/health-staff/detail/DetailTableQDC.svelte
+src/components/health-staff/installment
+src/components/health-staff/installment/InstallmentDetailModal.svelte
+src/components/health-staff/installment/InstallmentView.svelte
 src/components/health-staff/competition
 src/components/health-staff/competition/CompetitionCard.svelte
 src/components/health-staff/competition/FocusCompetitionTable.svelte
@@ -207,5 +210,6 @@ src/services/reports/master/salaryProcessor.js
 src/services/reports/master/salesProcessor.js
 src/services/reports/master/utils.js
 src/services/reports/master/configLoader.js
+src/services/reports/installment.report.js
 src/services/reports/competition.report.js
 src/services/reports/detail.report.js

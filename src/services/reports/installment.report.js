@@ -42,6 +42,7 @@ const isSuccessInstallment = (order) => {
     if (!isInstallmentOrder(order.hinhThucXuat)) return false;
     const statusHuy = normalize(order.trangThaiHuy);
     const statusThuTien = normalize(order.trangThaiThuTien);
+    // Điều kiện đậu: Không hủy VÀ Đã thu tiền
     return statusHuy !== 'đã hủy' && statusThuTien === 'đã thu';
 };
 
@@ -63,18 +64,18 @@ export const processInstallmentReport = (employeesInput) => {
             ...emp,
             stats: {
                 ...emp.stats, 
-                totalRevenue: 0,          // [NEW] Tổng doanh thu thực (tất cả đơn hợp lệ)
+                totalRevenue: 0,              // DT Thực (Đã thu tiền & Không hủy)
                 installmentTotal: 0,
                 installmentSuccess: 0,
                 installmentFail: 0,
-                installmentRevenueRaw: 0,     // [NEW] Doanh thu trả chậm gốc (chưa nhân 30%)
-                installmentRevenueWeighted: 0 // [NEW] Doanh thu trả chậm * 30%
+                installmentRevenueRaw: 0,     // DT Trả chậm gốc
+                installmentRevenueWeighted: 0 // DT Trả chậm (30%)
             }
         };
 
         const rawOrders = emp.orders || [];
         
-        // 1. Lọc đơn hợp lệ (Doanh thu + Ngành hàng)
+        // 1. Lấy danh sách đơn hợp lệ
         const validOrders = rawOrders.filter(o => 
             isRevenueOrder(o.hinhThucXuat) && 
             isValidSector(o.nganhHang)
@@ -82,21 +83,27 @@ export const processInstallmentReport = (employeesInput) => {
 
         validOrders.forEach(order => {
             const amount = formatCurrency(order.thanhTien);
+            
+            // [GENESIS FIX] Xác định điều kiện Doanh Thu Thực
+            const isCancelled = normalize(order.trangThaiHuy) === 'đã hủy';
+            const isCollected = normalize(order.trangThaiThuTien) === 'đã thu';
 
-            // [NEW] Cộng tổng doanh thu thực (bất kể trả góp hay tiền mặt)
-            newEmp.stats.totalRevenue += amount;
+            // ĐIỀU KIỆN MỚI: Phải là "Đã thu" và Không phải "Đã hủy"
+            if (isCollected && !isCancelled) {
+                newEmp.stats.totalRevenue += amount;
+            }
             
             kpi.totalOrders++;
             
+            // Xử lý KPI Trả Chậm
             if (isInstallmentOrder(order.hinhThucXuat)) {
                 kpi.totalInstallment++;
                 newEmp.stats.installmentTotal++;
                 
+                // Logic đậu/rớt giữ nguyên (đã dùng logic tương tự trong hàm isSuccessInstallment)
                 if (isSuccessInstallment(order)) {
                     kpi.totalSuccess++;
                     newEmp.stats.installmentSuccess++;
-                    
-                    // [NEW] Chỉ cộng doanh thu trả chậm nếu ĐẬU
                     newEmp.stats.installmentRevenueRaw += amount;
                 } else {
                     newEmp.stats.installmentFail++;
@@ -104,7 +111,7 @@ export const processInstallmentReport = (employeesInput) => {
             }
         });
 
-        // [NEW] Tính doanh thu trả chậm quy đổi (30%)
+        // Tính DT Trả chậm quy đổi (30%)
         newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 0.3;
 
         // Tính tỷ lệ duyệt

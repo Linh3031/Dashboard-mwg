@@ -5,10 +5,7 @@
     import InstallmentDetailModal from './InstallmentDetailModal.svelte';
 
     export let reportData = [];
-    
-    // [GENESIS NEW] Prop nhận dữ liệu đầu vào tùy biến (Dùng cho Realtime)
-    // Mặc định là undefined để kích hoạt logic fallback về ycxData
-    export let inputData = undefined;
+    export let inputData = undefined; // Input cho Realtime
 
     let viewData = {
         kpi: { totalOrders: 0, totalInstallment: 0, totalSuccess: 0, approvalRate: 0 },
@@ -21,7 +18,6 @@
 
     const smartMapOrders = (rawOrders, employees) => {
         const empMap = {};
-        
         employees.forEach(e => {
             const empObj = {
                 ...e,
@@ -33,6 +29,7 @@
                     installmentRevenueRaw: 0, installmentRevenueWeighted: 0 
                 }
             };
+            
             if (e.maNV) {
                 const key = e.maNV.toString().trim();
                 empMap[key] = empObj;
@@ -51,6 +48,7 @@
                 foundEmp.orders.push(order);
             }
         });
+
         return Object.values(empMap).filter(e => e.orders.length > 0);
     };
 
@@ -63,12 +61,9 @@
         }
     }
 
-    // [GENESIS FIX] Reactive Logic: Chọn nguồn dữ liệu linh hoạt
+    // Reactive Logic
     $: {
-        // Nếu inputData được truyền vào (kể cả mảng rỗng), dùng nó.
-        // Nếu inputData là undefined (không truyền), dùng $ycxData (mặc định cho SKNV).
         const sourceData = inputData !== undefined ? inputData : $ycxData;
-
         if (sourceData.length > 0 && $danhSachNhanVien.length > 0) {
             let targetEmployees = $danhSachNhanVien;
             if ($selectedWarehouse) {
@@ -81,7 +76,6 @@
         }
     }
 
-    // Helper: Tính % trả chậm
     const calcInstallmentPercent = (emp) => {
         if (!emp.stats.totalRevenue || emp.stats.totalRevenue === 0) return 0;
         return (emp.stats.installmentRevenueRaw / emp.stats.totalRevenue) * 100;
@@ -91,24 +85,18 @@
         let valA, valB;
         switch (sortKey) {
             case 'hoTen': 
-                valA = a.hoTen || ''; valB = b.hoTen || '';
-                break;
+                valA = a.hoTen || ''; valB = b.hoTen || ''; break;
             case 'totalOrders':
                 valA = a.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0); 
-                valB = b.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0);
-                break;
+                valB = b.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0); break;
             case 'totalRevenue': 
-                valA = a.stats.totalRevenue; valB = b.stats.totalRevenue;
-                break;
+                valA = a.stats.totalRevenue; valB = b.stats.totalRevenue; break;
             case 'installmentRevenueWeighted': 
-                valA = a.stats.installmentRevenueWeighted; valB = b.stats.installmentRevenueWeighted;
-                break;
+                valA = a.stats.installmentRevenueWeighted; valB = b.stats.installmentRevenueWeighted; break;
             case 'installmentPercent': 
-                valA = calcInstallmentPercent(a); valB = calcInstallmentPercent(b);
-                break;
+                valA = calcInstallmentPercent(a); valB = calcInstallmentPercent(b); break;
             case 'approvalRate':
-                valA = parseFloat(a.stats.approvalRate); valB = parseFloat(b.stats.approvalRate);
-                break;
+                valA = parseFloat(a.stats.approvalRate); valB = parseFloat(b.stats.approvalRate); break;
             default:
                 valA = a.stats[sortKey] || 0; valB = b.stats[sortKey] || 0;
         }
@@ -124,11 +112,10 @@
         };
         isModalOpen = true;
     }
-
     function closeDetail() { isModalOpen = false; selectedEmployee = null; }
 </script>
 
-<div class="space-y-6">
+<div class="space-y-6" data-capture-preset="mobile-portrait">
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
             <div class="text-gray-500 text-sm font-medium uppercase">Tổng đơn hàng</div>
@@ -159,7 +146,6 @@
             <h3 class="font-bold text-gray-700">Chi tiết theo nhân viên</h3>
             <span class="text-xs text-gray-500 italic">* Click tiêu đề để sắp xếp</span>
         </div>
-        
         <div class="overflow-x-auto">
             <table class="w-full text-sm text-left border-collapse">
                 <thead class="bg-gray-100 text-gray-600 font-semibold uppercase text-xs sticky top-0">
@@ -170,7 +156,6 @@
                         <th class="p-3 border-b border-r border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('totalOrders')}>
                             Tổng đơn {sortKey === 'totalOrders' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        
                         <th class="p-3 border-b border-r border-gray-200 text-center bg-purple-50 cursor-pointer hover:bg-purple-100 transition select-none" on:click={() => handleSort('installmentTotal')}>
                             SL Trả chậm {sortKey === 'installmentTotal' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
@@ -183,15 +168,12 @@
                         <th class="p-3 border-b border-r border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('approvalRate')}>
                             Tỷ lệ duyệt {sortKey === 'approvalRate' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-
                         <th class="p-3 border-b border-r border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('totalRevenue')}>
                             DT Thực {sortKey === 'totalRevenue' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        
                         <th class="p-3 border-b border-r border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentRevenueWeighted')}>
                             DT Trả chậm (30%) {sortKey === 'installmentRevenueWeighted' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-
                         <th class="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentPercent')}>
                             % Trả chậm {sortKey === 'installmentPercent' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
@@ -203,11 +185,9 @@
                             <td class="p-3 font-medium text-blue-700 cursor-pointer border-r border-gray-200" on:click={() => openDetail(emp)}>
                                 {formatters.getShortEmployeeName(emp.hoTen, emp.maNV)}
                             </td>
-                            
                             <td class="p-3 text-center text-gray-600 border-r border-gray-200">
                                 {emp.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0)}
                             </td>
-                            
                             <td class="p-3 text-center bg-purple-50 font-bold text-purple-700 border-r border-gray-200">{emp.stats.installmentTotal}</td>
                             <td class="p-3 text-center text-green-600 font-bold border-r border-gray-200">{emp.stats.installmentSuccess}</td>
                             <td class="p-3 text-center text-red-500 border-r border-gray-200">{emp.stats.installmentFail}</td>
@@ -216,22 +196,19 @@
                                     {emp.stats.approvalRate}%
                                 </span>
                             </td>
-
                             <td class="p-3 text-right text-gray-800 font-medium border-r border-gray-200">
                                 {Math.round(emp.stats.totalRevenue / 1000000)}
                             </td>
-                            
                             <td class="p-3 text-right font-medium text-gray-800 border-r border-gray-200">
-                                {(emp.stats.installmentRevenueWeighted / 1000000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                                {Math.round(emp.stats.installmentRevenueWeighted / 1000000)}
                             </td>
-
                             <td class="p-3 text-center font-bold text-blue-600">
                                 {calcInstallmentPercent(emp).toFixed(1)}%
                             </td>
                         </tr>
                     {/each}
                     {#if sortedEmployees.length === 0}
-                        <tr><td colspan="9" class="p-8 text-center text-gray-400">Không có dữ liệu</td></tr>
+                    <tr><td colspan="9" class="p-8 text-center text-gray-400">Không có dữ liệu</td></tr>
                     {/if}
                 </tbody>
             </table>

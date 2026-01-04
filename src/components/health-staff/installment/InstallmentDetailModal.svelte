@@ -3,7 +3,7 @@
     import { fade, fly } from 'svelte/transition';
 
     export let isOpen = false;
-    export let employee = null; // Object nhân viên từ report service
+    export let employee = null;
 
     const dispatch = createEventDispatcher();
 
@@ -14,24 +14,33 @@
         dispatch('close');
     }
 
-    // [GENESIS FIX] Hàm format Doanh thu thực (Chia 1tr, giữ số lẻ)
     const formatRevenue = (amount) => {
         if (!amount) return '0';
         const val = amount / 1000000;
-        // Sử dụng toLocaleString để hiển thị số đẹp, maximumFractionDigits: 6 để giữ số lẻ chi tiết
         return val.toLocaleString('vi-VN', { maximumFractionDigits: 6 });
     };
 
-    // [GENESIS FIX] Tính toán lại các bộ đếm vì stats có thể thiếu key hoặc khác tên
     $: totalOrders = employee?.processedCustomers 
         ? employee.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0) 
         : 0;
     
-    // Mapping đúng key từ report service (installmentTotal)
     $: installmentCount = employee?.stats?.installmentTotal || 0;
     $: approvalRate = employee?.stats?.approvalRate || 0;
 
-    // Hàm sắp xếp danh sách khách hàng
+    // Helper check điều kiện ghi nhận doanh thu
+    const isValidRevenue = (order) => {
+        const statusHuy = order.trangThaiHuy ? order.trangThaiHuy.toString().trim().toLowerCase() : '';
+        const statusThu = order.trangThaiThuTien ? order.trangThaiThuTien.toString().trim().toLowerCase() : '';
+        return statusThu === 'đã thu' && statusHuy !== 'đã hủy';
+    };
+
+    // Helper check hủy để hiển thị UI
+    const isCancelled = (order) => {
+        const status = order.trangThaiHuy ? order.trangThaiHuy.toString().trim().toLowerCase() : '';
+        return status === 'đã hủy';
+    };
+
+    // Hàm sắp xếp
     $: sortedCustomers = employee?.processedCustomers 
         ? [...employee.processedCustomers].filter(c => 
             c.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -39,8 +48,8 @@
             if (sortMode === 'installment') {
                 return b.installmentCount - a.installmentCount || b.totalOrders - a.totalOrders;
             } else if (sortMode === 'revenue') {
-                const revA = a.orders.reduce((sum, o) => sum + (parseInt(o.thanhTien) || 0), 0);
-                const revB = b.orders.reduce((sum, o) => sum + (parseInt(o.thanhTien) || 0), 0);
+                const revA = a.orders.reduce((sum, o) => sum + (isValidRevenue(o) ? (parseInt(o.thanhTien) || 0) : 0), 0);
+                const revB = b.orders.reduce((sum, o) => sum + (isValidRevenue(o) ? (parseInt(o.thanhTien) || 0) : 0), 0);
                 return revB - revA;
             } else {
                 return a.name.localeCompare(b.name);
@@ -48,16 +57,14 @@
         })
         : [];
 
-    // Tính tổng doanh thu hiển thị cho từng khách
     const getCustomerRevenue = (orders) => {
-        return orders.reduce((sum, o) => sum + (parseInt(o.thanhTien) || 0), 0);
+        return orders.reduce((sum, o) => sum + (isValidRevenue(o) ? (parseInt(o.thanhTien) || 0) : 0), 0);
     };
 
     const getOrderSummary = (cust) => {
         const cash = cust.totalOrders - cust.installmentCount;
         let parts = [];
         if (cash > 0) parts.push(`${cash} Tiền mặt`);
-        // [GENESIS] Đổi label Trả góp -> Trả chậm
         if (cust.installmentCount > 0) parts.push(`${cust.installmentCount} Trả chậm`);
         return parts.join(', ');
     };
@@ -72,7 +79,7 @@
             <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
                 <div>
                     <h3 class="text-lg font-bold text-gray-800">
-                        Chi tiết: {employee.name} - {employee.maNV || employee.id}
+                        Chi tiết: {employee.name}
                     </h3>
                     <div class="text-sm text-gray-500 mt-1 flex gap-4">
                         <span>Tổng đơn: <strong class="text-blue-600">{totalOrders}</strong></span>
@@ -127,7 +134,7 @@
                         </thead>
                         <tbody class="divide-y">
                             {#each sortedCustomers as cust}
-                                <tr class="hover:bg-blue-50 transition-colors">
+                                <tr class="hover:bg-gray-50">
                                     <td class="p-3 font-medium text-gray-800">
                                         {cust.name}
                                         <div class="text-xs text-gray-400 font-normal">{cust.orders.length} đơn hàng</div>
