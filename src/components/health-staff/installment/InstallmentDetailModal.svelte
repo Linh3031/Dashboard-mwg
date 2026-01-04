@@ -14,10 +14,22 @@
         dispatch('close');
     }
 
-    // Format tiền tệ
-    const formatMoney = (amount) => {
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
+    // [GENESIS FIX] Hàm format Doanh thu thực (Chia 1tr, giữ số lẻ)
+    const formatRevenue = (amount) => {
+        if (!amount) return '0';
+        const val = amount / 1000000;
+        // Sử dụng toLocaleString để hiển thị số đẹp, maximumFractionDigits: 6 để giữ số lẻ chi tiết
+        return val.toLocaleString('vi-VN', { maximumFractionDigits: 6 });
     };
+
+    // [GENESIS FIX] Tính toán lại các bộ đếm vì stats có thể thiếu key hoặc khác tên
+    $: totalOrders = employee?.processedCustomers 
+        ? employee.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0) 
+        : 0;
+    
+    // Mapping đúng key từ report service (installmentTotal)
+    $: installmentCount = employee?.stats?.installmentTotal || 0;
+    $: approvalRate = employee?.stats?.approvalRate || 0;
 
     // Hàm sắp xếp danh sách khách hàng
     $: sortedCustomers = employee?.processedCustomers 
@@ -25,10 +37,8 @@
             c.name.toLowerCase().includes(searchTerm.toLowerCase())
           ).sort((a, b) => {
             if (sortMode === 'installment') {
-                // Ưu tiên khách có làm trả góp, sau đó đến số lượng hồ sơ
                 return b.installmentCount - a.installmentCount || b.totalOrders - a.totalOrders;
             } else if (sortMode === 'revenue') {
-                // Tính tổng doanh thu của khách (cộng dồn các đơn)
                 const revA = a.orders.reduce((sum, o) => sum + (parseInt(o.thanhTien) || 0), 0);
                 const revB = b.orders.reduce((sum, o) => sum + (parseInt(o.thanhTien) || 0), 0);
                 return revB - revA;
@@ -37,18 +47,18 @@
             }
         })
         : [];
-    
+
     // Tính tổng doanh thu hiển thị cho từng khách
     const getCustomerRevenue = (orders) => {
         return orders.reduce((sum, o) => sum + (parseInt(o.thanhTien) || 0), 0);
     };
 
-    // Lấy danh sách loại đơn (VD: "2 Tiền mặt, 1 Trả góp")
     const getOrderSummary = (cust) => {
         const cash = cust.totalOrders - cust.installmentCount;
         let parts = [];
         if (cash > 0) parts.push(`${cash} Tiền mặt`);
-        if (cust.installmentCount > 0) parts.push(`${cust.installmentCount} Trả góp`);
+        // [GENESIS] Đổi label Trả góp -> Trả chậm
+        if (cust.installmentCount > 0) parts.push(`${cust.installmentCount} Trả chậm`);
         return parts.join(', ');
     };
 </script>
@@ -62,14 +72,14 @@
             <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
                 <div>
                     <h3 class="text-lg font-bold text-gray-800">
-                        Chi tiết: {employee.name} - {employee.id}
+                        Chi tiết: {employee.name} - {employee.maNV || employee.id}
                     </h3>
                     <div class="text-sm text-gray-500 mt-1 flex gap-4">
-                        <span>Tổng đơn: <strong class="text-blue-600">{employee.stats.totalOrders}</strong></span>
-                        <span>Trả góp: <strong class="text-purple-600">{employee.stats.totalInstallment}</strong></span>
+                        <span>Tổng đơn: <strong class="text-blue-600">{totalOrders}</strong></span>
+                        <span>Trả chậm: <strong class="text-purple-600">{installmentCount}</strong></span>
                         <span>Tỷ lệ duyệt: 
-                            <span class="{parseFloat(employee.stats.approvalRate) >= 50 ? 'text-green-600' : 'text-red-600'} font-bold">
-                                {employee.stats.approvalRate}%
+                            <span class="{parseFloat(approvalRate) >= 50 ? 'text-green-600' : 'text-red-600'} font-bold">
+                                {approvalRate}%
                             </span>
                         </span>
                     </div>
@@ -92,7 +102,7 @@
                         class="px-3 py-2 text-sm rounded border {sortMode === 'installment' ? 'bg-purple-100 text-purple-700 border-purple-300 font-bold' : 'bg-gray-100 text-gray-600'}"
                         on:click={() => sortMode = 'installment'}
                     >
-                        Sort: Trả góp (Hồ sơ)
+                        Sort: Trả chậm (Hồ sơ)
                     </button>
                     <button 
                         class="px-3 py-2 text-sm rounded border {sortMode === 'revenue' ? 'bg-green-100 text-green-700 border-green-300 font-bold' : 'bg-gray-100 text-gray-600'}"
@@ -110,8 +120,8 @@
                             <tr>
                                 <th class="p-3 border-b">Khách hàng</th>
                                 <th class="p-3 border-b text-center">Phân loại đơn</th>
-                                <th class="p-3 border-b text-center">Hồ sơ Trả góp</th>
-                                <th class="p-3 border-b text-right">Tổng giá trị</th>
+                                <th class="p-3 border-b text-center">Hồ sơ Trả chậm</th>
+                                <th class="p-3 border-b text-right">Doanh thu thực</th>
                                 <th class="p-3 border-b">Chi tiết trạng thái</th>
                             </tr>
                         </thead>
@@ -144,7 +154,7 @@
                                     </td>
 
                                     <td class="p-3 text-right font-medium text-gray-700">
-                                        {formatMoney(getCustomerRevenue(cust.orders))}
+                                        {formatRevenue(getCustomerRevenue(cust.orders))}
                                     </td>
 
                                     <td class="p-3 text-xs">

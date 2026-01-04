@@ -41,7 +41,7 @@
       { id: 'hieuqua', label: 'Hiệu quả NV LK', icon: 'bar-chart-2', title: 'HieuQuaKhaiThac' },
       { id: 'nganhhang', label: 'DT ngành hàng', icon: 'layers', title: 'DoanhThuNganhHang' },
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' },
-      { id: 'tragop', label: 'Trả góp', icon: 'credit-card', title: 'ThongKeTraGop' } // Tab Mới
+      { id: 'tragop', label: 'Trả chậm', icon: 'credit-card', title: 'ThongKeTraCham' } // Tab Mới
   ];
 
   let lastDataHash = '';

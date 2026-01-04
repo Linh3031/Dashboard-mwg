@@ -16,17 +16,13 @@ const isRevenueOrder = (hinhThucXuat) => {
 };
 
 /**
- * [GENESIS NEW] Kiểm tra đơn hàng có thuộc Ngành Hàng cho phép (Trả góp) không
- * Logic: Chấp nhận nếu cột Ngành hàng chứa đúng mã hoặc bắt đầu bằng mã đó (VD: '484 - Gia dụng')
+ * [GENESIS] Kiểm tra Ngành Hàng cho phép
  */
 const isValidSector = (nganhHang) => {
     if (!nganhHang) return false;
-    const sectorVal = normalize(nganhHang); // đã lowercase
+    const sectorVal = normalize(nganhHang); 
     const allowedSectors = config.DEFAULT_DATA.NGANH_HANG_TRA_GOP_ALLOW_LIST || [];
 
-    // Check: 
-    // 1. Trùng khớp mã (VD: '484' === '484')
-    // 2. Hoặc bắt đầu bằng mã + ký tự phân cách (VD: '484 - ' hoặc '484 ')
     return allowedSectors.some(code => {
         const cleanCode = normalize(code);
         return sectorVal === cleanCode || 
@@ -35,9 +31,6 @@ const isValidSector = (nganhHang) => {
     });
 };
 
-/**
- * Kiểm tra đơn hàng có phải trả góp không
- */
 const isInstallmentOrder = (hinhThucXuat) => {
     if (!hinhThucXuat) return false;
     const type = normalize(hinhThucXuat);
@@ -45,16 +38,10 @@ const isInstallmentOrder = (hinhThucXuat) => {
     return installmentTypes.includes(type);
 };
 
-/**
- * Kiểm tra đơn trả góp thành công
- */
 const isSuccessInstallment = (order) => {
     if (!isInstallmentOrder(order.hinhThucXuat)) return false;
-    
     const statusHuy = normalize(order.trangThaiHuy);
     const statusThuTien = normalize(order.trangThaiThuTien);
-
-    // Chưa hủy + Đã thu
     return statusHuy !== 'đã hủy' && statusThuTien === 'đã thu';
 };
 
@@ -76,48 +63,55 @@ export const processInstallmentReport = (employeesInput) => {
             ...emp,
             stats: {
                 ...emp.stats, 
+                totalRevenue: 0,          // [NEW] Tổng doanh thu thực (tất cả đơn hợp lệ)
                 installmentTotal: 0,
                 installmentSuccess: 0,
                 installmentFail: 0,
-                installmentRevenue: 0
+                installmentRevenueRaw: 0,     // [NEW] Doanh thu trả chậm gốc (chưa nhân 30%)
+                installmentRevenueWeighted: 0 // [NEW] Doanh thu trả chậm * 30%
             }
         };
 
         const rawOrders = emp.orders || [];
         
-        // [GENESIS] BƯỚC LỌC KÉP:
-        // 1. Đơn tính doanh thu
-        // 2. Đơn thuộc Ngành hàng cho phép
+        // 1. Lọc đơn hợp lệ (Doanh thu + Ngành hàng)
         const validOrders = rawOrders.filter(o => 
             isRevenueOrder(o.hinhThucXuat) && 
             isValidSector(o.nganhHang)
         );
 
         validOrders.forEach(order => {
+            const amount = formatCurrency(order.thanhTien);
+
+            // [NEW] Cộng tổng doanh thu thực (bất kể trả góp hay tiền mặt)
+            newEmp.stats.totalRevenue += amount;
+            
             kpi.totalOrders++;
             
             if (isInstallmentOrder(order.hinhThucXuat)) {
-                const amount = formatCurrency(order.thanhTien);
-                
                 kpi.totalInstallment++;
                 newEmp.stats.installmentTotal++;
-                newEmp.stats.installmentRevenue += amount;
-
+                
                 if (isSuccessInstallment(order)) {
                     kpi.totalSuccess++;
                     newEmp.stats.installmentSuccess++;
+                    
+                    // [NEW] Chỉ cộng doanh thu trả chậm nếu ĐẬU
+                    newEmp.stats.installmentRevenueRaw += amount;
                 } else {
                     newEmp.stats.installmentFail++;
                 }
             }
         });
 
-        // Tính tỷ lệ
+        // [NEW] Tính doanh thu trả chậm quy đổi (30%)
+        newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 0.3;
+
+        // Tính tỷ lệ duyệt
         newEmp.stats.approvalRate = newEmp.stats.installmentTotal > 0
             ? ((newEmp.stats.installmentSuccess / newEmp.stats.installmentTotal) * 100).toFixed(1)
             : 0;
 
-        // Grouping cho Modal: Truyền validOrders đã lọc
         newEmp.processedCustomers = processCustomerGrouping(validOrders);
 
         return newEmp;
@@ -127,7 +121,6 @@ export const processInstallmentReport = (employeesInput) => {
         ? ((kpi.totalSuccess / kpi.totalInstallment) * 100).toFixed(1)
         : 0;
 
-    // Lọc hiển thị: Chỉ lấy nhân viên có đơn
     const finalEmployees = processedEmployees
         .filter(e => e.processedCustomers && e.processedCustomers.length > 0) 
         .sort((a, b) => b.stats.installmentTotal - a.stats.installmentTotal);
@@ -135,7 +128,6 @@ export const processInstallmentReport = (employeesInput) => {
     return { kpi, employees: finalEmployees };
 };
 
-// Hàm group khách hàng
 const processCustomerGrouping = (orders) => {
     const customerMap = {};
     orders.forEach(order => {

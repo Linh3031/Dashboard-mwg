@@ -1,10 +1,9 @@
 <script>
   import { onMount } from 'svelte';
   
-  // [FIX] Sửa 'import * as dataService' thành 'import { dataService }'
   import { dataService } from '../../services/dataService.js';
-  
-  import { warehouseList, modalState, selectedWarehouse } from '../../stores.js';
+  // [GENESIS FIX] Thêm realtimeYCXData vào import để lấy dữ liệu upload
+  import { warehouseList, modalState, selectedWarehouse, realtimeYCXData } from '../../stores.js';
   import { actionService } from '../../services/action.service.js';
 
   import SummaryTab from './summary/SummaryTab.svelte';
@@ -13,6 +12,8 @@
   import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
   import CompetitionTab from './competition/CompetitionTab.svelte';
+  // [GENESIS NEW] Import Component Trả chậm
+  import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-realtime-sieu-thi'; 
@@ -27,7 +28,6 @@
   }
 
   async function handleFileUpload(event) {
-    // Bây giờ hàm này sẽ hoạt động đúng
     await dataService.handleRealtimeFileInput(event);
   }
 
@@ -81,14 +81,14 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-3 ml-auto mt-2 sm:mt-0">
-                
                 <div class="flex items-center gap-2 pr-4 border-r border-blue-100">
                     <a href="https://report.mwgroup.vn/home/dashboard/077" target="_blank" class="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1 bg-blue-50 px-2 py-1.5 rounded transition-colors">
-                        <i data-feather="external-link" class="w-3 h-3"></i> Lấy file
+                        <i data-feather="external-link" class="w-3 h-3"></i> 
+                        Lấy file
                     </a>
                     <label for="realtime-file-input" class="cursor-pointer bg-white text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition text-sm font-bold flex items-center gap-2 shadow-sm border border-blue-200">
                          <i data-feather="upload" class="w-4 h-4"></i>
-                        <span>Tải file</span>
+                         <span>Tải file</span>
                     </label>
                     <input 
                         type="file" 
@@ -106,7 +106,7 @@
                      </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
-                        <span class="hidden lg:inline">Xuất Excel</span>
+                         <span class="hidden lg:inline">Xuất Excel</span>
                     </button>
                     <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh" on:click={handleCapture}>
                         <i data-feather="camera" class="w-4 h-4"></i>
@@ -125,7 +125,7 @@
                         data-title="SieuThiRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="zap"></i>
+                         <i data-feather="zap"></i>
                         <span>Siêu thị Realtime</span>
                     </button>
                        
@@ -135,7 +135,7 @@
                         data-title="DTNVRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="pie-chart"></i>
+                         <i data-feather="pie-chart"></i>
                         <span>DT NV Realtime</span>
                     </button>
 
@@ -145,7 +145,7 @@
                         data-title="HieuQuaKhaiThacRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="bar-chart-2"></i>
+                         <i data-feather="bar-chart-2"></i>
                         <span>Hiệu quả NV Realtime</span>
                     </button>
 
@@ -155,7 +155,7 @@
                         data-title="NganhHangRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="layers"></i>
+                         <i data-feather="layers"></i>
                         <span>Ngành hàng Realtime</span>
                     </button>
 
@@ -165,7 +165,7 @@
                         data-title="HangRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="tag"></i>
+                         <i data-feather="tag"></i>
                         <span>DT Hãng Realtime</span>
                     </button>
 
@@ -175,8 +175,18 @@
                         data-title="ThiDuaNhanVienRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="award"></i>
+                         <i data-feather="award"></i>
                         <span>Thi đua NV Realtime</span>
+                    </button>
+
+                    <button 
+                        class="sub-tab-btn {activeSubTabId === 'subtab-realtime-tragop' ? 'active' : ''}" 
+                        data-target="subtab-realtime-tragop"
+                        data-title="TraChamRealtime"
+                        on:click={handleSubTabClick}
+                    >
+                         <i data-feather="credit-card"></i>
+                        <span>Trả chậm Realtime</span>
                     </button>
                 </nav>
             </div>
@@ -186,7 +196,7 @@
                     <div id="subtab-realtime-sieu-thi" class="sub-tab-content">
                         <SummaryTab {selectedWarehouse} />
                     </div>
-                
+                 
                 {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
                     <div id="subtab-realtime-nhan-vien" class="sub-tab-content" data-capture-preset="large-font-report">
                         <EmployeeTab {selectedWarehouse} />
@@ -210,6 +220,11 @@
                 {:else if activeSubTabId === 'subtab-realtime-thi-dua'}
                     <div id="subtab-realtime-thi-dua" class="sub-tab-content">
                         <CompetitionTab {selectedWarehouse} />
+                    </div>
+
+                {:else if activeSubTabId === 'subtab-realtime-tragop'}
+                    <div id="subtab-realtime-tragop" class="sub-tab-content">
+                        <InstallmentView inputData={$realtimeYCXData} />
                     </div>
                     
                 {:else}

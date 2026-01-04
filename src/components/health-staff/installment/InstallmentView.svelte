@@ -1,13 +1,15 @@
 <script>
     import { ycxData, selectedWarehouse, danhSachNhanVien } from '../../../stores.js';
     import { processInstallmentReport } from '../../../services/reports/installment.report.js';
-    import { formatters } from '../../../utils/formatters.js'; // [GENESIS] Import formatters chuẩn dự án
+    import { formatters } from '../../../utils/formatters.js';
     import InstallmentDetailModal from './InstallmentDetailModal.svelte';
 
-    // Props
     export let reportData = [];
+    
+    // [GENESIS NEW] Prop nhận dữ liệu đầu vào tùy biến (Dùng cho Realtime)
+    // Mặc định là undefined để kích hoạt logic fallback về ycxData
+    export let inputData = undefined;
 
-    // State
     let viewData = {
         kpi: { totalOrders: 0, totalInstallment: 0, totalSuccess: 0, approvalRate: 0 },
         employees: []
@@ -17,49 +19,41 @@
     let sortKey = 'installmentTotal';
     let sortDirection = 'desc';
 
-    // --- LOGIC MAPPING ---
     const smartMapOrders = (rawOrders, employees) => {
         const empMap = {};
         
-        // 1. Map từ danh sách nhân viên GỐC (Source of Truth)
         employees.forEach(e => {
             const empObj = {
                 ...e,
                 orders: [],
                 stats: { 
                     ...e.stats, 
-                    installmentTotal: 0, installmentSuccess: 0, installmentFail: 0, installmentRevenue: 0 
+                    totalRevenue: 0,
+                    installmentTotal: 0, installmentSuccess: 0, installmentFail: 0, 
+                    installmentRevenueRaw: 0, installmentRevenueWeighted: 0 
                 }
             };
-            // Key chuẩn là Mã NV
             if (e.maNV) {
                 const key = e.maNV.toString().trim();
                 empMap[key] = empObj;
             }
         });
 
-        // 2. Loop qua orders để "gắn" vào nhân viên
         rawOrders.forEach(order => {
             const creator = order.nguoiTao || '';
             let foundEmp = null;
-            
-            // Tìm theo Mã NV trong chuỗi người tạo (VD: "Tên - 123")
             const matchId = creator.match(/(\d+)/); 
             if (matchId && matchId[1]) {
                 const extractedId = matchId[1];
                 if (empMap[extractedId]) foundEmp = empMap[extractedId];
             }
-
             if (foundEmp) {
                 foundEmp.orders.push(order);
             }
         });
-
-        // Chỉ lấy nhân viên có đơn hàng (đã được lọc ở bước report)
         return Object.values(empMap).filter(e => e.orders.length > 0);
     };
 
-    // --- SORT ---
     function handleSort(key) {
         if (sortKey === key) {
             sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -69,26 +63,30 @@
         }
     }
 
-    // Reactive Processing
+    // [GENESIS FIX] Reactive Logic: Chọn nguồn dữ liệu linh hoạt
     $: {
-        if ($ycxData.length > 0 && $danhSachNhanVien.length > 0) {
-            let targetEmployees = $danhSachNhanVien;
-            
-            if ($selectedWarehouse) {
-                targetEmployees = targetEmployees.filter(e => {
-                    const k = e.maKho || e.boPhan || '';
-                    return k == $selectedWarehouse;
-                });
-            }
+        // Nếu inputData được truyền vào (kể cả mảng rỗng), dùng nó.
+        // Nếu inputData là undefined (không truyền), dùng $ycxData (mặc định cho SKNV).
+        const sourceData = inputData !== undefined ? inputData : $ycxData;
 
-            const employeesWithOrders = smartMapOrders($ycxData, targetEmployees);
+        if (sourceData.length > 0 && $danhSachNhanVien.length > 0) {
+            let targetEmployees = $danhSachNhanVien;
+            if ($selectedWarehouse) {
+                targetEmployees = targetEmployees.filter(e => (e.maKho || e.boPhan || '') == $selectedWarehouse);
+            }
+            const employeesWithOrders = smartMapOrders(sourceData, targetEmployees);
             viewData = processInstallmentReport(employeesWithOrders);
         } else {
             viewData = { kpi: { totalOrders: 0, totalInstallment: 0, totalSuccess: 0, approvalRate: 0 }, employees: [] };
         }
     }
 
-    // Reactive Sort
+    // Helper: Tính % trả chậm
+    const calcInstallmentPercent = (emp) => {
+        if (!emp.stats.totalRevenue || emp.stats.totalRevenue === 0) return 0;
+        return (emp.stats.installmentRevenueRaw / emp.stats.totalRevenue) * 100;
+    };
+
     $: sortedEmployees = [...viewData.employees].sort((a, b) => {
         let valA, valB;
         switch (sortKey) {
@@ -96,9 +94,17 @@
                 valA = a.hoTen || ''; valB = b.hoTen || '';
                 break;
             case 'totalOrders':
-                // Tính tổng từ danh sách khách hàng đã gộp (đã lọc doanh thu)
                 valA = a.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0); 
                 valB = b.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0);
+                break;
+            case 'totalRevenue': 
+                valA = a.stats.totalRevenue; valB = b.stats.totalRevenue;
+                break;
+            case 'installmentRevenueWeighted': 
+                valA = a.stats.installmentRevenueWeighted; valB = b.stats.installmentRevenueWeighted;
+                break;
+            case 'installmentPercent': 
+                valA = calcInstallmentPercent(a); valB = calcInstallmentPercent(b);
                 break;
             case 'approvalRate':
                 valA = parseFloat(a.stats.approvalRate); valB = parseFloat(b.stats.approvalRate);
@@ -112,10 +118,9 @@
     });
 
     function openDetail(employee) {
-        // Truyền tên đã format vào modal nếu cần, hoặc giữ nguyên object
         selectedEmployee = {
             ...employee,
-            name: formatters.getShortEmployeeName(employee.hoTen, employee.maNV) // Format cho Modal
+            name: formatters.getShortEmployeeName(employee.hoTen, employee.maNV)
         };
         isModalOpen = true;
     }
@@ -130,7 +135,7 @@
             <div class="mt-2 text-3xl font-bold text-gray-800">{viewData.kpi.totalOrders}</div>
         </div>
         <div class="bg-white p-4 rounded-lg shadow border-l-4 border-purple-500">
-            <div class="text-gray-500 text-sm font-medium uppercase">Hồ sơ Trả góp</div>
+            <div class="text-gray-500 text-sm font-medium uppercase">Hồ sơ Trả chậm</div>
             <div class="mt-2 text-3xl font-bold text-purple-600">{viewData.kpi.totalInstallment}</div>
         </div>
         <div class="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
@@ -145,7 +150,7 @@
                     {viewData.kpi.approvalRate}%
                 </span>
             </div>
-            <div class="text-xs text-gray-400 mt-1">trên tổng hồ sơ trả góp</div>
+            <div class="text-xs text-gray-400 mt-1">trên tổng hồ sơ trả chậm</div>
         </div>
     </div>
 
@@ -156,58 +161,77 @@
         </div>
         
         <div class="overflow-x-auto">
-            <table class="w-full text-sm text-left">
+            <table class="w-full text-sm text-left border-collapse">
                 <thead class="bg-gray-100 text-gray-600 font-semibold uppercase text-xs sticky top-0">
                     <tr>
-                        <th class="p-3 border-b cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('hoTen')}>
+                        <th class="p-3 border-b border-r border-gray-200 cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('hoTen')}>
                             Nhân viên {sortKey === 'hoTen' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        <th class="p-3 border-b text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('totalOrders')}>
+                        <th class="p-3 border-b border-r border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('totalOrders')}>
                             Tổng đơn {sortKey === 'totalOrders' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        <th class="p-3 border-b text-center bg-purple-50 cursor-pointer hover:bg-purple-100 transition select-none" on:click={() => handleSort('installmentTotal')}>
-                            SL Trả góp {sortKey === 'installmentTotal' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        
+                        <th class="p-3 border-b border-r border-gray-200 text-center bg-purple-50 cursor-pointer hover:bg-purple-100 transition select-none" on:click={() => handleSort('installmentTotal')}>
+                            SL Trả chậm {sortKey === 'installmentTotal' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        <th class="p-3 border-b text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentSuccess')}>
+                        <th class="p-3 border-b border-r border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentSuccess')}>
                             SL Đậu {sortKey === 'installmentSuccess' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        <th class="p-3 border-b text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentFail')}>
-                            SL Rớt/Hủy {sortKey === 'installmentFail' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        <th class="p-3 border-b border-r border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentFail')}>
+                            Rớt/Hủy {sortKey === 'installmentFail' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        <th class="p-3 border-b text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('approvalRate')}>
+                        <th class="p-3 border-b border-r border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('approvalRate')}>
                             Tỷ lệ duyệt {sortKey === 'approvalRate' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
-                        <th class="p-3 border-b text-right cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentRevenue')}>
-                            Doanh thu TG (Thực) {sortKey === 'installmentRevenue' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+
+                        <th class="p-3 border-b border-r border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('totalRevenue')}>
+                            DT Thực {sortKey === 'totalRevenue' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        
+                        <th class="p-3 border-b border-r border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentRevenueWeighted')}>
+                            DT Trả chậm (30%) {sortKey === 'installmentRevenueWeighted' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+
+                        <th class="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentPercent')}>
+                            % Trả chậm {sortKey === 'installmentPercent' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
                     </tr>
                 </thead>
                 <tbody class="divide-y">
                     {#each sortedEmployees as emp}
                         <tr class="hover:bg-blue-50 transition-colors group">
-                            <td class="p-3 font-medium text-blue-700 cursor-pointer" on:click={() => openDetail(emp)}>
+                            <td class="p-3 font-medium text-blue-700 cursor-pointer border-r border-gray-200" on:click={() => openDetail(emp)}>
                                 {formatters.getShortEmployeeName(emp.hoTen, emp.maNV)}
                             </td>
                             
-                            <td class="p-3 text-center text-gray-600">
+                            <td class="p-3 text-center text-gray-600 border-r border-gray-200">
                                 {emp.processedCustomers.reduce((sum, c) => sum + c.totalOrders, 0)}
                             </td>
                             
-                            <td class="p-3 text-center bg-purple-50 font-bold text-purple-700">{emp.stats.installmentTotal}</td>
-                            <td class="p-3 text-center text-green-600 font-bold">{emp.stats.installmentSuccess}</td>
-                            <td class="p-3 text-center text-red-500">{emp.stats.installmentFail}</td>
-                            <td class="p-3 text-center">
+                            <td class="p-3 text-center bg-purple-50 font-bold text-purple-700 border-r border-gray-200">{emp.stats.installmentTotal}</td>
+                            <td class="p-3 text-center text-green-600 font-bold border-r border-gray-200">{emp.stats.installmentSuccess}</td>
+                            <td class="p-3 text-center text-red-500 border-r border-gray-200">{emp.stats.installmentFail}</td>
+                            <td class="p-3 text-center border-r border-gray-200">
                                 <span class="px-2 py-1 rounded text-xs font-bold {parseFloat(emp.stats.approvalRate) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
                                     {emp.stats.approvalRate}%
                                 </span>
                             </td>
-                            <td class="p-3 text-right font-mono font-medium text-gray-800">
-                                {new Intl.NumberFormat('vi-VN').format(emp.stats.installmentRevenue)}
+
+                            <td class="p-3 text-right text-gray-800 font-medium border-r border-gray-200">
+                                {Math.round(emp.stats.totalRevenue / 1000000)}
+                            </td>
+                            
+                            <td class="p-3 text-right font-medium text-gray-800 border-r border-gray-200">
+                                {(emp.stats.installmentRevenueWeighted / 1000000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}
+                            </td>
+
+                            <td class="p-3 text-center font-bold text-blue-600">
+                                {calcInstallmentPercent(emp).toFixed(1)}%
                             </td>
                         </tr>
                     {/each}
                     {#if sortedEmployees.length === 0}
-                        <tr><td colspan="7" class="p-8 text-center text-gray-400">Không có dữ liệu</td></tr>
+                        <tr><td colspan="9" class="p-8 text-center text-gray-400">Không có dữ liệu</td></tr>
                     {/if}
                 </tbody>
             </table>
