@@ -6,6 +6,36 @@ const normalize = (str) => str ? str.toString().trim().toLowerCase() : '';
 const formatCurrency = (amount) => amount ? parseInt(amount) : 0;
 
 /**
+ * [GENESIS] Kiểm tra đơn hàng có được tính doanh thu không
+ */
+const isRevenueOrder = (hinhThucXuat) => {
+    if (!hinhThucXuat) return false;
+    const type = normalize(hinhThucXuat);
+    const revenueTypes = (config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || []).map(t => normalize(t));
+    return revenueTypes.includes(type);
+};
+
+/**
+ * [GENESIS NEW] Kiểm tra đơn hàng có thuộc Ngành Hàng cho phép (Trả góp) không
+ * Logic: Chấp nhận nếu cột Ngành hàng chứa đúng mã hoặc bắt đầu bằng mã đó (VD: '484 - Gia dụng')
+ */
+const isValidSector = (nganhHang) => {
+    if (!nganhHang) return false;
+    const sectorVal = normalize(nganhHang); // đã lowercase
+    const allowedSectors = config.DEFAULT_DATA.NGANH_HANG_TRA_GOP_ALLOW_LIST || [];
+
+    // Check: 
+    // 1. Trùng khớp mã (VD: '484' === '484')
+    // 2. Hoặc bắt đầu bằng mã + ký tự phân cách (VD: '484 - ' hoặc '484 ')
+    return allowedSectors.some(code => {
+        const cleanCode = normalize(code);
+        return sectorVal === cleanCode || 
+               sectorVal.startsWith(cleanCode + ' ') || 
+               sectorVal.startsWith(cleanCode + '-');
+    });
+};
+
+/**
  * Kiểm tra đơn hàng có phải trả góp không
  */
 const isInstallmentOrder = (hinhThucXuat) => {
@@ -16,21 +46,20 @@ const isInstallmentOrder = (hinhThucXuat) => {
 };
 
 /**
- * Kiểm tra đơn trả góp thành công (Đậu/Đã thu)
+ * Kiểm tra đơn trả góp thành công
  */
 const isSuccessInstallment = (order) => {
-    // 1. Phải là đơn trả góp
     if (!isInstallmentOrder(order.hinhThucXuat)) return false;
-
+    
     const statusHuy = normalize(order.trangThaiHuy);
     const statusThuTien = normalize(order.trangThaiThuTien);
 
-    // 2. Chưa hủy + Đã thu
+    // Chưa hủy + Đã thu
     return statusHuy !== 'đã hủy' && statusThuTien === 'đã thu';
 };
 
 /**
- * Hàm xử lý chính: Nhận vào danh sách nhân viên (đã có orders)
+ * Hàm xử lý chính
  */
 export const processInstallmentReport = (employeesInput) => {
     const kpi = {
@@ -40,17 +69,13 @@ export const processInstallmentReport = (employeesInput) => {
         approvalRate: 0
     };
 
-    // Đảm bảo input là array
     const sourceEmployees = Array.isArray(employeesInput) ? employeesInput : [];
 
     const processedEmployees = sourceEmployees.map(emp => {
-        // Clone object để không ảnh hưởng dữ liệu gốc
         const newEmp = {
             ...emp,
             stats: {
-                // Giữ lại stats cũ nếu cần, hoặc tạo mới
                 ...emp.stats, 
-                // Các chỉ số riêng cho tab Trả Góp
                 installmentTotal: 0,
                 installmentSuccess: 0,
                 installmentFail: 0,
@@ -58,10 +83,17 @@ export const processInstallmentReport = (employeesInput) => {
             }
         };
 
-        const orders = emp.orders || []; // Lấy đơn hàng đã được system map sẵn
+        const rawOrders = emp.orders || [];
         
-        // Tính toán cho từng nhân viên
-        orders.forEach(order => {
+        // [GENESIS] BƯỚC LỌC KÉP:
+        // 1. Đơn tính doanh thu
+        // 2. Đơn thuộc Ngành hàng cho phép
+        const validOrders = rawOrders.filter(o => 
+            isRevenueOrder(o.hinhThucXuat) && 
+            isValidSector(o.nganhHang)
+        );
+
+        validOrders.forEach(order => {
             kpi.totalOrders++;
             
             if (isInstallmentOrder(order.hinhThucXuat)) {
@@ -80,32 +112,30 @@ export const processInstallmentReport = (employeesInput) => {
             }
         });
 
-        // Tính tỷ lệ duyệt của nhân viên
+        // Tính tỷ lệ
         newEmp.stats.approvalRate = newEmp.stats.installmentTotal > 0
             ? ((newEmp.stats.installmentSuccess / newEmp.stats.installmentTotal) * 100).toFixed(1)
             : 0;
 
-        // Xử lý group khách hàng cho Modal chi tiết
-        newEmp.processedCustomers = processCustomerGrouping(orders);
+        // Grouping cho Modal: Truyền validOrders đã lọc
+        newEmp.processedCustomers = processCustomerGrouping(validOrders);
 
         return newEmp;
     });
 
-    // Tính tỷ lệ duyệt toàn kho
     kpi.approvalRate = kpi.totalInstallment > 0
         ? ((kpi.totalSuccess / kpi.totalInstallment) * 100).toFixed(1)
         : 0;
 
-    // Lọc: Chỉ lấy nhân viên có đơn trả góp để hiển thị cho gọn (hoặc lấy hết tùy bạn)
-    // Ở đây tôi lấy hết nhân viên có đơn hàng bất kỳ để so sánh
+    // Lọc hiển thị: Chỉ lấy nhân viên có đơn
     const finalEmployees = processedEmployees
-        .filter(e => e.orders && e.orders.length > 0)
+        .filter(e => e.processedCustomers && e.processedCustomers.length > 0) 
         .sort((a, b) => b.stats.installmentTotal - a.stats.installmentTotal);
 
     return { kpi, employees: finalEmployees };
 };
 
-// Hàm group khách hàng (giữ nguyên logic cũ vì nó tốt)
+// Hàm group khách hàng
 const processCustomerGrouping = (orders) => {
     const customerMap = {};
     orders.forEach(order => {
@@ -122,7 +152,7 @@ const processCustomerGrouping = (orders) => {
         const isInst = isInstallmentOrder(order.hinhThucXuat);
         const isSucc = isSuccessInstallment(order);
 
-        cust.totalOrders++;
+        cust.totalOrders++; 
         if (isInst) {
             cust.installmentCount++;
             if (isSucc) cust.successCount++;

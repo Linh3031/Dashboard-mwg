@@ -1,9 +1,9 @@
 // src/config.js
-// Version 2.3 - Update Admin Password
+// Version 2.4 - Add Installment Sectors
 // Chứa tất cả các cấu hình tĩnh của ứng dụng.
 
 export const config = {
-    ADMIN_PASSWORD: "Linh3010", // [UPDATED] Mật khẩu mới
+    ADMIN_PASSWORD: "Linh3010", 
     COLUMN_MAPPINGS: {
         danhsachnv: {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },
@@ -84,6 +84,21 @@ export const config = {
         'BP Kho Kiêm Hỗ Trợ Kỹ Thuật Xe Đạp - ĐM'
     ],
     DEFAULT_DATA: {
+        // [GENESIS ADD] Danh sách Mã Ngành Hàng được phép hiển thị ở tab Trả Góp
+        NGANH_HANG_TRA_GOP_ALLOW_LIST: [
+            '484',  // Điện gia dụng
+            '13',   // Điện thoại
+            '244',  // Tablet
+            '1754', // Máy lạnh, nước nóng
+            '304',  // Điện tử
+            '1756', // Máy giặt, sấy
+            '1214', // Gia dụng lắp đặt
+            '1755', // Tủ lạnh, đông, mát
+            '1116', // Máy lọc nước
+            '22',   // Laptop
+            '1274', // Đồng Hồ Thời Trang
+            '23'    // Wearable
+        ],
         HINH_THUC_XUAT_TINH_DOANH_THU: [
             'Xuất bán hàng tại siêu thị', 'Xuất cung ứng dịch vụ',
             'Xuất bán pre-order tại siêu thị', 'Xuất SIM trắng kèm theo SIM',
@@ -98,4 +113,3 @@ export const config = {
         HE_SO_QUY_DOI: { '1098 - Máy lạnh (IMEI)': 1,'4659 - Phụ kiện tiện ích Apple': 3.37,'6400 - Phụ kiện âm thanh Apple': 3.37,'2381 - Phụ kiện trang trí Apple': 3.37,'2011 - Khuyến mãi - SP Ảo': 1, '2511 - Nạp tiền AirTime M_Service': 1, '2151 - Phiếu mua hàng/Pre Order': 1, '971 - Thẻ cào điện tử': 1, '431 - Ốp Lưng - Flip Cover': 3.37, '2571 - Thu hộ cước Viettel': 1, '4519 - Thu Hộ Tiền Trả Góp': 1, '2513 - Thu hộ Payoo': 1, '4302 - Nón bảo hiểm các loại': 1.92, '2291 - Sim trắng (Seri)': 1, '18 - Điện Thoại Di Động': 1, '4599 - Thu Hộ Tiền Mặt': 1, '12 - Pin sạc dự phòng': 3.37, '571 - UDDĐ': 1, '58 - Miếng dán mặt sau': 3.37, '1231 - Miếng dán mặt trước': 3.37, '1491 - Smartphone': 1, '1891 - Sim Online': 5.45, '4479 - Dịch Vụ Bảo Hiểm': 4.18, '3359 - Phụ kiện đồng hồ': 3, '2391 - Smartwatch': 3, '911 - Máy nước nóng': 1, '4499 - Thu Hộ Phí Bảo Hiểm': 4.18, '4142 - Bình đun siêu tốc': 1.85, '4153 - Xay Sinh tố': 1.85, '15 - Tai nghe dây': 3.37, '1412 - Dịch vụ bảo trì': 1, '3345 - Cáp': 3.37, '2312 - Mã nạp thẻ game': 1, '4900 - Bàn phím': 3.37, '4141 - Bàn ủi khô': 1.85, '4156 - Nồi cơm nắp gài/nắp rời': 1.85, '14 - Sạc/ Adapter': 3.37, '42 - Laptop': 1.2, '751 - Khuyến mãi ba lô, túi xách': 1, '1031 - Loa di động': 3.37, '4199 - Miếng Dán Kính': 3.37, '3346 - Tai Nghe Bluetooth': 3.37, '931 - Máy tính bảng': 1.2, '19 - Khuyến mãi ĐTDĐ': 1, '10 - Chuột': 3.37, '4060 - Đồng hồ Nam Dây da': 3, '880 - Loa Karaoke': 1.29, '851 - Khuyến mãi Điện Tử': 1, '4169 - Lõi lọc': 1.85, '4540 - Tai Nghe Bluetooth - imei': 3.37, '4062 - Đồng hồ Nữ Dây kim loại': 3, '2831 - Phụ kiện Apple': 3.37, '2691 - Bộ Sạc/Cáp/Adaptor (Giá Rẻ)': 3.37, '1351 - Loa vi tính (imei)': 3.37, '1094 - Tivi LED (IMEI)': 1, '4324 - Khung treo, giá đỡ': 3.37, '1099 - Máy giặt (IMEI)': 1, '1097 - Tủ lạnh (IMEI)': 1, '4099 - Nồi chiên': 1.85, '4070 - Đồng hồ Trẻ em': 3, '967 - Sấy tóc': 1.85, '957 - Lò nướng': 1.85, '958 - Lò vi sóng': 1.85, '4158 - Nồi cơm điện tử': 1.85, '3241 - Dao/Kéo/Thớt': 1.92, '3240 - Hộp/Hũ': 1.92, '3265 - Nồi': 1.92, '4139 - Đèn bàn/Đèn Sạc/Đèn bắt muỗi': 1.85, '73 - Phụ kiện điện máy': 3.37, '4171 - Lọc nước dạng tủ đứng': 1.85, '3384 - Đồ nghề sử dụng điện': 1, '4147 - Bếp điện đơn': 1.85, '4063 - Đồng hồ Nữ Dây da': 3, '3263 - Chảo': 1.92, '3185 - Vệ sinh nhà cửa': 1.92, '4143 - Bàn ủi hơi nước đứng': 1.85, '4146 - Bếp gas đôi': 1.85, '1052 - Khuyến mãi Điện Lạnh': 1, '3799 - Quạt điều hòa': 1.85, '1951 - Software (số Lượng)': 1, '6000 - Máy ép trái cây': 1.85, '4059 - Đồng hồ Nam Dây kim loại': 3, '4160 - Quạt bàn/hộp/sạc': 1.85, '4162 - Bình/Ca đựng nước': 1.92, '4660 - Quạt lửng': 1.85, '17 - Phụ kiện IT khác': 3.37, '4145 - Bếp gas đơn': 1.85, '875 - Dàn máy': 1, '1071 - Phụ kiện điện tử': 3.37, '891 - Micro': 1, '4152 - Ổ cắm điện/vợt muỗi': 1.85, '4154 - Xay ép/Khác': 1.85, '5975 - Balo Túi Chống Sốc': 3.37, '893 - Tủ đông': 1, '2531 - Thu hộ Mservice': 1, '4019 - Sim trắng điện tử': 1, '4320 - Đồng hồ - Khuyến mãi mua': 1, '3187 - Bình/Ly/Ca giữ nhiệt': 1.92, '4159 - Quạt đứng': 1.85, '4157 - Nồi cơm cao tần': 1.85, '16 - Thẻ Nhớ': 3.37, '4140 - Bàn ủi hơi nước': 1.85, '4150 - Máy nước nóng lạnh': 1.85, '591 - Thay sim': 1, '2999 - Dụng cụ nhà bếp khác': 1.92, '4779 - Loa di động - imei': 3.37, '4440 - Gói Cước Và Dịch Vụ GTGT': 1, '4121 - Máy Bơm Nước': 1, '4161 - Quạt treo': 1.85, '4961 - Quần bó & legging nữ Thể Thao': 1, '4151 - Áp suất/lẩu/chiên/nướng': 1.85, '4144 - Bếp gas âm': 1.85, '871 - USB': 3.37, '6479 - Camera IP Trong nhà': 3.37, '4219 - Camera IP Ngoài trời': 3.37, '4659 - Phụ kiện tiện ích Apple': 3.37, '531 - Pin, 4095 - Cáp (Giá Rẻ)': 3.37, '2791 - Kinh doanh mùa vụ': 3.37, '2771 - Giá treo màn hình máy tính': 3.37, '80 - Khuyến mãi Khác': 1, '1131 - Máy in, Fax': 2, '4125 - Smartband': 3, '743 - Quạt sưởi': 1.85, '4659 - Phụ kiện Apple - Imei': 3.37, '4064 - Đồng hồ Nữ Dây khác': 3, '956 - Hút bụi': 1.85, '4172 - Lọc nước âm tủ/trên bàn': 1.85, '3779 - Bếp điện âm': 1.85, '4061 - Đồng hồ Nam Dây khác': 3, '4067 - Đồng hồ Unisex Dây khác': 3, '1411 - Dịch vụ lắp đặt': 1, '4149 - Bình thủy điện': 1.85, '4148 - Bếp điện đôi': 1.85, '955 - Hút mùi/ hút khói': 1.85, '4699 - Gia dụng không điện khác': 1.92, '4859 - Xe đạp đường phố cổ điển': 1, '4759 - Phụ Kiện Xe Đạp': 1, '2471 - Thu hộ cước VinaPhone': 1, '3719 - Quần dài nữ Thể Thao': 1, '1051 - Khuyến mãi Điện gia dụng': 1, '3721 - Quần ngắn & váy nữ Thể Thao': 1, '410 - Phụ kiện TT khác': 3.37, '4155 - Hút bụi cây': 1.85, '3563 - Máy tính nguyên bộ': 1, '894 - Tủ mát': 1, '3639 - Máy lọc không khí': 1.85, '611 - Ứng dụng PC & Laptop': 1, '4089 - Đồng hồ Unisex Dây kim loại': 3, '4439 - Hút Bụi Robot': 1.85, '3740 - Áo T-shirt nam Thể Thao': 1, '4339 - Ổn Áp': 1, '4459 - Quạt Trần': 1.85, '2351 - Router - Imei': 3.37, '3159 - DV Internet và Truyền hình thu tiền': 1, '3659 - Máy sấy lồng ngang': 1, '3519 - Áo Bra Thể Thao': 1, '3479 - Thiết bị mạng khác': 3.37, '3859 - Máy rửa chén': 1 }
     }
 };
-
