@@ -1,176 +1,134 @@
 <script>
-  // Component này nhận dữ liệu đã được xử lý và chỉ render ra HTML.
-  import { formatters } from '../../utils/formatters.js';
+    export let reportData = null;
 
-  export let reportData;
+    // --- HELPER FORMAT SỐ TIỀN ---
+    const currencyFormatter = new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+        maximumFractionDigits: 0
+    });
 
-  // --- Logic render được di chuyển từ ui-thidua-vung.js ---
-  let summary, coGiai, sapCoGiai, tiemNang, canCoGangNhieu;
-  let keyMap = {};
-  let soonPrizeTitleText = '';
-  let tyLeDatClass = '';
+    const percentFormatter = new Intl.NumberFormat('en-US', {
+        style: 'percent',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1
+    });
 
-  // Helper function (giữ nguyên từ file gốc)
-  const findKey = (item, keyword) => {
-      if (!item) return keyword; 
-      return Object.keys(item).find(k => k.trim().toLowerCase().includes(keyword.toLowerCase())) || keyword;
-  }
-
-  // $: là một khối reactive. Nó sẽ tự động chạy lại khi 'reportData' thay đổi.
-  $: {
-    if (!reportData) {
-      // Nếu không có data, reset
-      summary = null;
-      coGiai = [];
-      sapCoGiai = [];
-      tiemNang = [];
-      canCoGangNhieu = [];
-} else {
-      // Destructure dữ liệu
-      ({ summary, coGiai, sapCoGiai, tiemNang, canCoGangNhieu } = reportData);
-
-      // Tìm keys (giống hệt logic cũ)
-      const firstItem = coGiai[0] || sapCoGiai[0] || tiemNang[0] || canCoGangNhieu[0];
-      keyMap = {
-          sieuThi: findKey(summary, 'siêu thị'),
-          tongThuongTamTinh: findKey(summary, 'tổng thưởng tạm tỉnh'),
-          slThiDua: findKey(summary, 'sl nh thi đua'),
-          slDat: findKey(summary, 'sl nh >100%'),
-          tyLeDat: findKey(summary, 'tỷ lệ nh đạt >100%'),
-          slCoGiai: findKey(summary, 'sl nh dự kiến đạt giải'),
-          nganhHang: findKey(firstItem, 'ngành hàng'),
-          phanTramDuKien: findKey(firstItem, '% dự kiến'),
-          duKienVuot: findKey(firstItem, 'dự kiến d.thu'),
-          hangVuotTroi: findKey(firstItem, 'hạng vượt trội'),
-          hangTarget: findKey(firstItem, 'hạng % target'),
-          tongThuong: findKey(firstItem, 'tổng thưởng'),
-          hangCoGiaiKenh: 'hangCoGiaiKenh'
-      };
-
-      // Tính toán text/class (giống hệt logic cũ)
-      const totalSoonPrize = sapCoGiai.reduce((sum, item) => sum + (item.thuongTiemNang || 0), 0);
-      soonPrizeTitleText = totalSoonPrize > 0 ? ` - DK: ${formatters.formatNumber(totalSoonPrize)}đ` : '';
-
-      const tyLeDatValue = summary[keyMap.tyLeDat] || 0;
-      tyLeDatClass = tyLeDatValue >= 0.6 ? 'tdv-tyledat-high' : 'tdv-tyledat-low';
+    function formatMoney(amount) {
+        return currencyFormatter.format(amount || 0);
     }
-  }
+
+    function formatPercent(val) {
+        return percentFormatter.format(val || 0);
+    }
+
+    // --- XỬ LÝ DỮ LIỆU AN TOÀN (CRASH-PROOF) ---
+    $: safeData = reportData || {};
+    
+    // Luôn đảm bảo details là mảng, kể cả khi dữ liệu lỗi
+    $: rawDetails = Array.isArray(safeData.details) ? safeData.details : [];
+
+    // Tự động phân loại dữ liệu dựa trên mảng details
+    $: listDat = rawDetails.filter(item => (item.duKienHoanThanh || 0) >= 1);
+    $: listChuaDat = rawDetails.filter(item => (item.duKienHoanThanh || 0) < 1);
+
+    // Tính toán KPI tổng quan
+    $: totalItems = rawDetails.length;
+    $: totalDat = listDat.length;
+    $: progressPercent = totalItems > 0 ? Math.round((totalDat / totalItems) * 100) : 0;
+    
+    // Màu sắc trạng thái
+    $: statusColor = progressPercent >= 100 ? 'text-green-600' : (progressPercent >= 80 ? 'text-yellow-600' : 'text-red-600');
+    $: barColor = progressPercent >= 100 ? 'bg-green-500' : (progressPercent >= 80 ? 'bg-yellow-500' : 'bg-red-500');
+
 </script>
 
 {#if reportData}
-<div class="tdv-infographic-card" data-capture-group="thidua-vung">
-    <div class="tdv-header">
-        <h2 class="tdv-supermarket-name">{summary[keyMap.sieuThi]}</h2>
-        <div class="tdv-total-prize-container">
-            <span class="tdv-total-prize-label">Tổng thưởng tạm tính:</span>
-            <span class="tdv-total-prize-value">{formatters.formatNumber(summary[keyMap.tongThuongTamTinh])}đ</span>
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden font-sans mb-6">
+    <div class="p-6 bg-gray-50 border-b border-gray-100">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-3">
+                    <span class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded uppercase tracking-wider">
+                        {safeData.kenh || 'SIÊU THỊ'}
+                    </span>
+                    {safeData.sieuThi || 'Đang cập nhật tên...'}
+                </h2>
+                <div class="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                    <span>Xếp hạng Top 10%: <b class="text-blue-600">{safeData.rankTop10 || '-'}</b></span>
+                    <span>•</span>
+                    <span>Xếp hạng Vượt trội: <b class="text-purple-600">{safeData.rankVuotTroi || '-'}</b></span>
+                </div>
+            </div>
+            
+            <div class="bg-white p-4 rounded-lg border border-gray-100 shadow-sm min-w-[200px] text-right">
+                <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Tổng thưởng dự kiến</p>
+                <p class="text-2xl font-bold text-green-600">{formatMoney(safeData.tongThuong)}</p>
+            </div>
+        </div>
+
+        <div class="mt-6">
+            <div class="flex justify-between items-end mb-2">
+                <span class="text-sm font-medium text-gray-700">Tiến độ đạt chỉ tiêu ngành hàng</span>
+                <span class="text-lg font-bold {statusColor}">{totalDat}/{totalItems} ({progressPercent}%)</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="{barColor} h-3 rounded-full transition-all duration-700 ease-out" style="width: {progressPercent}%"></div>
+            </div>
         </div>
     </div>
 
-    <div class="tdv-summary-grid">
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slThiDua])}</span>
-            <span class="tdv-summary-label">Ngành thi đua</span>
-        </div>
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slDat])}</span>
-            <span class="tdv-summary-label">Ngành >100%</span>
-        </div>
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value {tyLeDatClass}">{formatters.formatPercentage(summary[keyMap.tyLeDat] || 0)}</span>
-            <span class="tdv-summary-label">Tỷ lệ đạt</span>
-        </div>
-         <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slCoGiai])}</span>
-            <span class="tdv-summary-label">Ngành dự kiến có giải</span>
-        </div>
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.hangCoGiaiKenh])}</span>
-            <span class="tdv-summary-label">Hạng có giải (Kênh)</span>
-        </div>
-    </div>
-
-    <div class="tdv-rows-container">
-        <div class="tdv-row">
-            <h3 class="tdv-row-title tdv-row-title--prize">Ngành hàng có giải ({coGiai.length})</h3>
-            <div class="tdv-row-body grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {#if coGiai.length > 0}
-                    {#each coGiai as item (item[keyMap.nganhHang])}
-                        <div class="tdv-item-card">
-                            <p class="tdv-item-card__title">{item[keyMap.nganhHang]}</p>
-                            <div class="tdv-progress-bar-container">
-                                <div class="tdv-progress-bar tdv-progress-bar--blue" style="width: {Math.min(item[keyMap.phanTramDuKien] * 100, 100)}%;"></div>
-                                <span class="tdv-progress-bar__text">{formatters.formatPercentage(item[keyMap.phanTramDuKien])}</span>
-                            </div>
-                            <div class="tdv-item-card__details">
-                                <span>Vượt: <strong>{formatters.formatNumber(item[keyMap.duKienVuot])}</strong></span>
-                                <span>Hạng DT/SL: <strong>{item[keyMap.hangVuotTroi]}</strong></span>
-                                <span>Hạng %: <strong>{item[keyMap.hangTarget]}</strong></span>
-                                <span class="tdv-item-card__prize">Thưởng: <strong>{formatters.formatNumber(item[keyMap.tongThuong])}</strong></span>
-                            </div>
-                        </div>
-                    {/each}
-                {:else}
-                    <p class="text-xs text-gray-500 col-span-full">Không có.</p>
-                {/if}
-            </div>
-        </div>
-
-        <div class="tdv-row">
-            <h3 class="tdv-row-title tdv-row-title--soon-prize">Sắp có giải ({sapCoGiai.length})<span class="tdv-row-subtitle">{soonPrizeTitleText}</span></h3>
-            <div class="tdv-row-body grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {#if sapCoGiai.length > 0}
-                    {#each sapCoGiai as item (item[keyMap.nganhHang])}
-                        <div class="tdv-item-card">
-                            <p class="tdv-item-card__title">{item[keyMap.nganhHang]}</p>
-                            <div class="tdv-progress-bar-container">
-                                <div class="tdv-progress-bar tdv-progress-bar--yellow" style="width: {Math.min(item[keyMap.phanTramDuKien] * 100, 100)}%;"></div>
-                                <span class="tdv-progress-bar__text">{formatters.formatPercentage(item[keyMap.phanTramDuKien])}</span>
-                            </div>
-                            <div class="tdv-item-card__details">
-                                <span>Cách giải: <strong>{item.khoangCach} hạng</strong></span>
-                                <span>Hạng DT/SL: <strong>{item[keyMap.hangVuotTroi]}</strong></span>
-                                <span>Hạng %: <strong>{item[keyMap.hangTarget]}</strong></span>
-                                <span class="tdv-item-card__prize">Thưởng DK: <strong>{formatters.formatNumber(item.thuongTiemNang)}</strong></span>
-                            </div>
-                        </div>
-                    {/each}
-                {:else}
-                    <p class="text-xs text-gray-500 col-span-full">Không có.</p>
-                {/if}
-            </div>
-        </div>
-
-        <div class="tdv-row">
-            <h3 class="tdv-row-title tdv-row-title--effort">Nhóm còn lại ({tiemNang.length + canCoGangNhieu.length})</h3>
-            <div class="tdv-row-body tdv-row-body--effort">
-                {#if tiemNang.length > 0}
-                    <div class="tdv-effort-subgroup">
-                        <h4 class="tdv-effort-subgroup__title tdv-effort-subgroup__title--potential">Tiềm năng (cách 21-40 hạng)</h4>
-                        <div class="tdv-effort-list">
-                            {#each tiemNang as item (item[keyMap.nganhHang])}
-                                <div class="tdv-effort-item">{item[keyMap.nganhHang]} (cách {item.khoangCach})</div>
-                            {/each}
+    <div class="p-6">
+        {#if listDat.length > 0}
+            <h3 class="text-lg font-bold text-green-700 mb-4 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Đã hoàn thành ({listDat.length})
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+                {#each listDat as item}
+                    <div class="p-4 rounded border border-green-100 bg-green-50/50 hover:shadow-md transition-shadow">
+                        <p class="font-bold text-gray-800 truncate" title={item.nganhHang}>{item.nganhHang}</p>
+                        <div class="flex justify-between items-center mt-2 text-sm">
+                            <span class="text-gray-600">Đạt: <b class="text-green-600">{formatPercent(item.duKienHoanThanh)}</b></span>
+                            <span class="font-medium text-green-700">{formatMoney(item.tongThuong)}</span>
                         </div>
                     </div>
-                {/if}
+                {/each}
+            </div>
+        {/if}
 
-                {#if canCoGangNhieu.length > 0}
-                     <div class="tdv-effort-subgroup">
-                        <h4 class="tdv-effort-subgroup__title tdv-effort-subgroup__title--major">Cần cố gắng nhiều</h4>
-                        <div class="tdv-effort-list">
-                            {#each canCoGangNhieu as item (item[keyMap.nganhHang])}
-                                <div class="tdv-effort-item">{item[keyMap.nganhHang]}</div>
-                            {/each}
+        {#if listChuaDat.length > 0}
+            <h3 class="text-lg font-bold text-red-600 mb-4 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Cần cố gắng ({listChuaDat.length})
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {#each listChuaDat as item}
+                    <div class="p-4 rounded border border-gray-200 bg-white hover:border-red-300 transition-colors">
+                        <p class="font-bold text-gray-700 truncate" title={item.nganhHang}>{item.nganhHang}</p>
+                        <div class="mt-2 text-sm text-gray-500 flex justify-between">
+                             <span>Hiện tại: <b class="text-red-500">{formatPercent(item.duKienHoanThanh)}</b></span>
+                             {#if item.rankTarget}
+                                <span>Hạng: {item.rankTarget}</span>
+                             {/if}
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-1.5 mt-2">
+                            <div class="bg-red-400 h-1.5 rounded-full" style="width: {Math.min((item.duKienHoanThanh || 0) * 100, 100)}%"></div>
                         </div>
                     </div>
-                {/if}
-
-                {#if tiemNang.length === 0 && canCoGangNhieu.length === 0}
-                    <p class="text-xs text-gray-500">Không có.</p>
-                {/if}
+                {/each}
             </div>
-        </div>
+        {/if}
+
+        {#if rawDetails.length === 0}
+            <div class="text-center py-10">
+                <p class="text-gray-400 italic">Chưa có dữ liệu chi tiết cho siêu thị này.</p>
+            </div>
+        {/if}
     </div>
 </div>
 {/if}

@@ -1,36 +1,32 @@
 <script>
   /* global XLSX, feather */
-  import { onMount } from 'svelte';
-  import { get } from 'svelte/store';
+  import { onMount, tick } from 'svelte';
   import { 
     thiDuaVungChiTiet, 
-    thiDuaVungTong, 
-    choices 
+    thiDuaVungTong 
   } from '../../stores.js';
-  import { dataProcessing } from '../../services/dataProcessing.js';
-  import { reportService } from '../../services/reportService.js';
+  import { regionalProcessor } from '../../services/processing/logic/regional.processor.js';
   import TdvInfographic from './TdvInfographic.svelte';
 
   let fileStatus = "";
   let isLoading = false;
   let supermarketNames = [];
-  let selectedSupermarket = "";
+  let selectedSupermarket = ""; 
   let reportData = null;
-  let choicesInstance = null;
-  let selectElement = null; 
+  let localTongData = [];
 
+  // --- HÀM XỬ LÝ FILE ---
   async function _handleFileRead(file) {
       return new Promise((resolve, reject) => {
-          if (!file) return reject(new Error("No file provided."));
           const reader = new FileReader();
-          reader.onload = (event) => {
+          reader.onload = (e) => {
               try {
-                  const data = new Uint8Array(event.target.result);
+                  const data = new Uint8Array(e.target.result);
                   const workbook = XLSX.read(data, { type: 'array', cellDates: true, cellText: true });
                  resolve(workbook);
               } catch (err) { reject(err); }
           };
-          reader.onerror = (err) => reject(new Error("Could not read the file: " + err));
+          reader.onerror = (err) => reject(new Error("Lỗi đọc file: " + err));
           reader.readAsArrayBuffer(file);
       });
   }
@@ -38,76 +34,80 @@
   async function handleFileInput(event) {
     const file = event.target.files[0];
     const fileNameEl = document.getElementById('file-name-thidua-vung');
-    if (!file) {
-      if (fileNameEl) fileNameEl.textContent = "Chưa thêm file";
-      fileStatus = "";
-      return;
-    }
+    if (!file) return;
 
     isLoading = true;
     if (fileNameEl) fileNameEl.textContent = file.name;
-    fileStatus = "Đang xử lý file...";
+    fileStatus = "Đang xử lý...";
+    reportData = null;
+    selectedSupermarket = "";
 
     try {
       const workbook = await _handleFileRead(file);
-      const { chiTietData, tongData } = dataProcessing.processThiDuaVungFile(workbook);
+      const { chiTietData, tongData } = regionalProcessor.processThiDuaVungFile(workbook);
       
-      if (!tongData || tongData.length === 0) {
-        throw new Error('Không tìm thấy dữ liệu hợp lệ trong file.');
-      }
-
+      if (!tongData || tongData.length === 0) throw new Error('File rỗng.');
+      
       thiDuaVungChiTiet.set(chiTietData);
       thiDuaVungTong.set(tongData);
- 
-      const supermarketKey = Object.keys(tongData[0]).find(k => k.trim().toLowerCase().includes('siêu thị'));
-      supermarketNames = [...new Set(tongData.map(row => row[supermarketKey]).filter(Boolean))].sort();
-
-      if (choicesInstance) {
-        choicesInstance.clearStore();
-        choicesInstance.setChoices(
-          supermarketNames.map(name => ({ value: name, label: name })),
-          'value',
-          'label',
-          true
-        );
-      }
+      localTongData = tongData;
       
+      supermarketNames = tongData
+          .map(row => row.sieuThi)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+          
       fileStatus = `✅ Đã xử lý ${supermarketNames.length} siêu thị.`;
+
     } catch (error) {
-      console.error("Lỗi xử lý file Thi Đua Vùng:", error);
+      console.error(error);
       fileStatus = `❌ Lỗi: ${error.message}`;
+      supermarketNames = [];
     } finally {
       isLoading = false;
-      event.target.value = null; 
+      event.target.value = null;
     }
   }
 
-  function handleFilterChange() {
-    if (!choicesInstance) return;
-    const selectedValue = choicesInstance.getValue(true);
-    selectedSupermarket = selectedValue;
- 
-    if (selectedValue) {
-      reportData = reportService.generateThiDuaVungReport(selectedValue);
-    } else {
-      reportData = null;
-    }
+  // --- HÀM XỬ LÝ CHỌN VỚI AN TOÀN DỮ LIỆU ---
+  function handleSelectChange() {
+      // 1. Tìm row dữ liệu
+      const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
+
+      if (row) {
+          // 2. Chế độ "Safe Mode": Đảm bảo không trường nào là null/undefined/rỗng tuếch
+          // Điều này giúp TdvInfographic không bị crash khi truy cập .split() hoặc [0]
+          reportData = {
+              sieuThi: row.sieuThi || 'Không tên',
+              kenh: row.kenh || 'N/A',
+              
+              // Số thì về 0
+              tongThuong: row.tongThuong || 0,
+              soNganhHang: row.soNganhHang || 0,
+              soNganhHangDat: row.soNganhHangDat || 0,
+              duKienHoanThanh: row.duKienHoanThanh || 0,
+
+              // Chuỗi thì về 'N/A' để split() không lỗi
+              evaluation: row.evaluation || 'N/A',
+              rankTop10: row.rankTop10 || 'N/A',
+              rankVuotTroi: row.rankVuotTroi || 'N/A',
+              rankTarget: row.rankTarget || 'N/A',
+              
+              // Mảng: Đảm bảo là mảng, và lọc bỏ phần tử null
+              details: (Array.isArray(row.details) ? row.details : []).map(d => ({
+                  ...d,
+                  nganhHang: d.nganhHang || 'N/A',
+                  duKienHoanThanh: d.duKienHoanThanh || 0
+              }))
+          };
+          console.log("✅ Data sent to Infographic:", reportData);
+      } else {
+          reportData = null;
+      }
   }
 
   onMount(() => {
-    if (typeof Choices !== 'undefined' && selectElement) {
-      choicesInstance = new Choices(selectElement, {
-        searchEnabled: true,
-        removeItemButton: false,
-        itemSelectText: 'Chọn',
-        searchPlaceholderValue: 'Tìm kiếm siêu thị...'
-      });
-      choices.update(c => ({ ...c, thiDuaVung_sieuThi: choicesInstance }));
-    }
-    
-    if (typeof feather !== 'undefined') {
-      feather.replace();
-    }
+    if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
 
@@ -117,7 +117,7 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:gap-4"> 
                 <label class="data-input-group__label !mb-2 sm:!mb-0 flex-shrink-0">File Thi Đua Vùng:</label> 
                 <div class="flex items-center gap-2"> 
-                    <label 
+                     <label 
                         for="file-thidua-vung" 
                         class="data-input-group__file-trigger"
                         class:opacity-50={isLoading}
@@ -131,32 +131,37 @@
                 type="file" 
                 id="file-thidua-vung" 
                 class="hidden" 
-                data-name="Thi đua vùng" 
                 accept=".xlsx, .xls, .csv"
                 on:change={handleFileInput}
                 disabled={isLoading}
-            > 
+             > 
             <div class="data-input-group__status-wrapper mt-2">
-                <span 
-                    class="data-input-group__status-text"
-                    class:text-green-600={fileStatus.startsWith('✅')}
-                    class:text-red-600={fileStatus.startsWith('❌')}
-                >
-                    {fileStatus}
+                <span class="data-input-group__status-text font-medium" 
+                      class:text-green-600={fileStatus.includes('✅')}
+                      class:text-red-600={fileStatus.includes('❌')}>
+                     {fileStatus}
                 </span>
             </div> 
         </div>
         
         <div class="data-input-group input-group--yellow h-full" style="min-height: 104px;"> 
              <label class="data-input-group__label">Chọn Siêu thị:</label> 
-             <div class="data-input-group__content">
-                <select 
-                    id="thidua-vung-filter-supermarket" 
-                    bind:this={selectElement}
-                    on:change={handleFilterChange}
-                >
-                    <option value="">Vui lòng tải file...</option>
-                </select> 
+             <div class="data-input-group__content text-black w-full">
+                <input 
+                    list="supermarket-list" 
+                    type="text"
+                    class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-yellow-500 bg-white"
+                    placeholder={supermarketNames.length > 0 ? "Gõ mã hoặc tên siêu thị..." : "Vui lòng tải file..."}
+                    bind:value={selectedSupermarket}
+                    on:input={handleSelectChange}
+                    on:change={handleSelectChange}
+                    disabled={supermarketNames.length === 0}
+                />
+                <datalist id="supermarket-list">
+                    {#each supermarketNames as name}
+                        <option value={name}></option>
+                    {/each}
+                </datalist>
              </div>
         </div> 
     </div>
@@ -164,8 +169,18 @@
 
 <div id="thidua-vung-infographic-container" class="mt-6"> 
     {#if reportData}
-        <TdvInfographic {reportData} />
+        {#key reportData.sieuThi}
+            <TdvInfographic {reportData} />
+        {/key}
     {:else}
-        <div class="placeholder-message">Vui lòng tải file và chọn một siêu thị để xem báo cáo.</div> 
+        <div class="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
+             {#if isLoading}
+                <p class="text-gray-500">⏳ Đang xử lý dữ liệu...</p>
+            {:else if supermarketNames.length > 0}
+                <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
+            {:else}
+                <p class="text-gray-400">Vui lòng tải file Excel để xem báo cáo.</p>
+            {/if}
+        </div> 
     {/if}
 </div>
