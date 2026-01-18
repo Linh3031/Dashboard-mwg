@@ -8,7 +8,9 @@
         maximumFractionDigits: 0
     });
     
-    const numberFormatter = new Intl.NumberFormat('vi-VN');
+    const numberFormatter = new Intl.NumberFormat('vi-VN', {
+        maximumFractionDigits: 0 // 0 nghĩa là làm tròn, không lấy số thập phân
+    });
 
     function formatMoney(amount) {
         return currencyFormatter.format(amount || 0);

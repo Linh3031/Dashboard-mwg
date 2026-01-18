@@ -189,7 +189,7 @@
             {:else if allSupermarketNames.length > 0}
                  <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
             {:else}
-                <p class="text-gray-400">Vui lòng tải file Excel để xem báo cáo.</p>
+                <p class="text-gray-400">Vui lòng tải file Excel để xem báo cáo (File exel do admin gửi).</p>
             {/if}
         </div> 
     {/if}
