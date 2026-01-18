@@ -1,6 +1,6 @@
 <script>
   /* global XLSX, feather */
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { 
     thiDuaVungChiTiet, 
     thiDuaVungTong 
@@ -10,10 +10,21 @@
 
   let fileStatus = "";
   let isLoading = false;
-  let supermarketNames = [];
+  
+  // Đổi tên biến để quản lý rõ ràng: Danh sách gốc vs Danh sách đã lọc
+  let allSupermarketNames = []; 
+  
   let selectedSupermarket = ""; 
   let reportData = null;
   let localTongData = [];
+
+  // --- LOGIC LỌC NGHIÊM NGẶT (STRICT FILTER) ---
+  // Chỉ hiển thị những siêu thị có tên CHỨA ĐÚNG cụm từ khóa (theo thứ tự)
+  $: filteredSupermarketNames = selectedSupermarket
+      ? allSupermarketNames.filter(name => 
+          name.toLowerCase().includes(selectedSupermarket.trim().toLowerCase())
+        )
+      : allSupermarketNames;
 
   // --- HÀM XỬ LÝ FILE ---
   async function _handleFileRead(file) {
@@ -51,18 +62,19 @@
       thiDuaVungChiTiet.set(chiTietData);
       thiDuaVungTong.set(tongData);
       localTongData = tongData;
-      
-      supermarketNames = tongData
+
+      // Lưu vào danh sách gốc
+      allSupermarketNames = tongData
           .map(row => row.sieuThi)
           .filter(Boolean)
           .sort((a, b) => a.localeCompare(b));
-          
-      fileStatus = `✅ Đã xử lý ${supermarketNames.length} siêu thị.`;
+      
+      fileStatus = `✅ Đã xử lý ${allSupermarketNames.length} siêu thị.`;
 
     } catch (error) {
       console.error(error);
       fileStatus = `❌ Lỗi: ${error.message}`;
-      supermarketNames = [];
+      allSupermarketNames = [];
     } finally {
       isLoading = false;
       event.target.value = null;
@@ -71,38 +83,34 @@
 
   // --- HÀM XỬ LÝ CHỌN VỚI AN TOÀN DỮ LIỆU ---
   function handleSelectChange() {
-      // 1. Tìm row dữ liệu
+      // Tìm chính xác trong data gốc
       const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
-
       if (row) {
-          // 2. Chế độ "Safe Mode": Đảm bảo không trường nào là null/undefined/rỗng tuếch
-          // Điều này giúp TdvInfographic không bị crash khi truy cập .split() hoặc [0]
           reportData = {
               sieuThi: row.sieuThi || 'Không tên',
               kenh: row.kenh || 'N/A',
-              
-              // Số thì về 0
               tongThuong: row.tongThuong || 0,
               soNganhHang: row.soNganhHang || 0,
               soNganhHangDat: row.soNganhHangDat || 0,
-              duKienHoanThanh: row.duKienHoanThanh || 0,
-
-              // Chuỗi thì về 'N/A' để split() không lỗi
-              evaluation: row.evaluation || 'N/A',
-              rankTop10: row.rankTop10 || 'N/A',
-              rankVuotTroi: row.rankVuotTroi || 'N/A',
-              rankTarget: row.rankTarget || 'N/A',
-              
-              // Mảng: Đảm bảo là mảng, và lọc bỏ phần tử null
+              rankCutoff: row.rankCutoff || 0,
               details: (Array.isArray(row.details) ? row.details : []).map(d => ({
                   ...d,
                   nganhHang: d.nganhHang || 'N/A',
-                  duKienHoanThanh: d.duKienHoanThanh || 0
+                  duKienHoanThanh: d.duKienHoanThanh || 0,
+                  duKienVuot: d.duKienVuot || 0,
+                  bestRank: d.bestRank || 9999,
+                  tongThuong: d.tongThuong || 0,
+                  potentialPrize: d.potentialPrize || 0
               }))
           };
-          console.log("✅ Data sent to Infographic:", reportData);
       } else {
           reportData = null;
+      }
+  }
+
+  function selectAllText(e) {
+      if (e && e.target) {
+          e.target.select();
       }
   }
 
@@ -117,7 +125,7 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:gap-4"> 
                 <label class="data-input-group__label !mb-2 sm:!mb-0 flex-shrink-0">File Thi Đua Vùng:</label> 
                 <div class="flex items-center gap-2"> 
-                     <label 
+                    <label 
                         for="file-thidua-vung" 
                         class="data-input-group__file-trigger"
                         class:opacity-50={isLoading}
@@ -134,12 +142,12 @@
                 accept=".xlsx, .xls, .csv"
                 on:change={handleFileInput}
                 disabled={isLoading}
-             > 
+            > 
             <div class="data-input-group__status-wrapper mt-2">
                 <span class="data-input-group__status-text font-medium" 
                       class:text-green-600={fileStatus.includes('✅')}
                       class:text-red-600={fileStatus.includes('❌')}>
-                     {fileStatus}
+                      {fileStatus}
                 </span>
             </div> 
         </div>
@@ -151,14 +159,16 @@
                     list="supermarket-list" 
                     type="text"
                     class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-yellow-500 bg-white"
-                    placeholder={supermarketNames.length > 0 ? "Gõ mã hoặc tên siêu thị..." : "Vui lòng tải file..."}
+                    placeholder={allSupermarketNames.length > 0 ? "Gõ mã hoặc tên siêu thị..." : "Vui lòng tải file..."}
                     bind:value={selectedSupermarket}
                     on:input={handleSelectChange}
                     on:change={handleSelectChange}
-                    disabled={supermarketNames.length === 0}
+                    on:click={selectAllText}
+                    on:focus={selectAllText}
+                    disabled={allSupermarketNames.length === 0}
                 />
                 <datalist id="supermarket-list">
-                    {#each supermarketNames as name}
+                    {#each filteredSupermarketNames as name}
                         <option value={name}></option>
                     {/each}
                 </datalist>
@@ -173,14 +183,28 @@
             <TdvInfographic {reportData} />
         {/key}
     {:else}
-        <div class="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
+        <div class="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 w-full">
              {#if isLoading}
                 <p class="text-gray-500">⏳ Đang xử lý dữ liệu...</p>
-            {:else if supermarketNames.length > 0}
-                <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
+            {:else if allSupermarketNames.length > 0}
+                 <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
             {:else}
                 <p class="text-gray-400">Vui lòng tải file Excel để xem báo cáo.</p>
             {/if}
         </div> 
     {/if}
 </div>
+
+<style>
+    /* XỬ LÝ CHẾ ĐỘ CHỤP ẢNH (CAPTURE MODE) */
+    :global(.capture-container) .content-card {
+        display: none !important;
+    }
+
+    :global(.capture-container) #thidua-vung-infographic-container {
+        width: 960px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+</style>

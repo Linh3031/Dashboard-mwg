@@ -1,134 +1,195 @@
 <script>
     export let reportData = null;
 
-    // --- HELPER FORMAT SỐ TIỀN ---
+    // --- HELPER ---
     const currencyFormatter = new Intl.NumberFormat('vi-VN', {
         style: 'currency',
         currency: 'VND',
         maximumFractionDigits: 0
     });
-
-    const percentFormatter = new Intl.NumberFormat('en-US', {
-        style: 'percent',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 1
-    });
+    
+    const numberFormatter = new Intl.NumberFormat('vi-VN');
 
     function formatMoney(amount) {
         return currencyFormatter.format(amount || 0);
     }
 
-    function formatPercent(val) {
-        return percentFormatter.format(val || 0);
-    }
-
-    // --- XỬ LÝ DỮ LIỆU AN TOÀN (CRASH-PROOF) ---
+    // --- LOGIC PHÂN LOẠI ---
     $: safeData = reportData || {};
-    
-    // Luôn đảm bảo details là mảng, kể cả khi dữ liệu lỗi
+    $: rankCutoff = safeData.rankCutoff || 0;
     $: rawDetails = Array.isArray(safeData.details) ? safeData.details : [];
 
-    // Tự động phân loại dữ liệu dựa trên mảng details
-    $: listDat = rawDetails.filter(item => (item.duKienHoanThanh || 0) >= 1);
-    $: listChuaDat = rawDetails.filter(item => (item.duKienHoanThanh || 0) < 1);
+    // 1. NHÓM CÓ GIẢI (Xanh)
+    $: listCoGiai = rawDetails.filter(d => d.tongThuong > 0);
 
-    // Tính toán KPI tổng quan
-    $: totalItems = rawDetails.length;
-    $: totalDat = listDat.length;
-    $: progressPercent = totalItems > 0 ? Math.round((totalDat / totalItems) * 100) : 0;
-    
-    // Màu sắc trạng thái
-    $: statusColor = progressPercent >= 100 ? 'text-green-600' : (progressPercent >= 80 ? 'text-yellow-600' : 'text-red-600');
-    $: barColor = progressPercent >= 100 ? 'bg-green-500' : (progressPercent >= 80 ? 'bg-yellow-500' : 'bg-red-500');
+    // 2. NHÓM TIỀM NĂNG (Vàng)
+    $: listTiemNang = rawDetails.filter(d => {
+        if (d.tongThuong > 0) return false;
+        const gap = (d.bestRank - rankCutoff);
+        return gap > 0 && gap < 10;
+    });
+
+    // 3. NHÓM CÒN LẠI (Đỏ)
+    $: listCanCoGang = rawDetails.filter(d => {
+        if (d.tongThuong > 0) return false;
+        const gap = (d.bestRank - rankCutoff);
+        return gap >= 10 || d.bestRank === 9999;
+    });
 
 </script>
 
-{#if reportData}
-<div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden font-sans mb-6">
-    <div class="p-6 bg-gray-50 border-b border-gray-100">
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-                <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-3">
-                    <span class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded uppercase tracking-wider">
-                        {safeData.kenh || 'SIÊU THỊ'}
-                    </span>
-                    {safeData.sieuThi || 'Đang cập nhật tên...'}
-                </h2>
-                <div class="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                    <span>Xếp hạng Top 10%: <b class="text-blue-600">{safeData.rankTop10 || '-'}</b></span>
-                    <span>•</span>
-                    <span>Xếp hạng Vượt trội: <b class="text-purple-600">{safeData.rankVuotTroi || '-'}</b></span>
+<div class="tdv-root bg-white w-full shadow-sm border border-gray-200 overflow-hidden font-sans rounded-xl mb-6">
+    
+    <div class="bg-gray-50 p-6 border-b border-gray-100">
+        <div class="text-center mb-6">
+             <h2 class="text-3xl font-bold text-gray-800 flex flex-col items-center justify-center gap-2">
+                <span class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded uppercase tracking-wider">
+                    {safeData.kenh}
+                </span>
+                <span>{safeData.sieuThi}</span>
+            </h2>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            <div class="bg-white rounded-lg p-3 border border-green-200 shadow-sm text-center flex flex-col justify-center">
+                <p class="text-xs text-green-700 uppercase font-semibold tracking-wide mb-1">Tổng Thưởng</p>
+                <p class="money-large text-2xl font-black text-green-600 leading-none">{formatMoney(safeData.tongThuong)}</p>
+            </div>
+
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
+                <p class="text-xs text-gray-500 uppercase font-bold">Hạng có giải theo kênh</p>
+                <p class="text-2xl font-bold text-gray-800 mt-1">Top {rankCutoff}</p>
+            </div>
+
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
+                <p class="text-xs text-gray-500 uppercase font-bold mb-1">Đang có giải</p>
+                <p class="text-2xl font-bold text-blue-600 leading-none">{listCoGiai.length}</p>
+                <p class="text-[10px] text-gray-400 mt-1">ngành hàng</p>
+            </div>
+
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
+                <p class="text-xs text-gray-500 uppercase font-bold mb-1">Sắp có giải</p>
+                <p class="text-2xl font-bold text-yellow-600 leading-none">{listTiemNang.length}</p>
+                <p class="text-[10px] text-gray-400 mt-1">tiềm năng</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="p-6 bg-white">
+        
+        {#if listCoGiai.length > 0}
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-blue-700 uppercase mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-blue-600"></span>
+                    Đang có giải ({listCoGiai.length})
+                </h3>
+                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each listCoGiai as item}
+                        <div class="bg-blue-50/50 border-2 border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden">
+                            <div class="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
+                                Hạng {item.bestRank}
+                            </div>
+                            <h4 class="card-title font-bold text-gray-800 text-sm mb-3 pr-16 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
+                            
+                            <div class="text-center my-3">
+                                <span class="card-money block text-2xl font-black text-blue-600 leading-none">{formatMoney(item.tongThuong)}</span>
+                                <span class="text-xs text-blue-500 font-medium mt-1 block">Thưởng dự kiến</span>
+                            </div>
+
+                            <div class="bg-white rounded p-2 flex justify-between items-center text-xs border border-blue-100">
+                                 <span class="text-gray-600">Vượt: <b class="text-blue-700">+{numberFormatter.format(item.duKienVuot)}</b></span>
+                                 <span class="text-gray-600">Đạt: <b class="text-blue-700">{(item.duKienHoanThanh * 100).toFixed(0)}%</b></span>
+                            </div>
+                        </div>
+                    {/each}
                 </div>
             </div>
-            
-            <div class="bg-white p-4 rounded-lg border border-gray-100 shadow-sm min-w-[200px] text-right">
-                <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Tổng thưởng dự kiến</p>
-                <p class="text-2xl font-bold text-green-600">{formatMoney(safeData.tongThuong)}</p>
-            </div>
-        </div>
+        {/if}
 
-        <div class="mt-6">
-            <div class="flex justify-between items-end mb-2">
-                <span class="text-sm font-medium text-gray-700">Tiến độ đạt chỉ tiêu ngành hàng</span>
-                <span class="text-lg font-bold {statusColor}">{totalDat}/{totalItems} ({progressPercent}%)</span>
-            </div>
-            <div class="w-full bg-gray-200 rounded-full h-3">
-                <div class="{barColor} h-3 rounded-full transition-all duration-700 ease-out" style="width: {progressPercent}%"></div>
-            </div>
-        </div>
-    </div>
+        {#if listTiemNang.length > 0}
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-yellow-700 uppercase mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                    Tiềm năng - Sắp có giải ({listTiemNang.length})
+                </h3>
+                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each listTiemNang as item}
+                        <div class="bg-yellow-50/50 border-2 border-yellow-300 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden">
+                             <div class="absolute top-0 right-0 bg-yellow-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
+                                Hạng {item.bestRank}
+                            </div>
+                            <h4 class="card-title font-bold text-gray-800 text-sm mb-3 pr-16 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
 
-    <div class="p-6">
-        {#if listDat.length > 0}
-            <h3 class="text-lg font-bold text-green-700 mb-4 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Đã hoàn thành ({listDat.length})
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-                {#each listDat as item}
-                    <div class="p-4 rounded border border-green-100 bg-green-50/50 hover:shadow-md transition-shadow">
-                        <p class="font-bold text-gray-800 truncate" title={item.nganhHang}>{item.nganhHang}</p>
-                        <div class="flex justify-between items-center mt-2 text-sm">
-                            <span class="text-gray-600">Đạt: <b class="text-green-600">{formatPercent(item.duKienHoanThanh)}</b></span>
-                            <span class="font-medium text-green-700">{formatMoney(item.tongThuong)}</span>
+                            <div class="text-center my-3">
+                                <span class="card-money block text-2xl font-black text-yellow-600 leading-none opacity-50">
+                                    {formatMoney(item.potentialPrize)}
+                                </span>
+                                <span class="text-[10px] text-yellow-600 font-bold uppercase mt-1 block">Thưởng nếu đạt giải</span>
+                            </div>
+
+                            <div class="bg-white rounded-lg p-2 my-2 border border-yellow-200 text-center">
+                                <div class="flex justify-between items-center text-xs mb-1">
+                                    <span class="text-gray-500">Cần chạy thêm:</span>
+                                    <b class="text-red-600 text-sm">{numberFormatter.format(Math.abs(item.duKienVuot))}</b>
+                                </div>
+                                <div class="flex justify-between items-center text-xs">
+                                     <span class="text-gray-500">Khoảng cách:</span>
+                                     <span class="font-bold text-red-500">{item.bestRank - rankCutoff} hạng</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                {/each}
+                    {/each}
+                </div>
             </div>
         {/if}
 
-        {#if listChuaDat.length > 0}
-            <h3 class="text-lg font-bold text-red-600 mb-4 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                Cần cố gắng ({listChuaDat.length})
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {#each listChuaDat as item}
-                    <div class="p-4 rounded border border-gray-200 bg-white hover:border-red-300 transition-colors">
-                        <p class="font-bold text-gray-700 truncate" title={item.nganhHang}>{item.nganhHang}</p>
-                        <div class="mt-2 text-sm text-gray-500 flex justify-between">
-                             <span>Hiện tại: <b class="text-red-500">{formatPercent(item.duKienHoanThanh)}</b></span>
-                             {#if item.rankTarget}
-                                <span>Hạng: {item.rankTarget}</span>
-                             {/if}
+        {#if listCanCoGang.length > 0}
+            <div>
+                <h3 class="text-lg font-bold text-red-700 uppercase mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                    Cần cố gắng ({listCanCoGang.length})
+                </h3>
+                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {#each listCanCoGang as item}
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3 shadow-sm hover:border-red-300 transition-colors">
+                            <div class="flex justify-between items-start mb-2">
+                                <h4 class="card-title font-bold text-gray-700 text-sm w-2/3 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
+                                <span class="text-xs font-bold text-red-400">{(item.duKienHoanThanh * 100).toFixed(0)}%</span>
+                            </div>
+                            <div class="text-xs text-gray-500 flex justify-between items-center bg-white p-2 rounded border border-red-100">
+                                <span>Hạng: <b>{item.bestRank}</b></span>
+                                <span>Cách giải: <b>{item.bestRank - rankCutoff} hạng</b></span>
+                            </div>
                         </div>
-                        <div class="w-full bg-gray-100 rounded-full h-1.5 mt-2">
-                            <div class="bg-red-400 h-1.5 rounded-full" style="width: {Math.min((item.duKienHoanThanh || 0) * 100, 100)}%"></div>
-                        </div>
-                    </div>
-                {/each}
+                    {/each}
+                </div>
             </div>
         {/if}
 
-        {#if rawDetails.length === 0}
-            <div class="text-center py-10">
-                <p class="text-gray-400 italic">Chưa có dữ liệu chi tiết cho siêu thị này.</p>
-            </div>
-        {/if}
     </div>
 </div>
-{/if}
+
+<style>
+    /* Khi nằm trong container chụp ảnh (.capture-container) */
+    :global(.capture-container) .tdv-root {
+        width: 960px !important; /* Giảm từ 1100 xuống 960 cho gọn */
+        max-width: 960px !important;
+        margin: 0 !important; /* Xóa margin auto */
+        background-color: white;
+        border: none !important;
+        padding: 0 !important; /* Xóa padding thừa */
+    }
+
+    /* Cưỡng ép lưới thẻ con thành 4 CỘT trên 1 dòng */
+    :global(.capture-container) .tdv-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 12px !important;
+    }
+    
+    :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
+    :global(.capture-container) .tdv-root .money-large { font-size: 36px !important; }
+    :global(.capture-container) .tdv-root .card-title { font-size: 15px !important; }
+    :global(.capture-container) .tdv-root .card-money { font-size: 24px !important; }
+</style>
