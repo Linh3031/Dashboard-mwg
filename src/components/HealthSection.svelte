@@ -12,9 +12,10 @@
       categoryNameMapping,
       macroCategoryConfig
   } from '../stores.js';
-  
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
+  // [CODEGENESIS] Import settingsService để tải goal
+  import { settingsService } from '../services/settings.service.js';
   
   import LuykeSieuThi from './luyke/LuykeSieuThi.svelte';
   import LuykeThiDua from './luyke/LuykeThiDua.svelte';
@@ -33,6 +34,12 @@
       ? $luykeGoalSettings[$selectedWarehouse] || {} 
       : {};
 
+  // [CODEGENESIS] Tự động tải Goal từ Cloud khi chọn kho
+  $: if ($selectedWarehouse) {
+      // Gọi hàm load ngầm, không cần await để tránh chặn UI
+      settingsService.loadGoalsFromCloud($selectedWarehouse);
+  }
+
   let filteredYCXData = [];
   $: {
       if (selectedDates && selectedDates.length > 0) {
@@ -47,7 +54,6 @@
   $: {
       const _mappingTrigger = $categoryNameMapping;
       const _macroTrigger = $macroCategoryConfig;
-
       if (!showPlaceholder) {
           const newMasterReport = reportService.generateMasterReportData(
               filteredYCXData, 
@@ -71,7 +77,6 @@
   $: numDays = selectedDates.length > 0 
       ? selectedDates.length 
       : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
-
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
@@ -116,7 +121,7 @@
                     <div class="flex items-center gap-2">
                         <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2> 
                         <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"> 
-                             <i data-feather="help-circle"></i> 
+                              <i data-feather="help-circle"></i> 
                         </button>
                     </div>
 
@@ -187,6 +192,7 @@
 
                 <div id="luyke-subtabs-content"> 
                     {#if activeSubTabId === 'subtab-luyke-sieu-thi'}
+                        
                         <div id="subtab-luyke-sieu-thi" class="sub-tab-content">
                             <LuykeSieuThi 
                                 supermarketReport={supermarketReport} 

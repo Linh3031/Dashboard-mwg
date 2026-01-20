@@ -9,14 +9,12 @@
   import { services } from '../../../services.js'; 
   
   import SpecialProgramTable from './SpecialProgramTable.svelte';
-  
   // [REFACTOR] Dùng chung component từ health-staff (đã có logic tô màu)
   import FocusCompetitionTable from '../../health-staff/competition/FocusCompetitionTable.svelte';
 
   let specialReportData = [];
   let competitionReportData = [];
   let hasData = false;
-
   // Reactive Statement: Chạy lại khi store thay đổi
   $: {
       // Fallback về mảng rỗng nếu chưa có dữ liệu
@@ -28,21 +26,18 @@
           filteredData, 
           $globalSpecialPrograms || []
       );
-
       // 2. Tính toán Thi Đua Tùy Chỉnh (Hãng)
       // Kết hợp cả Global và Local Configs
       const allConfigs = [ ...($globalCompetitionConfigs || []), ...($localCompetitionConfigs || []) ];
-      
       // Lọc trùng lặp Config (Ưu tiên cái mới nhất nếu trùng ID)
       const uniqueConfigs = Array.from(new Map(allConfigs.map(item => [item.id, item])).values());
-
       // [FIX CRITICAL]: Sửa tên hàm từ calculateCompetitionReport -> calculateCompetitionFocusReport
       // Nguyên nhân: Trong src/services/reports/competition.report.js định nghĩa là calculateCompetitionFocusReport
       const compReport = services.calculateCompetitionFocusReport(
           filteredData,
           uniqueConfigs
       );
-
+      
       console.groupCollapsed(`[DEBUG REALTIME] Calc Result`);
       console.log("SP Report:", spReport);
       console.log("Comp Report:", compReport);
@@ -50,13 +45,12 @@
       
       specialReportData = spReport;
       competitionReportData = compReport;
-      
       // Cờ check xem có dữ liệu để hiển thị không
       hasData = (specialReportData.length > 0 || competitionReportData.length > 0);
   }
 </script>
 
-<div class="h-full flex flex-col p-4 bg-gray-50 overflow-y-auto custom-scrollbar">
+<div id="competition-realtime-root" class="h-full flex flex-col p-4 bg-gray-50 overflow-y-auto custom-scrollbar">
     {#if !hasData}
         <div class="flex flex-col items-center justify-center h-full text-gray-400 border-2 border-dashed border-gray-300 rounded-xl bg-white p-8">
             <i data-feather="inbox" class="w-12 h-12 mb-3 opacity-50"></i>
@@ -99,4 +93,23 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+    /* --- LOGIC CSS MỚI CHO CHẾ ĐỘ CHỤP ẢNH --- */
+    :global(.capture-container) #competition-realtime-root {
+        /* Tự động co chiều rộng lại vừa khít nội dung (cắt khoảng trắng bên phải) */
+        width: fit-content !important; 
+        /* Đảm bảo chiều cao bung hết cỡ (không có thanh cuộn) */
+        height: auto !important; 
+        overflow: visible !important;
+        background-color: #f9fafb !important; /* Giữ màu nền xám nhẹ */
+        margin: 0 !important;
+    }
+
+    /* Cưỡng ép lưới hiển thị 2 cột chuẩn khi chụp ảnh (để tránh bị vỡ nếu viewport giả lập nhỏ) */
+    :global(.capture-container) #competition-realtime-root .grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(600px, 1fr)) !important; /* Mỗi cột tối thiểu 600px */
+        width: auto !important;
+        gap: 24px !important;
+    }
 </style>
