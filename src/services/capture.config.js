@@ -12,9 +12,10 @@ export const SPLIT_GROUPS = [
 ];
 
 // 2. Danh sách các nhóm cần GỘP DẠNG LƯỚI (Grid) - Dành cho KPI
+// QUAN TRỌNG: Bất kỳ nhóm nào nằm trong list này sẽ được kích hoạt Grid 2 cột
 export const KPI_GROUPS = [
     'kpi',
-    'supermarket-kpi' // Dự phòng thêm tên này
+    'supermarket-kpi' 
 ];
 
 // 3. Cấu hình mặc định: MERGE_VERTICAL (Gộp dọc)

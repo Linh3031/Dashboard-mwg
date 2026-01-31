@@ -47,10 +47,13 @@ export const injectCaptureStyles = () => {
             flex-direction: column; 
             gap: 24px; 
         }
+        
+        /* [QUAN TRỌNG] Class ép Grid 2 cột cho KPI */
         .prepare-for-kpi-capture {
             display: grid !important;
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 16px !important;
+            width: auto !important; /* Đảm bảo grid bung ra đúng kích thước */
         }
 
         /* Tiêu đề */
@@ -66,7 +69,7 @@ export const injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
-        /* [CRITICAL FIX] Mobile Portrait Preset - Chìa khóa độ nét */
+        /* [CRITICAL FIX] Mobile Portrait Preset - Scale 5 */
         .preset-mobile-portrait {
             width: 450px !important;
             min-width: 450px !important;
@@ -74,7 +77,7 @@ export const injectCaptureStyles = () => {
             padding: 10px !important;
             margin: 0 auto;
             transform: scale(5) !important;
-            transform-origin: top center !important; /* QUAN TRỌNG: Giữ nội dung không bị trôi */
+            transform-origin: top center !important; 
         }
         .preset-mobile-portrait .capture-title {
             font-size: 18px !important;
@@ -88,7 +91,8 @@ export const injectCaptureStyles = () => {
     return styleElement;
 };
 
-const swapCanvasToImage = (container) => {
+// Export để Service dùng chung
+export const swapCanvasToImage = (container) => {
     const canvases = container.querySelectorAll('canvas');
     canvases.forEach(canvas => {
         try {
@@ -108,7 +112,9 @@ const swapCanvasToImage = (container) => {
 };
 
 // --- CORE FUNCTION ---
-const _coreCapture = async (elementToCapture, title, presetClass = '') => {
+const _coreCapture = async (elementToCapture, title, presetClass = '', options = {}) => {
+    const { isPreview = false, scale = 2 } = options;
+
     if (typeof window.html2canvas === 'undefined') throw new Error("Thư viện html2canvas chưa tải xong.");
 
     const date = new Date();
@@ -124,21 +130,26 @@ const _coreCapture = async (elementToCapture, title, presetClass = '') => {
     titleEl.textContent = finalTitle;
     captureWrapper.appendChild(titleEl);
     
+    // Clone nội dung
     const contentClone = elementToCapture.cloneNode(true);
+    
+    // [FIX QUAN TRỌNG] Áp dụng class preset trực tiếp vào phần tử clone
+    // Điều này đảm bảo class .prepare-for-kpi-capture sẽ đè lên class gốc (VD: grid-cols-4)
     if (presetClass) { 
         const classes = presetClass.split(' ').filter(c => c);
         contentClone.classList.add(...classes); 
     }
+    
     captureWrapper.appendChild(contentClone);
     document.body.appendChild(captureWrapper);
 
     if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
     swapCanvasToImage(contentClone);
-    await new Promise(resolve => setTimeout(resolve, 300)); // Đợi render ổn định
+    await new Promise(resolve => setTimeout(resolve, 300)); 
 
     try {
         const canvas = await window.html2canvas(captureWrapper, {
-            scale: 2, // Độ phân giải cao (High Res)
+            scale: isPreview ? 1 : scale,
             useCORS: true,
             backgroundColor: '#f3f4f6',
             logging: false,
@@ -146,15 +157,22 @@ const _coreCapture = async (elementToCapture, title, presetClass = '') => {
             windowHeight: captureWrapper.scrollHeight
         });
 
-        const link = document.createElement('a');
-        link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
-        link.href = canvas.toDataURL('image/png');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const imageDataUrl = canvas.toDataURL('image/png');
 
-        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
-        setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+        if (isPreview) {
+            return { title: finalTitle, url: imageDataUrl };
+        } else {
+            const link = document.createElement('a');
+            link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
+            link.href = imageDataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
+            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+            return null;
+        }
     } finally {
         if (document.body.contains(captureWrapper)) document.body.removeChild(captureWrapper);
         if (typeof Chart !== 'undefined') Chart.defaults.animation = {}; 
@@ -163,13 +181,14 @@ const _coreCapture = async (elementToCapture, title, presetClass = '') => {
 
 // --- STRATEGIES ---
 
-export const strategySingle = async (element, baseTitle) => {
+export const strategySingle = async (element, baseTitle, options) => {
     const preset = element.dataset.capturePreset;
     let presetClass = preset ? `preset-${preset}` : '';
-    await _coreCapture(element, baseTitle, presetClass);
+    return await _coreCapture(element, baseTitle, presetClass, options);
 };
 
-export const strategySplit = async (elements, baseTitle) => {
+export const strategySplit = async (elements, baseTitle, options) => {
+    const results = [];
     for (const targetElement of elements) {
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
         const captureTitle = (foundTitle || baseTitle)
@@ -179,22 +198,43 @@ export const strategySplit = async (elements, baseTitle) => {
         const preset = targetElement.dataset.capturePreset;
         let presetClass = (preset ? `preset-${preset}` : '');
 
-        await _coreCapture(targetElement, captureTitle, presetClass);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const res = await _coreCapture(targetElement, captureTitle, presetClass, options);
+        if (res) results.push(res);
+        
+        const delay = (options && options.isPreview) ? 50 : 500;
+        await new Promise(resolve => setTimeout(resolve, delay));
     }
+    return results;
 };
 
-export const strategyMerge = async (elements, baseTitle, isKpiMode = false) => {
-    const targetElement = elements[0];
+export const strategyMerge = async (elements, baseTitle, isKpiMode = false, options) => {
+    let elementToCapture;
+    
+    // [FIX LOGIC GÂY LỖI LAYOUT]
+    // Cũ: if (elements.length > 1 || isKpiMode) -> Tạo wrapper bao ngoài
+    // Lỗi: Nếu chỉ có 1 phần tử KPI, wrapper bao ngoài làm vô hiệu hóa Grid 2 cột.
+    // Mới: Chỉ tạo wrapper khi có nhiều phần tử cần gộp.
+    
+    if (elements.length > 1) {
+        const tempContainer = document.createElement('div');
+        tempContainer.className = 'capture-layout-container'; 
+        elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
+        elementToCapture = tempContainer;
+    } else {
+        // Nếu chỉ có 1 phần tử (VD: nguyên khối KPI), lấy trực tiếp nó.
+        // Khi đó, class 'prepare-for-kpi-capture' sẽ được add thẳng vào nó -> Ép Grid thành công.
+        elementToCapture = elements[0];
+    }
+
     let foundTitle = '';
-    if (targetElement) {
-        foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
+    if (elements[0]) {
+        foundTitle = elements[0].querySelector('h3, h4')?.textContent?.trim() || '';
     }
     const captureTitle = (foundTitle || baseTitle)
                             .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
                             .replace(/\s+/g, '_');
 
-    const preset = targetElement.dataset.capturePreset;
+    const preset = elements[0]?.dataset.capturePreset;
     let presetClass = '';
 
     if (isKpiMode) {
@@ -203,21 +243,9 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false) => {
         presetClass = `preset-${preset}`;
     }
 
-    let elementToCapture;
-    
-    // Logic gộp
-    if (elements.length > 1 || isKpiMode) {
-        const tempContainer = document.createElement('div');
-        tempContainer.className = 'capture-layout-container'; 
-        elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
-        elementToCapture = tempContainer;
-    } else {
-        // Nếu chỉ có 1 phần tử (VD: Doanh thu NV LK), lấy trực tiếp để preset áp dụng đúng
-        elementToCapture = targetElement;
-    }
-
-    await _coreCapture(elementToCapture, captureTitle, presetClass);
+    const res = await _coreCapture(elementToCapture, captureTitle, presetClass, options);
     await new Promise(resolve => setTimeout(resolve, 300));
+    return res ? [res] : [];
 };
 
 export const captureAndDownload = _coreCapture;

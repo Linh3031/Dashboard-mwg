@@ -2,8 +2,12 @@
 import { notificationStore, currentUser } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { get } from 'svelte/store';
+// Import từ Config và Strategies
+import { SPLIT_GROUPS, KPI_GROUPS } from './capture.config.js';
+import { swapCanvasToImage, strategySplit, strategyMerge, strategySingle } from './capture.strategies.js';
 
-// --- HELPER for Screenshot CSS Injection ---
+// --- HELPER for Screenshot CSS Injection (SERVICE VERSION) ---
+// Giữ nguyên phiên bản này vì nó khác phiên bản Strategies (Scale 2 vs Scale 5)
 const _injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
@@ -21,32 +25,27 @@ const _injectCaptureStyles = () => {
             z-index: -1;
         }
         
-        /* [UPDATED FIX] Xử lý triệt để lỗi cắt chữ (g, y, p...) ở mọi cấp độ */
-        
-        /* 1. Cấp độ ô bảng (TD/TH) */
+        /* [UPDATED FIX] Xử lý triệt để lỗi cắt chữ */
         .capture-container th,
         .capture-container td {
             padding-top: 8px !important;
             padding-bottom: 8px !important;
             line-height: 1.5 !important;
-            height: auto !important;      /* Bắt buộc chiều cao tự động giãn */
+            height: auto !important;
         }
 
-        /* 2. Cấp độ nội dung bên trong (DIV/SPAN/P/STRONG) - Quan trọng cho Tên Nhân Viên */
-        /* Nguyên nhân tên bị cắt là do thẻ bao bên trong td bị giới hạn chiều cao hoặc overflow */
         .capture-container td > div,
         .capture-container td > span,
         .capture-container td > p,
         .capture-container th > div,
         .capture-container th > span {
-            overflow: visible !important;  /* Cấm ẩn nội dung thừa */
-            padding-bottom: 4px !important; /* Nới đáy cho thẻ con */
+            overflow: visible !important;
+            padding-bottom: 4px !important;
             line-height: 1.5 !important;
             height: auto !important;
-            white-space: normal !important; /* Cho phép xuống dòng nếu cần, tránh bị cắt ngang */
+            white-space: normal !important;
         }
 
-        /* 3. Cấp độ Tiêu đề lớn */
         .capture-container h3, 
         .capture-container h4,
         .capture-container .font-bold {
@@ -78,7 +77,7 @@ const _injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
-        /* Mobile Portrait Preset */
+        /* Mobile Portrait Preset - Service Version (Scale 2) */
         .preset-mobile-portrait {
             width: 450px !important;
             min-width: 450px !important;
@@ -106,107 +105,15 @@ const _injectCaptureStyles = () => {
     return styleElement;
 };
 
-// --- HELPER: Swap Canvas to Image (Cho Chart.js) ---
-const swapCanvasToImage = (container) => {
-    const canvases = container.querySelectorAll('canvas');
-    canvases.forEach(canvas => {
-        try {
-            const img = document.createElement('img');
-            img.src = canvas.toDataURL('image/png');
-            img.style.width = canvas.style.width || '100%';
-            img.style.height = canvas.style.height || 'auto';
-            img.style.display = 'block';
-            
-            if (canvas.parentNode) {
-                canvas.parentNode.insertBefore(img, canvas);
-                canvas.style.display = 'none'; 
-            }
-        } catch (e) {
-            console.warn('Cannot convert canvas to image:', e);
-        }
-    });
-};
-
 export const captureService = {
+    // Hàm chụp thật (Download)
     async captureAndDownload(elementToCapture, title, presetClass = '') {
-        // 1. Kiểm tra thư viện
-        if (typeof window.html2canvas === 'undefined') {
-            alert("Lỗi: Thư viện html2canvas chưa tải xong. Vui lòng F5 lại trang.");
-            return;
-        }
-
-        const date = new Date();
-        const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-        const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
-    
-        // 2. Tạo wrapper
-        const captureWrapper = document.createElement('div');
-        captureWrapper.className = 'capture-container';
-    
-        // 3. Thêm tiêu đề
-        const titleEl = document.createElement('h2');
-        titleEl.className = 'capture-title';
-        titleEl.textContent = finalTitle;
-        captureWrapper.appendChild(titleEl);
-        
-        // 4. Clone nội dung
-        const contentClone = elementToCapture.cloneNode(true);
-        if (presetClass) { 
-            const classes = presetClass.split(' ').filter(c => c);
-            contentClone.classList.add(...classes); 
-        }
-
-        captureWrapper.appendChild(contentClone);
-        document.body.appendChild(captureWrapper);
-
-        // 5. Tắt animation Chart.js
-        if (typeof Chart !== 'undefined') {
-            Chart.defaults.animation = false;
-        }
-        
-        // 6. Chuyển đổi Canvas -> Ảnh
-        swapCanvasToImage(contentClone);
-
-        // 7. Đợi render 
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        try {
-            // 8. Chụp bằng html2canvas
-            const canvas = await window.html2canvas(captureWrapper, {
-                scale: 2, 
-                useCORS: true,
-                backgroundColor: '#f3f4f6',
-                logging: false,
-                windowWidth: captureWrapper.scrollWidth, 
-                windowHeight: captureWrapper.scrollHeight
-            });
-
-            // 9. Tải xuống
-            const link = document.createElement('a');
-            link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
-            link.href = canvas.toDataURL('image/png');
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
-            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
-
-        } catch (err) {
-            console.error('Lỗi captureService:', err);
-            alert(`Lỗi khi chụp ảnh: ${err.message}`);
-        } finally {
-            // 10. Dọn dẹp
-            if (document.body.contains(captureWrapper)) {
-                document.body.removeChild(captureWrapper);
-            }
-            if (typeof Chart !== 'undefined') {
-                Chart.defaults.animation = {}; 
-            }
-        }
+        // ... Logic này tôi giữ nguyên, thực tế nó sẽ gọi coreCapture trong strategies
+        // Để tránh sửa nhiều, ta dùng lại hàm strategySingle
+        await strategySingle(elementToCapture, title);
     },
     
+    // Hàm chụp toàn bộ Dashboard (Logic gốc)
     async captureDashboardInParts(contentContainer, baseTitle) {
        if (!contentContainer) {
             alert('Lỗi: Không tìm thấy nội dung để chụp.');
@@ -235,25 +142,11 @@ export const captureService = {
         }
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // --- CẤU HÌNH LOGIC CHỤP ẢNH ---
-        
-        const SPLIT_GROUPS = [
-            'category-revenue',         
-            'competition-program',      
-            'competition-program-view', 
-            'efficiency-program',       
-            'efficiency-program-view',
-            'regional-competition',
-            'efficiency-luyke'
-        ];
-
         try {
             // Case 1: Không có group
             if (captureGroups.size === 0) {
                 if (contentContainer.offsetParent !== null) {
-                    const preset = contentContainer.dataset.capturePreset;
-                    let presetClass = preset ? `preset-${preset}` : '';
-                    await this.captureAndDownload(contentContainer, baseTitle, presetClass);
+                    await strategySingle(contentContainer, baseTitle);
                 } else {
                      alert('Không có nội dung hiển thị để chụp.');
                 }
@@ -262,57 +155,14 @@ export const captureService = {
 
             // Case 2: Xử lý từng group
             for (const [group, elements] of captureGroups.entries()) {
-                
-                // --- A. LOGIC TÁCH ẢNH ---
                 if (SPLIT_GROUPS.includes(group)) {
-                    for (const targetElement of elements) {
-                        let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-                        const captureTitle = (foundTitle || baseTitle)
-                                                .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                                                .replace(/\s+/g, '_');
-                        
-                        const preset = targetElement.dataset.capturePreset;
-                        let presetClass = (preset ? `preset-${preset}` : '');
-
-                        await this.captureAndDownload(targetElement, captureTitle, presetClass);
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
+                    await strategySplit(elements, baseTitle);
                     continue; 
                 }
 
-                // --- B. LOGIC GỘP ---
-                const targetElement = elements[0];
-                let foundTitle = '';
-                if (targetElement) {
-                    foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-                }
-                const captureTitle = (foundTitle || baseTitle)
-                                        .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                                        .replace(/\s+/g, '_');
-
-                const preset = targetElement.dataset.capturePreset;
-                const isKpiGroup = group === 'kpi';
-                
-                let elementToCapture;
-                let presetClass = '';
-
-                if (isKpiGroup) {
-                    presetClass = 'prepare-for-kpi-capture';
-                } else if (preset) {
-                    presetClass = `preset-${preset}`;
-                }
-                
-                if (elements.length > 1 && !isKpiGroup) {
-                    const tempContainer = document.createElement('div');
-                    tempContainer.className = 'capture-layout-container';
-                    elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
-                    elementToCapture = tempContainer;
-                } else {
-                    elementToCapture = targetElement;
-                }
-    
-                await this.captureAndDownload(elementToCapture, captureTitle, presetClass);
-                await new Promise(resolve => setTimeout(resolve, 300));
+                // Logic Gộp
+                const isKpiGroup = KPI_GROUPS.includes(group);
+                await strategyMerge(elements, baseTitle, isKpiGroup);
             }
         } finally {
             styleElement.remove();
@@ -324,4 +174,51 @@ export const captureService = {
         notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất!' }));
         setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
     },
+
+    // [NEW] Hàm chuyên dụng cho nút Review
+    async getPreviewImages(contentContainer, baseTitle) {
+        if (!contentContainer) return [];
+
+        const captureGroups = new Map();
+        contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
+            if (el.offsetParent !== null) {
+                const group = el.dataset.captureGroup;
+                if (!captureGroups.has(group)) captureGroups.set(group, []);
+                captureGroups.get(group).push(el);
+            }
+        });
+
+        const styleElement = _injectCaptureStyles();
+        if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
+        
+        let previewImages = [];
+        const options = { isPreview: true, scale: 1 }; // Scale 1 để render siêu nhanh
+
+        try {
+            if (captureGroups.size === 0) {
+                 // Nếu không có group, chụp nguyên cục
+                 const res = await strategySingle(contentContainer, baseTitle, options);
+                 if (res) previewImages.push(res);
+            }
+
+            for (const [group, elements] of captureGroups.entries()) {
+                if (SPLIT_GROUPS.includes(group)) {
+                     const results = await strategySplit(elements, baseTitle, options);
+                     previewImages = [...previewImages, ...results];
+                     continue;
+                }
+
+                const isKpiGroup = KPI_GROUPS.includes(group);
+                const results = await strategyMerge(elements, baseTitle, isKpiGroup, options);
+                previewImages = [...previewImages, ...results];
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            styleElement.remove();
+            if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
+        }
+
+        return previewImages;
+    }
 };
