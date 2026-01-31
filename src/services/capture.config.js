@@ -18,5 +18,10 @@ export const KPI_GROUPS = [
     'supermarket-kpi' 
 ];
 
-// 3. Cấu hình mặc định: MERGE_VERTICAL (Gộp dọc)
+// 3. [NEW] Danh sách nhóm cần ép GRID 4 CỘT
+export const GRID_4_GROUPS = [
+    'tier2' // Nhóm Chi tiết ngành hàng
+];
+
+// 4. Cấu hình mặc định: MERGE_VERTICAL (Gộp dọc)
 // Dành cho: Realtime, Doanh thu NV LK, Thu nhập...

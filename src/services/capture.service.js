@@ -3,11 +3,10 @@ import { notificationStore, currentUser } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { get } from 'svelte/store';
 // Import từ Config và Strategies
-import { SPLIT_GROUPS, KPI_GROUPS } from './capture.config.js';
+import { SPLIT_GROUPS, KPI_GROUPS, GRID_4_GROUPS } from './capture.config.js';
 import { swapCanvasToImage, strategySplit, strategyMerge, strategySingle } from './capture.strategies.js';
 
 // --- HELPER for Screenshot CSS Injection (SERVICE VERSION) ---
-// Giữ nguyên phiên bản này vì nó khác phiên bản Strategies (Scale 2 vs Scale 5)
 const _injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
@@ -25,7 +24,6 @@ const _injectCaptureStyles = () => {
             z-index: -1;
         }
         
-        /* [UPDATED FIX] Xử lý triệt để lỗi cắt chữ */
         .capture-container th,
         .capture-container td {
             padding-top: 8px !important;
@@ -54,9 +52,20 @@ const _injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
-        .force-desktop-mode {
-            min-width: 1600px !important;
-            width: fit-content !important;
+        /* --- [FIX QUAN TRỌNG] XỬ LÝ LỖI DÍNH DÒNG BẢNG TOP NHÓM HÀNG --- */
+        .capture-container .luyke-widget-body .mb-2 {
+            margin-bottom: 12px !important; 
+            display: flex !important;
+        }
+        .capture-container .luyke-widget-body .w-full.h-2 {
+            margin-top: 8px !important;
+            margin-bottom: 8px !important;
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        .capture-container .luyke-widget-body .py-2 {
+            padding-top: 10px !important;
+            padding-bottom: 10px !important;
         }
 
         .capture-layout-container { 
@@ -77,7 +86,27 @@ const _injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
-        /* Mobile Portrait Preset - Service Version (Scale 2) */
+        /* --- GRID LAYOUT FIXES --- */
+
+        /* 1. KPI Grid (2 cột) */
+        .prepare-for-kpi-capture {
+            display: grid !important;
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 16px !important;
+        }
+
+        /* 2. Category Grid (4 cột) - [WIDTH 800px] */
+        .prepare-for-grid-4-capture {
+            width: 800px !important;
+            max-width: none !important;
+        }
+        .prepare-for-grid-4-capture .luyke-cat-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 16px !important;
+        }
+
+        /* Mobile Portrait Preset */
         .preset-mobile-portrait {
             width: 450px !important;
             min-width: 450px !important;
@@ -89,13 +118,6 @@ const _injectCaptureStyles = () => {
         .preset-mobile-portrait .capture-title {
             font-size: 18px !important;
         }
-        
-        /* KPI Grid Fix */
-        .prepare-for-kpi-capture {
-            display: grid !important;
-            grid-template-columns: repeat(2, 1fr) !important;
-            gap: 16px !important;
-        }
     `;
 
     const styleElement = document.createElement('style');
@@ -106,14 +128,10 @@ const _injectCaptureStyles = () => {
 };
 
 export const captureService = {
-    // Hàm chụp thật (Download)
     async captureAndDownload(elementToCapture, title, presetClass = '') {
-        // ... Logic này tôi giữ nguyên, thực tế nó sẽ gọi coreCapture trong strategies
-        // Để tránh sửa nhiều, ta dùng lại hàm strategySingle
         await strategySingle(elementToCapture, title);
     },
     
-    // Hàm chụp toàn bộ Dashboard (Logic gốc)
     async captureDashboardInParts(contentContainer, baseTitle) {
        if (!contentContainer) {
             alert('Lỗi: Không tìm thấy nội dung để chụp.');
@@ -124,7 +142,6 @@ export const captureService = {
         analyticsService.incrementCounter('actionsTaken', user?.email);
         notificationStore.update(s => ({ ...s, visible: true, type: 'info', message: `Đang xử lý ảnh: ${baseTitle}...` }));
 
-        // Gom nhóm các phần tử
         const captureGroups = new Map();
         contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
             if (el.offsetParent !== null) {
@@ -143,7 +160,6 @@ export const captureService = {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
-            // Case 1: Không có group
             if (captureGroups.size === 0) {
                 if (contentContainer.offsetParent !== null) {
                     await strategySingle(contentContainer, baseTitle);
@@ -153,16 +169,20 @@ export const captureService = {
                 return;
             }
 
-            // Case 2: Xử lý từng group
             for (const [group, elements] of captureGroups.entries()) {
                 if (SPLIT_GROUPS.includes(group)) {
                     await strategySplit(elements, baseTitle);
                     continue; 
                 }
 
-                // Logic Gộp
-                const isKpiGroup = KPI_GROUPS.includes(group);
-                await strategyMerge(elements, baseTitle, isKpiGroup);
+                let mergeMode = false;
+                if (GRID_4_GROUPS.includes(group)) {
+                    mergeMode = 'grid-4';
+                } else if (KPI_GROUPS.includes(group)) {
+                    mergeMode = true;
+                }
+
+                await strategyMerge(elements, baseTitle, mergeMode);
             }
         } finally {
             styleElement.remove();
@@ -175,7 +195,6 @@ export const captureService = {
         setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
     },
 
-    // [NEW] Hàm chuyên dụng cho nút Review
     async getPreviewImages(contentContainer, baseTitle) {
         if (!contentContainer) return [];
 
@@ -192,11 +211,10 @@ export const captureService = {
         if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
         
         let previewImages = [];
-        const options = { isPreview: true, scale: 1 }; // Scale 1 để render siêu nhanh
+        const options = { isPreview: true, scale: 1 }; 
 
         try {
             if (captureGroups.size === 0) {
-                 // Nếu không có group, chụp nguyên cục
                  const res = await strategySingle(contentContainer, baseTitle, options);
                  if (res) previewImages.push(res);
             }
@@ -207,9 +225,15 @@ export const captureService = {
                      previewImages = [...previewImages, ...results];
                      continue;
                 }
+                
+                let mergeMode = false;
+                if (GRID_4_GROUPS.includes(group)) {
+                    mergeMode = 'grid-4';
+                } else if (KPI_GROUPS.includes(group)) {
+                    mergeMode = true;
+                }
 
-                const isKpiGroup = KPI_GROUPS.includes(group);
-                const results = await strategyMerge(elements, baseTitle, isKpiGroup, options);
+                const results = await strategyMerge(elements, baseTitle, mergeMode, options);
                 previewImages = [...previewImages, ...results];
             }
         } catch (e) {

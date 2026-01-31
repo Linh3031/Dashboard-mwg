@@ -2,7 +2,27 @@
 /* global Chart */
 import { notificationStore } from '../stores.js';
 
-// --- HELPER: CSS Injection (Đã Fix lỗi mờ & Cắt chữ) ---
+// --- HELPER: Chuyển Tiếng Việt sang Không Dấu (Phương pháp Cổ điển - An toàn nhất) ---
+const removeVietnameseTones = (str) => {
+    if (!str) return '';
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+    str = str.replace(/đ/g, "d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    return str;
+};
+
+// --- HELPER: CSS Injection ---
 export const injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
@@ -20,7 +40,6 @@ export const injectCaptureStyles = () => {
             z-index: -1;
         }
         
-        /* Fix lỗi cắt chữ (Padding & Line-height) */
         .capture-container th, .capture-container td {
             padding-top: 8px !important;
             padding-bottom: 8px !important;
@@ -41,6 +60,25 @@ export const injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
+        /* --- [FIX QUAN TRỌNG] XỬ LÝ LỖI DÍNH DÒNG BẢNG TOP NHÓM HÀNG --- */
+        /* Ép buộc khoảng cách giữa Tên và Thanh Bar */
+        .capture-container .luyke-widget-body .mb-2 {
+            margin-bottom: 12px !important; /* Đẩy thanh bar xuống */
+            display: flex !important;
+        }
+        /* Ép dòng chứa thanh bar phải tách biệt */
+        .capture-container .luyke-widget-body .w-full.h-2 {
+            margin-top: 8px !important;
+            margin-bottom: 8px !important;
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        /* Tăng khoảng cách giữa các dòng (item) */
+        .capture-container .luyke-widget-body .py-2 {
+            padding-top: 10px !important;
+            padding-bottom: 10px !important;
+        }
+
         /* Layout Helpers */
         .capture-layout-container { 
             display: flex; 
@@ -48,15 +86,24 @@ export const injectCaptureStyles = () => {
             gap: 24px; 
         }
         
-        /* [QUAN TRỌNG] Class ép Grid 2 cột cho KPI */
         .prepare-for-kpi-capture {
             display: grid !important;
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 16px !important;
-            width: auto !important; /* Đảm bảo grid bung ra đúng kích thước */
+            width: auto !important; 
         }
 
-        /* Tiêu đề */
+        /* [UPDATED WIDTH 800px] Grid 4 cột */
+        .prepare-for-grid-4-capture {
+            width: 800px !important;
+            max-width: none !important;
+        }
+        .prepare-for-grid-4-capture .luyke-cat-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 16px !important;
+        }
+
         .capture-title { 
             font-size: 28px; 
             font-weight: bold; 
@@ -69,7 +116,6 @@ export const injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
-        /* [CRITICAL FIX] Mobile Portrait Preset - Scale 5 */
         .preset-mobile-portrait {
             width: 450px !important;
             min-width: 450px !important;
@@ -91,7 +137,6 @@ export const injectCaptureStyles = () => {
     return styleElement;
 };
 
-// Export để Service dùng chung
 export const swapCanvasToImage = (container) => {
     const canvases = container.querySelectorAll('canvas');
     canvases.forEach(canvas => {
@@ -120,6 +165,8 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     const date = new Date();
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    // [FIX TITLE] Chuyển title hiển thị thành không dấu luôn nếu muốn, hoặc giữ có dấu để hiển thị
+    // Ở đây tôi giữ có dấu cho đẹp trong ảnh, chỉ sửa tên file
     const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
@@ -130,11 +177,8 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     titleEl.textContent = finalTitle;
     captureWrapper.appendChild(titleEl);
     
-    // Clone nội dung
     const contentClone = elementToCapture.cloneNode(true);
     
-    // [FIX QUAN TRỌNG] Áp dụng class preset trực tiếp vào phần tử clone
-    // Điều này đảm bảo class .prepare-for-kpi-capture sẽ đè lên class gốc (VD: grid-cols-4)
     if (presetClass) { 
         const classes = presetClass.split(' ').filter(c => c);
         contentClone.classList.add(...classes); 
@@ -162,8 +206,14 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
         if (isPreview) {
             return { title: finalTitle, url: imageDataUrl };
         } else {
+            // [FIX TÊN FILE] Chuyển thành Tiếng Việt không dấu + Gạch dưới
+            const noToneTitle = removeVietnameseTones(title);
+            const safeFileName = noToneTitle
+                                    .replace(/[^a-zA-Z0-9]/g, '_') // Thay ký tự lạ bằng _
+                                    .replace(/_+/g, '_'); // Gộp nhiều dấu _ thành 1
+                                    
             const link = document.createElement('a');
-            link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
+            link.download = `${safeFileName}_${dateString.replace(/\//g, '-')}.png`;
             link.href = imageDataUrl;
             document.body.appendChild(link);
             link.click();
@@ -179,8 +229,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     }
 };
 
-// --- STRATEGIES ---
-
 export const strategySingle = async (element, baseTitle, options) => {
     const preset = element.dataset.capturePreset;
     let presetClass = preset ? `preset-${preset}` : '';
@@ -191,9 +239,9 @@ export const strategySplit = async (elements, baseTitle, options) => {
     const results = [];
     for (const targetElement of elements) {
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-        const captureTitle = (foundTitle || baseTitle)
-                                .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                                .replace(/\s+/g, '_');
+        // Clean Title ngay từ đầu vào
+        foundTitle = removeVietnameseTones(foundTitle); 
+        const captureTitle = (foundTitle || baseTitle);
         
         const preset = targetElement.dataset.capturePreset;
         let presetClass = (preset ? `preset-${preset}` : '');
@@ -207,13 +255,8 @@ export const strategySplit = async (elements, baseTitle, options) => {
     return results;
 };
 
-export const strategyMerge = async (elements, baseTitle, isKpiMode = false, options) => {
+export const strategyMerge = async (elements, baseTitle, isKpiMode = false, options = {}) => {
     let elementToCapture;
-    
-    // [FIX LOGIC GÂY LỖI LAYOUT]
-    // Cũ: if (elements.length > 1 || isKpiMode) -> Tạo wrapper bao ngoài
-    // Lỗi: Nếu chỉ có 1 phần tử KPI, wrapper bao ngoài làm vô hiệu hóa Grid 2 cột.
-    // Mới: Chỉ tạo wrapper khi có nhiều phần tử cần gộp.
     
     if (elements.length > 1) {
         const tempContainer = document.createElement('div');
@@ -221,8 +264,6 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
         elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
         elementToCapture = tempContainer;
     } else {
-        // Nếu chỉ có 1 phần tử (VD: nguyên khối KPI), lấy trực tiếp nó.
-        // Khi đó, class 'prepare-for-kpi-capture' sẽ được add thẳng vào nó -> Ép Grid thành công.
         elementToCapture = elements[0];
     }
 
@@ -230,14 +271,16 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
     if (elements[0]) {
         foundTitle = elements[0].querySelector('h3, h4')?.textContent?.trim() || '';
     }
-    const captureTitle = (foundTitle || baseTitle)
-                            .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                            .replace(/\s+/g, '_');
+    foundTitle = removeVietnameseTones(foundTitle);
+    const captureTitle = (foundTitle || baseTitle);
 
     const preset = elements[0]?.dataset.capturePreset;
     let presetClass = '';
 
-    if (isKpiMode) {
+    if (isKpiMode === 'grid-4') {
+        presetClass = 'prepare-for-grid-4-capture';
+        if (!options.isPreview) options.scale = 4; // Zoom lớn cho grid 800px
+    } else if (isKpiMode === true) {
         presetClass = 'prepare-for-kpi-capture';
     } else if (preset) {
         presetClass = `preset-${preset}`;
