@@ -2,7 +2,7 @@
 /* global Chart */
 import { notificationStore } from '../stores.js';
 
-// --- HELPER: Chuyển Tiếng Việt sang Không Dấu (Phương pháp Cổ điển - An toàn nhất) ---
+// --- HELPER: Chuyển Tiếng Việt sang Không Dấu ---
 const removeVietnameseTones = (str) => {
     if (!str) return '';
     str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
@@ -27,6 +27,7 @@ export const injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
 
+    // CSS này áp dụng chung cho toàn bộ quá trình chụp
     const styles = `
         /* Container gốc */
         .capture-container { 
@@ -40,6 +41,7 @@ export const injectCaptureStyles = () => {
             z-index: -1;
         }
         
+        /* Reset Table styles cho đẹp khi chụp */
         .capture-container th, .capture-container td {
             padding-top: 8px !important;
             padding-bottom: 8px !important;
@@ -60,26 +62,7 @@ export const injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
-        /* --- [FIX QUAN TRỌNG] XỬ LÝ LỖI DÍNH DÒNG BẢNG TOP NHÓM HÀNG --- */
-        /* Ép buộc khoảng cách giữa Tên và Thanh Bar */
-        .capture-container .luyke-widget-body .mb-2 {
-            margin-bottom: 12px !important; /* Đẩy thanh bar xuống */
-            display: flex !important;
-        }
-        /* Ép dòng chứa thanh bar phải tách biệt */
-        .capture-container .luyke-widget-body .w-full.h-2 {
-            margin-top: 8px !important;
-            margin-bottom: 8px !important;
-            position: relative !important;
-            z-index: 1 !important;
-        }
-        /* Tăng khoảng cách giữa các dòng (item) */
-        .capture-container .luyke-widget-body .py-2 {
-            padding-top: 10px !important;
-            padding-bottom: 10px !important;
-        }
-
-        /* Layout Helpers */
+        /* Layout Grid */
         .capture-layout-container { 
             display: flex; 
             flex-direction: column; 
@@ -93,7 +76,6 @@ export const injectCaptureStyles = () => {
             width: auto !important; 
         }
 
-        /* [UPDATED WIDTH 800px] Grid 4 cột */
         .prepare-for-grid-4-capture {
             width: 800px !important;
             max-width: none !important;
@@ -165,8 +147,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     const date = new Date();
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    // [FIX TITLE] Chuyển title hiển thị thành không dấu luôn nếu muốn, hoặc giữ có dấu để hiển thị
-    // Ở đây tôi giữ có dấu cho đẹp trong ảnh, chỉ sửa tên file
     const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
@@ -206,11 +186,10 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
         if (isPreview) {
             return { title: finalTitle, url: imageDataUrl };
         } else {
-            // [FIX TÊN FILE] Chuyển thành Tiếng Việt không dấu + Gạch dưới
             const noToneTitle = removeVietnameseTones(title);
             const safeFileName = noToneTitle
-                                    .replace(/[^a-zA-Z0-9]/g, '_') // Thay ký tự lạ bằng _
-                                    .replace(/_+/g, '_'); // Gộp nhiều dấu _ thành 1
+                                    .replace(/[^a-zA-Z0-9]/g, '_')
+                                    .replace(/_+/g, '_');
                                     
             const link = document.createElement('a');
             link.download = `${safeFileName}_${dateString.replace(/\//g, '-')}.png`;
@@ -239,7 +218,6 @@ export const strategySplit = async (elements, baseTitle, options) => {
     const results = [];
     for (const targetElement of elements) {
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-        // Clean Title ngay từ đầu vào
         foundTitle = removeVietnameseTones(foundTitle); 
         const captureTitle = (foundTitle || baseTitle);
         
@@ -279,7 +257,7 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
 
     if (isKpiMode === 'grid-4') {
         presetClass = 'prepare-for-grid-4-capture';
-        if (!options.isPreview) options.scale = 4; // Zoom lớn cho grid 800px
+        if (!options.isPreview) options.scale = 4;
     } else if (isKpiMode === true) {
         presetClass = 'prepare-for-kpi-capture';
     } else if (preset) {

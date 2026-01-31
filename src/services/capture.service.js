@@ -52,21 +52,8 @@ const _injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
-        /* --- [FIX QUAN TRỌNG] XỬ LÝ LỖI DÍNH DÒNG BẢNG TOP NHÓM HÀNG --- */
-        .capture-container .luyke-widget-body .mb-2 {
-            margin-bottom: 12px !important; 
-            display: flex !important;
-        }
-        .capture-container .luyke-widget-body .w-full.h-2 {
-            margin-top: 8px !important;
-            margin-bottom: 8px !important;
-            position: relative !important;
-            z-index: 1 !important;
-        }
-        .capture-container .luyke-widget-body .py-2 {
-            padding-top: 10px !important;
-            padding-bottom: 10px !important;
-        }
+        /* --- [ĐÃ XÓA ĐOẠN CSS FIX CŨ GÂY XUNG ĐỘT] --- */
+        /* Trả lại layout tự nhiên cho component tự xử lý */
 
         .capture-layout-container { 
             display: flex; 
