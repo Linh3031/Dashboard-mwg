@@ -1,25 +1,21 @@
 <script>
-  // [FIX] Thêm import selectedWarehouse
   import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   
   import EmployeeList from './EmployeeList.svelte';
   import EmployeeDetail from './EmployeeDetail.svelte';
-
-  // [FIX] Bỏ export let selectedWarehouse
   
-  let selectedEmployeeId = null;
+  // [GENESIS UPDATE] Lưu trữ object nhân viên thay vì chỉ ID
+  let selectedEmployee = null;
   let filteredReport = [];
 
   $: {
-    // [FIX] Dùng $selectedWarehouse
     const currentWarehouse = $selectedWarehouse;
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     const goals = settings.goals || {};
     
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
-    
     if (currentWarehouse) {
       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
@@ -30,18 +26,25 @@
   }
 
   function handleViewDetail(event) {
-    selectedEmployeeId = event.detail.employeeId;
+    const empId = event.detail.employeeId;
+    // [GENESIS UPDATE] Tìm object nhân viên từ list đã lọc để đảm bảo có tên đúng
+    const foundEmployee = filteredReport.find(e => String(e.maNV) === String(empId));
+    if (foundEmployee) {
+        selectedEmployee = foundEmployee;
+    } else {
+        console.warn('Không tìm thấy thông tin nhân viên:', empId);
+    }
   }
 
   function handleBack() {
-    selectedEmployeeId = null;
+    selectedEmployee = null;
   }
 </script>
 
 <div class="animate-fade-in">
-  {#if selectedEmployeeId}
+  {#if selectedEmployee}
     <EmployeeDetail 
-      employeeId={selectedEmployeeId} 
+      employee={selectedEmployee} 
       on:back={handleBack}
     />
   {:else}

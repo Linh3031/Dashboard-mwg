@@ -1,29 +1,31 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { realtimeYCXData, employeeMaNVMap } from '../../../stores.js';
+  import { realtimeYCXData } from '../../../stores.js'; // Bỏ employeeMaNVMap vì không cần nữa
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   
-  export let employeeId;
+  // [GENESIS UPDATE] Nhận object employee trực tiếp
+  export let employee; 
 
   const dispatch = createEventDispatcher();
   let detailData = null;
   let employeeName = 'N/A';
   let goals = {};
 
-  // Reactive: Tính toán dữ liệu chi tiết khi employeeId thay đổi
+  // Reactive: Tính toán dữ liệu chi tiết
   $: {
-    if (employeeId && $realtimeYCXData.length > 0) {
-      const info = $employeeMaNVMap.get(String(employeeId));
-      employeeName = info ? formatters.getShortEmployeeName(info.hoTen, info.maNV) : `NV ${employeeId}`;
+    // Kiểm tra employee object thay vì ID
+    if (employee && $realtimeYCXData.length > 0) {
+      // [GENESIS FIX] Lấy tên trực tiếp, không lookup ngược
+      employeeName = formatters.getShortEmployeeName(employee.hoTen, employee.maNV);
       
-      const warehouse = info ? info.maKho : '';
+      const warehouse = employee.maKho || '';
       const settings = settingsService.getRealtimeGoalSettings(warehouse);
       goals = settings.goals || {};
       
-      detailData = reportService.generateRealtimeEmployeeDetailReport(employeeId, $realtimeYCXData);
+      // Vẫn dùng ID để generate report data
+      detailData = reportService.generateRealtimeEmployeeDetailReport(employee.maNV, $realtimeYCXData);
     }
   }
 
@@ -32,7 +34,11 @@
   }
 </script>
 
-<div class="max-w-4xl mx-auto animate-fade-in pb-10">
+<div 
+    class="max-w-4xl mx-auto animate-fade-in pb-10"
+    data-capture-group="revenue-detail-mobile"
+    data-capture-filename={employee ? `DT_Realtime_${employee.hoTen}_${employee.maNV}` : 'ChiTietNhanVien'}
+>
     <div class="mb-4 flex justify-between items-center">
         <button class="text-blue-600 hover:underline font-semibold flex items-center gap-1" on:click={goBack}>
             ‹ Quay lại bảng tổng hợp
@@ -71,7 +77,7 @@
              <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                 <div class="text-sm text-gray-500 font-medium uppercase">Tổng Đơn</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.totalOrders}</div>
-            </div>
+             </div>
             <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                  <div class="text-sm text-gray-500 font-medium uppercase">Đơn Bán Kèm</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.bundledOrderCount}</div>
@@ -79,7 +85,6 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-5">
                 <h4 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Tỷ trọng Nhóm hàng</h4>
                 <div class="space-y-4">
@@ -94,17 +99,17 @@
                                 <div class="bg-blue-600 h-2.5 rounded-full" style="width: {percent}%"></div>
                             </div>
                         </div>
-                    {/each}
+                   {/each}
                 </div>
             </div>
 
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-5">
                 <h4 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Chi tiết Khách hàng ({detailData.byCustomer.length})</h4>
                 <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                     {#each detailData.byCustomer as customer, index}
+                      {#each detailData.byCustomer as customer, index}
                         <details class="group border border-gray-200 rounded-lg bg-gray-50 open:bg-white open:shadow-sm transition-all">
                             <summary class="flex justify-between items-center p-3 cursor-pointer list-none select-none">
-                                <div class="flex items-center gap-2">
+                                 <div class="flex items-center gap-2">
                                     <span class="font-bold text-gray-500 text-sm">{index + 1}.</span>
                                     <span class="font-semibold text-gray-800 text-sm">{customer.name}</span>
                                     <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{customer.totalQuantity} SP</span>
