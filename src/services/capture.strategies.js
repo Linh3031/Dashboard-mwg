@@ -147,14 +147,16 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     const date = new Date();
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
+    
+    // [LOGIC TITLE]: Tiêu đề hiển thị TRONG ẢNH (vẫn giữ nguyên logic cũ: Title + Time)
+    const displayTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
     captureWrapper.className = 'capture-container';
 
     const titleEl = document.createElement('h2');
     titleEl.className = 'capture-title';
-    titleEl.textContent = finalTitle;
+    titleEl.textContent = displayTitle;
     captureWrapper.appendChild(titleEl);
     
     const contentClone = elementToCapture.cloneNode(true);
@@ -184,8 +186,9 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
         const imageDataUrl = canvas.toDataURL('image/png');
 
         if (isPreview) {
-            return { title: finalTitle, url: imageDataUrl };
+            return { title: displayTitle, url: imageDataUrl };
         } else {
+            // [LOGIC FILENAME]: Xử lý tên file tải về
             const noToneTitle = removeVietnameseTones(title);
             const safeFileName = noToneTitle
                                     .replace(/[^a-zA-Z0-9]/g, '_')
@@ -209,17 +212,26 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
 };
 
 export const strategySingle = async (element, baseTitle, options) => {
+    // [FIX GENESIS]: Ưu tiên tên file từ attribute
+    const manualFileName = element.dataset.captureFilename;
+    const captureTitle = manualFileName || baseTitle;
+
     const preset = element.dataset.capturePreset;
     let presetClass = preset ? `preset-${preset}` : '';
-    return await _coreCapture(element, baseTitle, presetClass, options);
+    return await _coreCapture(element, captureTitle, presetClass, options);
 };
 
 export const strategySplit = async (elements, baseTitle, options) => {
     const results = [];
     for (const targetElement of elements) {
+        // [FIX GENESIS]: Ưu tiên tên file từ attribute
+        const manualFileName = targetElement.dataset.captureFilename;
+
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
         foundTitle = removeVietnameseTones(foundTitle); 
-        const captureTitle = (foundTitle || baseTitle);
+        
+        // Logic mới: Manual Name > Found Tag > Base Title
+        const captureTitle = manualFileName || (foundTitle || baseTitle);
         
         const preset = targetElement.dataset.capturePreset;
         let presetClass = (preset ? `preset-${preset}` : '');
@@ -245,12 +257,18 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
         elementToCapture = elements[0];
     }
 
+    // [FIX GENESIS]: Ưu tiên lấy tên từ phần tử đầu tiên nếu có attribute
+    const manualFileName = elements[0]?.dataset?.captureFilename;
+
     let foundTitle = '';
     if (elements[0]) {
         foundTitle = elements[0].querySelector('h3, h4')?.textContent?.trim() || '';
     }
     foundTitle = removeVietnameseTones(foundTitle);
-    const captureTitle = (foundTitle || baseTitle);
+    
+    // Logic mới: Manual Name > Found Tag > Base Title
+    // [QUAN TRỌNG]: Đây là dòng sửa lỗi tên file bị default
+    const captureTitle = manualFileName || (foundTitle || baseTitle);
 
     const preset = elements[0]?.dataset.capturePreset;
     let presetClass = '';
