@@ -1,5 +1,26 @@
 import { notificationStore } from '../../stores.js';
 
+// --- HELPER: CHUYỂN TIẾNG VIỆT CÓ DẤU THÀNH KHÔNG DẤU ---
+const removeVietnameseTones = (str) => {
+    if (!str) return '';
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+    str = str.replace(/đ/g, "d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    // Kết hợp thêm normalize để xử lý các dấu tổ hợp nếu có
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+};
+
 export const injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
@@ -51,18 +72,18 @@ export const injectCaptureStyles = () => {
 
         /* --- [UPDATED] MOBILE VIEW --- */
         .preset-mobile-view {
-            /* [UPDATE] Tăng lên 1000px theo yêu cầu */
+            /* Width 1000px theo yêu cầu */
             width: 1000px !important; 
             min-width: 1000px !important;
             max-width: 1000px !important;
         }
         
-        /* FIX 1: KPI vẫn giữ 3 cột cho gọn (3x2) */
+        /* FIX 1: KPI giữ 3 cột (3x2) */
         .preset-mobile-view .lg\\:grid-cols-6 {
             grid-template-columns: repeat(3, 1fr) !important;
         }
 
-        /* FIX 2: [UPDATE] Biểu đồ ép về 2 cột (Side-by-side) để ảnh không bị dài */
+        /* FIX 2: Biểu đồ ép về 2 cột ngang nhau */
         .preset-mobile-view .lg\\:grid-cols-2 {
             grid-template-columns: repeat(2, 1fr) !important;
         }
@@ -123,14 +144,16 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
     const date = new Date();
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
+    
+    // Title hiển thị TRONG ẢNH (Vẫn giữ có dấu cho đẹp)
+    const displayTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
     captureWrapper.className = 'capture-container';
 
     const titleEl = document.createElement('h2');
     titleEl.className = 'capture-title';
-    titleEl.textContent = finalTitle;
+    titleEl.textContent = displayTitle;
     captureWrapper.appendChild(titleEl);
     
     const contentClone = elementToCapture.cloneNode(true);
@@ -156,15 +179,23 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
 
         const imageDataUrl = canvas.toDataURL('image/png');
         if (isPreview) {
-            return { title: finalTitle, url: imageDataUrl };
+            return { title: displayTitle, url: imageDataUrl };
         } else {
-            const safeFileName = finalTitle.replace(/[^a-zA-Z0-9]/g, '_');
+            // [FIX NAME] Xử lý tiếng Việt thành không dấu trước khi lưu file
+            const noToneTitle = removeVietnameseTones(displayTitle);
+            
+            // Chỉ giữ lại chữ cái không dấu, số và dấu gạch dưới
+            const safeFileName = noToneTitle
+                                    .replace(/[^a-zA-Z0-9]/g, '_')
+                                    .replace(/_+/g, '_'); // Tránh nhiều dấu _ liền nhau
+
             const link = document.createElement('a');
             link.download = `${safeFileName}.png`;
             link.href = imageDataUrl;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            
             notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
             setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
             return null;
