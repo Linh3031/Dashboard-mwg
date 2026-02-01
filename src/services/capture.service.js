@@ -74,11 +74,14 @@ export const captureService = {
             // Duyệt qua từng nhóm để xử lý
             for (const [group, elements] of captureGroups.entries()) {
                 // TRƯỜNG HỢP 1: Nhóm cần tách lẻ (Split)
-                // Ví dụ: Doanh thu ngành hàng (Mỗi bảng 1 ảnh)
                 if (SPLIT_GROUPS.includes(group)) {
                     for (const el of elements) {
+                        // [GENESIS FIX]: Ưu tiên lấy tên file từ attribute data-capture-filename
+                        let customName = el.dataset.captureFilename;
+
                         // Lấy tiêu đề con từ thẻ h3/h4 nếu có
-                        let subTitle = el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                        let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                        
                         // Gọi processor mặc định cho từng phần tử
                         await processDefault([el], subTitle);
                         // Delay nhẹ để trình duyệt không bị đơ
@@ -88,10 +91,18 @@ export const captureService = {
                 }
 
                 // TRƯỜNG HỢP 2: Nhóm gộp (Merge)
-                // Lấy processor tương ứng từ Registry (KPI, Competition, Default...)
                 const processor = getProcessor(group);
                 if (processor) {
                     await processor(elements, baseTitle);
+                } else {
+                    // [GENESIS FIX FALLBACK]: Nếu không có processor (như group 'sknv-detail-view'), 
+                    // dùng processDefault để chụp thay vì bỏ qua.
+                    for (const el of elements) {
+                         let customName = el.dataset.captureFilename;
+                         let subTitle = customName || baseTitle;
+                         await processDefault([el], subTitle);
+                         await new Promise(r => setTimeout(r, 300));
+                    }
                 }
             }
         } catch (error) {
@@ -137,7 +148,8 @@ export const captureService = {
                 // Xử lý SPLIT cho Preview
                 if (SPLIT_GROUPS.includes(group)) {
                      for (const el of elements) {
-                        let subTitle = el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                        let customName = el.dataset.captureFilename;
+                        let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
                         const res = await processDefault([el], subTitle, options);
                         if (res) previewImages.push(res);
                      }
@@ -148,15 +160,21 @@ export const captureService = {
                 const processor = getProcessor(group);
                 if (processor) {
                     const result = await processor(elements, baseTitle, options);
-                    // Processor có thể trả về 1 object (ảnh gộp) hoặc null
                     if (result) {
-                        // Nếu kết quả là mảng (trong trường hợp processor trả về nhiều ảnh), nối vào
                         if (Array.isArray(result)) {
                             previewImages = [...previewImages, ...result];
                         } else {
                             previewImages.push(result);
                         }
                     }
+                } else {
+                     // [GENESIS FIX FALLBACK PREVIEW]
+                     for (const el of elements) {
+                        let customName = el.dataset.captureFilename;
+                        let subTitle = customName || baseTitle;
+                        const res = await processDefault([el], subTitle, options);
+                        if (res) previewImages.push(res);
+                     }
                 }
             }
         } catch (e) {

@@ -13,7 +13,6 @@
   import AddMetricModal from '../../modals/AddMetricModal.svelte';
 
   export let employeeId;
-
   const dispatch = createEventDispatcher();
 
   let employeeData = null;
@@ -28,15 +27,19 @@
       'Năng suất': { above: 0, total: 0 },
       'Đơn giá': { above: 0, total: 0 }
   };
-  
   // State quản lý hiển thị Modal
   let isEffModalOpen = false;
   let isMetricModalOpen = false;
   let itemToEdit = null;
-
-  // [KHÔI PHỤC] Hai dòng quan trọng bị thiếu gây lỗi ReferenceError
+  
+  // [KHÔI PHỤC] Logic cũ giữ nguyên
   $: totalAbove = Object.values(kpiCounts).reduce((sum, item) => sum + item.above, 0);
   $: totalCriteria = Object.values(kpiCounts).reduce((sum, item) => sum + item.total, 0);
+  
+  // [GENESIS FIX 1]: Tạo tên file dynamic dựa trên nhân viên đang xem
+  $: filename = employeeData 
+      ? `${employeeData.hoTen} - ${employeeData.maNV}` 
+      : 'Chi_tiet_nhan_vien';
 
   // Logic tải dữ liệu từ Cloud khi Warehouse thay đổi
   $: if ($selectedWarehouse) {
@@ -50,10 +53,9 @@
 
   // Reactive: Tính toán lại khi Store metrics thay đổi HOẶC employeeId thay đổi
   $: calculateEmployeeData(employeeId, $masterReportData, $warehouseCustomMetrics);
-
+  
   function calculateEmployeeData(id, masterData, metrics) {
       if (!id || masterData.sknv.length === 0) return;
-
       const rawEmployee = masterData.sknv.find(e => String(e.maNV) === String(id));
       
       if (rawEmployee) {
@@ -90,14 +92,15 @@
                   .map(([name, val]) => ({ name, ...val }))
                   .filter(item => (item.revenue || 0) > 0)
                   .sort((a, b) => b.revenue - a.revenue);
-          } else { nganhHangData = []; }
+          } else { nganhHangData = [];
+          }
       }
   }
 
   function handleCountUpdate(event) {
       const { title, above, total } = event.detail;
       let key = title;
-      if (title === 'Hiệu quả') key = 'Hiệu quả khai thác'; 
+      if (title === 'Hiệu quả') key = 'Hiệu quả khai thác';
       if (kpiCounts[key]) {
           kpiCounts[key] = { above, total };
           kpiCounts = { ...kpiCounts };
@@ -134,7 +137,6 @@
       let currentMetrics = [...$warehouseCustomMetrics]; 
       
       const existingIndex = currentMetrics.findIndex(m => m.id === savedMetric.id);
-      
       if (existingIndex >= 0) {
           currentMetrics[existingIndex] = savedMetric;
       } else {
@@ -161,7 +163,11 @@
   afterUpdate(() => { if (window.feather) window.feather.replace(); });
 </script>
 
-<div class="animate-fade-in pb-10 max-w-7xl mx-auto">
+<div 
+    class="animate-fade-in pb-10 max-w-7xl mx-auto" 
+    data-capture-group="sknv-detail-view"
+    data-capture-filename={filename}
+>
     <div class="mb-4">
         <button on:click={goBack} class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
            <i data-feather="chevron-left" class="w-4 h-4"></i> Quay lại bảng tổng hợp
@@ -241,4 +247,39 @@
     :global(.sknv-header-yellow) { background-color: #ca8a04; }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [GENESIS FIX]: CSS RIÊNG CHO CHẾ ĐỘ CHỤP ẢNH CỦA CHI TIẾT NHÂN VIÊN */
+    :global(.capture-container [data-capture-group="sknv-detail-view"]) {
+        width: 1050px !important;
+        max-width: 1050px !important;
+        margin: 0 !important;
+        padding: 20px !important;
+        background-color: white;
+    }
+
+    /* 1. Ép Layout Grid 2 cột */
+    :global(.capture-container [data-capture-group="sknv-detail-view"] .grid) {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 24px !important;
+        width: 100% !important;
+    }
+
+    /* 2. [QUAN TRỌNG]: BUNG LỤA TABLE (Expand Scrollable Content)
+       Tìm tất cả các thẻ có thanh cuộn (overflow) và ép nó hiện hết nội dung
+    */
+    :global(.capture-container [data-capture-group="sknv-detail-view"] .overflow-y-auto),
+    :global(.capture-container [data-capture-group="sknv-detail-view"] .overflow-x-auto),
+    :global(.capture-container [data-capture-group="sknv-detail-view"] [class*="max-h-"]) {
+        max-height: none !important;      /* Hủy giới hạn chiều cao */
+        height: auto !important;          /* Chiều cao tự động theo nội dung */
+        overflow: visible !important;     /* Hiển thị phần bị che */
+        display: block !important;
+    }
+
+    /* Đảm bảo table chiếm hết chiều rộng */
+    :global(.capture-container [data-capture-group="sknv-detail-view"] table) {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
 </style>
