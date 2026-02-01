@@ -10,6 +10,7 @@
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse,
+      // [FIX] Thêm import store dữ liệu để xử lý bộ lọc kho
       danhSachNhanVien,
       warehouseList
   } from './stores.js';
@@ -45,9 +46,6 @@
   // [FIX] Import 2 Modal chi tiết còn thiếu
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
-  
-  // [DEBUG FEATURE] Import nút review ảnh (Chỉ dùng cho dev/test)
-  import CapturePreviewDebug from './components/CapturePreviewDebug.svelte';
 
   onMount(async () => {
     try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
@@ -55,6 +53,7 @@
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
     
     // [FIX CRITICAL] Tải toàn bộ cấu hình hệ thống (Quy đổi, Ngành hàng) cho TẤT CẢ user
+    // Điều này đảm bảo user thường cũng nhận được logic tính toán mới nhất
     await loadGlobalSystemConfig();
 
     // Load bảng hiệu quả khi khởi động
@@ -85,7 +84,6 @@
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
-
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
       if ($activeTab === 'declaration-section') {
@@ -179,6 +177,7 @@
           )].sort();
           
           warehouseList.set(uniqueWarehouses);
+          // console.log("[App] Warehouse list updated:", uniqueWarehouses);
       }
   }
 </script>
@@ -259,8 +258,6 @@
 <div id="modal-selection-container"></div>
 <div id="modal-customer-detail-container"></div>
 <div id="modal-unexported-detail-container"></div>
-
-<CapturePreviewDebug containerId="main-content" baseTitle="REVIEW_LAYOUT_TEST" />
 
 <style>
   :global(#main-content) { 

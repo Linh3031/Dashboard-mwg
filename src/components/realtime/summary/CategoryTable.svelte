@@ -7,7 +7,7 @@
   import { adminService } from '../../../services/admin.service.js';
 
   export let items = []; 
-  export let unexportedItems = []; 
+  export let unexportedItems = [];
   export let rawSource = []; 
 
   let showUnexported = false;
@@ -17,12 +17,11 @@
   
   let isSettingsOpen = false;
   let filterSearch = '';
-  let hiddenCategories = new Set(); 
+  let hiddenCategories = new Set();
   let isLoadingConfig = false;
 
   let chartInstancePie = null;
   let chartInstanceBar = null;
-
   onMount(async () => {
       if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
           try {
@@ -33,7 +32,6 @@
           } catch (e) { console.error(e); }
       }
   });
-
   // --- THEME ---
   $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT (QĐ)" : "CHI TIẾT NGÀNH HÀNG";
   $: titleIcon = showUnexported ? "alert-circle" : "layers";
@@ -75,7 +73,6 @@
 
   // --- LOGIC AGGREGATION TRỰC TIẾP ---
   $: sourceData = showUnexported ? unexportedItems : items;
-
   $: allGroups = (() => {
       const macroItems = ($macroCategoryConfig || []).map(m => ({
           key: m.name, 
@@ -95,11 +92,9 @@
 
       return [...macroItems, ...simpleItems];
   })();
-  
   $: filterList = allGroups.filter(g => 
       g.label.toLowerCase().includes(filterSearch.toLowerCase())
   );
-
   function toggleCategoryVisibility(key) {
       if (hiddenCategories.has(key)) hiddenCategories.delete(key);
       else hiddenCategories.add(key);
@@ -139,7 +134,6 @@
               }
           }
       });
-
       // B. Simple (Luôn hiện nếu không ẩn)
       sourceData.forEach((item, index) => {
           const name = item.name || item.nganhHang || 'Chưa đặt tên';
@@ -154,7 +148,6 @@
               });
           }
       });
-
       return result;
   })();
 
@@ -162,7 +155,6 @@
       const name = item.name || '';
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
   });
-
   $: sortedItems = [...filteredItems].sort((a, b) => {
       const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
       const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
@@ -170,10 +162,8 @@
       if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
       return 0;
   });
-
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
   $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
-
   // --- CHART LOGIC ---
   $: pieData = (() => {
       const sorted = sortedItems.slice(); 
@@ -183,13 +173,10 @@
       const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
       return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
   })();
-
   // [FIX CHART]
-  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig); 
-
+  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig);
   function calculateBrandData(source, visibleItems, configs) {
       if (!source || source.length === 0) return [];
-
       // Bung nén danh sách được phép
       const allowedNames = new Set();
       visibleItems.forEach(item => {
@@ -276,7 +263,6 @@
   }
 
   $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
-
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
@@ -290,7 +276,7 @@
     :global(.filter-dropdown) {
         display: flex;
         flex-direction: column;
-        max-height: 400px; 
+        max-height: 400px;
     }
     :global(.filter-body) {
         flex: 1;
@@ -300,6 +286,12 @@
     :global(.filter-actions) {
         flex-shrink: 0;
         border-top: 1px solid #eee;
+    }
+
+    /* [FIX GENESIS]: Ép lưới 4 cột khi Capture */
+    :global(.capture-container .luyke-cat-grid) {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 12px !important;
     }
 </style>
 
@@ -336,13 +328,14 @@
                         <div class="filter-header">
                             <input type="text" class="filter-search" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
                         </div>
+                        
                         <div class="filter-body custom-scrollbar">
                             {#if filterList.length === 0}
                                 <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                             {:else}
                                 {#each filterList as group (group.key)}
                                     <div class="filter-item" on:click={() => toggleCategoryVisibility(group.key)}>
-                                        <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
+                                         <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
                                         {#if group.type === 'macro'}
                                             <label class="text-teal-700 font-bold text-xs flex items-center gap-1 flex-1">
                                                 <i data-feather="layers" class="w-3 h-3"></i> {group.label}
@@ -394,7 +387,7 @@
                         </div>
                         
                         <h4 class="cat-name-text {textColor}" title={name}>
-                            {name} 
+                             {name} 
                             {#if item.isMacro}<span class="text-[10px] bg-white border px-1 rounded text-gray-500 ml-1 font-normal">GỘP</span>{/if}
                         </h4>
                         

@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   
   import { dataService } from '../../services/dataService.js';
-  // [GENESIS FIX] Thêm realtimeYCXData vào import để lấy dữ liệu upload
   import { warehouseList, modalState, selectedWarehouse, realtimeYCXData } from '../../stores.js';
   import { actionService } from '../../services/action.service.js';
 
@@ -12,12 +11,10 @@
   import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
   import CompetitionTab from './competition/CompetitionTab.svelte';
-  // [GENESIS NEW] Import Component Trả chậm
   import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
-  let activeSubTabId = 'subtab-realtime-sieu-thi'; 
-  
+  let activeSubTabId = 'subtab-realtime-sieu-thi';
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
@@ -74,7 +71,7 @@
                      >
                        <option value="">-- Toàn bộ --</option>
                        {#each $warehouseList as kho}
-                          <option value={kho}>{kho}</option>
+                       <option value={kho}>{kho}</option>
                        {/each}
                     </select>
                 </div>
@@ -106,7 +103,7 @@
                      </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
-                         <span class="hidden lg:inline">Xuất Excel</span>
+                        <span class="hidden lg:inline">Xuất Excel</span>
                     </button>
                     <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh" on:click={handleCapture}>
                         <i data-feather="camera" class="w-4 h-4"></i>
@@ -125,7 +122,7 @@
                         data-title="SieuThiRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="zap"></i>
+                        <i data-feather="zap"></i>
                         <span>Siêu thị Realtime</span>
                     </button>
                        
@@ -135,7 +132,7 @@
                         data-title="DTNVRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="pie-chart"></i>
+                        <i data-feather="pie-chart"></i>
                         <span>DT NV Realtime</span>
                     </button>
 
@@ -145,7 +142,7 @@
                         data-title="HieuQuaKhaiThacRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="bar-chart-2"></i>
+                        <i data-feather="bar-chart-2"></i>
                         <span>Hiệu quả NV Realtime</span>
                     </button>
 
@@ -155,7 +152,7 @@
                         data-title="NganhHangRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="layers"></i>
+                        <i data-feather="layers"></i>
                         <span>Ngành hàng Realtime</span>
                     </button>
 
@@ -165,7 +162,7 @@
                         data-title="HangRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="tag"></i>
+                        <i data-feather="tag"></i>
                         <span>DT Hãng Realtime</span>
                     </button>
 
@@ -175,7 +172,7 @@
                         data-title="ThiDuaNhanVienRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="award"></i>
+                        <i data-feather="award"></i>
                         <span>Thi đua NV Realtime</span>
                     </button>
 
@@ -185,7 +182,7 @@
                         data-title="TraChamRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="credit-card"></i>
+                        <i data-feather="credit-card"></i>
                         <span>Trả chậm Realtime</span>
                     </button>
                 </nav>
@@ -193,10 +190,10 @@
 
             <div id="realtime-subtabs-content">
                 {#if activeSubTabId === 'subtab-realtime-sieu-thi'}
-                    <div id="subtab-realtime-sieu-thi" class="sub-tab-content">
+                    <div id="subtab-realtime-sieu-thi" class="sub-tab-content" data-capture-preset="mobile-optimized">
                         <SummaryTab {selectedWarehouse} />
                     </div>
-                 
+                
                 {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
                     <div id="subtab-realtime-nhan-vien" class="sub-tab-content" data-capture-preset="large-font-report">
                         <EmployeeTab {selectedWarehouse} />
@@ -237,3 +234,13 @@
     </div>
 
 </section>
+
+<style>
+    /* [FIX GENESIS]: Định nghĩa Preset Mobile Optimized (800px) */
+    :global(.preset-mobile-optimized) {
+        width: 800px !important;
+        min-width: 800px !important;
+        max-width: 800px !important;
+        margin: 0 auto;
+    }
+</style>

@@ -10,14 +10,13 @@
   import { datasyncService } from '../../../services/datasync.service.js';
   import { adminService } from '../../../services/admin.service.js';
 
-  export let items = []; 
+  export let items = [];
   export let numDays = 1;
 
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
-  let localConfig = []; 
-
+  let localConfig = [];
   // Bảng màu rực rỡ cho thanh tiến trình
   const BAR_COLORS = [
       'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-400',
@@ -25,7 +24,6 @@
       'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
       'bg-violet-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
   ];
-
   // 1. Load config Nhóm Hàng Lớn nếu chưa có
   onMount(async () => {
       if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
@@ -37,7 +35,6 @@
           }
       }
   });
-
   // 2. Tạo danh sách Filter (Ưu tiên Nhóm Lớn lên đầu)
   $: allGroups = (() => {
       // A. Nhóm Lớn
@@ -48,6 +45,7 @@
 
       // B. Nhóm Thường
       const structureNames = new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean));
+      
       const presentNames = new Set(items.map(i => i.name).filter(Boolean));
       
       const simpleNames = [...new Set([...structureNames, ...presentNames])]
@@ -59,11 +57,9 @@
 
       return [...macroNames, ...simpleNames];
   })();
-
   $: filterList = allGroups.filter(g => 
       g.name.toLowerCase().includes(filterSearch.toLowerCase())
   );
-
   // 3. Logic Load/Save Config (Dùng chung config với Lũy kế để đồng bộ trải nghiệm)
   $: if ($selectedWarehouse) {
       loadConfigForWarehouse($selectedWarehouse);
@@ -96,7 +92,7 @@
           if ($selectedWarehouse) {
               datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
           }
-      }, 500); 
+      }, 500);
   }
 
   function toggleAllVisibility(show) {
@@ -142,7 +138,6 @@
               finalResults.push(aggregatedItem);
           } 
       });
-
       // B. Xử lý Simple Items
       selectedSimples.forEach(simpleName => {
           const item = items.find(i => i.name === simpleName);
@@ -157,13 +152,11 @@
               });
           }
       });
-
       // Sắp xếp giảm dần theo doanh thu QĐ
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
-
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
@@ -207,7 +200,7 @@
                                     <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} text-xs flex items-center gap-1 cursor-pointer flex-1">
                                         <i data-feather="layers" class="w-3 h-3"></i>
                                         {group.name}
-                                    </label>
+                                     </label>
                                  {:else}
                                     <label class="{isChecked ? 'font-bold text-blue-700' : 'text-gray-700'} text-xs cursor-pointer flex-1">{group.name}</label>
                                  {/if}
@@ -242,11 +235,11 @@
           <div class="py-2.5 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1.5 rounded
                       {item.isMacro ? 'bg-teal-50/40 hover:bg-teal-50/60' : 'hover:bg-gray-50'}">
             
-            <div class="flex items-center gap-3">
+             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                
-               <div class="flex-grow min-w-0">
-                   <div class="flex justify-between items-center mb-1.5">
+               <div class="flex-grow min-w-0 qdc-content-wrapper">
+                   <div class="flex justify-between items-center mb-1.5 qdc-info-row">
                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1.5 {item.isMacro ? 'text-teal-800' : 'text-slate-700'}" title={item.name}>
                            {#if item.isMacro}
                                 <i data-feather="layers" class="w-3.5 h-3.5 text-teal-600"></i>
@@ -258,11 +251,11 @@
                        </span>
                    </div>
                    
-                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1.5 shadow-inner">
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1.5 shadow-inner qdc-bar-row">
                         <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
                    </div>
                    
-                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1 font-medium">
+                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1 font-medium qdc-extra-row">
                        <div class="flex gap-3">
                            <span>DT: <strong class="text-slate-600">{formatters.formatRevenue(item.dt)}</strong></span>
                            <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
@@ -273,7 +266,7 @@
                                 <span>TB: <strong>{formatters.formatNumber(item.quantity / numDays, 0)}</strong>/ngày</span>
                            {/if}
                        </div>
-                    </div>
+                   </div>
                </div>
             </div>
           </div>
@@ -288,4 +281,42 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* [FIX GENESIS]: Sửa lỗi tranh chấp hiển thị giữa Text và Bar khi Capture */
+    :global(.capture-container .qdc-content-wrapper) {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 6px !important; 
+    }
+
+    /* Đẩy Text lên Layer cao nhất */
+    :global(.capture-container .qdc-info-row) {
+        margin-bottom: 0 !important;
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 50 !important; 
+        width: 100% !important;
+    }
+
+    :global(.capture-container .qdc-info-row span:first-child) {
+        overflow: visible !important;
+        white-space: normal !important; 
+        flex: 1 !important;
+    }
+
+    :global(.capture-container .qdc-info-row span:last-child) {
+        flex-shrink: 0 !important;
+        margin-left: 8px !important;
+        z-index: 51 !important;
+    }
+
+    /* Đảm bảo thanh bar nằm ở tầng dưới cùng */
+    :global(.capture-container .qdc-bar-row) {
+        margin-top: 0 !important;
+        position: relative !important;
+        z-index: 1 !important;
+        width: 100% !important;
+        min-height: 8px !important;
+    }
 </style>
