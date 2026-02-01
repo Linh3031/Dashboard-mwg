@@ -4,7 +4,6 @@
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
-  
   import DetailHeader from '../detail/DetailHeader.svelte';
   import RevenueKpiBoard from './RevenueKpiBoard.svelte';
   import DailyPerfChart from './DailyPerfChart.svelte';
@@ -16,7 +15,6 @@
   let detailData = null;
   let employeeData = null;
   let goals = {};
-
   $: if (employeeId && $ycxData.length > 0) {
       employeeData = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeId));
       if (employeeData) {
@@ -30,7 +28,6 @@
       dispatch('back');
   }
 
-  // [ĐÃ SỬA] Bỏ điều kiện kiểm tra sâu, đảm bảo lệnh mở Modal luôn được thực thi
   function openUnexportedModal() {
       if (detailData) {
           modalState.update(s => ({ 
@@ -55,7 +52,11 @@
   }
 </script>
 
-<div class="animate-fade-in pb-10 max-w-7xl mx-auto">
+<div 
+    class="animate-fade-in pb-10 max-w-7xl mx-auto"
+    data-capture-group="revenue-detail-mobile"
+    data-capture-filename={employeeData ? `DTLK_ChiTiet_${employeeData.hoTen}_${employeeData.maNV}` : 'ChiTietNhanVien'}
+>
     <div class="mb-4 flex justify-between items-center">
         <button on:click={goBack} class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
             <i data-feather="chevron-left" class="w-4 h-4"></i> Quay lại bảng tổng hợp
