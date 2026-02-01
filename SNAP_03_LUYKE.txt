@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 1/3/2026, 2:59:56 PM
+GENERATED AT: 1/31/2026, 6:17:34 PM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
@@ -523,14 +523,13 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
   import { datasyncService } from '../../services/datasync.service.js';
   import { adminService } from '../../services/admin.service.js';
 
-  export let items = []; 
+  export let items = [];
   export let numDays = 1;
 
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
-  let localConfig = []; 
-
+  let localConfig = [];
   // [MỚI] Bảng màu rực rỡ cho thanh tiến trình
   const BAR_COLORS = [
       'bg-red-500',       // Đỏ
@@ -539,7 +538,8 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
       'bg-yellow-400',    // Vàng chanh
       'bg-lime-500',      // Xanh chanh
       'bg-green-500',     // Xanh lá
-      'bg-emerald-500',   // Xanh ngọc
+      'bg-emerald-500',  
+      // Xanh ngọc
       'bg-teal-500',      // Xanh cổ vịt
       'bg-cyan-500',      // Xanh da trời nhạt
       'bg-sky-500',       // Xanh bầu trời
@@ -547,10 +547,10 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
       'bg-indigo-500',    // Chàm
       'bg-violet-500',    // Tím
       'bg-fuchsia-500',   // Hồng tím
+   
       'bg-pink-500',      // Hồng
       'bg-rose-500'       // Hồng đỏ
   ];
-
   // 1. Load config
   onMount(async () => {
       if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
@@ -559,10 +559,10 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
               macroProductGroupConfig.set(configs);
           } catch (e) {
               console.error("Lỗi load Macro Product Groups:", e);
-          }
+     
+      }
       }
   });
-
   // 2. Tạo danh sách Filter
   $: allGroups = (() => {
       const macroNames = ($macroProductGroupConfig || []).map(m => ({
@@ -574,6 +574,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
       const presentNames = new Set(items.map(i => i.name).filter(Boolean));
       
       const simpleNames = [...new Set([...structureNames, ...presentNames])]
+ 
           .sort()
           .map(name => ({
               name: name,
@@ -582,11 +583,9 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
 
       return [...macroNames, ...simpleNames];
   })();
-
   $: filterList = allGroups.filter(g => 
       g.name.toLowerCase().includes(filterSearch.toLowerCase())
   );
-
   // 3. Logic Load/Save Config
   $: if ($selectedWarehouse) {
       loadConfigForWarehouse($selectedWarehouse);
@@ -610,27 +609,27 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
   function toggleQdcSelection(name) {
       if (localConfig.includes(name)) {
           localConfig = localConfig.filter(n => n !== name);
-      } else {
+  } else {
           localConfig = [...localConfig, name];
-      }
+  }
       
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => {
+  saveTimer = setTimeout(() => {
           if ($selectedWarehouse) {
               datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
           }
-      }, 500); 
+      }, 500);
   }
 
   function toggleAllVisibility(show) {
       if (show) {
           localConfig = allGroups.map(g => g.name);
-      } else {
+  } else {
           localConfig = [];
-      }
+  }
       if ($selectedWarehouse) {
          datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
-      }
+  }
   }
 
   // 4. Aggregation Logic
@@ -644,7 +643,8 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
       const selectedSimples = localConfig.filter(name => !macroConfigs.some(m => m.name === name));
 
       selectedMacros.forEach(macroName => {
-          const config = macroConfigs.find(m => m.name === macroName);
+          const 
+              config = macroConfigs.find(m => m.name === macroName);
           if (!config) return;
 
           const childIds = new Set(config.items || []);
@@ -656,7 +656,8 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                   name: config.name,
                   isMacro: true, 
                   dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || 0), 0),
-                  dt: childItems.reduce((sum, i) => sum + (i.dt || 0), 0),
+                  dt: childItems.reduce((sum, i) => sum + (i.dt ||
+                      0), 0),
                   quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.sl || 0), 0),
                   _children: childItems 
               };
@@ -670,16 +671,16 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
               finalResults.push({ ...item, isMacro: false });
           }
       });
-
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
-  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
+  $: maxVal = sortedItems.length > 0 ?
+      (sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
-      }
+  }
   }
 
   afterUpdate(() => {
@@ -707,29 +708,37 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                 <div class="filter-header">
                     <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
                 </div>
+          
                 <div class="filter-body custom-scrollbar" style="max-height: 250px;">
                     {#if filterList.length === 0}
                          <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
+                
                         {#each filterList as group}
                             {@const isChecked = localConfig.includes(group.name)}
                             <div class="filter-item" on:click={() => toggleQdcSelection(group.name)}>
-                                 <input type="checkbox" checked={isChecked} />
+                          
+                                <input type="checkbox" checked={isChecked} />
                                  {#if group.type === 'macro'}
-                                    <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
+                                    <label class="{isChecked ?
+                                    'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
                                         <i data-feather="layers" class="w-3 h-3"></i>
                                         {group.name}
+          
                                     </label>
                                  {:else}
-                                    <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{group.name}</label>
+                                    <label class="{isChecked ?
+                                    'font-bold text-blue-700' : ''}">{group.name}</label>
                                  {/if}
                             </div>
                         {/each}
+            
                     {/if}
                  </div>
                 <div class="filter-actions">
                     <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                     <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+     
                 </div>
             </div>
         {/if}
@@ -741,52 +750,63 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
         <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
           <p class="text-sm">Không có dữ liệu hiển thị.</p>
           {#if items.length > 0}
-             <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
+        
+              <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
           {/if}
        </div>
     {:else}
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
-          {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
+          {@const percent = maxVal > 0 ?
+            (item.dtqd / maxVal) * 100 : 0}
           
           {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
           
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1 
                       {item.isMacro ? 'bg-teal-50/30 hover:bg-teal-50/50' : 'hover:bg-gray-50'}">
             
-            <div class="flex items-center gap-3">
+  
+           <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
-                <div class="flex-grow min-w-0">
-                   <div class="flex justify-between items-center mb-1">
+                <div class="flex-grow min-w-0 relative">
+                   
+                   <div class="flex justify-between items-center mb-1 relative z-10">
                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1 {item.isMacro ? 'text-teal-800' : 'text-gray-700'}" title={item.name}>
                            {#if item.isMacro}
                                 <i data-feather="layers" class="w-3 h-3 text-teal-600"></i>
-                           {/if}
+                        
+                            {/if}
                            {item.name}
                        </span>
                        <span class="text-sm font-bold whitespace-nowrap text-gray-800">
-                           {formatters.formatRevenue(item.dtqd)}
+                    
+                        {formatters.formatRevenue(item.dtqd)}
                        </span>
                    </div>
                    
-                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner">
-                        <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner relative z-0">
+      
+                       <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
                    </div>
                    
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
-                       <div class="flex gap-2">
+          
+                      <div class="flex gap-2">
                            <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
-                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                           <span class="{item.isMacro ?
+                                'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
                        </div>
                        <div class="flex gap-2">
                            <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
-                           <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
+                   
+                         <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
                        </div>
                     </div>
                </div>
             </div>
           </div>
-        {/each}
+      
+         {/each}
       </div>
     {/if}
   </div>
@@ -1511,36 +1531,43 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
 <script>
   /* global XLSX, feather */
   import { onMount } from 'svelte';
-  import { get } from 'svelte/store';
   import { 
     thiDuaVungChiTiet, 
-    thiDuaVungTong, 
-    choices 
+    thiDuaVungTong 
   } from '../../stores.js';
-  import { dataProcessing } from '../../services/dataProcessing.js';
-  import { reportService } from '../../services/reportService.js';
+  import { regionalProcessor } from '../../services/processing/logic/regional.processor.js';
   import TdvInfographic from './TdvInfographic.svelte';
 
   let fileStatus = "";
   let isLoading = false;
-  let supermarketNames = [];
-  let selectedSupermarket = "";
+  
+  // Đổi tên biến để quản lý rõ ràng: Danh sách gốc vs Danh sách đã lọc
+  let allSupermarketNames = []; 
+  
+  let selectedSupermarket = ""; 
   let reportData = null;
-  let choicesInstance = null;
-  let selectElement = null; 
+  let localTongData = [];
 
+  // --- LOGIC LỌC NGHIÊM NGẶT (STRICT FILTER) ---
+  // Chỉ hiển thị những siêu thị có tên CHỨA ĐÚNG cụm từ khóa (theo thứ tự)
+  $: filteredSupermarketNames = selectedSupermarket
+      ? allSupermarketNames.filter(name => 
+          name.toLowerCase().includes(selectedSupermarket.trim().toLowerCase())
+        )
+      : allSupermarketNames;
+
+  // --- HÀM XỬ LÝ FILE ---
   async function _handleFileRead(file) {
       return new Promise((resolve, reject) => {
-          if (!file) return reject(new Error("No file provided."));
           const reader = new FileReader();
-          reader.onload = (event) => {
+          reader.onload = (e) => {
               try {
-                  const data = new Uint8Array(event.target.result);
+                  const data = new Uint8Array(e.target.result);
                   const workbook = XLSX.read(data, { type: 'array', cellDates: true, cellText: true });
                  resolve(workbook);
               } catch (err) { reject(err); }
           };
-          reader.onerror = (err) => reject(new Error("Could not read the file: " + err));
+          reader.onerror = (err) => reject(new Error("Lỗi đọc file: " + err));
           reader.readAsArrayBuffer(file);
       });
   }
@@ -1548,76 +1575,77 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
   async function handleFileInput(event) {
     const file = event.target.files[0];
     const fileNameEl = document.getElementById('file-name-thidua-vung');
-    if (!file) {
-      if (fileNameEl) fileNameEl.textContent = "Chưa thêm file";
-      fileStatus = "";
-      return;
-    }
+    if (!file) return;
 
     isLoading = true;
     if (fileNameEl) fileNameEl.textContent = file.name;
-    fileStatus = "Đang xử lý file...";
+    fileStatus = "Đang xử lý...";
+    reportData = null;
+    selectedSupermarket = "";
 
     try {
       const workbook = await _handleFileRead(file);
-      const { chiTietData, tongData } = dataProcessing.processThiDuaVungFile(workbook);
+      const { chiTietData, tongData } = regionalProcessor.processThiDuaVungFile(workbook);
       
-      if (!tongData || tongData.length === 0) {
-        throw new Error('Không tìm thấy dữ liệu hợp lệ trong file.');
-      }
-
+      if (!tongData || tongData.length === 0) throw new Error('File rỗng.');
+      
       thiDuaVungChiTiet.set(chiTietData);
       thiDuaVungTong.set(tongData);
- 
-      const supermarketKey = Object.keys(tongData[0]).find(k => k.trim().toLowerCase().includes('siêu thị'));
-      supermarketNames = [...new Set(tongData.map(row => row[supermarketKey]).filter(Boolean))].sort();
+      localTongData = tongData;
 
-      if (choicesInstance) {
-        choicesInstance.clearStore();
-        choicesInstance.setChoices(
-          supermarketNames.map(name => ({ value: name, label: name })),
-          'value',
-          'label',
-          true
-        );
-      }
+      // Lưu vào danh sách gốc
+      allSupermarketNames = tongData
+          .map(row => row.sieuThi)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
       
-      fileStatus = `✅ Đã xử lý ${supermarketNames.length} siêu thị.`;
+      fileStatus = `✅ Đã xử lý ${allSupermarketNames.length} siêu thị.`;
+
     } catch (error) {
-      console.error("Lỗi xử lý file Thi Đua Vùng:", error);
+      console.error(error);
       fileStatus = `❌ Lỗi: ${error.message}`;
+      allSupermarketNames = [];
     } finally {
       isLoading = false;
-      event.target.value = null; 
+      event.target.value = null;
     }
   }
 
-  function handleFilterChange() {
-    if (!choicesInstance) return;
-    const selectedValue = choicesInstance.getValue(true);
-    selectedSupermarket = selectedValue;
- 
-    if (selectedValue) {
-      reportData = reportService.generateThiDuaVungReport(selectedValue);
-    } else {
-      reportData = null;
-    }
+  // --- HÀM XỬ LÝ CHỌN VỚI AN TOÀN DỮ LIỆU ---
+  function handleSelectChange() {
+      // Tìm chính xác trong data gốc
+      const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
+      if (row) {
+          reportData = {
+              sieuThi: row.sieuThi || 'Không tên',
+              kenh: row.kenh || 'N/A',
+              tongThuong: row.tongThuong || 0,
+              soNganhHang: row.soNganhHang || 0,
+              soNganhHangDat: row.soNganhHangDat || 0,
+              rankCutoff: row.rankCutoff || 0,
+              details: (Array.isArray(row.details) ? row.details : []).map(d => ({
+                  ...d,
+                  nganhHang: d.nganhHang || 'N/A',
+                  duKienHoanThanh: d.duKienHoanThanh || 0,
+                  duKienVuot: d.duKienVuot || 0,
+                  bestRank: d.bestRank || 9999,
+                  tongThuong: d.tongThuong || 0,
+                  potentialPrize: d.potentialPrize || 0
+              }))
+          };
+      } else {
+          reportData = null;
+      }
+  }
+
+  function selectAllText(e) {
+      if (e && e.target) {
+          e.target.select();
+      }
   }
 
   onMount(() => {
-    if (typeof Choices !== 'undefined' && selectElement) {
-      choicesInstance = new Choices(selectElement, {
-        searchEnabled: true,
-        removeItemButton: false,
-        itemSelectText: 'Chọn',
-        searchPlaceholderValue: 'Tìm kiếm siêu thị...'
-      });
-      choices.update(c => ({ ...c, thiDuaVung_sieuThi: choicesInstance }));
-    }
-    
-    if (typeof feather !== 'undefined') {
-      feather.replace();
-    }
+    if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
 
@@ -1641,32 +1669,39 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                 type="file" 
                 id="file-thidua-vung" 
                 class="hidden" 
-                data-name="Thi đua vùng" 
                 accept=".xlsx, .xls, .csv"
                 on:change={handleFileInput}
                 disabled={isLoading}
             > 
             <div class="data-input-group__status-wrapper mt-2">
-                <span 
-                    class="data-input-group__status-text"
-                    class:text-green-600={fileStatus.startsWith('✅')}
-                    class:text-red-600={fileStatus.startsWith('❌')}
-                >
-                    {fileStatus}
+                <span class="data-input-group__status-text font-medium" 
+                      class:text-green-600={fileStatus.includes('✅')}
+                      class:text-red-600={fileStatus.includes('❌')}>
+                      {fileStatus}
                 </span>
             </div> 
         </div>
         
         <div class="data-input-group input-group--yellow h-full" style="min-height: 104px;"> 
              <label class="data-input-group__label">Chọn Siêu thị:</label> 
-             <div class="data-input-group__content">
-                <select 
-                    id="thidua-vung-filter-supermarket" 
-                    bind:this={selectElement}
-                    on:change={handleFilterChange}
-                >
-                    <option value="">Vui lòng tải file...</option>
-                </select> 
+             <div class="data-input-group__content text-black w-full">
+                <input 
+                    list="supermarket-list" 
+                    type="text"
+                    class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-yellow-500 bg-white"
+                    placeholder={allSupermarketNames.length > 0 ? "Gõ mã hoặc tên siêu thị..." : "Vui lòng tải file..."}
+                    bind:value={selectedSupermarket}
+                    on:input={handleSelectChange}
+                    on:change={handleSelectChange}
+                    on:click={selectAllText}
+                    on:focus={selectAllText}
+                    disabled={allSupermarketNames.length === 0}
+                />
+                <datalist id="supermarket-list">
+                    {#each filteredSupermarketNames as name}
+                        <option value={name}></option>
+                    {/each}
+                </datalist>
              </div>
         </div> 
     </div>
@@ -1674,11 +1709,35 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
 
 <div id="thidua-vung-infographic-container" class="mt-6"> 
     {#if reportData}
-        <TdvInfographic {reportData} />
+        {#key reportData.sieuThi}
+            <TdvInfographic {reportData} />
+        {/key}
     {:else}
-        <div class="placeholder-message">Vui lòng tải file và chọn một siêu thị để xem báo cáo.</div> 
+        <div class="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 w-full">
+             {#if isLoading}
+                <p class="text-gray-500">⏳ Đang xử lý dữ liệu...</p>
+            {:else if allSupermarketNames.length > 0}
+                 <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
+            {:else}
+                <p class="text-gray-400">Vui lòng tải file Excel để xem báo cáo (File exel do admin gửi).</p>
+            {/if}
+        </div> 
     {/if}
 </div>
+
+<style>
+    /* XỬ LÝ CHẾ ĐỘ CHỤP ẢNH (CAPTURE MODE) */
+    :global(.capture-container) .content-card {
+        display: none !important;
+    }
+
+    :global(.capture-container) #thidua-vung-infographic-container {
+        width: 960px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+</style>
 <<< FILE_END: src/components/luyke/LuykeThiDuaVung.svelte
 
 >>> FILE_START: src/components/luyke/LuykeUnexportedTable.svelte
@@ -1778,181 +1837,202 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
 
 >>> FILE_START: src/components/luyke/TdvInfographic.svelte
 <script>
-  // Component này nhận dữ liệu đã được xử lý và chỉ render ra HTML.
-  import { formatters } from '../../utils/formatters.js';
+    export let reportData = null;
 
-  export let reportData;
+    // --- HELPER ---
+    const currencyFormatter = new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+        maximumFractionDigits: 0
+    });
+    
+    const numberFormatter = new Intl.NumberFormat('vi-VN', {
+        maximumFractionDigits: 0 // 0 nghĩa là làm tròn, không lấy số thập phân
+    });
 
-  // --- Logic render được di chuyển từ ui-thidua-vung.js ---
-  let summary, coGiai, sapCoGiai, tiemNang, canCoGangNhieu;
-  let keyMap = {};
-  let soonPrizeTitleText = '';
-  let tyLeDatClass = '';
-
-  // Helper function (giữ nguyên từ file gốc)
-  const findKey = (item, keyword) => {
-      if (!item) return keyword; 
-      return Object.keys(item).find(k => k.trim().toLowerCase().includes(keyword.toLowerCase())) || keyword;
-  }
-
-  // $: là một khối reactive. Nó sẽ tự động chạy lại khi 'reportData' thay đổi.
-  $: {
-    if (!reportData) {
-      // Nếu không có data, reset
-      summary = null;
-      coGiai = [];
-      sapCoGiai = [];
-      tiemNang = [];
-      canCoGangNhieu = [];
-} else {
-      // Destructure dữ liệu
-      ({ summary, coGiai, sapCoGiai, tiemNang, canCoGangNhieu } = reportData);
-
-      // Tìm keys (giống hệt logic cũ)
-      const firstItem = coGiai[0] || sapCoGiai[0] || tiemNang[0] || canCoGangNhieu[0];
-      keyMap = {
-          sieuThi: findKey(summary, 'siêu thị'),
-          tongThuongTamTinh: findKey(summary, 'tổng thưởng tạm tỉnh'),
-          slThiDua: findKey(summary, 'sl nh thi đua'),
-          slDat: findKey(summary, 'sl nh >100%'),
-          tyLeDat: findKey(summary, 'tỷ lệ nh đạt >100%'),
-          slCoGiai: findKey(summary, 'sl nh dự kiến đạt giải'),
-          nganhHang: findKey(firstItem, 'ngành hàng'),
-          phanTramDuKien: findKey(firstItem, '% dự kiến'),
-          duKienVuot: findKey(firstItem, 'dự kiến d.thu'),
-          hangVuotTroi: findKey(firstItem, 'hạng vượt trội'),
-          hangTarget: findKey(firstItem, 'hạng % target'),
-          tongThuong: findKey(firstItem, 'tổng thưởng'),
-          hangCoGiaiKenh: 'hangCoGiaiKenh'
-      };
-
-      // Tính toán text/class (giống hệt logic cũ)
-      const totalSoonPrize = sapCoGiai.reduce((sum, item) => sum + (item.thuongTiemNang || 0), 0);
-      soonPrizeTitleText = totalSoonPrize > 0 ? ` - DK: ${formatters.formatNumber(totalSoonPrize)}đ` : '';
-
-      const tyLeDatValue = summary[keyMap.tyLeDat] || 0;
-      tyLeDatClass = tyLeDatValue >= 0.6 ? 'tdv-tyledat-high' : 'tdv-tyledat-low';
+    function formatMoney(amount) {
+        return currencyFormatter.format(amount || 0);
     }
-  }
+
+    // --- LOGIC PHÂN LOẠI ---
+    $: safeData = reportData || {};
+    $: rankCutoff = safeData.rankCutoff || 0;
+    $: rawDetails = Array.isArray(safeData.details) ? safeData.details : [];
+
+    // 1. NHÓM CÓ GIẢI (Xanh)
+    $: listCoGiai = rawDetails.filter(d => d.tongThuong > 0);
+
+    // 2. NHÓM TIỀM NĂNG (Vàng)
+    $: listTiemNang = rawDetails.filter(d => {
+        if (d.tongThuong > 0) return false;
+        const gap = (d.bestRank - rankCutoff);
+        return gap > 0 && gap < 10;
+    });
+
+    // 3. NHÓM CÒN LẠI (Đỏ)
+    $: listCanCoGang = rawDetails.filter(d => {
+        if (d.tongThuong > 0) return false;
+        const gap = (d.bestRank - rankCutoff);
+        return gap >= 10 || d.bestRank === 9999;
+    });
+
 </script>
 
-{#if reportData}
-<div class="tdv-infographic-card" data-capture-group="thidua-vung">
-    <div class="tdv-header">
-        <h2 class="tdv-supermarket-name">{summary[keyMap.sieuThi]}</h2>
-        <div class="tdv-total-prize-container">
-            <span class="tdv-total-prize-label">Tổng thưởng tạm tính:</span>
-            <span class="tdv-total-prize-value">{formatters.formatNumber(summary[keyMap.tongThuongTamTinh])}đ</span>
+<div class="tdv-root bg-white w-full shadow-sm border border-gray-200 overflow-hidden font-sans rounded-xl mb-6">
+    
+    <div class="bg-gray-50 p-6 border-b border-gray-100">
+        <div class="text-center mb-6">
+             <h2 class="text-3xl font-bold text-gray-800 flex flex-col items-center justify-center gap-2">
+                <span class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded uppercase tracking-wider">
+                    {safeData.kenh}
+                </span>
+                <span>{safeData.sieuThi}</span>
+            </h2>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            <div class="bg-white rounded-lg p-3 border border-green-200 shadow-sm text-center flex flex-col justify-center">
+                <p class="text-xs text-green-700 uppercase font-semibold tracking-wide mb-1">Tổng Thưởng</p>
+                <p class="money-large text-2xl font-black text-green-600 leading-none">{formatMoney(safeData.tongThuong)}</p>
+            </div>
+
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
+                <p class="text-xs text-gray-500 uppercase font-bold">Hạng có giải theo kênh</p>
+                <p class="text-2xl font-bold text-gray-800 mt-1">Top {rankCutoff}</p>
+            </div>
+
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
+                <p class="text-xs text-gray-500 uppercase font-bold mb-1">Đang có giải</p>
+                <p class="text-2xl font-bold text-blue-600 leading-none">{listCoGiai.length}</p>
+                <p class="text-[10px] text-gray-400 mt-1">ngành hàng</p>
+            </div>
+
+            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
+                <p class="text-xs text-gray-500 uppercase font-bold mb-1">Sắp có giải</p>
+                <p class="text-2xl font-bold text-yellow-600 leading-none">{listTiemNang.length}</p>
+                <p class="text-[10px] text-gray-400 mt-1">tiềm năng</p>
+            </div>
         </div>
     </div>
 
-    <div class="tdv-summary-grid">
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slThiDua])}</span>
-            <span class="tdv-summary-label">Ngành thi đua</span>
-        </div>
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slDat])}</span>
-            <span class="tdv-summary-label">Ngành >100%</span>
-        </div>
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value {tyLeDatClass}">{formatters.formatPercentage(summary[keyMap.tyLeDat] || 0)}</span>
-            <span class="tdv-summary-label">Tỷ lệ đạt</span>
-        </div>
-         <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.slCoGiai])}</span>
-            <span class="tdv-summary-label">Ngành dự kiến có giải</span>
-        </div>
-        <div class="tdv-summary-item">
-            <span class="tdv-summary-value">{formatters.formatNumber(summary[keyMap.hangCoGiaiKenh])}</span>
-            <span class="tdv-summary-label">Hạng có giải (Kênh)</span>
-        </div>
-    </div>
-
-    <div class="tdv-rows-container">
-        <div class="tdv-row">
-            <h3 class="tdv-row-title tdv-row-title--prize">Ngành hàng có giải ({coGiai.length})</h3>
-            <div class="tdv-row-body grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {#if coGiai.length > 0}
-                    {#each coGiai as item (item[keyMap.nganhHang])}
-                        <div class="tdv-item-card">
-                            <p class="tdv-item-card__title">{item[keyMap.nganhHang]}</p>
-                            <div class="tdv-progress-bar-container">
-                                <div class="tdv-progress-bar tdv-progress-bar--blue" style="width: {Math.min(item[keyMap.phanTramDuKien] * 100, 100)}%;"></div>
-                                <span class="tdv-progress-bar__text">{formatters.formatPercentage(item[keyMap.phanTramDuKien])}</span>
+    <div class="p-6 bg-white">
+        
+        {#if listCoGiai.length > 0}
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-blue-700 uppercase mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-blue-600"></span>
+                    Đang có giải ({listCoGiai.length})
+                </h3>
+                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each listCoGiai as item}
+                        <div class="bg-blue-50/50 border-2 border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden">
+                            <div class="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
+                                Hạng {item.bestRank}
                             </div>
-                            <div class="tdv-item-card__details">
-                                <span>Vượt: <strong>{formatters.formatNumber(item[keyMap.duKienVuot])}</strong></span>
-                                <span>Hạng DT/SL: <strong>{item[keyMap.hangVuotTroi]}</strong></span>
-                                <span>Hạng %: <strong>{item[keyMap.hangTarget]}</strong></span>
-                                <span class="tdv-item-card__prize">Thưởng: <strong>{formatters.formatNumber(item[keyMap.tongThuong])}</strong></span>
+                            <h4 class="card-title font-bold text-gray-800 text-sm mb-3 pr-16 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
+                            
+                            <div class="text-center my-3">
+                                <span class="card-money block text-2xl font-black text-blue-600 leading-none">{formatMoney(item.tongThuong)}</span>
+                                <span class="text-xs text-blue-500 font-medium mt-1 block">Thưởng dự kiến</span>
+                            </div>
+
+                            <div class="bg-white rounded p-2 flex justify-between items-center text-xs border border-blue-100">
+                                 <span class="text-gray-600">Vượt: <b class="text-blue-700">+{numberFormatter.format(item.duKienVuot)}</b></span>
+                                 <span class="text-gray-600">Đạt: <b class="text-blue-700">{(item.duKienHoanThanh * 100).toFixed(0)}%</b></span>
                             </div>
                         </div>
                     {/each}
-                {:else}
-                    <p class="text-xs text-gray-500 col-span-full">Không có.</p>
-                {/if}
+                </div>
             </div>
-        </div>
+        {/if}
 
-        <div class="tdv-row">
-            <h3 class="tdv-row-title tdv-row-title--soon-prize">Sắp có giải ({sapCoGiai.length})<span class="tdv-row-subtitle">{soonPrizeTitleText}</span></h3>
-            <div class="tdv-row-body grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {#if sapCoGiai.length > 0}
-                    {#each sapCoGiai as item (item[keyMap.nganhHang])}
-                        <div class="tdv-item-card">
-                            <p class="tdv-item-card__title">{item[keyMap.nganhHang]}</p>
-                            <div class="tdv-progress-bar-container">
-                                <div class="tdv-progress-bar tdv-progress-bar--yellow" style="width: {Math.min(item[keyMap.phanTramDuKien] * 100, 100)}%;"></div>
-                                <span class="tdv-progress-bar__text">{formatters.formatPercentage(item[keyMap.phanTramDuKien])}</span>
+        {#if listTiemNang.length > 0}
+            <div class="mb-8">
+                <h3 class="text-lg font-bold text-yellow-700 uppercase mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+                    Tiềm năng - Sắp có giải ({listTiemNang.length})
+                </h3>
+                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {#each listTiemNang as item}
+                        <div class="bg-yellow-50/50 border-2 border-yellow-300 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden">
+                             <div class="absolute top-0 right-0 bg-yellow-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
+                                Hạng {item.bestRank}
                             </div>
-                            <div class="tdv-item-card__details">
-                                <span>Cách giải: <strong>{item.khoangCach} hạng</strong></span>
-                                <span>Hạng DT/SL: <strong>{item[keyMap.hangVuotTroi]}</strong></span>
-                                <span>Hạng %: <strong>{item[keyMap.hangTarget]}</strong></span>
-                                <span class="tdv-item-card__prize">Thưởng DK: <strong>{formatters.formatNumber(item.thuongTiemNang)}</strong></span>
+                            <h4 class="card-title font-bold text-gray-800 text-sm mb-3 pr-16 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
+
+                            <div class="text-center my-3">
+                                <span class="card-money block text-2xl font-black text-yellow-600 leading-none opacity-50">
+                                    {formatMoney(item.potentialPrize)}
+                                </span>
+                                <span class="text-[10px] text-yellow-600 font-bold uppercase mt-1 block">Thưởng nếu đạt giải</span>
+                            </div>
+
+                            <div class="bg-white rounded-lg p-2 my-2 border border-yellow-200 text-center">
+                                <div class="flex justify-between items-center text-xs mb-1">
+                                    <span class="text-gray-500">Cần chạy thêm:</span>
+                                    <b class="text-red-600 text-sm">{numberFormatter.format(Math.abs(item.duKienVuot))}</b>
+                                </div>
+                                <div class="flex justify-between items-center text-xs">
+                                     <span class="text-gray-500">Khoảng cách:</span>
+                                     <span class="font-bold text-red-500">{item.bestRank - rankCutoff} hạng</span>
+                                </div>
                             </div>
                         </div>
                     {/each}
-                {:else}
-                    <p class="text-xs text-gray-500 col-span-full">Không có.</p>
-                {/if}
+                </div>
             </div>
-        </div>
+        {/if}
 
-        <div class="tdv-row">
-            <h3 class="tdv-row-title tdv-row-title--effort">Nhóm còn lại ({tiemNang.length + canCoGangNhieu.length})</h3>
-            <div class="tdv-row-body tdv-row-body--effort">
-                {#if tiemNang.length > 0}
-                    <div class="tdv-effort-subgroup">
-                        <h4 class="tdv-effort-subgroup__title tdv-effort-subgroup__title--potential">Tiềm năng (cách 21-40 hạng)</h4>
-                        <div class="tdv-effort-list">
-                            {#each tiemNang as item (item[keyMap.nganhHang])}
-                                <div class="tdv-effort-item">{item[keyMap.nganhHang]} (cách {item.khoangCach})</div>
-                            {/each}
+        {#if listCanCoGang.length > 0}
+            <div>
+                <h3 class="text-lg font-bold text-red-700 uppercase mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                    Cần cố gắng ({listCanCoGang.length})
+                </h3>
+                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {#each listCanCoGang as item}
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3 shadow-sm hover:border-red-300 transition-colors">
+                            <div class="flex justify-between items-start mb-2">
+                                <h4 class="card-title font-bold text-gray-700 text-sm w-2/3 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
+                                <span class="text-xs font-bold text-red-400">{(item.duKienHoanThanh * 100).toFixed(0)}%</span>
+                            </div>
+                            <div class="text-xs text-gray-500 flex justify-between items-center bg-white p-2 rounded border border-red-100">
+                                <span>Hạng: <b>{item.bestRank}</b></span>
+                                <span>Cách giải: <b>{item.bestRank - rankCutoff} hạng</b></span>
+                            </div>
                         </div>
-                    </div>
-                {/if}
-
-                {#if canCoGangNhieu.length > 0}
-                     <div class="tdv-effort-subgroup">
-                        <h4 class="tdv-effort-subgroup__title tdv-effort-subgroup__title--major">Cần cố gắng nhiều</h4>
-                        <div class="tdv-effort-list">
-                            {#each canCoGangNhieu as item (item[keyMap.nganhHang])}
-                                <div class="tdv-effort-item">{item[keyMap.nganhHang]}</div>
-                            {/each}
-                        </div>
-                    </div>
-                {/if}
-
-                {#if tiemNang.length === 0 && canCoGangNhieu.length === 0}
-                    <p class="text-xs text-gray-500">Không có.</p>
-                {/if}
+                    {/each}
+                </div>
             </div>
-        </div>
+        {/if}
+
     </div>
 </div>
-{/if}
+
+<style>
+    /* Khi nằm trong container chụp ảnh (.capture-container) */
+    :global(.capture-container) .tdv-root {
+        width: 960px !important; /* Giảm từ 1100 xuống 960 cho gọn */
+        max-width: 960px !important;
+        margin: 0 !important; /* Xóa margin auto */
+        background-color: white;
+        border: none !important;
+        padding: 0 !important; /* Xóa padding thừa */
+    }
+
+    /* Cưỡng ép lưới thẻ con thành 4 CỘT trên 1 dòng */
+    :global(.capture-container) .tdv-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 12px !important;
+    }
+    
+    :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
+    :global(.capture-container) .tdv-root .money-large { font-size: 36px !important; }
+    :global(.capture-container) .tdv-root .card-title { font-size: 15px !important; }
+    :global(.capture-container) .tdv-root .card-money { font-size: 24px !important; }
+</style>
 <<< FILE_END: src/components/luyke/TdvInfographic.svelte
 
 >>> FILE_START: src/components/luyke/sub/LuykeCategoryCharts.svelte

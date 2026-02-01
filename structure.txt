@@ -21,6 +21,7 @@ src/styles/tables.css
 src/styles/specific-sknv.css
 src/styles/specific-realtime.css
 src/components
+src/components/CapturePreviewDebug.svelte
 src/components/DeclarationSection.svelte
 src/components/HealthSection.svelte
 src/components/admin
@@ -155,6 +156,13 @@ src/services
 src/services/capture.service.js
 src/services/action.service.js
 src/services/admin.service.js
+src/services/capture
+src/services/capture/registry.js
+src/services/capture/processors
+src/services/capture/processors/competition-grid.js
+src/services/capture/processors/default.js
+src/services/capture/processors/kpi-grid.js
+src/services/capture/engine.js
 src/services/datasync.service.js
 src/services/processing
 src/services/processing/parsers

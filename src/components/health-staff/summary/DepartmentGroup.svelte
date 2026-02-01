@@ -3,7 +3,6 @@
   
   export let departmentName;
   export let employees = [];
-  
   // Priority styling cho "Tư Vấn - ĐM"
   $: isPriority = departmentName.includes('Tư Vấn');
   $: headerClass = isPriority 
@@ -18,7 +17,7 @@
   </div>
   
   <div class="p-4 bg-slate-50/30 border-x border-b border-gray-200 rounded-b-lg">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sknv-employee-grid">
       {#each employees as emp, index (emp.maNV)}
         <EmployeeCard employee={emp} rank={index + 1} on:click />
       {/each}

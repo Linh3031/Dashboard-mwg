@@ -1,15 +1,14 @@
 CONTEXT GROUP: SNAP_02_REALTIME.txt
-GENERATED AT: 1/3/2026, 2:59:56 PM
+GENERATED AT: 1/31/2026, 6:17:34 PM
 
 
 >>> FILE_START: src/components/realtime/RealtimeSection.svelte
 <script>
   import { onMount } from 'svelte';
   
-  // [FIX] Sửa 'import * as dataService' thành 'import { dataService }'
   import { dataService } from '../../services/dataService.js';
-  
-  import { warehouseList, modalState, selectedWarehouse } from '../../stores.js';
+  // [GENESIS FIX] Thêm realtimeYCXData vào import để lấy dữ liệu upload
+  import { warehouseList, modalState, selectedWarehouse, realtimeYCXData } from '../../stores.js';
   import { actionService } from '../../services/action.service.js';
 
   import SummaryTab from './summary/SummaryTab.svelte';
@@ -18,6 +17,8 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
   import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
   import CompetitionTab from './competition/CompetitionTab.svelte';
+  // [GENESIS NEW] Import Component Trả chậm
+  import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-realtime-sieu-thi'; 
@@ -32,7 +33,6 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
   }
 
   async function handleFileUpload(event) {
-    // Bây giờ hàm này sẽ hoạt động đúng
     await dataService.handleRealtimeFileInput(event);
   }
 
@@ -86,14 +86,14 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
             </div>
 
             <div class="flex flex-wrap items-center gap-3 ml-auto mt-2 sm:mt-0">
-                
                 <div class="flex items-center gap-2 pr-4 border-r border-blue-100">
                     <a href="https://report.mwgroup.vn/home/dashboard/077" target="_blank" class="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium flex items-center gap-1 bg-blue-50 px-2 py-1.5 rounded transition-colors">
-                        <i data-feather="external-link" class="w-3 h-3"></i> Lấy file
+                        <i data-feather="external-link" class="w-3 h-3"></i> 
+                        Lấy file
                     </a>
                     <label for="realtime-file-input" class="cursor-pointer bg-white text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition text-sm font-bold flex items-center gap-2 shadow-sm border border-blue-200">
                          <i data-feather="upload" class="w-4 h-4"></i>
-                        <span>Tải file</span>
+                         <span>Tải file</span>
                     </label>
                     <input 
                         type="file" 
@@ -111,7 +111,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                      </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
-                        <span class="hidden lg:inline">Xuất Excel</span>
+                         <span class="hidden lg:inline">Xuất Excel</span>
                     </button>
                     <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh" on:click={handleCapture}>
                         <i data-feather="camera" class="w-4 h-4"></i>
@@ -130,7 +130,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                         data-title="SieuThiRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="zap"></i>
+                         <i data-feather="zap"></i>
                         <span>Siêu thị Realtime</span>
                     </button>
                        
@@ -140,7 +140,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                         data-title="DTNVRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="pie-chart"></i>
+                         <i data-feather="pie-chart"></i>
                         <span>DT NV Realtime</span>
                     </button>
 
@@ -150,7 +150,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                         data-title="HieuQuaKhaiThacRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="bar-chart-2"></i>
+                         <i data-feather="bar-chart-2"></i>
                         <span>Hiệu quả NV Realtime</span>
                     </button>
 
@@ -160,7 +160,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                         data-title="NganhHangRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="layers"></i>
+                         <i data-feather="layers"></i>
                         <span>Ngành hàng Realtime</span>
                     </button>
 
@@ -170,7 +170,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                         data-title="HangRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="tag"></i>
+                         <i data-feather="tag"></i>
                         <span>DT Hãng Realtime</span>
                     </button>
 
@@ -180,8 +180,18 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                         data-title="ThiDuaNhanVienRealtime"
                         on:click={handleSubTabClick}
                     >
-                        <i data-feather="award"></i>
+                         <i data-feather="award"></i>
                         <span>Thi đua NV Realtime</span>
+                    </button>
+
+                    <button 
+                        class="sub-tab-btn {activeSubTabId === 'subtab-realtime-tragop' ? 'active' : ''}" 
+                        data-target="subtab-realtime-tragop"
+                        data-title="TraChamRealtime"
+                        on:click={handleSubTabClick}
+                    >
+                         <i data-feather="credit-card"></i>
+                        <span>Trả chậm Realtime</span>
                     </button>
                 </nav>
             </div>
@@ -191,7 +201,7 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                     <div id="subtab-realtime-sieu-thi" class="sub-tab-content">
                         <SummaryTab {selectedWarehouse} />
                     </div>
-                
+                 
                 {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
                     <div id="subtab-realtime-nhan-vien" class="sub-tab-content" data-capture-preset="large-font-report">
                         <EmployeeTab {selectedWarehouse} />
@@ -215,6 +225,11 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
                 {:else if activeSubTabId === 'subtab-realtime-thi-dua'}
                     <div id="subtab-realtime-thi-dua" class="sub-tab-content">
                         <CompetitionTab {selectedWarehouse} />
+                    </div>
+
+                {:else if activeSubTabId === 'subtab-realtime-tragop'}
+                    <div id="subtab-realtime-tragop" class="sub-tab-content">
+                        <InstallmentView inputData={$realtimeYCXData} />
                     </div>
                     
                 {:else}
@@ -522,14 +537,12 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
   import { services } from '../../../services.js'; 
   
   import SpecialProgramTable from './SpecialProgramTable.svelte';
-  
   // [REFACTOR] Dùng chung component từ health-staff (đã có logic tô màu)
   import FocusCompetitionTable from '../../health-staff/competition/FocusCompetitionTable.svelte';
 
   let specialReportData = [];
   let competitionReportData = [];
   let hasData = false;
-
   // Reactive Statement: Chạy lại khi store thay đổi
   $: {
       // Fallback về mảng rỗng nếu chưa có dữ liệu
@@ -541,21 +554,18 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
           filteredData, 
           $globalSpecialPrograms || []
       );
-
       // 2. Tính toán Thi Đua Tùy Chỉnh (Hãng)
       // Kết hợp cả Global và Local Configs
       const allConfigs = [ ...($globalCompetitionConfigs || []), ...($localCompetitionConfigs || []) ];
-      
       // Lọc trùng lặp Config (Ưu tiên cái mới nhất nếu trùng ID)
       const uniqueConfigs = Array.from(new Map(allConfigs.map(item => [item.id, item])).values());
-
       // [FIX CRITICAL]: Sửa tên hàm từ calculateCompetitionReport -> calculateCompetitionFocusReport
       // Nguyên nhân: Trong src/services/reports/competition.report.js định nghĩa là calculateCompetitionFocusReport
       const compReport = services.calculateCompetitionFocusReport(
           filteredData,
           uniqueConfigs
       );
-
+      
       console.groupCollapsed(`[DEBUG REALTIME] Calc Result`);
       console.log("SP Report:", spReport);
       console.log("Comp Report:", compReport);
@@ -563,13 +573,12 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
       
       specialReportData = spReport;
       competitionReportData = compReport;
-      
       // Cờ check xem có dữ liệu để hiển thị không
       hasData = (specialReportData.length > 0 || competitionReportData.length > 0);
   }
 </script>
 
-<div class="h-full flex flex-col p-4 bg-gray-50 overflow-y-auto custom-scrollbar">
+<div id="competition-realtime-root" class="h-full flex flex-col p-4 bg-gray-50 overflow-y-auto custom-scrollbar">
     {#if !hasData}
         <div class="flex flex-col items-center justify-center h-full text-gray-400 border-2 border-dashed border-gray-300 rounded-xl bg-white p-8">
             <i data-feather="inbox" class="w-12 h-12 mb-3 opacity-50"></i>
@@ -612,6 +621,25 @@ GENERATED AT: 1/3/2026, 2:59:56 PM
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+    /* --- LOGIC CSS MỚI CHO CHẾ ĐỘ CHỤP ẢNH --- */
+    :global(.capture-container) #competition-realtime-root {
+        /* Tự động co chiều rộng lại vừa khít nội dung (cắt khoảng trắng bên phải) */
+        width: fit-content !important; 
+        /* Đảm bảo chiều cao bung hết cỡ (không có thanh cuộn) */
+        height: auto !important; 
+        overflow: visible !important;
+        background-color: #f9fafb !important; /* Giữ màu nền xám nhẹ */
+        margin: 0 !important;
+    }
+
+    /* Cưỡng ép lưới hiển thị 2 cột chuẩn khi chụp ảnh (để tránh bị vỡ nếu viewport giả lập nhỏ) */
+    :global(.capture-container) #competition-realtime-root .grid {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(600px, 1fr)) !important; /* Mỗi cột tối thiểu 600px */
+        width: auto !important;
+        gap: 24px !important;
+    }
 </style>
 <<< FILE_END: src/components/realtime/competition/CompetitionTab.svelte
 

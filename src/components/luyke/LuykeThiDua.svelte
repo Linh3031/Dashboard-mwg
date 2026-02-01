@@ -2,8 +2,7 @@
   import { afterUpdate } from 'svelte';
   import { competitionData } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
-  
-  // Logic dữ liệu (GIỮ NGUYÊN)
+
   let viewType = 'completion'; 
   let sortedData = [];
   let summary = {
@@ -55,7 +54,13 @@
       return 'text-red-600';
   }
 
-  // [FIX 1] Định nghĩa MAP màu sắc tường minh để tránh lỗi Tailwind Purge (mất màu vàng)
+  // [MỚI] Hàm cắt chuỗi cứng bằng JS để đảm bảo hiện dấu "..." khi chụp ảnh
+  function truncateTextSimple(text, maxLength = 50) {
+      if (!text || text.length <= maxLength) return text;
+      // Cắt ở ký tự thứ 50 và thêm dấu ...
+      return text.substring(0, maxLength) + '...';
+  }
+
   const COLOR_MAP = {
     blue: {
         text: 'text-blue-600',
@@ -123,12 +128,14 @@
     {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
 
     <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
-        <div class="flex justify-between items-start gap-3 mb-2">
-            <h4 class="font-bold text-gray-800 text-sm leading-snug line-clamp-2 flex-grow" title={item.name}>
-                {item.name}
+        <div class="flex justify-between items-start gap-3 mb-4">
+            <h4 class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
+                title={item.name}
+                style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                {truncateTextSimple(item.name)}
             </h4>
             <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
-                {formatters.formatPercentage(item.hoanThanhValue / 100)}
+               {formatters.formatPercentage(item.hoanThanhValue / 100)}
             </span>
         </div>
 
@@ -137,7 +144,7 @@
         </div>
 
         <div class="mt-auto pt-2 border-t border-dashed border-gray-100 grid grid-cols-2 gap-2 text-xs items-end">
-             <div>
+            <div>
                 <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
                 <div class="text-gray-700 font-bold whitespace-nowrap">
                     <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
@@ -310,21 +317,18 @@
 <style>
     /* CSS dành riêng cho chế độ chụp ảnh */
     :global(.capture-container .luyke-dashboard-container) {
-        /* [ĐIỀU CHỈNH 1] Tăng độ rộng lên 1100px để khớp với chiều ngang điện thoại HD */
         width: 1100px !important;    
         min-width: 1100px !important;
         background-color: white;
-        padding: 20px !important; /* Thêm chút lề cho đẹp */
+        padding: 20px !important;
     }
 
-    /* [ĐIỀU CHỈNH 2] Tăng số cột lên 4 để giảm chiều dài ảnh */
     :global(.capture-container .grid) {
         display: grid !important;
         grid-template-columns: repeat(4, 1fr) !important; 
         gap: 16px !important;
     }
 
-    /* Tăng kích thước chữ một chút khi chụp để đọc rõ hơn */
     :global(.capture-container h4) {
         font-size: 16px !important;
     }

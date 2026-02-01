@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_00_CORE.txt
-GENERATED AT: 1/3/2026, 2:59:56 PM
+GENERATED AT: 1/31/2026, 6:17:34 PM
 
 
 >>> FILE_START: src/stores.js
@@ -184,7 +184,6 @@ initializeApp();
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse,
-      // [FIX] Thêm import store dữ liệu để xử lý bộ lọc kho
       danhSachNhanVien,
       warehouseList
   } from './stores.js';
@@ -220,6 +219,9 @@ initializeApp();
   // [FIX] Import 2 Modal chi tiết còn thiếu
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
+  
+  // [DEBUG FEATURE] Import nút review ảnh (Chỉ dùng cho dev/test)
+  import CapturePreviewDebug from './components/CapturePreviewDebug.svelte';
 
   onMount(async () => {
     try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
@@ -227,7 +229,6 @@ initializeApp();
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
     
     // [FIX CRITICAL] Tải toàn bộ cấu hình hệ thống (Quy đổi, Ngành hàng) cho TẤT CẢ user
-    // Điều này đảm bảo user thường cũng nhận được logic tính toán mới nhất
     await loadGlobalSystemConfig();
 
     // Load bảng hiệu quả khi khởi động
@@ -258,6 +259,7 @@ initializeApp();
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
+
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
       if ($activeTab === 'declaration-section') {
@@ -351,7 +353,6 @@ initializeApp();
           )].sort();
           
           warehouseList.set(uniqueWarehouses);
-          // console.log("[App] Warehouse list updated:", uniqueWarehouses);
       }
   }
 </script>
@@ -433,6 +434,8 @@ initializeApp();
 <div id="modal-customer-detail-container"></div>
 <div id="modal-unexported-detail-container"></div>
 
+<CapturePreviewDebug containerId="main-content" baseTitle="REVIEW_LAYOUT_TEST" />
+
 <style>
   :global(#main-content) { 
     transition: margin-left 0.3s ease-in-out;
@@ -462,11 +465,11 @@ initializeApp();
 
 >>> FILE_START: src/config.js
 // src/config.js
-// Version 2.3 - Update Admin Password
+// Version 2.4 - Add Installment Sectors
 // Chứa tất cả các cấu hình tĩnh của ứng dụng.
 
 export const config = {
-    ADMIN_PASSWORD: "Linh3010", // [UPDATED] Mật khẩu mới
+    ADMIN_PASSWORD: "Linh3010", 
     COLUMN_MAPPINGS: {
         danhsachnv: {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },
@@ -547,6 +550,21 @@ export const config = {
         'BP Kho Kiêm Hỗ Trợ Kỹ Thuật Xe Đạp - ĐM'
     ],
     DEFAULT_DATA: {
+        // [GENESIS ADD] Danh sách Mã Ngành Hàng được phép hiển thị ở tab Trả Góp
+        NGANH_HANG_TRA_GOP_ALLOW_LIST: [
+            '484',  // Điện gia dụng
+            '13',   // Điện thoại
+            '244',  // Tablet
+            '1754', // Máy lạnh, nước nóng
+            '304',  // Điện tử
+            '1756', // Máy giặt, sấy
+            '1214', // Gia dụng lắp đặt
+            '1755', // Tủ lạnh, đông, mát
+            '1116', // Máy lọc nước
+            '22',   // Laptop
+            '1274', // Đồng Hồ Thời Trang
+            '23'    // Wearable
+        ],
         HINH_THUC_XUAT_TINH_DOANH_THU: [
             'Xuất bán hàng tại siêu thị', 'Xuất cung ứng dịch vụ',
             'Xuất bán pre-order tại siêu thị', 'Xuất SIM trắng kèm theo SIM',
@@ -561,8 +579,6 @@ export const config = {
         HE_SO_QUY_DOI: { '1098 - Máy lạnh (IMEI)': 1,'4659 - Phụ kiện tiện ích Apple': 3.37,'6400 - Phụ kiện âm thanh Apple': 3.37,'2381 - Phụ kiện trang trí Apple': 3.37,'2011 - Khuyến mãi - SP Ảo': 1, '2511 - Nạp tiền AirTime M_Service': 1, '2151 - Phiếu mua hàng/Pre Order': 1, '971 - Thẻ cào điện tử': 1, '431 - Ốp Lưng - Flip Cover': 3.37, '2571 - Thu hộ cước Viettel': 1, '4519 - Thu Hộ Tiền Trả Góp': 1, '2513 - Thu hộ Payoo': 1, '4302 - Nón bảo hiểm các loại': 1.92, '2291 - Sim trắng (Seri)': 1, '18 - Điện Thoại Di Động': 1, '4599 - Thu Hộ Tiền Mặt': 1, '12 - Pin sạc dự phòng': 3.37, '571 - UDDĐ': 1, '58 - Miếng dán mặt sau': 3.37, '1231 - Miếng dán mặt trước': 3.37, '1491 - Smartphone': 1, '1891 - Sim Online': 5.45, '4479 - Dịch Vụ Bảo Hiểm': 4.18, '3359 - Phụ kiện đồng hồ': 3, '2391 - Smartwatch': 3, '911 - Máy nước nóng': 1, '4499 - Thu Hộ Phí Bảo Hiểm': 4.18, '4142 - Bình đun siêu tốc': 1.85, '4153 - Xay Sinh tố': 1.85, '15 - Tai nghe dây': 3.37, '1412 - Dịch vụ bảo trì': 1, '3345 - Cáp': 3.37, '2312 - Mã nạp thẻ game': 1, '4900 - Bàn phím': 3.37, '4141 - Bàn ủi khô': 1.85, '4156 - Nồi cơm nắp gài/nắp rời': 1.85, '14 - Sạc/ Adapter': 3.37, '42 - Laptop': 1.2, '751 - Khuyến mãi ba lô, túi xách': 1, '1031 - Loa di động': 3.37, '4199 - Miếng Dán Kính': 3.37, '3346 - Tai Nghe Bluetooth': 3.37, '931 - Máy tính bảng': 1.2, '19 - Khuyến mãi ĐTDĐ': 1, '10 - Chuột': 3.37, '4060 - Đồng hồ Nam Dây da': 3, '880 - Loa Karaoke': 1.29, '851 - Khuyến mãi Điện Tử': 1, '4169 - Lõi lọc': 1.85, '4540 - Tai Nghe Bluetooth - imei': 3.37, '4062 - Đồng hồ Nữ Dây kim loại': 3, '2831 - Phụ kiện Apple': 3.37, '2691 - Bộ Sạc/Cáp/Adaptor (Giá Rẻ)': 3.37, '1351 - Loa vi tính (imei)': 3.37, '1094 - Tivi LED (IMEI)': 1, '4324 - Khung treo, giá đỡ': 3.37, '1099 - Máy giặt (IMEI)': 1, '1097 - Tủ lạnh (IMEI)': 1, '4099 - Nồi chiên': 1.85, '4070 - Đồng hồ Trẻ em': 3, '967 - Sấy tóc': 1.85, '957 - Lò nướng': 1.85, '958 - Lò vi sóng': 1.85, '4158 - Nồi cơm điện tử': 1.85, '3241 - Dao/Kéo/Thớt': 1.92, '3240 - Hộp/Hũ': 1.92, '3265 - Nồi': 1.92, '4139 - Đèn bàn/Đèn Sạc/Đèn bắt muỗi': 1.85, '73 - Phụ kiện điện máy': 3.37, '4171 - Lọc nước dạng tủ đứng': 1.85, '3384 - Đồ nghề sử dụng điện': 1, '4147 - Bếp điện đơn': 1.85, '4063 - Đồng hồ Nữ Dây da': 3, '3263 - Chảo': 1.92, '3185 - Vệ sinh nhà cửa': 1.92, '4143 - Bàn ủi hơi nước đứng': 1.85, '4146 - Bếp gas đôi': 1.85, '1052 - Khuyến mãi Điện Lạnh': 1, '3799 - Quạt điều hòa': 1.85, '1951 - Software (số Lượng)': 1, '6000 - Máy ép trái cây': 1.85, '4059 - Đồng hồ Nam Dây kim loại': 3, '4160 - Quạt bàn/hộp/sạc': 1.85, '4162 - Bình/Ca đựng nước': 1.92, '4660 - Quạt lửng': 1.85, '17 - Phụ kiện IT khác': 3.37, '4145 - Bếp gas đơn': 1.85, '875 - Dàn máy': 1, '1071 - Phụ kiện điện tử': 3.37, '891 - Micro': 1, '4152 - Ổ cắm điện/vợt muỗi': 1.85, '4154 - Xay ép/Khác': 1.85, '5975 - Balo Túi Chống Sốc': 3.37, '893 - Tủ đông': 1, '2531 - Thu hộ Mservice': 1, '4019 - Sim trắng điện tử': 1, '4320 - Đồng hồ - Khuyến mãi mua': 1, '3187 - Bình/Ly/Ca giữ nhiệt': 1.92, '4159 - Quạt đứng': 1.85, '4157 - Nồi cơm cao tần': 1.85, '16 - Thẻ Nhớ': 3.37, '4140 - Bàn ủi hơi nước': 1.85, '4150 - Máy nước nóng lạnh': 1.85, '591 - Thay sim': 1, '2999 - Dụng cụ nhà bếp khác': 1.92, '4779 - Loa di động - imei': 3.37, '4440 - Gói Cước Và Dịch Vụ GTGT': 1, '4121 - Máy Bơm Nước': 1, '4161 - Quạt treo': 1.85, '4961 - Quần bó & legging nữ Thể Thao': 1, '4151 - Áp suất/lẩu/chiên/nướng': 1.85, '4144 - Bếp gas âm': 1.85, '871 - USB': 3.37, '6479 - Camera IP Trong nhà': 3.37, '4219 - Camera IP Ngoài trời': 3.37, '4659 - Phụ kiện tiện ích Apple': 3.37, '531 - Pin, 4095 - Cáp (Giá Rẻ)': 3.37, '2791 - Kinh doanh mùa vụ': 3.37, '2771 - Giá treo màn hình máy tính': 3.37, '80 - Khuyến mãi Khác': 1, '1131 - Máy in, Fax': 2, '4125 - Smartband': 3, '743 - Quạt sưởi': 1.85, '4659 - Phụ kiện Apple - Imei': 3.37, '4064 - Đồng hồ Nữ Dây khác': 3, '956 - Hút bụi': 1.85, '4172 - Lọc nước âm tủ/trên bàn': 1.85, '3779 - Bếp điện âm': 1.85, '4061 - Đồng hồ Nam Dây khác': 3, '4067 - Đồng hồ Unisex Dây khác': 3, '1411 - Dịch vụ lắp đặt': 1, '4149 - Bình thủy điện': 1.85, '4148 - Bếp điện đôi': 1.85, '955 - Hút mùi/ hút khói': 1.85, '4699 - Gia dụng không điện khác': 1.92, '4859 - Xe đạp đường phố cổ điển': 1, '4759 - Phụ Kiện Xe Đạp': 1, '2471 - Thu hộ cước VinaPhone': 1, '3719 - Quần dài nữ Thể Thao': 1, '1051 - Khuyến mãi Điện gia dụng': 1, '3721 - Quần ngắn & váy nữ Thể Thao': 1, '410 - Phụ kiện TT khác': 3.37, '4155 - Hút bụi cây': 1.85, '3563 - Máy tính nguyên bộ': 1, '894 - Tủ mát': 1, '3639 - Máy lọc không khí': 1.85, '611 - Ứng dụng PC & Laptop': 1, '4089 - Đồng hồ Unisex Dây kim loại': 3, '4439 - Hút Bụi Robot': 1.85, '3740 - Áo T-shirt nam Thể Thao': 1, '4339 - Ổn Áp': 1, '4459 - Quạt Trần': 1.85, '2351 - Router - Imei': 3.37, '3159 - DV Internet và Truyền hình thu tiền': 1, '3659 - Máy sấy lồng ngang': 1, '3519 - Áo Bra Thể Thao': 1, '3479 - Thiết bị mạng khác': 3.37, '3859 - Máy rửa chén': 1 }
     }
 };
-
-
 <<< FILE_END: src/config.js
 
 >>> FILE_START: src/services/action.service.js
@@ -1019,6 +1035,296 @@ export const authService = {
 };
 <<< FILE_END: src/services/auth.service.js
 
+>>> FILE_START: src/services/capture/engine.js
+import { notificationStore } from '../../stores.js';
+
+export const injectCaptureStyles = () => {
+    const styleId = 'dynamic-capture-styles';
+    document.getElementById(styleId)?.remove();
+
+    const styles = `
+        /* 1. CONTAINER GỐC (TRẢ VỀ FIT-CONTENT NHƯ CODE CŨ) */
+        .capture-container { 
+            padding: 20px; 
+            background-color: #f3f4f6; 
+            box-sizing: border-box; 
+            
+            /* QUAN TRỌNG: Để fit-content để container tự ôm sát thẻ KPI -> Không bị thừa viền trắng */
+            width: fit-content !important; 
+            height: fit-content !important;
+            
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            z-index: -1;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .capture-title { 
+            font-size: 26px; 
+            font-weight: 800; 
+            color: #1e3a8a; 
+            margin-bottom: 20px; 
+            text-align: center; 
+            text-transform: uppercase;
+            white-space: nowrap; /* Tiêu đề không xuống dòng bậy */
+        }
+
+        /* Reset Table */
+        .capture-container th, 
+        .capture-container td,
+        .capture-container h3, 
+        .capture-container h4 {
+            white-space: normal !important;
+            overflow: visible !important;
+            height: auto !important;
+        }
+
+        /* 2. CÁC PRESET LAYOUT */
+
+        /* KPI Lũy Kế (Thẻ màu): Grid 2 cột tự nhiên */
+        .prepare-for-kpi-capture {
+            display: grid !important;
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 16px !important;
+            /* Không set width cứng, để nó tự ăn theo content */
+        }
+
+        /* KPI Tier 2: Grid 4 cột */
+        .prepare-for-grid-4-capture {
+            /* Nhóm này thường to, có thể set min-width để khỏi bị ép */
+            min-width: 800px !important;
+        }
+        .prepare-for-grid-4-capture .luyke-cat-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 12px !important;
+        }
+
+        /* 3. FIX RIÊNG CHO THI ĐUA VÙNG (Thẻ trắng) */
+        /* Nhóm này cần ép rộng 800px để chữ không bị nát xuống dòng xấu */
+        .force-mobile-width {
+            width: 800px !important;
+            max-width: 800px !important;
+        }
+        
+        .prepare-for-competition-grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 16px !important;
+        }
+    `;
+
+    const styleElement = document.createElement('style');
+    styleElement.id = styleId;
+    styleElement.textContent = styles;
+    document.head.appendChild(styleElement);
+    return styleElement;
+};
+
+export const swapCanvasToImage = (container) => {
+    const canvases = container.querySelectorAll('canvas');
+    canvases.forEach(canvas => {
+        try {
+            const img = document.createElement('img');
+            img.src = canvas.toDataURL('image/png');
+            img.style.width = canvas.style.width || '100%';
+            img.style.height = canvas.style.height || 'auto';
+            img.style.display = 'block';
+            if (canvas.parentNode) {
+                canvas.parentNode.insertBefore(img, canvas);
+                canvas.style.display = 'none'; 
+            }
+        } catch (e) { console.warn(e); }
+    });
+};
+
+export const coreCapture = async (elementToCapture, title, presetClass = '', options = {}) => {
+    const { isPreview = false, scale = 2 } = options; 
+    if (typeof window.html2canvas === 'undefined') throw new Error("Thư viện html2canvas chưa tải xong.");
+
+    const date = new Date();
+    const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+    const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
+
+    const captureWrapper = document.createElement('div');
+    captureWrapper.className = 'capture-container';
+
+    const titleEl = document.createElement('h2');
+    titleEl.className = 'capture-title';
+    titleEl.textContent = finalTitle;
+    captureWrapper.appendChild(titleEl);
+    
+    const contentClone = elementToCapture.cloneNode(true);
+    if (presetClass) contentClone.className = presetClass;
+    
+    // Logic mới: Nếu là nhóm Thi đua vùng, thêm class ép width
+    if (presetClass.includes('prepare-for-competition-grid')) {
+        contentClone.classList.add('force-mobile-width');
+    }
+
+    captureWrapper.appendChild(contentClone);
+    document.body.appendChild(captureWrapper);
+
+    if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
+    swapCanvasToImage(contentClone);
+    await new Promise(resolve => setTimeout(resolve, 300)); 
+
+    try {
+        const canvas = await window.html2canvas(captureWrapper, {
+            scale: isPreview ? 1 : scale,
+            useCORS: true,
+            backgroundColor: '#f3f4f6',
+            logging: false,
+            // Xóa bỏ windowWidth cứng, để html2canvas tự đo theo fit-content
+            windowWidth: captureWrapper.scrollWidth,
+            windowHeight: captureWrapper.scrollHeight
+        });
+
+        const imageDataUrl = canvas.toDataURL('image/png');
+        if (isPreview) {
+            return { title: finalTitle, url: imageDataUrl };
+        } else {
+            const safeFileName = finalTitle.replace(/[^a-zA-Z0-9]/g, '_');
+            const link = document.createElement('a');
+            link.download = `${safeFileName}.png`;
+            link.href = imageDataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
+            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+            return null;
+        }
+    } finally {
+        if (document.body.contains(captureWrapper)) document.body.removeChild(captureWrapper);
+        if (typeof Chart !== 'undefined') Chart.defaults.animation = {}; 
+    }
+};
+<<< FILE_END: src/services/capture/engine.js
+
+>>> FILE_START: src/services/capture/processors/competition-grid.js
+import { coreCapture } from '../engine.js';
+
+export const processCompetitionGrid = async (elements, baseTitle, options = {}) => {
+    // Với thẻ Thi đua vùng, ta cũng ép Grid 2 cột trên nền 720px
+    // Điều này giúp ảnh trông gọn gàng như xem trên điện thoại
+    const presetClass = 'prepare-for-competition-grid';
+
+    const container = document.createElement('div');
+    
+    elements.forEach(el => {
+        const clone = el.cloneNode(true);
+        // Xóa các class width cũ của Tailwind nếu có (vd: w-1/4) để tránh xung đột
+        clone.style.width = 'auto';
+        clone.classList.remove('w-full', 'w-screen'); 
+        
+        // Tìm và xử lý tiêu đề bên trong để chắc chắn hiện dấu ...
+        // (Dù engine đã có CSS, nhưng thêm class này để chắc chắn)
+        const headers = clone.querySelectorAll('h3, h4, .font-bold');
+        headers.forEach(h => h.classList.add('truncate-capture'));
+
+        container.appendChild(clone);
+    });
+
+    return await coreCapture(container, baseTitle, presetClass, options);
+};
+<<< FILE_END: src/services/capture/processors/competition-grid.js
+
+>>> FILE_START: src/services/capture/processors/default.js
+import { coreCapture } from '../engine.js';
+
+export const processDefault = async (elements, baseTitle, options = {}) => {
+    // Logic gộp dọc đơn giản
+    const container = document.createElement('div');
+    container.className = 'capture-layout-container';
+    
+    elements.forEach(el => {
+        container.appendChild(el.cloneNode(true));
+    });
+
+    return await coreCapture(container, baseTitle, '', options);
+};
+<<< FILE_END: src/services/capture/processors/default.js
+
+>>> FILE_START: src/services/capture/processors/kpi-grid.js
+import { coreCapture } from '../engine.js';
+
+export const processKpiGrid = async (elements, baseTitle, options = {}) => {
+    // Xác định chế độ Grid (2 cột mặc định hoặc 4 cột)
+    const isGrid4 = options.mode === 'grid-4';
+    
+    // Tên class để ép giao diện (CSS này đã nằm trong engine.js)
+    let presetClass = 'prepare-for-kpi-capture'; 
+    if (isGrid4) {
+        presetClass = 'prepare-for-grid-4-capture';
+        // Grid 4 cột cần độ phân giải cao hơn
+        if (!options.isPreview) options.scale = 4;
+    }
+
+    // --- SỬA LỖI LOGIC TẠI ĐÂY ---
+    let elementToCapture;
+    let finalPresetClass = presetClass;
+
+    if (elements.length === 1) {
+        // TRƯỜNG HỢP 1: Người dùng gom nhóm cả bảng (Container)
+        // -> Clone trực tiếp, áp dụng class ép Grid thẳng vào nó.
+        elementToCapture = elements[0].cloneNode(true);
+        
+        // Lưu ý: Nếu phần tử gốc đã có class, ta phải merge thêm class preset vào
+        elementToCapture.classList.add(...presetClass.split(' '));
+        finalPresetClass = ''; // Đã add trực tiếp rồi nên không cần pass vào coreCapture nữa
+    } else {
+        // TRƯỜNG HỢP 2: Người dùng chọn từng thẻ rời rạc
+        // -> Tạo container bao ngoài, ép container thành Grid.
+        const container = document.createElement('div');
+        // Class 'capture-layout-container' cũ dùng flex-col, ta không dùng ở đây để tránh conflict với Grid
+        container.className = presetClass; 
+        
+        elements.forEach(el => container.appendChild(el.cloneNode(true)));
+        elementToCapture = container;
+        finalPresetClass = ''; // Class đã nằm ở container
+    }
+
+    // Gọi Core Engine
+    return await coreCapture(elementToCapture, baseTitle, finalPresetClass, options);
+};
+<<< FILE_END: src/services/capture/processors/kpi-grid.js
+
+>>> FILE_START: src/services/capture/registry.js
+import { processDefault } from './processors/default.js';
+import { processKpiGrid } from './processors/kpi-grid.js';
+import { processCompetitionGrid } from './processors/competition-grid.js';
+
+// CẤU HÌNH LOGIC TẠI ĐÂY
+export const getProcessor = (groupName) => {
+    // 1. Nhóm KPI Màu (Lũy kế) -> Grid Cứng
+    if (['kpi', 'supermarket-kpi'].includes(groupName)) {
+        return (els, title, opts) => processKpiGrid(els, title, { ...opts, mode: 'normal' });
+    }
+    
+    // 2. Nhóm Grid 4 Cột (Tier 2)
+    if (['tier2'].includes(groupName)) {
+        return (els, title, opts) => processKpiGrid(els, title, { ...opts, mode: 'grid-4' });
+    }
+
+    // 3. Nhóm Thi đua & Chi tiết (SKNV, Realtime) -> Grid Linh hoạt
+    // Đã thêm 'detail-category' và 'regional-competition' vào đây
+    if (['regional-competition', 'detail-category', 'competition-detail'].includes(groupName)) {
+        return processCompetitionGrid;
+    }
+
+    // 4. Mặc định (Gộp dọc)
+    return processDefault;
+};
+
+// Danh sách các nhóm cần tách ảnh (Split)
+export const SPLIT_GROUPS = [
+    'category-revenue', 'competition-program', 'efficiency-program'
+];
+<<< FILE_END: src/services/capture/registry.js
+
 >>> FILE_START: src/services/capture.config.js
 // File: src/services/capture.config.js
 
@@ -1034,12 +1340,18 @@ export const SPLIT_GROUPS = [
 ];
 
 // 2. Danh sách các nhóm cần GỘP DẠNG LƯỚI (Grid) - Dành cho KPI
+// QUAN TRỌNG: Bất kỳ nhóm nào nằm trong list này sẽ được kích hoạt Grid 2 cột
 export const KPI_GROUPS = [
     'kpi',
-    'supermarket-kpi' // Dự phòng thêm tên này
+    'supermarket-kpi' 
 ];
 
-// 3. Cấu hình mặc định: MERGE_VERTICAL (Gộp dọc)
+// 3. [NEW] Danh sách nhóm cần ép GRID 4 CỘT
+export const GRID_4_GROUPS = [
+    'tier2' // Nhóm Chi tiết ngành hàng
+];
+
+// 4. Cấu hình mặc định: MERGE_VERTICAL (Gộp dọc)
 // Dành cho: Realtime, Doanh thu NV LK, Thu nhập...
 <<< FILE_END: src/services/capture.config.js
 
@@ -1049,210 +1361,33 @@ import { notificationStore, currentUser } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { get } from 'svelte/store';
 
-// --- HELPER for Screenshot CSS Injection ---
-const _injectCaptureStyles = () => {
-    const styleId = 'dynamic-capture-styles';
-    document.getElementById(styleId)?.remove();
-
-    const styles = `
-        /* Container gốc */
-        .capture-container { 
-            padding: 24px; 
-            background-color: #f3f4f6; 
-            box-sizing: border-box; 
-            width: fit-content; 
-            position: absolute;
-            left: -9999px;
-            top: 0;
-            z-index: -1;
-        }
-        
-        /* [UPDATED FIX] Xử lý triệt để lỗi cắt chữ (g, y, p...) ở mọi cấp độ */
-        
-        /* 1. Cấp độ ô bảng (TD/TH) */
-        .capture-container th,
-        .capture-container td {
-            padding-top: 8px !important;
-            padding-bottom: 8px !important;
-            line-height: 1.5 !important;
-            height: auto !important;      /* Bắt buộc chiều cao tự động giãn */
-        }
-
-        /* 2. Cấp độ nội dung bên trong (DIV/SPAN/P/STRONG) - Quan trọng cho Tên Nhân Viên */
-        /* Nguyên nhân tên bị cắt là do thẻ bao bên trong td bị giới hạn chiều cao hoặc overflow */
-        .capture-container td > div,
-        .capture-container td > span,
-        .capture-container td > p,
-        .capture-container th > div,
-        .capture-container th > span {
-            overflow: visible !important;  /* Cấm ẩn nội dung thừa */
-            padding-bottom: 4px !important; /* Nới đáy cho thẻ con */
-            line-height: 1.5 !important;
-            height: auto !important;
-            white-space: normal !important; /* Cho phép xuống dòng nếu cần, tránh bị cắt ngang */
-        }
-
-        /* 3. Cấp độ Tiêu đề lớn */
-        .capture-container h3, 
-        .capture-container h4,
-        .capture-container .font-bold {
-            padding-bottom: 6px !important;
-            line-height: 1.5 !important;
-            overflow: visible !important;
-        }
-
-        .force-desktop-mode {
-            min-width: 1600px !important;
-            width: fit-content !important;
-        }
-
-        .capture-layout-container { 
-            display: flex; 
-            flex-direction: column; 
-            gap: 24px; 
-        }
-        
-        .capture-title { 
-            font-size: 28px; 
-            font-weight: bold; 
-            color: #1e3a8a; 
-            margin-bottom: 20px; 
-            text-align: center; 
-            font-family: 'Segoe UI', sans-serif;
-            text-transform: uppercase;
-            line-height: 1.5 !important;
-            padding-bottom: 10px !important;
-        }
-
-        /* Mobile Portrait Preset */
-        .preset-mobile-portrait {
-            width: 450px !important;
-            min-width: 450px !important;
-            max-width: 450px !important;
-            padding: 10px !important;
-            margin: 0 auto;
-            transform: scale(2) !important;
-        }
-        .preset-mobile-portrait .capture-title {
-            font-size: 18px !important;
-        }
-        
-        /* KPI Grid Fix */
-        .prepare-for-kpi-capture {
-            display: grid !important;
-            grid-template-columns: repeat(2, 1fr) !important;
-            gap: 16px !important;
-        }
-    `;
-
-    const styleElement = document.createElement('style');
-    styleElement.id = styleId;
-    styleElement.textContent = styles;
-    document.head.appendChild(styleElement);
-    return styleElement;
-};
-
-// --- HELPER: Swap Canvas to Image (Cho Chart.js) ---
-const swapCanvasToImage = (container) => {
-    const canvases = container.querySelectorAll('canvas');
-    canvases.forEach(canvas => {
-        try {
-            const img = document.createElement('img');
-            img.src = canvas.toDataURL('image/png');
-            img.style.width = canvas.style.width || '100%';
-            img.style.height = canvas.style.height || 'auto';
-            img.style.display = 'block';
-            
-            if (canvas.parentNode) {
-                canvas.parentNode.insertBefore(img, canvas);
-                canvas.style.display = 'none'; 
-            }
-        } catch (e) {
-            console.warn('Cannot convert canvas to image:', e);
-        }
-    });
-};
+// Import từ hệ thống Capture mới
+import { injectCaptureStyles } from './capture/engine.js';
+import { getProcessor, SPLIT_GROUPS } from './capture/registry.js';
+import { processDefault } from './capture/processors/default.js';
 
 export const captureService = {
+    // 1. Chụp một phần tử đơn lẻ (Dùng cho nút chụp lẻ)
     async captureAndDownload(elementToCapture, title, presetClass = '') {
-        // 1. Kiểm tra thư viện
-        if (typeof window.html2canvas === 'undefined') {
-            alert("Lỗi: Thư viện html2canvas chưa tải xong. Vui lòng F5 lại trang.");
-            return;
-        }
-
-        const date = new Date();
-        const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-        const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        const finalTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
-    
-        // 2. Tạo wrapper
-        const captureWrapper = document.createElement('div');
-        captureWrapper.className = 'capture-container';
-    
-        // 3. Thêm tiêu đề
-        const titleEl = document.createElement('h2');
-        titleEl.className = 'capture-title';
-        titleEl.textContent = finalTitle;
-        captureWrapper.appendChild(titleEl);
+        const user = get(currentUser);
+        analyticsService.incrementCounter('actionsTaken', user?.email);
         
-        // 4. Clone nội dung
-        const contentClone = elementToCapture.cloneNode(true);
-        if (presetClass) { 
-            const classes = presetClass.split(' ').filter(c => c);
-            contentClone.classList.add(...classes); 
-        }
-
-        captureWrapper.appendChild(contentClone);
-        document.body.appendChild(captureWrapper);
-
-        // 5. Tắt animation Chart.js
-        if (typeof Chart !== 'undefined') {
-            Chart.defaults.animation = false;
-        }
+        const styleElement = injectCaptureStyles();
         
-        // 6. Chuyển đổi Canvas -> Ảnh
-        swapCanvasToImage(contentClone);
-
-        // 7. Đợi render 
-        await new Promise(resolve => setTimeout(resolve, 300));
-
         try {
-            // 8. Chụp bằng html2canvas
-            const canvas = await window.html2canvas(captureWrapper, {
-                scale: 2, 
-                useCORS: true,
-                backgroundColor: '#f3f4f6',
-                logging: false,
-                windowWidth: captureWrapper.scrollWidth, 
-                windowHeight: captureWrapper.scrollHeight
+            // Dùng processor mặc định cho chụp lẻ
+            await processDefault([elementToCapture], title, { 
+                presetClass: presetClass 
             });
-
-            // 9. Tải xuống
-            const link = document.createElement('a');
-            link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
-            link.href = canvas.toDataURL('image/png');
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
-            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
-
-        } catch (err) {
-            console.error('Lỗi captureService:', err);
-            alert(`Lỗi khi chụp ảnh: ${err.message}`);
+        } catch (error) {
+            console.error('Capture Single Error:', error);
+            alert('Lỗi khi chụp ảnh: ' + error.message);
         } finally {
-            // 10. Dọn dẹp
-            if (document.body.contains(captureWrapper)) {
-                document.body.removeChild(captureWrapper);
-            }
-            if (typeof Chart !== 'undefined') {
-                Chart.defaults.animation = {}; 
-            }
+            styleElement.remove();
         }
     },
     
+    // 2. Chụp toàn bộ Dashboard (Nút chụp tổng)
     async captureDashboardInParts(contentContainer, baseTitle) {
        if (!contentContainer) {
             alert('Lỗi: Không tìm thấy nội dung để chụp.');
@@ -1263,10 +1398,10 @@ export const captureService = {
         analyticsService.incrementCounter('actionsTaken', user?.email);
         notificationStore.update(s => ({ ...s, visible: true, type: 'info', message: `Đang xử lý ảnh: ${baseTitle}...` }));
 
-        // Gom nhóm các phần tử
+        // Phân loại các nhóm (Grouping)
         const captureGroups = new Map();
         contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
-            if (el.offsetParent !== null) {
+            if (el.offsetParent !== null) { // Chỉ lấy element đang hiển thị
                 const group = el.dataset.captureGroup;
                 if (!captureGroups.has(group)) {
                      captureGroups.set(group, []);
@@ -1275,91 +1410,51 @@ export const captureService = {
             }
         });
 
-        const styleElement = _injectCaptureStyles();
+        const styleElement = injectCaptureStyles();
         if (typeof Chart !== 'undefined') {
             Chart.defaults.animation = false;
         }
+        
+        // Đợi một chút để style ăn vào DOM
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // --- CẤU HÌNH LOGIC CHỤP ẢNH ---
-        
-        const SPLIT_GROUPS = [
-            'category-revenue',         
-            'competition-program',      
-            'competition-program-view', 
-            'efficiency-program',       
-            'efficiency-program-view',
-            'regional-competition',
-            'efficiency-luyke'
-        ];
-
         try {
-            // Case 1: Không có group
             if (captureGroups.size === 0) {
                 if (contentContainer.offsetParent !== null) {
-                    const preset = contentContainer.dataset.capturePreset;
-                    let presetClass = preset ? `preset-${preset}` : '';
-                    await this.captureAndDownload(contentContainer, baseTitle, presetClass);
+                    // Nếu không có nhóm nào, chụp toàn bộ container bằng processor mặc định
+                    await processDefault([contentContainer], baseTitle);
                 } else {
                      alert('Không có nội dung hiển thị để chụp.');
                 }
                 return;
             }
 
-            // Case 2: Xử lý từng group
+            // Duyệt qua từng nhóm để xử lý
             for (const [group, elements] of captureGroups.entries()) {
-                
-                // --- A. LOGIC TÁCH ẢNH ---
+                // TRƯỜNG HỢP 1: Nhóm cần tách lẻ (Split)
+                // Ví dụ: Doanh thu ngành hàng (Mỗi bảng 1 ảnh)
                 if (SPLIT_GROUPS.includes(group)) {
-                    for (const targetElement of elements) {
-                        let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-                        const captureTitle = (foundTitle || baseTitle)
-                                                .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                                                .replace(/\s+/g, '_');
-                        
-                        const preset = targetElement.dataset.capturePreset;
-                        let presetClass = (preset ? `preset-${preset}` : '');
-
-                        await this.captureAndDownload(targetElement, captureTitle, presetClass);
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                    for (const el of elements) {
+                        // Lấy tiêu đề con từ thẻ h3/h4 nếu có
+                        let subTitle = el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                        // Gọi processor mặc định cho từng phần tử
+                        await processDefault([el], subTitle);
+                        // Delay nhẹ để trình duyệt không bị đơ
+                        await new Promise(r => setTimeout(r, 300));
                     }
                     continue; 
                 }
 
-                // --- B. LOGIC GỘP ---
-                const targetElement = elements[0];
-                let foundTitle = '';
-                if (targetElement) {
-                    foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
+                // TRƯỜNG HỢP 2: Nhóm gộp (Merge)
+                // Lấy processor tương ứng từ Registry (KPI, Competition, Default...)
+                const processor = getProcessor(group);
+                if (processor) {
+                    await processor(elements, baseTitle);
                 }
-                const captureTitle = (foundTitle || baseTitle)
-                                        .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                                        .replace(/\s+/g, '_');
-
-                const preset = targetElement.dataset.capturePreset;
-                const isKpiGroup = group === 'kpi';
-                
-                let elementToCapture;
-                let presetClass = '';
-
-                if (isKpiGroup) {
-                    presetClass = 'prepare-for-kpi-capture';
-                } else if (preset) {
-                    presetClass = `preset-${preset}`;
-                }
-                
-                if (elements.length > 1 && !isKpiGroup) {
-                    const tempContainer = document.createElement('div');
-                    tempContainer.className = 'capture-layout-container';
-                    elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
-                    elementToCapture = tempContainer;
-                } else {
-                    elementToCapture = targetElement;
-                }
-    
-                await this.captureAndDownload(elementToCapture, captureTitle, presetClass);
-                await new Promise(resolve => setTimeout(resolve, 300));
             }
+        } catch (error) {
+            console.error('Capture Dashboard Error:', error);
+            alert('Có lỗi xảy ra: ' + error.message);
         } finally {
             styleElement.remove();
             if (typeof Chart !== 'undefined') {
@@ -1367,9 +1462,70 @@ export const captureService = {
             }
         }
 
-        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất!' }));
+        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất quá trình chụp!' }));
         setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
     },
+
+    // 3. Lấy ảnh xem trước (Preview)
+    async getPreviewImages(contentContainer, baseTitle) {
+        if (!contentContainer) return [];
+
+        const captureGroups = new Map();
+        contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
+            if (el.offsetParent !== null) {
+                const group = el.dataset.captureGroup;
+                if (!captureGroups.has(group)) captureGroups.set(group, []);
+                captureGroups.get(group).push(el);
+            }
+        });
+
+        const styleElement = injectCaptureStyles();
+        if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
+        
+        let previewImages = [];
+        const options = { isPreview: true, scale: 1 }; 
+
+        try {
+            if (captureGroups.size === 0) {
+                 const res = await processDefault([contentContainer], baseTitle, options);
+                 if (res) previewImages.push(res);
+            }
+
+            for (const [group, elements] of captureGroups.entries()) {
+                // Xử lý SPLIT cho Preview
+                if (SPLIT_GROUPS.includes(group)) {
+                     for (const el of elements) {
+                        let subTitle = el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                        const res = await processDefault([el], subTitle, options);
+                        if (res) previewImages.push(res);
+                     }
+                     continue;
+                }
+                
+                // Xử lý MERGE cho Preview
+                const processor = getProcessor(group);
+                if (processor) {
+                    const result = await processor(elements, baseTitle, options);
+                    // Processor có thể trả về 1 object (ảnh gộp) hoặc null
+                    if (result) {
+                        // Nếu kết quả là mảng (trong trường hợp processor trả về nhiều ảnh), nối vào
+                        if (Array.isArray(result)) {
+                            previewImages = [...previewImages, ...result];
+                        } else {
+                            previewImages.push(result);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Preview Error:', e);
+        } finally {
+            styleElement.remove();
+            if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
+        }
+
+        return previewImages;
+    }
 };
 <<< FILE_END: src/services/capture.service.js
 
@@ -1378,11 +1534,32 @@ export const captureService = {
 /* global Chart */
 import { notificationStore } from '../stores.js';
 
-// --- HELPER: CSS Injection (Đã Fix lỗi mờ & Cắt chữ) ---
+// --- HELPER: Chuyển Tiếng Việt sang Không Dấu ---
+const removeVietnameseTones = (str) => {
+    if (!str) return '';
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+    str = str.replace(/đ/g, "d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    return str;
+};
+
+// --- HELPER: CSS Injection ---
 export const injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
 
+    // CSS này áp dụng chung cho toàn bộ quá trình chụp
     const styles = `
         /* Container gốc */
         .capture-container { 
@@ -1396,7 +1573,7 @@ export const injectCaptureStyles = () => {
             z-index: -1;
         }
         
-        /* Fix lỗi cắt chữ (Padding & Line-height) */
+        /* Reset Table styles cho đẹp khi chụp */
         .capture-container th, .capture-container td {
             padding-top: 8px !important;
             padding-bottom: 8px !important;
@@ -1417,19 +1594,30 @@ export const injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
-        /* Layout Helpers */
+        /* Layout Grid */
         .capture-layout-container { 
             display: flex; 
             flex-direction: column; 
             gap: 24px; 
         }
+        
         .prepare-for-kpi-capture {
             display: grid !important;
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 16px !important;
+            width: auto !important; 
         }
 
-        /* Tiêu đề */
+        .prepare-for-grid-4-capture {
+            width: 800px !important;
+            max-width: none !important;
+        }
+        .prepare-for-grid-4-capture .luyke-cat-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 16px !important;
+        }
+
         .capture-title { 
             font-size: 28px; 
             font-weight: bold; 
@@ -1442,7 +1630,6 @@ export const injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
-        /* [CRITICAL FIX] Mobile Portrait Preset - Chìa khóa độ nét */
         .preset-mobile-portrait {
             width: 450px !important;
             min-width: 450px !important;
@@ -1450,7 +1637,7 @@ export const injectCaptureStyles = () => {
             padding: 10px !important;
             margin: 0 auto;
             transform: scale(5) !important;
-            transform-origin: top center !important; /* QUAN TRỌNG: Giữ nội dung không bị trôi */
+            transform-origin: top center !important; 
         }
         .preset-mobile-portrait .capture-title {
             font-size: 18px !important;
@@ -1464,7 +1651,7 @@ export const injectCaptureStyles = () => {
     return styleElement;
 };
 
-const swapCanvasToImage = (container) => {
+export const swapCanvasToImage = (container) => {
     const canvases = container.querySelectorAll('canvas');
     canvases.forEach(canvas => {
         try {
@@ -1484,7 +1671,9 @@ const swapCanvasToImage = (container) => {
 };
 
 // --- CORE FUNCTION ---
-const _coreCapture = async (elementToCapture, title, presetClass = '') => {
+const _coreCapture = async (elementToCapture, title, presetClass = '', options = {}) => {
+    const { isPreview = false, scale = 2 } = options;
+
     if (typeof window.html2canvas === 'undefined') throw new Error("Thư viện html2canvas chưa tải xong.");
 
     const date = new Date();
@@ -1501,20 +1690,22 @@ const _coreCapture = async (elementToCapture, title, presetClass = '') => {
     captureWrapper.appendChild(titleEl);
     
     const contentClone = elementToCapture.cloneNode(true);
+    
     if (presetClass) { 
         const classes = presetClass.split(' ').filter(c => c);
         contentClone.classList.add(...classes); 
     }
+    
     captureWrapper.appendChild(contentClone);
     document.body.appendChild(captureWrapper);
 
     if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
     swapCanvasToImage(contentClone);
-    await new Promise(resolve => setTimeout(resolve, 300)); // Đợi render ổn định
+    await new Promise(resolve => setTimeout(resolve, 300)); 
 
     try {
         const canvas = await window.html2canvas(captureWrapper, {
-            scale: 2, // Độ phân giải cao (High Res)
+            scale: isPreview ? 1 : scale,
             useCORS: true,
             backgroundColor: '#f3f4f6',
             logging: false,
@@ -1522,78 +1713,92 @@ const _coreCapture = async (elementToCapture, title, presetClass = '') => {
             windowHeight: captureWrapper.scrollHeight
         });
 
-        const link = document.createElement('a');
-        link.download = `${title}_${dateString.replace(/\//g, '-')}.png`;
-        link.href = canvas.toDataURL('image/png');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const imageDataUrl = canvas.toDataURL('image/png');
 
-        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
-        setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+        if (isPreview) {
+            return { title: finalTitle, url: imageDataUrl };
+        } else {
+            const noToneTitle = removeVietnameseTones(title);
+            const safeFileName = noToneTitle
+                                    .replace(/[^a-zA-Z0-9]/g, '_')
+                                    .replace(/_+/g, '_');
+                                    
+            const link = document.createElement('a');
+            link.download = `${safeFileName}_${dateString.replace(/\//g, '-')}.png`;
+            link.href = imageDataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
+            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+            return null;
+        }
     } finally {
         if (document.body.contains(captureWrapper)) document.body.removeChild(captureWrapper);
         if (typeof Chart !== 'undefined') Chart.defaults.animation = {}; 
     }
 };
 
-// --- STRATEGIES ---
-
-export const strategySingle = async (element, baseTitle) => {
+export const strategySingle = async (element, baseTitle, options) => {
     const preset = element.dataset.capturePreset;
     let presetClass = preset ? `preset-${preset}` : '';
-    await _coreCapture(element, baseTitle, presetClass);
+    return await _coreCapture(element, baseTitle, presetClass, options);
 };
 
-export const strategySplit = async (elements, baseTitle) => {
+export const strategySplit = async (elements, baseTitle, options) => {
+    const results = [];
     for (const targetElement of elements) {
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-        const captureTitle = (foundTitle || baseTitle)
-                                .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                                .replace(/\s+/g, '_');
+        foundTitle = removeVietnameseTones(foundTitle); 
+        const captureTitle = (foundTitle || baseTitle);
         
         const preset = targetElement.dataset.capturePreset;
         let presetClass = (preset ? `preset-${preset}` : '');
 
-        await _coreCapture(targetElement, captureTitle, presetClass);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const res = await _coreCapture(targetElement, captureTitle, presetClass, options);
+        if (res) results.push(res);
+        
+        const delay = (options && options.isPreview) ? 50 : 500;
+        await new Promise(resolve => setTimeout(resolve, delay));
     }
+    return results;
 };
 
-export const strategyMerge = async (elements, baseTitle, isKpiMode = false) => {
-    const targetElement = elements[0];
-    let foundTitle = '';
-    if (targetElement) {
-        foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
-    }
-    const captureTitle = (foundTitle || baseTitle)
-                            .replace(/[^a-zA-Z0-9\sÁ-ỹ]/g, '')
-                            .replace(/\s+/g, '_');
-
-    const preset = targetElement.dataset.capturePreset;
-    let presetClass = '';
-
-    if (isKpiMode) {
-        presetClass = 'prepare-for-kpi-capture';
-    } else if (preset) {
-        presetClass = `preset-${preset}`;
-    }
-
+export const strategyMerge = async (elements, baseTitle, isKpiMode = false, options = {}) => {
     let elementToCapture;
     
-    // Logic gộp
-    if (elements.length > 1 || isKpiMode) {
+    if (elements.length > 1) {
         const tempContainer = document.createElement('div');
         tempContainer.className = 'capture-layout-container'; 
         elements.forEach(el => tempContainer.appendChild(el.cloneNode(true)));
         elementToCapture = tempContainer;
     } else {
-        // Nếu chỉ có 1 phần tử (VD: Doanh thu NV LK), lấy trực tiếp để preset áp dụng đúng
-        elementToCapture = targetElement;
+        elementToCapture = elements[0];
     }
 
-    await _coreCapture(elementToCapture, captureTitle, presetClass);
+    let foundTitle = '';
+    if (elements[0]) {
+        foundTitle = elements[0].querySelector('h3, h4')?.textContent?.trim() || '';
+    }
+    foundTitle = removeVietnameseTones(foundTitle);
+    const captureTitle = (foundTitle || baseTitle);
+
+    const preset = elements[0]?.dataset.capturePreset;
+    let presetClass = '';
+
+    if (isKpiMode === 'grid-4') {
+        presetClass = 'prepare-for-grid-4-capture';
+        if (!options.isPreview) options.scale = 4;
+    } else if (isKpiMode === true) {
+        presetClass = 'prepare-for-kpi-capture';
+    } else if (preset) {
+        presetClass = `preset-${preset}`;
+    }
+
+    const res = await _coreCapture(elementToCapture, captureTitle, presetClass, options);
     await new Promise(resolve => setTimeout(resolve, 300));
+    return res ? [res] : [];
 };
 
 export const captureAndDownload = _coreCapture;
@@ -4239,35 +4444,200 @@ export const dynamicTableProcessor = {
 <<< FILE_END: src/services/processing/logic/dynamicTable.processor.js
 
 >>> FILE_START: src/services/processing/logic/regional.processor.js
-// src/services/processing/logic/regional.processor.js
 import { helpers } from '../helpers.js';
+
+// --- HELPER FUNCTIONS ---
+const evaluatePerformance = (dat, tong) => {
+    if (tong === 0) return 'N/A';
+    const tyLe = dat / tong;
+    if (tyLe >= 1) return 'Xuất sắc'; 
+    if (tyLe >= 0.8) return 'Gần đạt'; 
+    return 'Cần cố gắng';
+};
 
 export const regionalProcessor = {
     // Xử lý file Excel Thi Đua Vùng
     processThiDuaVungFile(workbook) {
-        const sheetNames = workbook.SheetNames;
-        
-        const chiTietSheetName = sheetNames.find(name => {
-            const upperName = name.toUpperCase();
-            return upperName.includes('CHITIET') || upperName.includes('CHI TIẾT');
-        });
-        
-        const tongSheetName = sheetNames.find(name => {
-            const upperName = name.toUpperCase();
-            return upperName.includes('TONG') || upperName.includes('SIEU THI');
-        });
+        console.group('🚀 [RegionalProcessor] Bắt đầu xử lý file...');
 
-        const chiTietSheet = chiTietSheetName ? workbook.Sheets[chiTietSheetName] : null;
-        const tongSheet = tongSheetName ? workbook.Sheets[tongSheetName] : null;
-
-        if (!chiTietSheet || !tongSheet) {
-            throw new Error('File Excel phải chứa sheet (CHITIET/CHI TIẾT) và (TONG/SIEU THI).');
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('File Excel không chứa sheet dữ liệu nào.');
         }
-        
-        const chiTietData = helpers.findHeaderAndProcess(chiTietSheet, ['siêu thị', 'ngành hàng', 'kênh']);
-        const tongData = helpers.findHeaderAndProcess(tongSheet, ['siêu thị', 'tổng thưởng']);
 
-        return { chiTietData, tongData };
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        // 2. KHAI BÁO TỪ KHÓA
+        const KEYWORDS = {
+            tinh: 'tỉnh',
+            boss: 'boss',
+            kenh: 'kênh',
+            sieuThi: 'siêu thị',
+            nganhHang: 'ngành hàng thi đua',
+            
+            // Các chỉ số KPI
+            duKienHoanThanh: 'dự kiến hoàn thành', 
+            duKienVuot: 'dự kiến dt/sl vượt', 
+            
+            // Các loại Hạng
+            rankTop10: 'top 10% kênh', 
+            rankVuotTroi: 'hạng vượt trội dt/sl theo kênh', 
+            rankTarget: 'hạng h.t target theo kênh', 
+            
+            // Thưởng (Lấy thêm các cột thưởng tiềm năng)
+            tongThuong: 'tổng thưởng',
+            thuongVuotTroi: 'thưởng top vượt trội', // Cột thưởng tiềm năng 1
+            thuongTarget: 'thưởng top hoàn thành'   // Cột thưởng tiềm năng 2
+        };
+
+        const REQUIRED_MATCHES = [KEYWORDS.sieuThi, KEYWORDS.nganhHang, KEYWORDS.tongThuong];
+
+        let headerRowIndex = -1;
+        let columnMap = {}; 
+        let maxRowIndex = 0;
+
+        // 3. QUÉT SHEET TÌM HEADER
+        const cellKeys = Object.keys(sheet).filter(k => !k.startsWith('!'));
+        cellKeys.forEach(key => {
+            const match = key.match(/^([A-Z]+)(\d+)$/);
+            if (match) {
+                const row = parseInt(match[2]);
+                if (row > maxRowIndex) maxRowIndex = row;
+            }
+        });
+
+        for (let r = 1; r <= Math.min(50, maxRowIndex); r++) {
+            const rowTexts = [];
+            const colToText = {}; 
+
+            cellKeys.forEach(key => {
+                const match = key.match(/^([A-Z]+)(\d+)$/);
+                if (match && parseInt(match[2]) === r) {
+                    const cellVal = sheet[key].v;
+                    if (typeof cellVal === 'string') {
+                        const cleanText = cellVal.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+                        rowTexts.push(cleanText);
+                        colToText[match[1]] = cleanText;
+                    }
+                }
+            });
+
+            const isHeader = REQUIRED_MATCHES.every(req => rowTexts.includes(req));
+
+            if (isHeader) {
+                headerRowIndex = r;
+                // MAP CỘT
+                Object.entries(colToText).forEach(([colLetter, text]) => {
+                    for (const [keyId, keyText] of Object.entries(KEYWORDS)) {
+                        if (text === keyText) { 
+                            columnMap[keyId] = colLetter;
+                            continue;
+                        }
+                        if (text.includes(keyText) && !columnMap[keyId]) {
+                            columnMap[keyId] = colLetter;
+                        }
+                    }
+                });
+                break;
+            }
+        }
+
+        if (headerRowIndex === -1) {
+            throw new Error(`Không tìm thấy dòng tiêu đề hợp lệ.`);
+        }
+
+        // 4. TRÍCH XUẤT DATA
+        const rawData = [];
+        const supermarketMap = new Map();
+        let skippedRows = 0;
+
+        for (let r = headerRowIndex + 1; r <= maxRowIndex; r++) {
+            const getVal = (keyId) => {
+                const col = columnMap[keyId];
+                if (!col) return null;
+                const cell = sheet[`${col}${r}`];
+                return cell ? cell.v : null;
+            };
+
+            let sieuThiName = getVal('sieuThi');
+            
+            if (!sieuThiName || typeof sieuThiName !== 'string') {
+                skippedRows++; continue;
+            }
+            
+            sieuThiName = sieuThiName.replace(/\s+/g, ' ').trim(); 
+            if (sieuThiName === '') {
+                skippedRows++; continue;
+            }
+
+            // Đọc dữ liệu thưởng tiềm năng
+            const thuongVuotTroi = parseFloat(getVal('thuongVuotTroi')) || 0;
+            const thuongTarget = parseFloat(getVal('thuongTarget')) || 0;
+
+            const rowItem = {
+                id: `${r}`,
+                sieuThi: sieuThiName,
+                kenh: getVal('kenh') || '',
+                nganhHang: getVal('nganhHang') || '',
+                
+                // Số liệu
+                duKienHoanThanh: parseFloat(getVal('duKienHoanThanh')) || 0, 
+                duKienVuot: parseFloat(getVal('duKienVuot')) || 0, 
+                tongThuong: parseFloat(getVal('tongThuong')) || 0,
+                
+                // Tiềm năng (Lấy số lớn nhất trong các cơ hội thưởng)
+                potentialPrize: Math.max(thuongVuotTroi, thuongTarget),
+
+                // Hạng (Rank)
+                rankCutoff: parseFloat(getVal('rankTop10')) || 0, 
+                rankVuotTroi: parseFloat(getVal('rankVuotTroi')) || 9999,
+                rankTarget: parseFloat(getVal('rankTarget')) || 9999,
+            };
+
+            rowItem.bestRank = Math.min(rowItem.rankVuotTroi, rowItem.rankTarget);
+            
+            rawData.push(rowItem);
+
+            if (!supermarketMap.has(sieuThiName)) {
+                supermarketMap.set(sieuThiName, {
+                    sieuThi: sieuThiName, 
+                    kenh: rowItem.kenh, 
+                    tongThuong: 0,
+                    soNganhHang: 0,
+                    soNganhHangDat: 0,
+                    rankCutoff: rowItem.rankCutoff,
+                    details: []
+                });
+            }
+
+            const stData = supermarketMap.get(sieuThiName);
+            stData.tongThuong += rowItem.tongThuong;
+            stData.soNganhHang += 1;
+            
+            if (rowItem.duKienHoanThanh >= 1.0) {
+                stData.soNganhHangDat += 1;
+            }
+            if (stData.rankCutoff === 0 && rowItem.rankCutoff > 0) {
+                stData.rankCutoff = rowItem.rankCutoff;
+            }
+
+            stData.details.push(rowItem);
+        }
+
+        const aggregatedData = Array.from(supermarketMap.values())
+            .map(item => {
+                item.evaluation = evaluatePerformance(item.soNganhHangDat, item.soNganhHang);
+                return item;
+            })
+            .sort((a, b) => a.sieuThi.localeCompare(b.sieuThi));
+
+        console.log(`✅ Đã xử lý ${aggregatedData.length} siêu thị.`);
+        console.groupEnd();
+
+        return {
+            chiTietData: rawData, 
+            tongData: aggregatedData 
+        };
     }
 };
 <<< FILE_END: src/services/processing/logic/regional.processor.js
@@ -5760,6 +6130,175 @@ export const generalReportLogic = {
     }
 };
 <<< FILE_END: src/services/reports/general.report.js
+
+>>> FILE_START: src/services/reports/installment.report.js
+// src/services/reports/installment.report.js
+import { config } from '../../config';
+
+// Helpers
+const normalize = (str) => str ? str.toString().trim().toLowerCase() : '';
+const formatCurrency = (amount) => amount ? parseInt(amount) : 0;
+
+/**
+ * [GENESIS] Kiểm tra đơn hàng có được tính doanh thu không
+ */
+const isRevenueOrder = (hinhThucXuat) => {
+    if (!hinhThucXuat) return false;
+    const type = normalize(hinhThucXuat);
+    const revenueTypes = (config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || []).map(t => normalize(t));
+    return revenueTypes.includes(type);
+};
+
+/**
+ * [GENESIS] Kiểm tra Ngành Hàng cho phép
+ */
+const isValidSector = (nganhHang) => {
+    if (!nganhHang) return false;
+    const sectorVal = normalize(nganhHang); 
+    const allowedSectors = config.DEFAULT_DATA.NGANH_HANG_TRA_GOP_ALLOW_LIST || [];
+
+    return allowedSectors.some(code => {
+        const cleanCode = normalize(code);
+        return sectorVal === cleanCode || 
+               sectorVal.startsWith(cleanCode + ' ') || 
+               sectorVal.startsWith(cleanCode + '-');
+    });
+};
+
+const isInstallmentOrder = (hinhThucXuat) => {
+    if (!hinhThucXuat) return false;
+    const type = normalize(hinhThucXuat);
+    const installmentTypes = (config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || []).map(t => normalize(t));
+    return installmentTypes.includes(type);
+};
+
+const isSuccessInstallment = (order) => {
+    if (!isInstallmentOrder(order.hinhThucXuat)) return false;
+    const statusHuy = normalize(order.trangThaiHuy);
+    const statusThuTien = normalize(order.trangThaiThuTien);
+    // Điều kiện đậu: Không hủy VÀ Đã thu tiền
+    return statusHuy !== 'đã hủy' && statusThuTien === 'đã thu';
+};
+
+/**
+ * Hàm xử lý chính
+ */
+export const processInstallmentReport = (employeesInput) => {
+    const kpi = {
+        totalOrders: 0,
+        totalInstallment: 0,
+        totalSuccess: 0,
+        approvalRate: 0
+    };
+
+    const sourceEmployees = Array.isArray(employeesInput) ? employeesInput : [];
+
+    const processedEmployees = sourceEmployees.map(emp => {
+        const newEmp = {
+            ...emp,
+            stats: {
+                ...emp.stats, 
+                totalRevenue: 0,              // DT Thực (Đã thu tiền & Không hủy)
+                installmentTotal: 0,
+                installmentSuccess: 0,
+                installmentFail: 0,
+                installmentRevenueRaw: 0,     // DT Trả chậm gốc
+                installmentRevenueWeighted: 0 // DT Trả chậm (30%)
+            }
+        };
+
+        const rawOrders = emp.orders || [];
+        
+        // 1. Lấy danh sách đơn hợp lệ
+        const validOrders = rawOrders.filter(o => 
+            isRevenueOrder(o.hinhThucXuat) && 
+            isValidSector(o.nganhHang)
+        );
+
+        validOrders.forEach(order => {
+            const amount = formatCurrency(order.thanhTien);
+            
+            // [GENESIS FIX] Xác định điều kiện Doanh Thu Thực
+            const isCancelled = normalize(order.trangThaiHuy) === 'đã hủy';
+            const isCollected = normalize(order.trangThaiThuTien) === 'đã thu';
+
+            // ĐIỀU KIỆN MỚI: Phải là "Đã thu" và Không phải "Đã hủy"
+            if (isCollected && !isCancelled) {
+                newEmp.stats.totalRevenue += amount;
+            }
+            
+            kpi.totalOrders++;
+            
+            // Xử lý KPI Trả Chậm
+            if (isInstallmentOrder(order.hinhThucXuat)) {
+                kpi.totalInstallment++;
+                newEmp.stats.installmentTotal++;
+                
+                // Logic đậu/rớt giữ nguyên (đã dùng logic tương tự trong hàm isSuccessInstallment)
+                if (isSuccessInstallment(order)) {
+                    kpi.totalSuccess++;
+                    newEmp.stats.installmentSuccess++;
+                    newEmp.stats.installmentRevenueRaw += amount;
+                } else {
+                    newEmp.stats.installmentFail++;
+                }
+            }
+        });
+
+        // Tính DT Trả chậm quy đổi (30%)
+        newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 0.3;
+
+        // Tính tỷ lệ duyệt
+        newEmp.stats.approvalRate = newEmp.stats.installmentTotal > 0
+            ? ((newEmp.stats.installmentSuccess / newEmp.stats.installmentTotal) * 100).toFixed(1)
+            : 0;
+
+        newEmp.processedCustomers = processCustomerGrouping(validOrders);
+
+        return newEmp;
+    });
+
+    kpi.approvalRate = kpi.totalInstallment > 0
+        ? ((kpi.totalSuccess / kpi.totalInstallment) * 100).toFixed(1)
+        : 0;
+
+    const finalEmployees = processedEmployees
+        .filter(e => e.processedCustomers && e.processedCustomers.length > 0) 
+        .sort((a, b) => b.stats.installmentTotal - a.stats.installmentTotal);
+
+    return { kpi, employees: finalEmployees };
+};
+
+const processCustomerGrouping = (orders) => {
+    const customerMap = {};
+    orders.forEach(order => {
+        const rawName = order.tenKhachHang || 'Khách lẻ';
+        const key = normalize(rawName);
+
+        if (!customerMap[key]) {
+            customerMap[key] = {
+                name: rawName,
+                totalOrders: 0, installmentCount: 0, successCount: 0, orders: []
+            };
+        }
+        const cust = customerMap[key];
+        const isInst = isInstallmentOrder(order.hinhThucXuat);
+        const isSucc = isSuccessInstallment(order);
+
+        cust.totalOrders++; 
+        if (isInst) {
+            cust.installmentCount++;
+            if (isSucc) cust.successCount++;
+        }
+        cust.orders.push({ ...order, _isInstallment: isInst, _isSuccess: isSucc });
+    });
+
+    return Object.values(customerMap).sort((a, b) => {
+        if (b.installmentCount !== a.installmentCount) return b.installmentCount - a.installmentCount;
+        return b.totalOrders - a.totalOrders;
+    });
+};
+<<< FILE_END: src/services/reports/installment.report.js
 
 >>> FILE_START: src/services/reports/master/aggregator.js
 // src/services/reports/master/aggregator.js
