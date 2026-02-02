@@ -39,7 +39,7 @@
   import LoginModal from './components/modals/LoginModal.svelte';
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
   import UserSpecialProgramModal from './components/modals/UserSpecialProgramModal.svelte';
-  import ComposerModal from './components/modals/ComposerModal.svelte';
+  import ComposerModal from './components/modals/composer/ComposerModal.svelte';
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';

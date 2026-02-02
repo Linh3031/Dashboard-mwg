@@ -9,7 +9,21 @@ export const currentUser = writable(null);
 export const feedbackList = writable([]);
 export const userStats = writable([]); 
 export const helpContent = writable({ data: '...', luyke: '...', sknv: '...', realtime: '...' });
-export const composerTemplates = writable({ luyke: '', sknv: '', realtime: '' });
+
+// --- [SỬA ĐỔI] XỬ LÝ LƯU TRỮ MẪU NHẬN XÉT (PERSISTENCE) ---
+// Thay vì khởi tạo rỗng, ta đọc từ localStorage nếu có
+let savedTemplates = { luyke: '', sknv: '', realtime: '' };
+if (typeof localStorage !== 'undefined') {
+    try {
+        const raw = localStorage.getItem('composerTemplates');
+        if (raw) savedTemplates = JSON.parse(raw);
+    } catch (e) {
+        console.error('Lỗi đọc mẫu nhận xét từ localStorage:', e);
+    }
+}
+export const composerTemplates = writable(savedTemplates);
+// -------------------------------------------------------------
+
 export const competitionNameMappings = writable({}); 
 export const homeConfig = writable({ videoUrl: '', timeline: [], sliderImages: [], changelogs: [] });
 export const danhSachNhanVien = writable([]);

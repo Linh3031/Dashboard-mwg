@@ -1,15 +1,14 @@
 // File: src/services/composerService.js
-// MỤC ĐÍCH: Chỉ chứa logic cho Trình tạo Nhận xét.
+// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Đã fix lỗi 900% - Lấy DT Dự kiến từ file dán)
 
 import { get } from 'svelte/store';
 import { masterReportData } from '../stores.js';
 import { dataProcessing } from './dataProcessing.js';
-// [FIX LỖI IMPORT] Dùng 'import * as utils' thay vì 'import { utils }'
 import * as utils from '../utils.js'; 
 import { formatters } from '../utils/formatters.js';
 
 const composerServices = {
-    // Logic getEmployeeRanking
+    // --- Helpers cho Xếp hạng (Giữ nguyên) ---
     getEmployeeRanking(reportData, key, direction = 'desc', count = 3, department = 'ALL') {
         if (!reportData || reportData.length === 0) return [];
         let filteredData = reportData;
@@ -23,7 +22,6 @@ const composerServices = {
             .slice(0, count);
     },
 
-    // Logic getEmployeesBelowTarget
     getEmployeesBelowTarget(reportData, dataKey, goalKey, department = 'ALL') {
         if (!reportData || reportData.length === 0) return [];
         let filteredData = reportData;
@@ -38,7 +36,6 @@ const composerServices = {
         }).sort((a, b) => (b[dataKey] || 0) - (a[dataKey] || 0));
     },
 
-    // Logic formatEmployeeList
     formatEmployeeList(employeeArray, valueKey, valueType = 'number') {
         if (!Array.isArray(employeeArray) || employeeArray.length === 0) {
             return " (không có)";
@@ -57,7 +54,7 @@ const composerServices = {
         }).join("\n");
     },
     
-    // Logic processComposerTemplate
+    // --- LOGIC XỬ LÝ CHÍNH ---
     processComposerTemplate(template, supermarketReport, goals, rankingReportData, competitionData, sectionId) {
         if (!template || !supermarketReport || !goals) {
             return "Lỗi: Dữ liệu không đủ để tạo nhận xét.";
@@ -80,59 +77,101 @@ const composerServices = {
             'BH': { dataKey: 'pctBaoHiem', goalKey: 'phanTramBaoHiem', format: 'percent' },
         };
 
-        return template.replace(/\[(.*?)\]/g, (match, tag) => {
-            const now = new Date();
-            const currentDay = now.getDate() || 1;
+        // --- BƯỚC 1: CHUẨN BỊ SỐ LIỆU ---
+        let dtThuc = supermarketReport.doanhThu || 0;
+        let dtQd = supermarketReport.doanhThuQuyDoi || 0;
+        let tlQd = supermarketReport.hieuQuaQuyDoi || 0; 
+        let comparisonPercentage = 'N/A';
+        
+        // Biến lưu số liệu Dự Kiến (Forecast) lấy từ file dán
+        let dtThucDuKienFromPaste = 0; 
+        let phanTramTargetQdFromPaste = null;
 
-            let dtThuc = supermarketReport.doanhThu || 0;
-            let dtQd = supermarketReport.doanhThuQuyDoi || 0;
-            let phanTramHTQD = goals.doanhThuQD > 0 ? (dtQd / 1000000) / goals.doanhThuQD : 0;
+        // Ưu tiên lấy dữ liệu Paste
+        if (sectionId === 'luyke' && typeof localStorage !== 'undefined') {
+            const pastedText = localStorage.getItem('daily_paste_luyke');
+            if (pastedText) {
+                // [QUAN TRỌNG] Lấy dtDuKien từ parser giống LuykeSieuThi.svelte 
+                const pastedData = dataProcessing.parseLuyKePastedData(pastedText);
+                const { mainKpis, comparisonData, dtDuKien } = pastedData;
 
-            if (sectionId === 'luyke') {
-                // Cần đảm bảo element tồn tại trước khi lấy value
-                const pasteEl = document.getElementById('paste-luyke');
-                const pastedLuyKeData = dataProcessing.parseLuyKePastedData(pasteEl?.value || '');
-                
-                if (pastedLuyKeData.mainKpis && pastedLuyKeData.mainKpis['Thực hiện DT thực']) {
-                    dtThuc = parseFloat(pastedLuyKeData.mainKpis['Thực hiện DT thực'].replace(/,/g, '')) * 1000000;
+                if (mainKpis && mainKpis['Thực hiện DT thực']) {
+                    const clean = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
+                    
+                    const dtThucPaste = clean(mainKpis['Thực hiện DT thực']) * 1000000;
+                    const dtQdPaste = clean(mainKpis['Thực hiện DTQĐ']) * 1000000;
+
+                    if (dtThucPaste > 0) {
+                        dtThuc = dtThucPaste;
+                        dtQd = dtQdPaste;
+                        tlQd = (dtQd / dtThuc) - 1;
+                    }
+
+                    if (mainKpis['% HT Target Dự Kiến (QĐ)']) {
+                         const rawPct = String(mainKpis['% HT Target Dự Kiến (QĐ)']).replace(/%|,/g, '');
+                         phanTramTargetQdFromPaste = parseFloat(rawPct) / 100;
+                    }
                 }
-                if (pastedLuyKeData.mainKpis && pastedLuyKeData.mainKpis['Thực hiện DTQĐ']) {
-                    dtQd = parseFloat(pastedLuyKeData.mainKpis['Thực hiện DTQĐ'].replace(/,/g, '')) * 1000000;
+
+                // [FIX LỖI 900%] Lấy số liệu dự kiến từ file dán (đơn vị triệu) -> đổi về đơn vị chuẩn
+                if (dtDuKien) {
+                    dtThucDuKienFromPaste = parseFloat(String(dtDuKien).replace(/,/g, '')) * 1000000;
                 }
-                if (pastedLuyKeData.mainKpis && pastedLuyKeData.mainKpis['% HT Target Dự Kiến (QĐ)']) {
-                    phanTramHTQD = (parseFloat(pastedLuyKeData.mainKpis['% HT Target Dự Kiến (QĐ)'].replace('%', '')) || 0) / 100;
+
+                if (comparisonData && comparisonData.percentage) {
+                    comparisonPercentage = comparisonData.percentage;
                 }
             }
+        }
 
+        // --- BƯỚC 2: TÍNH TOÁN DỰ KIẾN FALLBACK (Chỉ dùng khi không có dữ liệu dán) ---
+        const now = new Date();
+        const currentDay = now.getDate() || 1;
+        const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+        // --- BƯỚC 3: THAY THẾ TAG ---
+        return template.replace(/\[(.*?)\]/g, (match, tag) => {
+            
             if (tag === 'NGAY') return now.toLocaleDateString('vi-VN');
             if (tag === 'GIO') return now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
             if (tag === 'DT_THUC') return formatters.formatNumber(dtThuc / 1000000, 0) + " tr";
             if (tag === 'DTQD') return formatters.formatNumber(dtQd / 1000000, 0) + " tr";
-            if (tag === '%HT_DTQD') return formatters.formatPercentage(phanTramHTQD);
-
-            if (tag === 'TLQD') {
-                if (sectionId === 'luyke') {
-                    const pasteEl = document.getElementById('paste-luyke');
-                    const pastedLuyKeData = dataProcessing.parseLuyKePastedData(pasteEl?.value || '');
-                    if (pastedLuyKeData.mainKpis && pastedLuyKeData.mainKpis['Thực hiện DT thực'] && pastedLuyKeData.mainKpis['Thực hiện DTQĐ']) {
-                        const dtThucPasted = parseFloat(String(pastedLuyKeData.mainKpis['Thực hiện DT thực']).replace(/,/g, ''));
-                        const dtQdPasted = parseFloat(String(pastedLuyKeData.mainKpis['Thực hiện DTQĐ']).replace(/,/g, ''));
-                        if (dtThucPasted > 0) {
-                            return formatters.formatPercentage((dtQdPasted / dtThucPasted) - 1);
-                        }
-                    }
+            if (tag === 'TLQD') return formatters.formatPercentage(tlQd);
+            
+            if (tag === '%HT_DTQD') {
+                if (phanTramTargetQdFromPaste !== null) {
+                    return formatters.formatPercentage(phanTramTargetQdFromPaste);
                 }
-                return formatters.formatPercentage(supermarketReport.hieuQuaQuyDoi || 0);
+                const target = parseFloat(goals.doanhThuQD) || 0;
+                if (target > 0) {
+                    const currentRev = dtQd / 1000000;
+                    const projectedRev = (currentRev / currentDay) * totalDaysInMonth;
+                    return formatters.formatPercentage(projectedRev / target);
+                }
+                return '0%';
             }
 
+            // [FIX LỖI 900%] Logic tính % HT DT Thực
             if (tag === '%HT_DTT') {
-                const target = parseFloat(goals.doanhThuThuc) || 0;
-                const percent = target > 0 ? (dtThuc / 1000000) / target : 0;
-                return formatters.formatPercentage(percent);
+                const targetMillions = parseFloat(goals.doanhThuThuc) || 0;
+                const targetFull = targetMillions * 1000000; // Đổi mục tiêu (triệu) ra số đầy đủ
+
+                if (targetFull > 0) {
+                    // Ưu tiên 1: Dùng số Dự kiến từ file dán (Chính xác nhất)
+                    if (dtThucDuKienFromPaste > 0) {
+                        return formatters.formatPercentage(dtThucDuKienFromPaste / targetFull);
+                    }
+                    
+                    // Ưu tiên 2: Tự tính (Fallback - có thể sai số đầu tháng)
+                    const projectedRev = (dtThuc / currentDay) * totalDaysInMonth;
+                    return formatters.formatPercentage(projectedRev / targetFull);
+                }
+                return '0%';
             }
+
             if (tag === 'DT_CHUAXUAT') return formatters.formatRevenue(supermarketReport.doanhThuQuyDoiChuaXuat || 0) + " tr";
-            if (tag === 'SS_CUNGKY') return supermarketReport.comparisonData?.percentage || 'N/A';
+            if (tag === 'SS_CUNGKY') return comparisonPercentage;
 
             if (tag.startsWith('TD_')) {
                 const total = competitionData?.length || 0;
@@ -165,7 +204,6 @@ const composerServices = {
                 const metricInfo = tagMapping[metric];
                 if (metricInfo) {
                     let dataForRanking = rankingReportData;
-                    // Nếu là thu nhập, lấy từ masterReportData để có đủ dữ liệu
                     if (metric === 'THUNHAP') {
                          const masterData = get(masterReportData);
                          if (masterData && masterData.sknv.length > 0) {

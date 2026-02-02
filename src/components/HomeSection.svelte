@@ -1,5 +1,5 @@
 <script>
-  // Version 2.5 - Fix Youtube Refused to Connect & Image Object Fit
+  // Version 2.6 - Fix Firebase Storage Cost (Switch to Local Images)
   import { onMount, afterUpdate, onDestroy } from 'svelte';
   import { homeConfig } from '../stores.js';
   import { adminService } from '../services/admin.service.js';
@@ -11,13 +11,13 @@
   let slideIndex = 0;
   let slideInterval;
   let showQRModal = false;
-  
   let stats = {
       totalUsers: 0,
       totalVisits: 0,
       totalActions: 0
   };
-
+  
+  // Cấu hình mặc định
   let config = {
       videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4', // Link mặc định chuẩn
       timeline: [],
@@ -25,7 +25,21 @@
       changelogs: []
   };
 
-  $: config = $homeConfig || config;
+  // [CODEGENESIS FIX START] --- Cấu hình ảnh Local để không tốn tiền Storage ---
+  const localImages = [
+      { title: "Sức khỏe siêu thị", url: "/images/slides/suc-khoe-sieu-thi.png" },
+      { title: "Chi tiết ngành hàng", url: "/images/slides/Chi-tiet-nganh-hang.png" },
+      { title: "Biểu đồ tỷ trọng ngành hàng", url: "/images/slides/Bieu-do.png" },
+      { title: "Thi đua siêu thị lũy kế", url: "/images/slides/thi-dua-st.png" },
+      { title: "Tiền thưởng thi đua vùng", url: "/images/slides/thi-dua-vung.png" }
+  ];
+
+  // Logic Merge: Lấy Video/Log từ Firebase nhưng ÉP BUỘC dùng ảnh Local
+  $: config = {
+      ...($homeConfig || config), // Giữ lại cấu hình Video/Changelog từ Firebase
+      sliderImages: localImages   // Ghi đè: Luôn dùng ảnh Local miễn phí
+  };
+  // [CODEGENESIS FIX END] -----------------------------------------------------
 
   // [MỚI] Hàm xử lý link Youtube an toàn
   // Dù dữ liệu nhập vào là gì, hàm này sẽ luôn trả về link embed chuẩn
@@ -33,7 +47,6 @@
       if (!url) return '';
       // Nếu đã là link embed thì giữ nguyên
       if (url.includes('/embed/')) return url;
-      
       // Nếu là link xem thường (youtube.com/watch?v=ABC)
       if (url.includes('v=')) {
           const v = url.split('v=')[1].split('&')[0];
@@ -46,7 +59,8 @@
           return `https://www.youtube.com/embed/${v}`;
       }
       
-      return url; // Trả về gốc nếu không nhận dạng được
+      return url;
+      // Trả về gốc nếu không nhận dạng được
   }
 
   // Biến phản ứng để luôn lấy link chuẩn
@@ -135,7 +149,6 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-    
         <div class="lg:col-span-2 content-card !p-0 overflow-hidden flex flex-col shadow-lg border-0">
             <div class="relative w-full" style="padding-top: 56.25%;"> 
                 <iframe
@@ -151,22 +164,22 @@
 
         <div class="content-card flex flex-col h-full !mb-0 bg-white border border-gray-200">
             <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                 <i data-feather="list" class="text-blue-600"></i> Mục lục Video
+                  <i data-feather="list" class="text-blue-600"></i> Mục lục Video
             </h3>
             <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar max-h-[300px] lg:max-h-none space-y-2">
                 {#if config.timeline && config.timeline.length > 0}
                    {#each config.timeline as item}
-                     <button 
+                      <button 
                             class="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition flex items-start gap-3 group border border-transparent hover:border-blue-100"
                             on:click={() => jumpToTime(item.time)}
-                        >
+                      >
                             <span class="bg-blue-100 text-blue-700 font-mono text-xs font-bold px-2 py-1 rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">
                                 {item.time}
-                            </span>
+                             </span>
                             <span class="text-sm text-gray-700 font-medium group-hover:text-blue-800 line-clamp-2">
                                 {item.label}
                             </span>
-                        </button>
+                         </button>
                     {/each}
                 {:else}
                     <p class="text-sm text-gray-400 italic text-center py-4">Chưa có mục lục.</p>
@@ -179,31 +192,31 @@
         <div class="content-card flex flex-col h-[600px]">
             <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2 border-b pb-2">
                 <i data-feather="image" class="text-blue-600"></i> Các chức năng dự án
-            </h3>
+             </h3>
             <div class="flex-grow relative group overflow-hidden rounded-lg bg-gray-900 flex items-center justify-center">
                 {#if config.sliderImages && config.sliderImages.length > 0}
                     {#each config.sliderImages as img, i}
                          <div 
-                            class="absolute inset-0 transition-opacity duration-700 ease-in-out {i === slideIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}"
+                             class="absolute inset-0 transition-opacity duration-700 ease-in-out {i === slideIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}"
                         >
                             <img 
                                 src={img.url} 
-                                alt={img.title} 
+                                 alt={img.title} 
                                 class="w-full h-full object-contain"
                             >
-                             <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
+                              <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
                                 <h3 class="text-white font-bold text-lg drop-shadow-md">{img.title}</h3>
                              </div>
-                        </div>
+                         </div>
                     {/each}
 
                     <button class="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 text-white rounded-full z-20 opacity-0 group-hover:opacity-100 transition" on:click={prevSlide}>
                         <i data-feather="chevron-left"></i>
-                    </button>
+                     </button>
                      <button class="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 text-white rounded-full z-20 opacity-0 group-hover:opacity-100 transition" on:click={nextSlide}>
                         <i data-feather="chevron-right"></i>
                     </button>
-                    
+                     
                     <div class="absolute bottom-3 right-4 flex gap-2 z-20">
                         {#each config.sliderImages as _, i}
                              <div class="w-2 h-2 rounded-full transition-colors {i === slideIndex ? 'bg-white' : 'bg-white/40'}"></div>
@@ -211,29 +224,29 @@
                     </div>
                 {:else}
                     <div class="text-white/50 flex flex-col items-center">
-                        <i data-feather="image" class="w-10 h-10 mb-2"></i>
+                         <i data-feather="image" class="w-10 h-10 mb-2"></i>
                         <p>Chưa có ảnh slide.</p>
                      </div>
                 {/if}
             </div>
-        </div>
+         </div>
 
         <div class="content-card flex flex-col h-[600px] bg-slate-50">
             <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2 border-b pb-2">
                 <i data-feather="clock" class="text-green-600"></i> Lịch sử cập nhật
             </h3>
             <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar space-y-4 pb-4">
-                {#if config.changelogs && config.changelogs.length > 0}
+                 {#if config.changelogs && config.changelogs.length > 0}
                    {#each config.changelogs as log}
                         <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                             <div class="mb-3 border-b border-gray-100 pb-2">
-                                 <span class="text-lg font-bold text-blue-700">Phiên bản {log.version} <span class="text-gray-500 font-medium text-sm ml-1">({log.date})</span></span>
+                                  <span class="text-lg font-bold text-blue-700">Phiên bản {log.version} <span class="text-gray-500 font-medium text-sm ml-1">({log.date})</span></span>
                             </div>
                             <div class="text-sm text-gray-700 leading-relaxed changelog-content">
-                                {@html log.content}
+                                 {@html log.content}
                             </div>
                         </div>
-                    {/each}
+                  {/each}
                 {:else}
                     <p class="text-gray-500 italic text-center py-10">Chưa có thông tin cập nhật.</p>
                 {/if}
@@ -244,7 +257,7 @@
 
 {#if showQRModal}
     <div 
-        class="fixed inset-0 bg-black/60 z-[1300] flex items-center justify-center backdrop-blur-sm p-4"
+         class="fixed inset-0 bg-black/60 z-[1300] flex items-center justify-center backdrop-blur-sm p-4"
         on:click={() => showQRModal = false}
         role="button"
         tabindex="0"
@@ -258,7 +271,7 @@
             <p class="text-sm text-gray-500 mb-6">Sử dụng camera hoặc Line để quét</p>
             
             <div class="bg-gray-100 p-4 rounded-xl inline-block mb-4">
-                <img 
+                 <img 
                     src="/images/qr-line-group.jpg" 
                     alt="Mã QR Nhóm Line" 
                     class="w-48 h-48 object-contain rounded-lg"
