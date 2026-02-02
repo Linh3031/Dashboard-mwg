@@ -1,5 +1,5 @@
 // File: src/services/composerService.js
-// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Đã fix lỗi 900% - Lấy DT Dự kiến từ file dán)
+// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Update: Thêm % Trả chậm & Ranking Top 5)
 
 import { get } from 'svelte/store';
 import { masterReportData } from '../stores.js';
@@ -8,7 +8,7 @@ import * as utils from '../utils.js';
 import { formatters } from '../utils/formatters.js';
 
 const composerServices = {
-    // --- Helpers cho Xếp hạng (Giữ nguyên) ---
+    // --- Helpers cho Xếp hạng ---
     getEmployeeRanking(reportData, key, direction = 'desc', count = 3, department = 'ALL') {
         if (!reportData || reportData.length === 0) return [];
         let filteredData = reportData;
@@ -17,7 +17,7 @@ const composerServices = {
         }
 
         return [...filteredData]
-            .filter(e => e[key] > 0)
+            .filter(e => e[key] > 0 || (key === 'tyLeTraCham' && e[key] >= 0)) // Trả chậm có thể = 0 vẫn xếp hạng
             .sort((a, b) => direction === 'desc' ? (b[key] || 0) - (a[key] || 0) : (a[key] || 0) - (b[key] || 0))
             .slice(0, count);
     },
@@ -60,10 +60,12 @@ const composerServices = {
             return "Lỗi: Dữ liệu không đủ để tạo nhận xét.";
         }
 
+        // [UPDATE] Thêm TLTC (Tỷ lệ trả chậm) vào mapping ranking
         const tagMapping = {
             'DTQD': { key: 'doanhThuQuyDoi', format: 'currency' },
             'THUNHAP': { key: 'tongThuNhap', format: 'currency' },
             'TLQD': { key: 'hieuQuaQuyDoi', format: 'percent' },
+            'TLTC': { key: 'tyLeTraCham', format: 'percent' } 
         };
 
         const botTargetMapping = {
@@ -81,9 +83,9 @@ const composerServices = {
         let dtThuc = supermarketReport.doanhThu || 0;
         let dtQd = supermarketReport.doanhThuQuyDoi || 0;
         let tlQd = supermarketReport.hieuQuaQuyDoi || 0; 
+        let tlTraCham = supermarketReport.tyLeTraCham || 0; // [NEW] Biến trả chậm
         let comparisonPercentage = 'N/A';
         
-        // Biến lưu số liệu Dự Kiến (Forecast) lấy từ file dán
         let dtThucDuKienFromPaste = 0; 
         let phanTramTargetQdFromPaste = null;
 
@@ -91,10 +93,10 @@ const composerServices = {
         if (sectionId === 'luyke' && typeof localStorage !== 'undefined') {
             const pastedText = localStorage.getItem('daily_paste_luyke');
             if (pastedText) {
-                // [QUAN TRỌNG] Lấy dtDuKien từ parser giống LuykeSieuThi.svelte 
                 const pastedData = dataProcessing.parseLuyKePastedData(pastedText);
-                const { mainKpis, comparisonData, dtDuKien } = pastedData;
+                const { mainKpis, comparisonData, dtDuKien, tyLeTraCham } = pastedData;
 
+                // Xử lý DT & TLQĐ
                 if (mainKpis && mainKpis['Thực hiện DT thực']) {
                     const clean = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
                     
@@ -113,18 +115,24 @@ const composerServices = {
                     }
                 }
 
-                // [FIX LỖI 900%] Lấy số liệu dự kiến từ file dán (đơn vị triệu) -> đổi về đơn vị chuẩn
+                // [NEW] Xử lý Tỷ lệ trả chậm từ paste (Dữ liệu paste thường là số 10.5 -> cần chia 100)
+                if (tyLeTraCham !== undefined) {
+                    tlTraCham = parseFloat(tyLeTraCham) / 100;
+                }
+
+                // DT Dự kiến
                 if (dtDuKien) {
                     dtThucDuKienFromPaste = parseFloat(String(dtDuKien).replace(/,/g, '')) * 1000000;
                 }
 
+                // So sánh cùng kỳ
                 if (comparisonData && comparisonData.percentage) {
                     comparisonPercentage = comparisonData.percentage;
                 }
             }
         }
 
-        // --- BƯỚC 2: TÍNH TOÁN DỰ KIẾN FALLBACK (Chỉ dùng khi không có dữ liệu dán) ---
+        // --- BƯỚC 2: TÍNH TOÁN DỰ KIẾN FALLBACK ---
         const now = new Date();
         const currentDay = now.getDate() || 1;
         const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -138,6 +146,7 @@ const composerServices = {
             if (tag === 'DT_THUC') return formatters.formatNumber(dtThuc / 1000000, 0) + " tr";
             if (tag === 'DTQD') return formatters.formatNumber(dtQd / 1000000, 0) + " tr";
             if (tag === 'TLQD') return formatters.formatPercentage(tlQd);
+            if (tag === 'TLTC') return formatters.formatPercentage(tlTraCham); // [NEW] Tag TLTC
             
             if (tag === '%HT_DTQD') {
                 if (phanTramTargetQdFromPaste !== null) {
@@ -152,18 +161,14 @@ const composerServices = {
                 return '0%';
             }
 
-            // [FIX LỖI 900%] Logic tính % HT DT Thực
             if (tag === '%HT_DTT') {
                 const targetMillions = parseFloat(goals.doanhThuThuc) || 0;
-                const targetFull = targetMillions * 1000000; // Đổi mục tiêu (triệu) ra số đầy đủ
+                const targetFull = targetMillions * 1000000; 
 
                 if (targetFull > 0) {
-                    // Ưu tiên 1: Dùng số Dự kiến từ file dán (Chính xác nhất)
                     if (dtThucDuKienFromPaste > 0) {
                         return formatters.formatPercentage(dtThucDuKienFromPaste / targetFull);
                     }
-                    
-                    // Ưu tiên 2: Tự tính (Fallback - có thể sai số đầu tháng)
                     const projectedRev = (dtThuc / currentDay) * totalDaysInMonth;
                     return formatters.formatPercentage(projectedRev / targetFull);
                 }

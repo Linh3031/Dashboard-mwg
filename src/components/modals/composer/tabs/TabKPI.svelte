@@ -15,6 +15,7 @@
         <button class="tag-btn w-full text-left" on:click={() => sendTag('[%HT_DTT]')}>% HT DT Thực</button>
         <button class="tag-btn w-full text-left" on:click={() => sendTag('[%HT_DTQD]')}>% HT DT QĐ</button>
         <button class="tag-btn w-full text-left" on:click={() => sendTag('[TLQD]')}>Tỷ lệ Quy đổi</button>
+        <button class="tag-btn w-full text-left" on:click={() => sendTag('[TLTC]')}>Tỷ lệ Trả chậm</button>
         <button class="tag-btn w-full text-left" on:click={() => sendTag('[DT_CHUAXUAT]')}>DT Chưa xuất</button>
         <button class="tag-btn w-full text-left" on:click={() => sendTag('[SS_CUNGKY]')}>So sánh Cùng kỳ</button>
     </div>

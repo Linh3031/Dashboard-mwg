@@ -1,18 +1,19 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  // [SỬA LỖI]: Dùng ../../../ thay vì ../../../../
   import { 
     modalState, composerTemplates, realtimeYCXData, ycxData, 
     selectedWarehouse, competitionData, notificationStore 
-  } from '../../../stores.js'; // Note: Adjust path levels if needed
+  } from '../../../stores.js'; 
+  
+  // [SỬA LỖI]: Dùng ../../../ cho services
   import { composerService } from '../../../services/composerService.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   
-  // Components con
   import ComposerEditor from './ComposerEditor.svelte';
   import ComposerSidebar from './ComposerSidebar.svelte';
 
-  // --- CẤU HÌNH TAB ---
   const CONFIG = {
       luyke: {
           label: 'Sức khỏe Siêu thị (Lũy kế)',
@@ -46,25 +47,24 @@
       }
   };
 
-  // --- STATE ---
   $: isOpen = $modalState.activeModal === 'composer-modal';
   $: context = $modalState.context || 'luyke';
   
   let activeSubTabId = '';
   let editorContent = '';
   let saveStatus = '';
+  let isLoading = false; 
   
-  // Dữ liệu tính toán
   let supermarketReport = {};
   let rankingReportData = [];
   let compData = [];
   let currentGoals = {};
 
-  // Reference tới Component con để gọi hàm insertText
   let editorComponent;
 
-  // --- LOGIC ---
+  // --- LOGIC ANTI-FREEZE ---
   $: if (isOpen && context) {
+      isLoading = true; 
       initializeData();
   }
 
@@ -73,14 +73,24 @@
           activeSubTabId = CONFIG[context].subTabs[0].id;
       }
       
-      // Load mẫu từ store (đã sync localStorage)
       if ($composerTemplates[context] && $composerTemplates[context][activeSubTabId]) {
           editorContent = $composerTemplates[context][activeSubTabId];
       } else {
           editorContent = '';
       }
       saveStatus = '';
-      await calculateReportData();
+
+      await tick(); 
+      setTimeout(async () => {
+          try {
+              await calculateReportData();
+          } catch (e) {
+              console.error("Lỗi tính toán báo cáo:", e);
+              notificationStore.show('Lỗi tải dữ liệu báo cáo', 'error');
+          } finally {
+              isLoading = false; 
+          }
+      }, 50);
   }
 
   async function calculateReportData() {
@@ -105,7 +115,6 @@
       compData = (context === 'luyke' || context === 'sknv') ? $competitionData : [];
   }
 
-  // Xử lý sự kiện từ Editor
   function updateTemplateStore() {
       composerTemplates.update(s => {
           if (!s[context]) s[context] = {};
@@ -118,10 +127,7 @@
   }
 
   function handleSwitchSubTab(event) {
-      // Lưu tab cũ
       updateTemplateStore();
-      
-      // Chuyển tab mới
       const newTabId = event.detail;
       activeSubTabId = newTabId;
       editorContent = $composerTemplates[context]?.[newTabId] || '';
@@ -139,11 +145,9 @@
       const processedText = composerService.processComposerTemplate(
           content, supermarketReport, currentGoals, rankingReportData, compData, context
       );
-      // Gọi callback để trả kết quả về cho Editor hiển thị
       if (callback) callback(processedText);
   }
 
-  // Xử lý sự kiện từ Sidebar
   function handleInsertTag(event) {
       const tag = event.detail;
       if (editorComponent) {
@@ -172,8 +176,15 @@
                 </button>
             </div>
 
-            <div class="flex-grow flex flex-col md:flex-row overflow-hidden">
-                 
+            <div class="flex-grow flex flex-col md:flex-row overflow-hidden relative">
+                
+                {#if isLoading}
+                    <div class="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-3"></div>
+                        <span class="text-sm font-medium text-indigo-700 animate-pulse">Đang xử lý dữ liệu báo cáo...</span>
+                    </div>
+                {/if}
+
                 <ComposerEditor 
                     bind:this={editorComponent}
                     bind:editorContent
