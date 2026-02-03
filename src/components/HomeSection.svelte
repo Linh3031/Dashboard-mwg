@@ -1,5 +1,5 @@
 <script>
-  // Version 2.6 - Fix Firebase Storage Cost (Switch to Local Images)
+  // Version 2.7 - Add Bookmark Download Button
   import { onMount, afterUpdate, onDestroy } from 'svelte';
   import { homeConfig } from '../stores.js';
   import { adminService } from '../services/admin.service.js';
@@ -11,6 +11,10 @@
   let slideIndex = 0;
   let slideInterval;
   let showQRModal = false;
+
+  // [GENESIS]: LINK TẢI BOOKMARK (Đã cập nhật)
+  const bookmarkUrl = 'https://firebasestorage.googleapis.com/v0/b/qlst-9e6bd.firebasestorage.app/o/templates%2FShare_QLST.zip?alt=media&token=5ea0dd5b-9126-4fdc-b2a2-b01ac4de812c';
+
   let stats = {
       totalUsers: 0,
       totalVisits: 0,
@@ -19,13 +23,13 @@
   
   // Cấu hình mặc định
   let config = {
-      videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4', // Link mặc định chuẩn
+      videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4',
       timeline: [],
       sliderImages: [],
       changelogs: []
   };
 
-  // [CODEGENESIS FIX START] --- Cấu hình ảnh Local để không tốn tiền Storage ---
+  // [CODEGENESIS FIX START] --- Cấu hình ảnh Local ---
   const localImages = [
       { title: "Sức khỏe siêu thị", url: "/images/slides/suc-khoe-sieu-thi.png" },
       { title: "Chi tiết ngành hàng", url: "/images/slides/Chi-tiet-nganh-hang.png" },
@@ -34,36 +38,26 @@
       { title: "Tiền thưởng thi đua vùng", url: "/images/slides/thi-dua-vung.png" }
   ];
 
-  // Logic Merge: Lấy Video/Log từ Firebase nhưng ÉP BUỘC dùng ảnh Local
   $: config = {
-      ...($homeConfig || config), // Giữ lại cấu hình Video/Changelog từ Firebase
-      sliderImages: localImages   // Ghi đè: Luôn dùng ảnh Local miễn phí
+      ...($homeConfig || config),
+      sliderImages: localImages
   };
-  // [CODEGENESIS FIX END] -----------------------------------------------------
+  // [CODEGENESIS FIX END] ---------------------------
 
-  // [MỚI] Hàm xử lý link Youtube an toàn
-  // Dù dữ liệu nhập vào là gì, hàm này sẽ luôn trả về link embed chuẩn
   function getSafeVideoUrl(url) {
       if (!url) return '';
-      // Nếu đã là link embed thì giữ nguyên
       if (url.includes('/embed/')) return url;
-      // Nếu là link xem thường (youtube.com/watch?v=ABC)
       if (url.includes('v=')) {
           const v = url.split('v=')[1].split('&')[0];
           return `https://www.youtube.com/embed/${v}`;
       }
-      
-      // Nếu là link rút gọn (youtu.be/ABC)
       if (url.includes('youtu.be/')) {
           const v = url.split('youtu.be/')[1].split('?')[0];
           return `https://www.youtube.com/embed/${v}`;
       }
-      
       return url;
-      // Trả về gốc nếu không nhận dạng được
   }
 
-  // Biến phản ứng để luôn lấy link chuẩn
   $: safeVideoSrc = getSafeVideoUrl(config.videoUrl);
 
   onMount(async () => {
@@ -91,9 +85,7 @@
       } else {
           seconds = parseInt(timeStr);
       }
-      // Khi nhảy thời gian, cũng phải dùng link chuẩn
       let baseUrl = safeVideoSrc.split('?')[0];
-      // Cập nhật lại config.videoUrl tạm thời để iframe load lại (nhưng dùng safeVideoSrc làm gốc)
       config.videoUrl = `${baseUrl}?start=${seconds}&autoplay=1`;
   }
 
@@ -139,6 +131,17 @@
                 <i data-feather="message-circle" class="w-4 h-4"></i>
                 Nhóm Line hỗ trợ
              </button>
+
+             <a 
+                href={bookmarkUrl}
+                target="_blank"
+                download
+                class="flex items-center gap-2 px-3 py-1.5 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition shadow-sm text-sm font-bold no-underline"
+                title="Tải bộ bookmark mẫu"
+             >
+                <i data-feather="download" class="w-4 h-4"></i>
+                Tải Bookmark
+             </a>
         </div>
 
          <div id="usage-counter-display" class="text-sm font-medium bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm flex gap-4 text-gray-600"> 
@@ -164,22 +167,22 @@
 
         <div class="content-card flex flex-col h-full !mb-0 bg-white border border-gray-200">
             <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <i data-feather="list" class="text-blue-600"></i> Mục lục Video
+                 <i data-feather="list" class="text-blue-600"></i> Mục lục Video
             </h3>
             <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar max-h-[300px] lg:max-h-none space-y-2">
                 {#if config.timeline && config.timeline.length > 0}
                    {#each config.timeline as item}
-                      <button 
+                       <button 
                             class="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition flex items-start gap-3 group border border-transparent hover:border-blue-100"
                             on:click={() => jumpToTime(item.time)}
                       >
                             <span class="bg-blue-100 text-blue-700 font-mono text-xs font-bold px-2 py-1 rounded group-hover:bg-blue-600 group-hover:text-white transition-colors">
                                 {item.time}
-                             </span>
+                            </span>
                             <span class="text-sm text-gray-700 font-medium group-hover:text-blue-800 line-clamp-2">
                                 {item.label}
                             </span>
-                         </button>
+                        </button>
                     {/each}
                 {:else}
                     <p class="text-sm text-gray-400 italic text-center py-4">Chưa có mục lục.</p>
@@ -197,17 +200,17 @@
                 {#if config.sliderImages && config.sliderImages.length > 0}
                     {#each config.sliderImages as img, i}
                          <div 
-                             class="absolute inset-0 transition-opacity duration-700 ease-in-out {i === slideIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}"
+                              class="absolute inset-0 transition-opacity duration-700 ease-in-out {i === slideIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}"
                         >
                             <img 
                                 src={img.url} 
-                                 alt={img.title} 
+                                alt={img.title} 
                                 class="w-full h-full object-contain"
                             >
                               <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
                                 <h3 class="text-white font-bold text-lg drop-shadow-md">{img.title}</h3>
                              </div>
-                         </div>
+                          </div>
                     {/each}
 
                     <button class="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 text-white rounded-full z-20 opacity-0 group-hover:opacity-100 transition" on:click={prevSlide}>
@@ -224,7 +227,7 @@
                     </div>
                 {:else}
                     <div class="text-white/50 flex flex-col items-center">
-                         <i data-feather="image" class="w-10 h-10 mb-2"></i>
+                          <i data-feather="image" class="w-10 h-10 mb-2"></i>
                         <p>Chưa có ảnh slide.</p>
                      </div>
                 {/if}
@@ -236,7 +239,7 @@
                 <i data-feather="clock" class="text-green-600"></i> Lịch sử cập nhật
             </h3>
             <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar space-y-4 pb-4">
-                 {#if config.changelogs && config.changelogs.length > 0}
+                  {#if config.changelogs && config.changelogs.length > 0}
                    {#each config.changelogs as log}
                         <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                             <div class="mb-3 border-b border-gray-100 pb-2">
@@ -264,7 +267,7 @@
     >
         <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center relative animate-fade-in" on:click|stopPropagation>
             <button class="absolute top-4 right-4 text-gray-400 hover:text-red-500" on:click={() => showQRModal = false}>
-                <i data-feather="x" class="w-6 h-6"></i>
+                 <i data-feather="x" class="w-6 h-6"></i>
             </button>
             
             <h3 class="text-xl font-bold text-green-600 mb-2">Quét mã tham gia nhóm</h3>
@@ -285,13 +288,17 @@
 {/if}
 
 <style>
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px;
+}
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px;
+}
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     
-    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    .animate-fade-in { animation: fadeIn 0.3s ease-out;
+}
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1);
+} }
 
     /* Style cho nội dung HTML trong Changelog */
     :global(.changelog-content ul) {
@@ -302,11 +309,12 @@
     }
     :global(.changelog-content li) {
         margin-bottom: 0.25rem;
-    }
+}
     :global(.changelog-content strong), :global(.changelog-content b) {
-        color: #1f2937; /* gray-800 */
+        color: #1f2937;
+        /* gray-800 */
         font-weight: 700;
-    }
+}
     :global(.changelog-content p) {
         margin-bottom: 0.5rem;
     }
