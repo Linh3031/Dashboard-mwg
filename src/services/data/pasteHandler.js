@@ -45,15 +45,21 @@ export const pasteHandler = {
                     const blob = new Blob([pastedText], { type: 'text/plain' });
                     const path = `warehouse_data/${warehouse}/${primaryKey}_${Date.now()}.txt`;
                     const downloadUrl = await storageService.uploadFileToStorage(blob, path);
+                    const now = Date.now();
                     const metadata = {
                         downloadURL: downloadUrl,
                         fileName: 'du_lieu_dan.txt',
                         fileType: 'text',
                         rowCount: processedCount, 
-                        updatedAt: new Date(),
+                        updatedAt: new Date(now),
+                        timestamp: now, // [FIX] Thêm timestamp
                         updatedBy: get(currentUser)?.email || 'Tôi'
                     };
                     await datasyncService.saveWarehouseMetadata(warehouse, primaryKey, metadata);
+                    
+                    // [FIX] Cập nhật metadata local ngay lập tức
+                    localStorage.setItem(`_meta_${warehouse}_${primaryKey}`, JSON.stringify(metadata));
+
                     updateSyncState(saveKeyPaste, 'synced', `✓ Đã đồng bộ`, metadata);
                 } catch (e) {
                     console.error("Cloud paste upload error:", e);

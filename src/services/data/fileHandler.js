@@ -71,17 +71,23 @@ export const fileHandler = {
                 try {
                     const path = `warehouse_data/${warehouse}/${saveKey}_${Date.now()}_${file.name}`;
                     const downloadUrl = await storageService.uploadFileToStorage(file, path);
+                    const now = Date.now();
                     
                     const metadata = {
                         downloadURL: downloadUrl,
                         fileName: file.name,
                         fileType: 'excel',
                         rowCount: normalizedData.length,
-                        updatedAt: new Date(),
+                        updatedAt: new Date(now),
+                        timestamp: now, // [FIX] Thêm timestamp để so sánh chính xác
                         updatedBy: get(currentUser)?.email || 'Tôi'
                     };
                     
                     await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
+                    
+                    // [FIX] Cập nhật ngay metadata vào LocalStorage để tránh conflict phiên bản
+                    localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
+
                     updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
                 } catch (e) {
                     console.error("Lỗi upload cloud:", e);
