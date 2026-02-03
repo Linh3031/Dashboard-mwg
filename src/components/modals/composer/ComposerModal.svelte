@@ -4,8 +4,7 @@
   import { 
     modalState, composerTemplates, realtimeYCXData, ycxData, 
     selectedWarehouse, competitionData, notificationStore 
-  } from '../../../stores.js'; 
-  
+  } from '../../../stores.js';
   // [SỬA LỖI]: Dùng ../../../ cho services
   import { composerService } from '../../../services/composerService.js';
   import { reportService } from '../../../services/reportService.js';
@@ -36,13 +35,15 @@
       },
       realtime: {
           label: 'Doanh thu Realtime',
+          // [GENESIS]: Đã đồng bộ tên Tab ngắn gọn theo RealtimeSection
           subTabs: [
-              { id: 'subtab-realtime-sieu-thi', label: 'Siêu thị Realtime' },
-              { id: 'subtab-realtime-nhan-vien', label: 'DT NV Realtime' },
-              { id: 'subtab-realtime-hieu-qua-nhan-vien', label: 'Hiệu quả NV Realtime' },
-              { id: 'subtab-realtime-nganh-hang', label: 'Ngành hàng Realtime' },
-              { id: 'subtab-realtime-hang-ban', label: 'DT Hãng Realtime' },
-              { id: 'subtab-realtime-thi-dua', label: 'Thi đua NV Realtime' }
+              { id: 'subtab-realtime-sieu-thi', label: 'Siêu thị Real' },
+              { id: 'subtab-realtime-nhan-vien', label: 'DT NV Real' },
+              { id: 'subtab-realtime-hieu-qua-nhan-vien', label: 'Hiệu quả NV Real' },
+              { id: 'subtab-realtime-nganh-hang', label: 'Ngành hàng Real' },
+              { id: 'subtab-realtime-hang-ban', label: 'Chi tiết YCX Real' },
+              { id: 'subtab-realtime-thi-dua', label: 'Thi đua NV Real' },
+              { id: 'subtab-realtime-tragop', label: 'Trả chậm Real' }
           ]
       }
   };
@@ -64,7 +65,7 @@
 
   // --- LOGIC ANTI-FREEZE ---
   $: if (isOpen && context) {
-      isLoading = true; 
+      isLoading = true;
       initializeData();
   }
 
@@ -80,7 +81,7 @@
       }
       saveStatus = '';
 
-      await tick(); 
+      await tick();
       setTimeout(async () => {
           try {
               await calculateReportData();
@@ -185,21 +186,25 @@
                     </div>
                 {/if}
 
-                <ComposerEditor 
-                    bind:this={editorComponent}
-                    bind:editorContent
-                    subTabs={CONFIG[context]?.subTabs || []}
-                    {activeSubTabId}
-                    {saveStatus}
-                    on:changeSubTab={handleSwitchSubTab}
-                    on:save={handleSave}
-                    on:requestPreview={handleRequestPreview}
-                />
+                <div class="flex-grow md:max-w-[70%] h-full flex flex-col min-w-0">
+                    <ComposerEditor 
+                        bind:this={editorComponent}
+                        bind:editorContent
+                        subTabs={CONFIG[context]?.subTabs || []}
+                        {activeSubTabId}
+                        {saveStatus}
+                        on:changeSubTab={handleSwitchSubTab}
+                        on:save={handleSave}
+                        on:requestPreview={handleRequestPreview}
+                    />
+                </div>
 
-                <ComposerSidebar 
-                    {supermarketReport}
-                    on:insertTag={handleInsertTag}
-                />
+                <div class="shrink-0 h-full border-l border-gray-200 bg-slate-50">
+                    <ComposerSidebar 
+                        {supermarketReport}
+                        on:insertTag={handleInsertTag}
+                    />
+                </div>
             </div>
         </div>
     </div>

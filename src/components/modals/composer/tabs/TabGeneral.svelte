@@ -3,6 +3,14 @@
     const dispatch = createEventDispatcher();
 
     const ICON_SETS = {
+        // [GENESIS]: Bộ số Traffic Light Style
+        numbers: {
+            title: '🔢 Số thứ tự (Màu)',
+            icons: [
+                '⚫0️⃣', '🔴1️⃣', '🟡2️⃣', '🟢3️⃣', '🔵4️⃣', 
+                '🟣5️⃣', '🟠6️⃣', '🟤7️⃣', '⚪8️⃣', '🟦9️⃣'
+            ]
+        },
         ranking: {
             title: '🏆 Xếp hạng (Top/Bot)',
             icons: ['🏆', '🥇', '🥈', '🥉', '🏅', '🎖️', '👑', '🔝', '🛐', '⬆️', '⬇️']
@@ -57,14 +65,23 @@
 
 <style>
     .tag-btn {
-        background-color: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe;
+        background-color: #eef2ff;
+        color: #4338ca; border: 1px solid #c7d2fe;
         padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; transition: all 0.2s;
     }
-    .tag-btn:hover { background-color: #e0e7ff; border-color: #818cf8; }
+    .tag-btn:hover { background-color: #e0e7ff; border-color: #818cf8;
+    }
+    /* [GENESIS]: Sửa style để thu nhỏ button icon */
     .icon-btn {
-        background-color: white; border: 1px solid #e5e7eb; border-radius: 0.375rem;
-        padding: 0.5rem; font-size: 1.25rem; display: flex; align-items: center; justify-content: center;
+        background-color: white; border: 1px solid #e5e7eb;
+        border-radius: 0.375rem;
+        /* Giảm padding và font-size để vừa với icon kép */
+        padding: 0.25rem; 
+        font-size: 1.1rem; 
+        white-space: nowrap; /* Ngăn xuống dòng */
+        display: flex; align-items: center; justify-content: center;
         transition: all 0.2s; cursor: pointer;
+        overflow: hidden; /* Ẩn phần thừa nếu có */
     }
     .icon-btn:hover { background-color: #f9fafb; border-color: #d1d5db; transform: scale(1.1); }
 </style>
