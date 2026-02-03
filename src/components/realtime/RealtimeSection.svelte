@@ -123,7 +123,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="zap"></i>
-                        <span>Siêu thị Realtime</span>
+                        <span>Siêu thị Real</span>
                     </button>
                        
                     <button 
@@ -133,7 +133,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="pie-chart"></i>
-                        <span>DT NV Realtime</span>
+                        <span>DT NV Real</span>
                     </button>
 
                     <button 
@@ -143,7 +143,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="bar-chart-2"></i>
-                        <span>Hiệu quả NV Realtime</span>
+                        <span>Hiệu quả NV Real</span>
                     </button>
 
                       <button 
@@ -153,7 +153,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="layers"></i>
-                        <span>Ngành hàng Realtime</span>
+                        <span>Ngành hàng Real</span>
                     </button>
 
                     <button 
@@ -163,7 +163,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="tag"></i>
-                        <span>DT Hãng Realtime</span>
+                        <span>Chi tiết YCX Real</span>
                     </button>
 
                     <button 
@@ -173,7 +173,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="award"></i>
-                        <span>Thi đua NV Realtime</span>
+                        <span>Thi đua NV Real</span>
                     </button>
 
                     <button 
@@ -183,7 +183,7 @@
                         on:click={handleSubTabClick}
                     >
                         <i data-feather="credit-card"></i>
-                        <span>Trả chậm Realtime</span>
+                        <span>Trả chậm Real</span>
                     </button>
                 </nav>
             </div>
