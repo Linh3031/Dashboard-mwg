@@ -49,10 +49,14 @@ src/components/modals/AddMetricModal.svelte
 src/components/modals/CustomerDetailModal.svelte
 src/components/modals/AddPerformanceTableModal.svelte
 src/components/modals/AddEfficiencyColumnModal.svelte
+src/components/modals/composer
+src/components/modals/composer/tabs
+src/components/modals/composer/ComposerEditor.svelte
+src/components/modals/composer/ComposerSidebar.svelte
+src/components/modals/composer/ComposerModal.svelte
 src/components/modals/UnexportedDetailModal.svelte
 src/components/modals/UserCompetitionModal.svelte
 src/components/modals/LoginModal.svelte
-src/components/modals/ComposerModal.svelte
 src/components/modals/UserSpecialProgramModal.svelte
 src/components/modals/AdminModal.svelte
 src/components/modals/AddRevenueTableModal.svelte
@@ -65,6 +69,7 @@ src/components/realtime/category
 src/components/realtime/category/CategoryTab.svelte
 src/components/realtime/brand
 src/components/realtime/brand/BrandTab.svelte
+src/components/realtime/brand/TableRowRecursive.svelte
 src/components/realtime/brand/BrandTable.svelte
 src/components/realtime/competition
 src/components/realtime/competition/CompetitionTab.svelte
@@ -146,6 +151,8 @@ src/components/luyke/TdvInfographic.svelte
 src/components/luyke/sub
 src/components/luyke/sub/LuykeCategoryToolbar.svelte
 src/components/luyke/sub/LuykeCategoryCharts.svelte
+src/components/luyke/sub/LuykeCategoryTreeTable.svelte
+src/components/luyke/sub/LuykeCategoryView.svelte
 src/components/luyke/LuykeCategoryTable.svelte
 src/components/luyke/LuykeEfficiencyTable.svelte
 src/components/luyke/LuykeSieuThi.svelte
@@ -159,6 +166,7 @@ src/services/admin.service.js
 src/services/capture
 src/services/capture/registry.js
 src/services/capture/processors
+src/services/capture/processors/mobile-view.js
 src/services/capture/processors/competition-grid.js
 src/services/capture/processors/default.js
 src/services/capture/processors/kpi-grid.js

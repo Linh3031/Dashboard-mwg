@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_04_ADMIN.txt
-GENERATED AT: 1/31/2026, 6:17:34 PM
+GENERATED AT: 2/4/2026, 9:59:00 AM
 
 
 >>> FILE_START: src/components/admin/AdminCalculation.svelte

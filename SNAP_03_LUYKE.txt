@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 1/31/2026, 6:17:34 PM
+GENERATED AT: 2/4/2026, 9:59:00 AM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
@@ -530,162 +530,95 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   let filterSearch = '';
   let saveTimer;
   let localConfig = [];
-  // [MỚI] Bảng màu rực rỡ cho thanh tiến trình
   const BAR_COLORS = [
-      'bg-red-500',       // Đỏ
-      'bg-orange-500',    // Cam
-      'bg-amber-500',     // Vàng hổ phách
-      'bg-yellow-400',    // Vàng chanh
-      'bg-lime-500',      // Xanh chanh
-      'bg-green-500',     // Xanh lá
-      'bg-emerald-500',  
-      // Xanh ngọc
-      'bg-teal-500',      // Xanh cổ vịt
-      'bg-cyan-500',      // Xanh da trời nhạt
-      'bg-sky-500',       // Xanh bầu trời
-      'bg-blue-500',      // Xanh dương
-      'bg-indigo-500',    // Chàm
-      'bg-violet-500',    // Tím
-      'bg-fuchsia-500',   // Hồng tím
-   
-      'bg-pink-500',      // Hồng
-      'bg-rose-500'       // Hồng đỏ
+      'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-400',
+      'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500',
+      'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
+      'bg-violet-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
   ];
-  // 1. Load config
+
   onMount(async () => {
       if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
           try {
               const configs = await adminService.loadMacroProductGroupConfig();
               macroProductGroupConfig.set(configs);
-          } catch (e) {
-              console.error("Lỗi load Macro Product Groups:", e);
-     
-      }
+          } catch (e) { console.error("Lỗi load Macro Product Groups:", e); }
       }
   });
-  // 2. Tạo danh sách Filter
-  $: allGroups = (() => {
-      const macroNames = ($macroProductGroupConfig || []).map(m => ({
-          name: m.name,
-          type: 'macro'
-      })).sort((a, b) => a.name.localeCompare(b.name));
 
+  $: allGroups = (() => {
+      const macroNames = ($macroProductGroupConfig || []).map(m => ({ name: m.name, type: 'macro' })).sort((a, b) => a.name.localeCompare(b.name));
       const structureNames = new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean));
       const presentNames = new Set(items.map(i => i.name).filter(Boolean));
-      
-      const simpleNames = [...new Set([...structureNames, ...presentNames])]
- 
-          .sort()
-          .map(name => ({
-              name: name,
-              type: 'simple'
-          }));
-
+      const simpleNames = [...new Set([...structureNames, ...presentNames])].sort().map(name => ({ name: name, type: 'simple' }));
       return [...macroNames, ...simpleNames];
   })();
-  $: filterList = allGroups.filter(g => 
-      g.name.toLowerCase().includes(filterSearch.toLowerCase())
-  );
-  // 3. Logic Load/Save Config
-  $: if ($selectedWarehouse) {
-      loadConfigForWarehouse($selectedWarehouse);
-  } else {
-      localConfig = allGroups.map(g => g.name);
-  }
+
+  $: filterList = allGroups.filter(g => g.name.toLowerCase().includes(filterSearch.toLowerCase()));
+
+  $: if ($selectedWarehouse) { loadConfigForWarehouse($selectedWarehouse); } 
+  else { localConfig = allGroups.map(g => g.name); }
 
   async function loadConfigForWarehouse(kho) {
       try {
           const savedConfig = await datasyncService.loadQdcConfig(kho);
-          if (savedConfig && Array.isArray(savedConfig)) {
-              localConfig = savedConfig;
-          } else {
-              localConfig = allGroups.map(g => g.name);
-          }
-      } catch (e) {
-          localConfig = allGroups.map(g => g.name);
-      }
+          if (savedConfig && Array.isArray(savedConfig)) { localConfig = savedConfig; } 
+          else { localConfig = allGroups.map(g => g.name); }
+      } catch (e) { localConfig = allGroups.map(g => g.name); }
   }
 
   function toggleQdcSelection(name) {
-      if (localConfig.includes(name)) {
-          localConfig = localConfig.filter(n => n !== name);
-  } else {
-          localConfig = [...localConfig, name];
-  }
-      
+      if (localConfig.includes(name)) { localConfig = localConfig.filter(n => n !== name); } 
+      else { localConfig = [...localConfig, name]; }
       clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-          if ($selectedWarehouse) {
-              datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
-          }
+      saveTimer = setTimeout(() => {
+          if ($selectedWarehouse) { datasyncService.saveQdcConfig($selectedWarehouse, localConfig); }
       }, 500);
   }
 
   function toggleAllVisibility(show) {
-      if (show) {
-          localConfig = allGroups.map(g => g.name);
-  } else {
-          localConfig = [];
-  }
-      if ($selectedWarehouse) {
-         datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
-  }
+      if (show) { localConfig = allGroups.map(g => g.name); } 
+      else { localConfig = []; }
+      if ($selectedWarehouse) { datasyncService.saveQdcConfig($selectedWarehouse, localConfig); }
   }
 
-  // 4. Aggregation Logic
   $: sortedItems = (() => {
       if (localConfig.length === 0) return [];
-
       let finalResults = [];
       const macroConfigs = $macroProductGroupConfig || [];
-      
       const selectedMacros = localConfig.filter(name => macroConfigs.some(m => m.name === name));
       const selectedSimples = localConfig.filter(name => !macroConfigs.some(m => m.name === name));
 
       selectedMacros.forEach(macroName => {
-          const 
-              config = macroConfigs.find(m => m.name === macroName);
+          const config = macroConfigs.find(m => m.name === macroName);
           if (!config) return;
-
           const childIds = new Set(config.items || []);
           const childItems = items.filter(i => childIds.has(i.id));
-
           if (childItems.length > 0) {
-              const aggregatedItem = {
-                  id: config.id, 
-                  name: config.name,
-                  isMacro: true, 
+              finalResults.push({
+                  id: config.id, name: config.name, isMacro: true, 
                   dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || 0), 0),
-                  dt: childItems.reduce((sum, i) => sum + (i.dt ||
-                      0), 0),
+                  dt: childItems.reduce((sum, i) => sum + (i.dt || 0), 0),
                   quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.sl || 0), 0),
                   _children: childItems 
-              };
-              finalResults.push(aggregatedItem);
+              });
           } 
       });
 
       selectedSimples.forEach(simpleName => {
           const item = items.find(i => i.name === simpleName);
-          if (item) {
-              finalResults.push({ ...item, isMacro: false });
-          }
+          if (item) { finalResults.push({ ...item, isMacro: false }); }
       });
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
-  $: maxVal = sortedItems.length > 0 ?
-      (sortedItems[0].dtqd || 1) : 1;
+  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
-      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
-          isSettingsOpen = false;
-  }
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) { isSettingsOpen = false; }
   }
 
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') feather.replace();
-  });
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <svelte:window on:click={handleWindowClick} />
@@ -708,37 +641,28 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                 <div class="filter-header">
                     <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
                 </div>
-          
                 <div class="filter-body custom-scrollbar" style="max-height: 250px;">
                     {#if filterList.length === 0}
                          <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
-                
                         {#each filterList as group}
                             {@const isChecked = localConfig.includes(group.name)}
                             <div class="filter-item" on:click={() => toggleQdcSelection(group.name)}>
-                          
-                                <input type="checkbox" checked={isChecked} />
+                                 <input type="checkbox" checked={isChecked} />
                                  {#if group.type === 'macro'}
-                                    <label class="{isChecked ?
-                                    'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
-                                        <i data-feather="layers" class="w-3 h-3"></i>
-                                        {group.name}
-          
+                                  <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
+                                        <i data-feather="layers" class="w-3 h-3"></i> {group.name}
                                     </label>
                                  {:else}
-                                    <label class="{isChecked ?
-                                    'font-bold text-blue-700' : ''}">{group.name}</label>
+                                     <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{group.name}</label>
                                  {/if}
                             </div>
                         {/each}
-            
                     {/if}
                  </div>
                 <div class="filter-actions">
                     <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                     <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
-     
                 </div>
             </div>
         {/if}
@@ -749,68 +673,91 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     {#if sortedItems.length === 0}
         <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
           <p class="text-sm">Không có dữ liệu hiển thị.</p>
-          {#if items.length > 0}
-        
-              <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
-          {/if}
+          {#if items.length > 0} <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p> {/if}
        </div>
     {:else}
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
-          {@const percent = maxVal > 0 ?
-            (item.dtqd / maxVal) * 100 : 0}
-          
+          {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
           {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
           
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1 
                       {item.isMacro ? 'bg-teal-50/30 hover:bg-teal-50/50' : 'hover:bg-gray-50'}">
-            
-  
            <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
-                <div class="flex-grow min-w-0 relative">
+               
+               <div class="flex-grow min-w-0 relative qdc-content-wrapper">
                    
-                   <div class="flex justify-between items-center mb-1 relative z-10">
+                   <div class="flex justify-between items-center mb-1 relative z-10 qdc-info-row">
                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1 {item.isMacro ? 'text-teal-800' : 'text-gray-700'}" title={item.name}>
-                           {#if item.isMacro}
-                                <i data-feather="layers" class="w-3 h-3 text-teal-600"></i>
-                        
-                            {/if}
+                           {#if item.isMacro} <i data-feather="layers" class="w-3 h-3 text-teal-600"></i> {/if}
                            {item.name}
                        </span>
                        <span class="text-sm font-bold whitespace-nowrap text-gray-800">
-                    
                         {formatters.formatRevenue(item.dtqd)}
                        </span>
                    </div>
                    
-                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner relative z-0">
-      
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner relative z-0 qdc-bar-row">
                        <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
                    </div>
                    
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
-          
                       <div class="flex gap-2">
                            <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
-                           <span class="{item.isMacro ?
-                                'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
                        </div>
                        <div class="flex gap-2">
                            <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
-                   
-                         <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
+                           <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
                        </div>
                     </div>
                </div>
-            </div>
+           </div>
           </div>
-      
-         {/each}
+        {/each}
       </div>
     {/if}
   </div>
 </div>
+
+<style>
+    /* [FIX GENESIS] - Giải pháp Layout bảo vệ hiển thị khi Capture */
+    
+    :global(.capture-container .qdc-content-wrapper) {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 6px !important; 
+    }
+
+    :global(.capture-container .qdc-info-row) {
+        margin-bottom: 0 !important;
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 50 !important; 
+        width: 100% !important;
+    }
+
+    :global(.capture-container .qdc-info-row span:first-child) {
+        overflow: visible !important;
+        white-space: normal !important; 
+        flex: 1 !important;
+    }
+
+    :global(.capture-container .qdc-bar-row) {
+        margin-top: 0 !important;
+        position: relative !important;
+        z-index: 1 !important;
+        width: 100% !important;
+        min-height: 8px !important;
+    }
+
+    :global(.capture-container .qdc-info-row span:last-child) {
+        flex-shrink: 0 !important;
+        margin-left: 8px !important;
+    }
+</style>
 <<< FILE_END: src/components/luyke/LuykeQdcTable.svelte
 
 >>> FILE_START: src/components/luyke/LuykeSieuThi.svelte
@@ -1194,8 +1141,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   import { afterUpdate } from 'svelte';
   import { competitionData } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
-  
-  // Logic dữ liệu (GIỮ NGUYÊN)
+
   let viewType = 'completion'; 
   let sortedData = [];
   let summary = {
@@ -1247,7 +1193,13 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
       return 'text-red-600';
   }
 
-  // [FIX 1] Định nghĩa MAP màu sắc tường minh để tránh lỗi Tailwind Purge (mất màu vàng)
+  // [MỚI] Hàm cắt chuỗi cứng bằng JS để đảm bảo hiện dấu "..." khi chụp ảnh
+  function truncateTextSimple(text, maxLength = 50) {
+      if (!text || text.length <= maxLength) return text;
+      // Cắt ở ký tự thứ 50 và thêm dấu ...
+      return text.substring(0, maxLength) + '...';
+  }
+
   const COLOR_MAP = {
     blue: {
         text: 'text-blue-600',
@@ -1315,12 +1267,14 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
 
     <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
-        <div class="flex justify-between items-start gap-3 mb-2">
-            <h4 class="font-bold text-gray-800 text-sm leading-snug line-clamp-2 flex-grow" title={item.name}>
-                {item.name}
+        <div class="flex justify-between items-start gap-3 mb-4">
+            <h4 class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
+                title={item.name}
+                style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                {truncateTextSimple(item.name)}
             </h4>
             <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
-                {formatters.formatPercentage(item.hoanThanhValue / 100)}
+               {formatters.formatPercentage(item.hoanThanhValue / 100)}
             </span>
         </div>
 
@@ -1329,7 +1283,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
         </div>
 
         <div class="mt-auto pt-2 border-t border-dashed border-gray-100 grid grid-cols-2 gap-2 text-xs items-end">
-             <div>
+            <div>
                 <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
                 <div class="text-gray-700 font-bold whitespace-nowrap">
                     <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
@@ -1502,21 +1456,18 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 <style>
     /* CSS dành riêng cho chế độ chụp ảnh */
     :global(.capture-container .luyke-dashboard-container) {
-        /* [ĐIỀU CHỈNH 1] Tăng độ rộng lên 1100px để khớp với chiều ngang điện thoại HD */
         width: 1100px !important;    
         min-width: 1100px !important;
         background-color: white;
-        padding: 20px !important; /* Thêm chút lề cho đẹp */
+        padding: 20px !important;
     }
 
-    /* [ĐIỀU CHỈNH 2] Tăng số cột lên 4 để giảm chiều dài ảnh */
     :global(.capture-container .grid) {
         display: grid !important;
         grid-template-columns: repeat(4, 1fr) !important; 
         gap: 16px !important;
     }
 
-    /* Tăng kích thước chữ một chút khi chụp để đọc rõ hơn */
     :global(.capture-container h4) {
         font-size: 16px !important;
     }
@@ -2277,6 +2228,509 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     </div>
 </div>
 <<< FILE_END: src/components/luyke/sub/LuykeCategoryToolbar.svelte
+
+>>> FILE_START: src/components/luyke/sub/LuykeCategoryTreeTable.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    // Import component dòng đệ quy từ module Realtime (Tái sử dụng)
+    // Đường dẫn: từ components/luyke/sub -> ra components -> vào realtime/brand
+    import TableRowRecursive from '../../realtime/brand/TableRowRecursive.svelte'; 
+
+    export let data = [];
+    export let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+    export let allDimensions = [];
+    export let activeIds = [];
+    export let filterOptions = {}; 
+    export let currentFilters = {};
+
+    const dispatch = createEventDispatcher();
+    
+    // UI State
+    let expandedRows = new Set(); 
+    let openFilterId = null;
+    let filterSearchQuery = ''; 
+
+    // --- FORMATTERS ---
+    const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
+    const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
+    const fmtPct = (n) => (n || 0).toFixed(1) + '%';
+    
+    // Màu sắc phân cấp
+    const LEVEL_COLORS = [
+        'text-red-700 font-bold',     
+        'text-blue-700 font-semibold',
+        'text-purple-700 font-medium',
+        'text-emerald-700',           
+        'text-orange-700'             
+    ];
+
+    // --- ACTIONS ---
+    function toggleRow(id) {
+        if (expandedRows.has(id)) expandedRows.delete(id);
+        else expandedRows.add(id);
+        expandedRows = expandedRows; 
+    }
+
+    function expandAll(nodes) {
+        if (!nodes) return;
+        nodes.forEach(node => {
+            expandedRows.add(node.id);
+            if (node.children) expandAll(node.children);
+        });
+        expandedRows = expandedRows;
+    }
+
+    function collapseAll() { expandedRows = new Set(); }
+
+    function toggleFilterDropdown(dimId) {
+        if (openFilterId === dimId) openFilterId = null;
+        else {
+            openFilterId = dimId;
+            filterSearchQuery = '';
+        }
+    }
+
+    function toggleFilterItem(dimId, value) {
+        const current = currentFilters[dimId] || [];
+        let newSelected;
+        if (current.includes(value)) newSelected = current.filter(x => x !== value);
+        else newSelected = [...current, value];
+        dispatch('filterChange', { key: dimId, selected: newSelected });
+    }
+
+    function clearFilter(dimId) {
+        dispatch('filterChange', { key: dimId, selected: [] });
+    }
+
+    $: getDisplayOptions = (dimId) => {
+        const options = filterOptions[dimId] || [];
+        const selected = currentFilters[dimId] || [];
+        const query = filterSearchQuery.toLowerCase();
+        let filtered = options.filter(opt => opt.toLowerCase().includes(query));
+        return filtered.sort((a, b) => {
+            const aSel = selected.includes(a);
+            const bSel = selected.includes(b);
+            if (aSel && !bSel) return -1;
+            if (!aSel && bSel) return 1;
+            return a.localeCompare(b);
+        });
+    };
+
+    function handleDimensionToggle(dimId) {
+        let newIds = [...activeIds];
+        if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId);
+        else newIds.push(dimId);
+        dispatch('configChange', newIds);
+    }
+</script>
+
+<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200">
+    <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
+        {#each allDimensions as dim (dim.id)}
+            {@const activeIndex = activeIds.indexOf(dim.id)}
+            {@const isActive = activeIndex > -1}
+            {@const hasFilter = (currentFilters[dim.id] || []).length > 0}
+            
+            <div class="relative group">
+                <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
+                    <button 
+                        class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}"
+                        on:click={() => handleDimensionToggle(dim.id)}
+                    >
+                        {#if isActive}
+                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
+                                {activeIndex + 1}
+                            </span>
+                        {:else}
+                            <span class="w-4 h-4 rounded border border-gray-400"></span>
+                        {/if}
+                        {dim.label}
+                    </button>
+
+                    <button 
+                        class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
+                        on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        {#if hasFilter}
+                            <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                            </span>
+                        {/if}
+                    </button>
+                </div>
+
+                {#if openFilterId === dim.id}
+                    <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
+                            {#if hasFilter}
+                                <button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>
+                            {/if}
+                        </div>
+                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
+                        <div class="max-h-48 overflow-y-auto space-y-1">
+                            {#each getDisplayOptions(dim.id) as option}
+                                {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
+                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+                                    <input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
+                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span>
+                                </label>
+                            {/each}
+                            {#if getDisplayOptions(dim.id).length === 0}
+                                <div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>
+                            {/if}
+                        </div>
+                        <div class="mt-2 pt-2 border-t text-right">
+                             <button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button>
+                        </div>
+                    </div>
+                    <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
+                {/if}
+            </div>
+        {/each}
+    </div>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+            <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
+                <tr>
+                    <th class="py-3 px-4 border-b border-r min-w-[200px]">
+                        <div class="flex items-center gap-2">
+                            <span>Danh mục</span>
+                            <div class="flex gap-1 ml-auto">
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
+                                </button>
+                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </th>
+                    <th class="py-3 px-4 text-right border-b w-32">Số lượng</th>
+                    <th class="py-3 px-4 text-right border-b w-40">Doanh thu <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
+                    <th class="py-3 px-4 text-right border-b w-40">DT Quy đổi <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
+                    <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50">DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
+                    <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                </tr>
+                <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
+                    <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
+                    <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
+                    <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
+                    <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
+                    <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
+                    <td class="py-3 px-4 text-center bg-yellow-100">
+                        {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
+                    </td>
+                </tr>
+            </thead>
+            <tbody>
+                {#if data.length === 0}
+                    <tr><td colspan="6" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                {:else}
+                    {#each data as group (group.id)}
+                        <TableRowRecursive 
+                            {group} 
+                            {expandedRows} 
+                            {toggleRow} 
+                            {LEVEL_COLORS}
+                            {fmtQty} {fmtRev} {fmtPct}
+                        />
+                    {/each}
+                {/if}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
+    @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+<<< FILE_END: src/components/luyke/sub/LuykeCategoryTreeTable.svelte
+
+>>> FILE_START: src/components/luyke/sub/LuykeCategoryView.svelte
+<script>
+    import { cleanCategoryName } from '../../../utils.js';
+    import { config } from '../../../config.js';
+    import { dataProcessing } from '../../../services/dataProcessing.js';
+    import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
+
+    export let data = []; 
+    export let selectedWarehouse = '';
+
+    const AVAILABLE_DIMENSIONS = [
+        { id: 'nganhHang', label: 'Ngành hàng', default: true },
+        { id: 'nhomHang', label: 'Nhóm hàng', default: true },
+        { id: 'nhaSanXuat', label: 'Nhà sản xuất', default: true },
+        { id: 'nhanVienTao', label: 'Người tạo', default: false },
+        { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
+    ];
+
+    const findCol = dataProcessing.findColumnName;
+
+    // State
+    let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
+    let treeData = [];
+    let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+    let currentFilters = {};
+    let filterOptions = {};
+    let warnings = [];
+
+    // --- HELPER: Tìm cột chính xác ---
+    function resolveCol(headers, type, standardKey, exactNameInFile = null) {
+        // 1. Tìm chính xác theo tên file (có xử lý khoảng trắng thừa)
+        if (exactNameInFile) {
+            const searchKey = exactNameInFile.trim().toLowerCase();
+            const found = headers.find(h => h.trim().toLowerCase() === searchKey);
+            if (found) return found;
+        }
+
+        // 2. Tìm theo config
+        const fromConfig = findCol(headers, type, standardKey);
+        if (fromConfig) return fromConfig;
+        
+        // 3. Fallback: Tìm theo key chuẩn (cho dữ liệu đã normalized)
+        if (headers.includes(standardKey)) return standardKey;
+        
+        return null;
+    }
+
+    // --- HÀM XỬ LÝ 1 DÒNG (CORE LOGIC - STRICT MODE) ---
+    function processItemMetrics(item, cols) {
+        // 1. Check trạng thái Hủy
+        if (cols.trangThaiHuy) {
+            const valTrangThaiHuy = item[cols.trangThaiHuy];
+            if (valTrangThaiHuy && String(valTrangThaiHuy).trim() !== '') return null;
+        }
+
+        // 2. Check hình thức xuất (CHẶT CHẼ)
+        const valHinhThucXuat = cols.hinhThucXuat ? item[cols.hinhThucXuat] : '';
+        const allowedHTX = config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || [];
+        
+        // [FIX QUAN TRỌNG] Chuyển từ .some(include) sang .includes() trực tiếp
+        // Đảm bảo chỉ những hình thức xuất CHÍNH XÁC trong danh sách mới được tính
+        const isAllowed = allowedHTX.includes(valHinhThucXuat);
+        
+        if (!isAllowed) return null;
+
+        // 3. Lấy giá trị số
+        let qty = parseFloat(item[cols.soLuong]) || 0;
+        let rev = parseFloat(item[cols.thanhTien]) || 0;
+        let revQD = parseFloat(item[cols.revenueQD]) || 0;
+
+        // 4. Tự tính DTQĐ nếu thiếu (dùng hệ số quy đổi)
+        if (!revQD && rev !== 0) {
+            // Logic cũ: Tự tính lại nếu file thiếu cột revenueQuyDoi
+            const tenSP = item[cols.tenSanPham];
+            const nganhHang = item[cols.nganhHang];
+            const heSo = dataProcessing.getHeSoQuyDoi({ tenSanPham: tenSP, nganhHang: nganhHang });
+            revQD = rev * heSo;
+        }
+
+        // 5. Check Trả Góp (Vẫn giữ logic tìm chuỗi con cho nhóm này vì config thường ngắn gọn)
+        const listTraGop = config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || [];
+        const strHTX = String(valHinhThucXuat || '').toLowerCase();
+        const isTraGop = listTraGop.some(tg => strHTX.includes(tg.toLowerCase()));
+        
+        return {
+            qty: qty,
+            rev: rev,
+            revQD: revQD,
+            revTraCham: isTraGop ? rev : 0
+        };
+    }
+
+    function getRawValue(item, dimId, cols) {
+        let val = '';
+        if (dimId === 'nganhHang') val = item[cols.nganhHang];
+        else if (dimId === 'nhomHang') val = item[cols.nhomHang];
+        else if (dimId === 'nhaSanXuat') val = item[cols.nhaSanXuat];
+        else if (dimId === 'nhanVienTao') val = item[cols.nguoiTao];
+        else if (dimId === 'tenSanPham') val = item[cols.tenSanPham];
+        return (val === undefined || val === null) ? '(Khác)' : String(val);
+    }
+
+    // --- HÀM TÍNH TOÁN ---
+    function calculateData() {
+        if (!data || data.length === 0) {
+            treeData = [];
+            totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+            return;
+        }
+
+        const sample = data[0];
+        const headers = Object.keys(sample);
+
+        // Mapping Cột
+        const cols = {
+            soLuong: resolveCol(headers, 'ycx', 'soLuong', 'Số lượng'),
+            thanhTien: resolveCol(headers, 'ycx', 'thanhTien', 'Giá bán'),
+            revenueQD: resolveCol(headers, 'ycx', 'doanhThuQuyDoi', 'Doanh thu quy đổi'),
+            trangThaiHuy: resolveCol(headers, 'ycx', 'trangThaiHuy', 'Trạng thái hủy'),
+            hinhThucXuat: resolveCol(headers, 'ycx', 'hinhThucXuat', 'Hình thức xuất'),
+            nganhHang: resolveCol(headers, 'ycx', 'nganhHang', 'Ngành hàng'),
+            nhomHang: resolveCol(headers, 'ycx', 'nhomHang', 'Nhóm hàng'),
+            nhaSanXuat: resolveCol(headers, 'ycx', 'nhaSanXuat', 'Nhà sản xuất'),
+            nguoiTao: resolveCol(headers, 'ycx', 'nguoiTao', 'Người tạo'),
+            tenSanPham: resolveCol(headers, 'ycx', 'tenSanPham', 'Tên sản phẩm'),
+            // [FIX] Cố gắng tìm cột mã kho, nhưng chấp nhận nếu không có (do dữ liệu đã normalized)
+            maKho: resolveCol(headers, 'ycx', 'maKho', 'Mã kho tạo')
+        };
+
+        // Reset cảnh báo
+        warnings = [];
+        // [FIX] Tắt cảnh báo đỏ gây khó chịu vì ta biết chắc chắn cột này đã bị mất trong quá trình normalized
+        // Nếu cần debug thì bật lại console.log
+        if (!cols.maKho && selectedWarehouse) {
+             console.warn("LuykeCategoryView: Dữ liệu đầu vào thiếu cột 'Mã kho tạo'. Bỏ qua bộ lọc kho cục bộ.");
+        }
+
+        let processedItems = [];
+        let totals = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+
+        for (const item of data) {
+            // [LOGIC LỌC KHO AN TOÀN]
+            // Chỉ lọc khi CÓ chọn kho VÀ CÓ cột kho trong dữ liệu
+            if (selectedWarehouse && cols.maKho) {
+                const itemKho = item[cols.maKho];
+                if (itemKho && String(itemKho).trim() !== String(selectedWarehouse).trim()) continue;
+            }
+            // Nếu không có cột maKho, ta mặc định dữ liệu đã được lọc từ Parent Component
+            // hoặc là dữ liệu tổng hợp, nên vẫn cho phép đi tiếp (không continue)
+
+            const metrics = processItemMetrics(item, cols);
+            // Nếu metrics null (do hủy hoặc sai hình thức xuất) -> Bỏ qua
+            if (!metrics) continue;
+
+            // Filter UI
+            let passFilter = true;
+            for (const dim of AVAILABLE_DIMENSIONS) {
+                const selectedValues = currentFilters[dim.id];
+                if (selectedValues && selectedValues.length > 0) {
+                    let val = getRawValue(item, dim.id, cols);
+                    if (dim.id === 'nganhHang') val = cleanCategoryName(val);
+                    if (!selectedValues.includes(val)) {
+                        passFilter = false;
+                        break;
+                    }
+                }
+            }
+            if (!passFilter) continue;
+
+            processedItems.push({ item, metrics });
+            totals.quantity += metrics.qty;
+            totals.revenue += metrics.rev;
+            totals.revenueQD += metrics.revQD;
+            totals.revenueTraCham += metrics.revTraCham;
+        }
+
+        totalMetrics = totals;
+        treeData = buildHierarchy(processedItems, activeDimensionIds, 0, 'root', cols);
+        extractFilterOptions(processedItems, cols);
+    }
+
+    function buildHierarchy(pItems, dimIds, level, parentId, cols) {
+        if (level >= dimIds.length || pItems.length === 0) return [];
+
+        const currentDimId = dimIds[level];
+        const groups = {};
+
+        for (const { item, metrics } of pItems) {
+            let val = getRawValue(item, currentDimId, cols);
+            if (!val) val = '(Trống)';
+            if (currentDimId === 'nganhHang') val = cleanCategoryName(val);
+
+            if (!groups[val]) {
+                groups[val] = {
+                    id: `${parentId}_${val}`,
+                    name: val,
+                    level: level,
+                    childrenRaw: [],
+                    quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0
+                };
+            }
+            groups[val].childrenRaw.push({ item, metrics });
+            groups[val].quantity += metrics.qty;
+            groups[val].revenue += metrics.rev;
+            groups[val].revenueQD += metrics.revQD;
+            groups[val].revenueTraCham += metrics.revTraCham;
+        }
+
+        return Object.values(groups)
+            .sort((a, b) => b.revenue - a.revenue)
+            .map(group => {
+                const children = buildHierarchy(group.childrenRaw, dimIds, level + 1, group.id, cols);
+                delete group.childrenRaw; 
+                return { ...group, children, isLeaf: children.length === 0 };
+            });
+    }
+
+    function extractFilterOptions(pItems, cols) {
+        const options = {};
+        AVAILABLE_DIMENSIONS.forEach(dim => {
+            const uniqueValues = new Set();
+            pItems.forEach(({ item }) => {
+                let val = getRawValue(item, dim.id, cols);
+                if (dim.id === 'nganhHang') val = cleanCategoryName(val);
+                if (val && val !== '(Khác)' && val !== '(Trống)') {
+                    uniqueValues.add(val);
+                }
+            });
+            options[dim.id] = Array.from(uniqueValues).sort();
+        });
+        filterOptions = options;
+    }
+
+    $: {
+        if (data || selectedWarehouse || currentFilters || activeDimensionIds) {
+            calculateData();
+        }
+    }
+
+    function handleConfigChange(event) { activeDimensionIds = event.detail; }
+    function handleFilterChange(event) {
+        const { key, selected } = event.detail;
+        currentFilters = { ...currentFilters, [key]: selected };
+    }
+</script>
+
+<div class="animate-fade-in pb-10">
+    {#if warnings.length > 0}
+        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            <strong>⚠️ Cảnh báo cấu trúc:</strong>
+            <ul class="list-disc pl-5 mt-1">
+                {#each warnings as w}
+                    <li>{w}</li>
+                {/each}
+            </ul>
+        </div>
+    {/if}
+
+    <LuykeCategoryTreeTable 
+        data={treeData} 
+        {totalMetrics}
+        allDimensions={AVAILABLE_DIMENSIONS}
+        activeIds={activeDimensionIds}
+        {filterOptions}
+        {currentFilters}
+        on:configChange={handleConfigChange}
+        on:filterChange={handleFilterChange}
+    />
+</div>
+
+<style>
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+<<< FILE_END: src/components/luyke/sub/LuykeCategoryView.svelte
 
 >>> FILE_START: src/styles/dashboard-luyke.css
 /* src/styles/dashboard-luyke.css */

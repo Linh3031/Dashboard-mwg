@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_02_REALTIME.txt
-GENERATED AT: 1/31/2026, 6:17:34 PM
+GENERATED AT: 2/4/2026, 9:59:00 AM
 
 
 >>> FILE_START: src/components/realtime/RealtimeSection.svelte
@@ -7,7 +7,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   import { onMount } from 'svelte';
   
   import { dataService } from '../../services/dataService.js';
-  // [GENESIS FIX] Thêm realtimeYCXData vào import để lấy dữ liệu upload
   import { warehouseList, modalState, selectedWarehouse, realtimeYCXData } from '../../stores.js';
   import { actionService } from '../../services/action.service.js';
 
@@ -17,12 +16,10 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
   import CompetitionTab from './competition/CompetitionTab.svelte';
-  // [GENESIS NEW] Import Component Trả chậm
   import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
-  let activeSubTabId = 'subtab-realtime-sieu-thi'; 
-  
+  let activeSubTabId = 'subtab-realtime-sieu-thi';
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
@@ -79,7 +76,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                      >
                        <option value="">-- Toàn bộ --</option>
                        {#each $warehouseList as kho}
-                          <option value={kho}>{kho}</option>
+                       <option value={kho}>{kho}</option>
                        {/each}
                     </select>
                 </div>
@@ -111,7 +108,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                      </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
-                         <span class="hidden lg:inline">Xuất Excel</span>
+                        <span class="hidden lg:inline">Xuất Excel</span>
                     </button>
                     <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh" on:click={handleCapture}>
                         <i data-feather="camera" class="w-4 h-4"></i>
@@ -130,8 +127,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="SieuThiRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="zap"></i>
-                        <span>Siêu thị Realtime</span>
+                        <i data-feather="zap"></i>
+                        <span>Siêu thị Real</span>
                     </button>
                        
                     <button 
@@ -140,8 +137,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="DTNVRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="pie-chart"></i>
-                        <span>DT NV Realtime</span>
+                        <i data-feather="pie-chart"></i>
+                        <span>DT NV Real</span>
                     </button>
 
                     <button 
@@ -150,8 +147,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="HieuQuaKhaiThacRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="bar-chart-2"></i>
-                        <span>Hiệu quả NV Realtime</span>
+                        <i data-feather="bar-chart-2"></i>
+                        <span>Hiệu quả NV Real</span>
                     </button>
 
                       <button 
@@ -160,8 +157,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="NganhHangRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="layers"></i>
-                        <span>Ngành hàng Realtime</span>
+                        <i data-feather="layers"></i>
+                        <span>Ngành hàng Real</span>
                     </button>
 
                     <button 
@@ -170,8 +167,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="HangRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="tag"></i>
-                        <span>DT Hãng Realtime</span>
+                        <i data-feather="tag"></i>
+                        <span>Chi tiết YCX Real</span>
                     </button>
 
                     <button 
@@ -180,8 +177,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="ThiDuaNhanVienRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="award"></i>
-                        <span>Thi đua NV Realtime</span>
+                        <i data-feather="award"></i>
+                        <span>Thi đua NV Real</span>
                     </button>
 
                     <button 
@@ -190,18 +187,18 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         data-title="TraChamRealtime"
                         on:click={handleSubTabClick}
                     >
-                         <i data-feather="credit-card"></i>
-                        <span>Trả chậm Realtime</span>
+                        <i data-feather="credit-card"></i>
+                        <span>Trả chậm Real</span>
                     </button>
                 </nav>
             </div>
 
             <div id="realtime-subtabs-content">
                 {#if activeSubTabId === 'subtab-realtime-sieu-thi'}
-                    <div id="subtab-realtime-sieu-thi" class="sub-tab-content">
+                    <div id="subtab-realtime-sieu-thi" class="sub-tab-content" data-capture-preset="mobile-optimized">
                         <SummaryTab {selectedWarehouse} />
                     </div>
-                 
+                
                 {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
                     <div id="subtab-realtime-nhan-vien" class="sub-tab-content" data-capture-preset="large-font-report">
                         <EmployeeTab {selectedWarehouse} />
@@ -242,130 +239,233 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     </div>
 
 </section>
+
+<style>
+    /* [FIX GENESIS]: Định nghĩa Preset Mobile Optimized (800px) */
+    :global(.preset-mobile-optimized) {
+        width: 800px !important;
+        min-width: 800px !important;
+        max-width: 800px !important;
+        margin: 0 auto;
+    }
+</style>
 <<< FILE_END: src/components/realtime/RealtimeSection.svelte
 
 >>> FILE_START: src/components/realtime/brand/BrandTab.svelte
 <script>
-  import { onMount } from 'svelte';
   import { realtimeYCXData } from '../../../stores.js';
-  import { reportService } from '../../../services/reportService.js';
   import { cleanCategoryName } from '../../../utils.js';
   import BrandTable from './BrandTable.svelte';
 
   export let selectedWarehouse = '';
 
-  let viewType = 'brand'; // 'brand' | 'employee'
-  let selectedCategory = '';
-  let selectedBrand = '';
-  
-  let categories = [];
-  let brands = [];
-  let reportData = [];
+  // 1. CẤU HÌNH DIMENSIONS (Các chiều dữ liệu)
+  const AVAILABLE_DIMENSIONS = [
+      { id: 'nganhHang', label: 'Ngành hàng', default: true },
+      { id: 'nhomHang', label: 'Nhóm hàng', default: true },
+      { id: 'nhaSanXuat', label: 'Nhà sản xuất', default: true },
+      { id: 'nhanVienTao', label: 'Người tạo', default: false },
+      { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
+  ];
 
-  // 1. Lấy danh sách Ngành hàng từ dữ liệu (Reactive)
+  // 2. CẤU HÌNH METRICS (Mapping keys từ CSV/Excel)
+  const METRIC_KEYS = {
+      quantity: ['soLuong', 'so_luong', 'Số lượng', 'Quantity', 'SL', 'soluong'],
+      revenue: ['doanhThu', 'thanhTien', 'Thành tiền', 'Doanh thu', 'Revenue', 'TIEN_SAU_CK', 'tongTien', 'Total', 'Giá bán', 'Phải thu'],
+      revenueQD: ['doanhThuQuyDoi', 'dtqd', 'Doanh thu quy đổi', 'DTQD', 'DoanhThuQuyDoi', 'revenueQuyDoi'],
+      warehouse: ['maKho', 'ma_kho', 'Mã kho', 'Warehouse', 'Kho', 'MaKho', 'Mã kho tạo'],
+      // Cột hình thức xuất để lọc trả góp
+      hinhThucXuat: ['hinhThucXuat', 'Hình thức xuất', 'HinhThucXuat']
+  };
+
+  // State
+  let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
+  let treeData = [];
+  let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+  let currentFilters = {}; 
+  let filterOptions = {};
+
+  // --- HÀM TÌM KIẾM KEY THÔNG MINH ---
+  function findValue(item, possibleKeys) {
+      // 1. Tìm chính xác
+      for (const key of possibleKeys) {
+          if (item[key] !== undefined && item[key] !== null) return item[key];
+      }
+      // 2. Tìm không phân biệt hoa thường
+      const itemKeys = Object.keys(item);
+      for (const key of possibleKeys) {
+          const lowerKey = key.toLowerCase();
+          const foundKey = itemKeys.find(k => k.toLowerCase() === lowerKey);
+          if (foundKey) return item[foundKey];
+      }
+      return null;
+  }
+
+  // --- LOGIC KIỂM TRA TRẢ CHẬM (CHUẨN HÓA THEO YÊU CẦU MỚI) ---
+  function checkTraCham(item) {
+      // Lấy giá trị cột "Hình thức xuất"
+      const val = String(findValue(item, METRIC_KEYS.hinhThucXuat) || '').toLowerCase();
+      
+      // Danh sách các hình thức xuất được tính là trả góp:
+      // 1. Xuất bán hàng trả góp tại siêu thị
+      // 2. Xuất bán trả góp ưu đãi cho nhân viên
+      // 3. Xuất bán trả góp cho NV phục vụ công việc
+      // 4. Xuất bán pre-order trả góp tại siêu thị
+      // 5. Xuất bán pre-order trả góp tại siêu thị (TCĐM)
+      
+      // -> Tất cả đều chứa từ khóa "trả góp". 
+      // -> Logic: Chỉ cần "Hình thức xuất" có chứa chữ "trả góp" là ĐÚNG.
+      return val.includes('trả góp');
+  }
+
+  function getRawValue(item, dimId) {
+      const keyMap = {
+          'nganhHang': ['nganhHang', 'Ngành hàng', 'NGANH HANG', 'NganhHang'],
+          'nhomHang': ['nhomHang', 'nhom_hang', 'Nhóm hàng', 'NhomHang'],
+          'nhaSanXuat': ['nhaSanXuat', 'hang', 'Hãng', 'Nhà sản xuất', 'NhaSanXuat'],
+          'nhanVienTao': ['nhanVienTao', 'nguoiTao', 'Nhân viên', 'Người tạo', 'NhanVien'],
+          'tenSanPham': ['tenSanPham', 'ten_sp', 'Tên sản phẩm', 'Product Name', 'TenSP']
+      };
+      const possibleKeys = keyMap[dimId] || [dimId];
+      const val = findValue(item, possibleKeys);
+      return val !== null ? String(val) : '(Khác)';
+  }
+
+  function extractFilterOptions(data) {
+      const options = {};
+      AVAILABLE_DIMENSIONS.forEach(dim => {
+          const uniqueValues = new Set();
+          data.forEach(item => {
+              let val = getRawValue(item, dim.id);
+              if (dim.id === 'nganhHang') val = cleanCategoryName(val);
+              if (val && val !== '(Khác)' && val !== '(Trống)') {
+                  uniqueValues.add(val);
+              }
+          });
+          options[dim.id] = Array.from(uniqueValues).sort();
+      });
+      return options;
+  }
+
+  // --- THUẬT TOÁN GOM NHÓM ---
+  function buildHierarchy(items, dimensionIds, level = 0, parentId = 'root') {
+      if (level >= dimensionIds.length || items.length === 0) return [];
+      const currentDimId = dimensionIds[level];
+      const groups = {};
+
+      items.forEach(item => {
+          let val = getRawValue(item, currentDimId);
+          if (!val) val = '(Trống)';
+          if (currentDimId === 'nganhHang') val = cleanCategoryName(val);
+
+          if (!groups[val]) {
+              groups[val] = {
+                  id: `${parentId}_${val}`,
+                  name: val,
+                  level: level,
+                  items: [],
+                  quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0
+              };
+          }
+          groups[val].items.push(item);
+          
+          // Metrics
+          const sl = Number(findValue(item, METRIC_KEYS.quantity) || 0);
+          const dt = Number(findValue(item, METRIC_KEYS.revenue) || 0);
+          const dtqd = Number(findValue(item, METRIC_KEYS.revenueQD) || dt);
+          
+          // Check trả chậm
+          const isTraCham = checkTraCham(item);
+
+          groups[val].quantity += sl;
+          groups[val].revenue += dt;
+          groups[val].revenueQD += dtqd;
+          if (isTraCham) groups[val].revenueTraCham += dt;
+      });
+
+      return Object.values(groups)
+          .sort((a, b) => b.revenue - a.revenue)
+          .map(group => {
+              const children = buildHierarchy(group.items, dimensionIds, level + 1, group.id);
+              delete group.items; 
+              return { ...group, children, isLeaf: children.length === 0 };
+          });
+  }
+
+  // --- REACTIVE MAIN FLOW ---
   $: {
-      if ($realtimeYCXData.length > 0) {
-          categories = [...new Set($realtimeYCXData
-              .map(row => cleanCategoryName(row.nganhHang))
-              .filter(Boolean))
-          ].sort();
+      if ($realtimeYCXData && $realtimeYCXData.length > 0) {
+          let processedData = $realtimeYCXData;
+
+          // 1. Lọc theo Kho
+          const sampleItem = processedData[0];
+          const hasWarehouseKey = findValue(sampleItem, METRIC_KEYS.warehouse) !== null;
+          if (selectedWarehouse && hasWarehouseKey) {
+              processedData = processedData.filter(x => {
+                  const khoVal = findValue(x, METRIC_KEYS.warehouse);
+                  return (khoVal || '').toString().includes(selectedWarehouse);
+              });
+          }
+
+          // 2. Filter Options
+          filterOptions = extractFilterOptions(processedData);
+
+          // 3. Apply Filters
+          processedData = processedData.filter(item => {
+              return AVAILABLE_DIMENSIONS.every(dim => {
+                  const selectedValues = currentFilters[dim.id];
+                  if (!selectedValues || selectedValues.length === 0) return true;
+                  let val = getRawValue(item, dim.id);
+                  if (dim.id === 'nganhHang') val = cleanCategoryName(val);
+                  return selectedValues.includes(val);
+              });
+          });
+
+          // 4. Global Totals
+          totalMetrics = processedData.reduce((acc, item) => {
+              const sl = Number(findValue(item, METRIC_KEYS.quantity) || 0);
+              const dt = Number(findValue(item, METRIC_KEYS.revenue) || 0);
+              const dtqd = Number(findValue(item, METRIC_KEYS.revenueQD) || dt);
+              
+              const isTraCham = checkTraCham(item);
+
+              acc.quantity += sl;
+              acc.revenue += dt;
+              acc.revenueQD += dtqd;
+              if (isTraCham) acc.revenueTraCham += dt;
+              return acc;
+          }, { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 });
+
+          // 5. Build Tree
+          treeData = buildHierarchy(processedData, activeDimensionIds);
+      } else {
+          treeData = [];
+          totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+          filterOptions = {};
       }
   }
 
-  // 2. Lấy danh sách Hãng dựa trên Ngành hàng đã chọn (Reactive)
-  $: {
-      let filteredData = $realtimeYCXData;
-      if (selectedCategory) {
-          filteredData = filteredData.filter(row => cleanCategoryName(row.nganhHang) === selectedCategory);
-      }
-      
-      if (filteredData.length > 0) {
-          brands = [...new Set(filteredData
-              .map(row => row.nhaSanXuat || 'Hãng khác')
-              .filter(Boolean))
-          ].sort();
-      } else {
-          brands = [];
-      }
-      
-      // Reset selectedBrand nếu nó không còn trong danh sách mới
-      if (selectedBrand && !brands.includes(selectedBrand)) {
-          selectedBrand = '';
-      }
+  function handleConfigChange(event) {
+      activeDimensionIds = event.detail;
   }
 
-  // 3. Tính toán dữ liệu báo cáo (Reactive)
-  $: {
-      // Lọc theo kho trước (Logic đơn giản hóa, sử dụng dữ liệu đã tải về)
-      // Lưu ý: Nếu cần lọc chính xác theo kho của user, cần đảm bảo realtimeYCXData đã được lọc hoặc lọc lại ở đây
-      // Hiện tại service sẽ xử lý việc tính toán tổng hợp.
-      
-      const result = reportService.generateRealtimeBrandReport(
-          $realtimeYCXData, 
-          selectedCategory,
-          selectedBrand
-      );
-      
-      if (viewType === 'brand') {
-          reportData = result.byBrand;
-      } else {
-          reportData = result.byEmployee;
-      }
+  function handleFilterChange(event) {
+      const { key, selected } = event.detail;
+      currentFilters = { ...currentFilters, [key]: selected };
   }
 </script>
 
 <div class="animate-fade-in pb-10">
-    <div class="content-card mb-6">
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-4 border-b pb-4">
-            <h3 class="text-xl font-bold text-gray-700 uppercase">Thống kê theo Hãng</h3>
-            <div class="view-switcher bg-gray-200 p-1 rounded-lg flex">
-                <button 
-                    class="px-4 py-2 rounded-md text-sm font-medium transition-all {viewType === 'brand' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:bg-gray-300'}"
-                    on:click={() => viewType = 'brand'}
-                >
-                    Theo Hãng
-                </button>
-                <button 
-                    class="px-4 py-2 rounded-md text-sm font-medium transition-all {viewType === 'employee' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:bg-gray-300'}"
-                    on:click={() => viewType = 'employee'}
-                >
-                    Theo Nhân viên
-                </button>
-            </div>
-        </div>
-        
-        <div class="flex flex-wrap items-center gap-4">
-            <div class="flex flex-col">
-                <label for="rt-brand-cat-select" class="text-sm font-semibold text-gray-600 mb-1">Ngành hàng:</label>
-                <select 
-                    id="rt-brand-cat-select"
-                    class="p-2 border rounded-lg text-sm shadow-sm bg-white min-w-[200px] focus:ring-2 focus:ring-blue-500 outline-none"
-                    bind:value={selectedCategory}
-                >
-                    <option value="">-- Tất cả ngành hàng --</option>
-                    {#each categories as cat}
-                        <option value={cat}>{cat}</option>
-                    {/each}
-                </select>
-            </div>
-
-            <div class="flex flex-col">
-                <label for="rt-brand-select" class="text-sm font-semibold text-gray-600 mb-1">Hãng:</label>
-                <select 
-                    id="rt-brand-select"
-                    class="p-2 border rounded-lg text-sm shadow-sm bg-white min-w-[200px] focus:ring-2 focus:ring-blue-500 outline-none"
-                    bind:value={selectedBrand}
-                >
-                    <option value="">-- Tất cả các hãng --</option>
-                    {#each brands as brand}
-                        <option value={brand}>{brand}</option>
-                    {/each}
-                </select>
-            </div>
-        </div>
-    </div>
-
-    <BrandTable {viewType} {reportData} />
+    <BrandTable 
+        data={treeData} 
+        {totalMetrics}
+        allDimensions={AVAILABLE_DIMENSIONS}
+        activeIds={activeDimensionIds}
+        {filterOptions}
+        {currentFilters}
+        on:configChange={handleConfigChange}
+        on:filterChange={handleFilterChange}
+    />
 </div>
 
 <style>
@@ -376,109 +476,312 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
 >>> FILE_START: src/components/realtime/brand/BrandTable.svelte
 <script>
-  import { formatters } from '../../../utils/formatters.js';
-  // Import component mới
-  import SortableTh from '../../common/SortableTh.svelte';
+  import { createEventDispatcher } from 'svelte';
+  // IMPORT TRỰC TIẾP Ở ĐÂY (QUAN TRỌNG)
+  import TableRowRecursive from './TableRowRecursive.svelte';
+  
+  export let data = [];
+  export let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+  export let allDimensions = [];
+  export let activeIds = [];
+  export let filterOptions = {}; 
+  export let currentFilters = {}; 
 
-  export let viewType = 'brand'; // 'brand' hoặc 'employee'
-  export let reportData = [];
+  const dispatch = createEventDispatcher();
+  
+  // Trạng thái UI
+  let expandedRows = new Set(); 
+  let openFilterId = null; 
+  let filterSearchQuery = ''; 
 
-  let sortKey = 'revenue';
-  let sortDirection = 'desc';
+  // --- FORMATTERS ---
+  // 1. Số lượng: Giữ nguyên
+  const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
+  
+  // 2. Doanh thu: Chia 1 triệu, làm tròn (Thêm check n || 0 để tránh lỗi crash)
+  const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
+  
+  // 3. Phần trăm
+  const fmtPct = (n) => (n || 0).toFixed(1) + '%';
 
-  // Reset sort khi đổi chế độ xem
-  $: if (viewType) {
-      sortKey = 'revenue';
-      sortDirection = 'desc';
+  // Màu sắc phân cấp
+  const LEVEL_COLORS = [
+      'text-red-700 font-bold',     
+      'text-blue-700 font-semibold',
+      'text-purple-700 font-medium',
+      'text-emerald-700',           
+      'text-orange-700'             
+  ];
+
+  // --- LOGIC UI ---
+  function toggleRow(id) {
+      if (expandedRows.has(id)) expandedRows.delete(id);
+      else expandedRows.add(id);
+      expandedRows = expandedRows; 
   }
 
-  // Hàm xử lý sự kiện sort từ component con
-  function handleSort(event) {
-    const key = event.detail; // Nhận key từ dispatch('sort', key)
-    if (sortKey === key) {
-      sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-    } else {
-      sortKey = key;
-      sortDirection = 'desc';
-    }
-  }
-
-  // Hàm sort dữ liệu
-  function sortData(items, key, dir) {
-      return [...items].sort((a, b) => {
-          // Sort chữ
-          if (key === 'name') {
-             const valA = a.name || '';
-             const valB = b.name || '';
-             return dir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-          }
-          // Sort số
-          let valA = Number(a[key]) || 0;
-          let valB = Number(b[key]) || 0;
-          return dir === 'asc' ? valA - valB : valB - valA;
+  function expandAll(nodes) {
+      if (!nodes) return;
+      nodes.forEach(node => {
+          expandedRows.add(node.id);
+          if (node.children) expandAll(node.children);
       });
+      expandedRows = expandedRows;
   }
 
-  // Cấu hình cột cho từng chế độ xem
-  $: columns = viewType === 'brand' 
-    ? [
-        { id: 'name', label: 'Hãng', align: 'left' },
-        { id: 'quantity', label: 'Số lượng', align: 'right' },
-        { id: 'revenue', label: 'Doanh thu', align: 'right' },
-        { id: 'avgPrice', label: 'Đơn giá TB', align: 'right' }
-      ]
-    : [
-        { id: 'name', label: 'Nhân viên', align: 'left' },
-        { id: 'quantity', label: 'Số lượng', align: 'right' },
-        { id: 'revenue', label: 'Doanh thu', align: 'right' }
-    ];
+  function collapseAll() {
+      expandedRows = new Set();
+  }
+
+  function toggleFilterDropdown(dimId) {
+      if (openFilterId === dimId) openFilterId = null;
+      else {
+          openFilterId = dimId;
+          filterSearchQuery = ''; 
+      }
+  }
+
+  function toggleFilterItem(dimId, value) {
+      const current = currentFilters[dimId] || [];
+      let newSelected;
+      if (current.includes(value)) newSelected = current.filter(x => x !== value);
+      else newSelected = [...current, value];
+      dispatch('filterChange', { key: dimId, selected: newSelected });
+  }
+
+  function clearFilter(dimId) {
+      dispatch('filterChange', { key: dimId, selected: [] });
+  }
+
+  $: getDisplayOptions = (dimId) => {
+      const options = filterOptions[dimId] || [];
+      const selected = currentFilters[dimId] || [];
+      const query = filterSearchQuery.toLowerCase();
+      let filtered = options.filter(opt => opt.toLowerCase().includes(query));
+      return filtered.sort((a, b) => {
+          const aSel = selected.includes(a);
+          const bSel = selected.includes(b);
+          if (aSel && !bSel) return -1;
+          if (!aSel && bSel) return 1;
+          return a.localeCompare(b);
+      });
+  };
+
+  function handleDimensionToggle(dimId) {
+      let newIds = [...activeIds];
+      if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId);
+      else newIds.push(dimId);
+      dispatch('configChange', newIds);
+  }
 </script>
 
-<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-  <div class="p-4 border-b bg-gray-50 border-gray-200 flex justify-between items-center">
-      <h4 class="text-lg font-bold uppercase text-gray-700">
-          {viewType === 'brand' ? 'Thống kê theo Hãng' : 'Thống kê theo Nhân viên'}
-      </h4>
-  </div>
+<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200">
+    <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
+        
+        {#each allDimensions as dim (dim.id)}
+            {@const activeIndex = activeIds.indexOf(dim.id)}
+            {@const isActive = activeIndex > -1}
+            {@const hasFilter = (currentFilters[dim.id] || []).length > 0}
+            
+            <div class="relative group">
+                <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
+                    <button 
+                        class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}"
+                        on:click={() => handleDimensionToggle(dim.id)}
+                    >
+                        {#if isActive}
+                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
+                                {activeIndex + 1}
+                            </span>
+                        {:else}
+                            <span class="w-4 h-4 rounded border border-gray-400"></span>
+                        {/if}
+                        
+                        {dim.label}
+                    </button>
 
-  <div class="overflow-x-auto">
-    <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
-      <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20 shadow-sm">
-        <tr>
-          {#each columns as col}
-            <SortableTh 
-              key={col.id}
-              label={col.label}
-              align={col.align}
-              {sortKey}
-              {sortDirection}
-              on:sort={handleSort} 
-            />
-          {/each}
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-200">
-        {#if reportData.length === 0}
-            <tr><td colspan={columns.length} class="p-4 text-center text-gray-500 italic">Không có dữ liệu.</td></tr>
-        {:else}
-            {#each sortData(reportData, sortKey, sortDirection) as item}
-              <tr class="hover:bg-blue-50 transition">
-                <td class="px-4 py-2 font-semibold text-blue-600 {viewType === 'employee' ? 'sticky left-0 bg-white hover:bg-blue-50 z-10 border-r' : ''}">
-                  {item.name}
-                </td>
-                <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatNumber(item.quantity)}</td>
-                <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.revenue)}</td>
-                {#if viewType === 'brand'}
-                    <td class="px-4 py-2 text-right font-bold text-green-600">{formatters.formatRevenue(item.avgPrice)}</td>
+                    <button 
+                        class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
+                        on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        {#if hasFilter}
+                            <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                            </span>
+                        {/if}
+                    </button>
+                </div>
+
+                {#if openFilterId === dim.id}
+                    <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
+                            {#if hasFilter}
+                                <button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>
+                            {/if}
+                        </div>
+                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
+                        <div class="max-h-48 overflow-y-auto space-y-1">
+                            {#each getDisplayOptions(dim.id) as option}
+                                {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
+                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
+                                    <input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
+                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span>
+                                </label>
+                            {/each}
+                            {#if getDisplayOptions(dim.id).length === 0}
+                                <div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>
+                            {/if}
+                        </div>
+                        <div class="mt-2 pt-2 border-t text-right">
+                             <button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button>
+                        </div>
+                    </div>
+                    <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
-              </tr>
-            {/each}
-        {/if}
-      </tbody>
-    </table>
-  </div>
+            </div>
+        {/each}
+    </div>
 </div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+            <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
+                <tr>
+                    <th class="py-3 px-4 border-b border-r min-w-[200px]">
+                        <div class="flex items-center gap-2">
+                            <span>Danh mục</span>
+                            <div class="flex gap-1 ml-auto">
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
+                                </button>
+                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </th>
+                    <th class="py-3 px-4 text-right border-b w-32">Số lượng</th>
+                    <th class="py-3 px-4 text-right border-b w-40">Doanh thu <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
+                    <th class="py-3 px-4 text-right border-b w-40">DT Quy đổi <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
+                    <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50">DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
+                    <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                </tr>
+                <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
+                    <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
+                    <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
+                    <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
+                    <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
+                    <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
+                    <td class="py-3 px-4 text-center bg-yellow-100">
+                        {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
+                    </td>
+                </tr>
+            </thead>
+            
+            <tbody>
+                {#if data.length === 0}
+                    <tr><td colspan="6" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                {:else}
+                    {#each data as group (group.id)}
+                        <TableRowRecursive 
+                            {group} 
+                            {expandedRows} 
+                            {toggleRow} 
+                            {LEVEL_COLORS}
+                            {fmtQty} 
+                            {fmtRev}
+                            {fmtPct}
+                        />
+                    {/each}
+                {/if}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
+    @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
 <<< FILE_END: src/components/realtime/brand/BrandTable.svelte
+
+>>> FILE_START: src/components/realtime/brand/TableRowRecursive.svelte
+<script>
+    export let group;
+    export let expandedRows;
+    export let toggleRow;
+    export let LEVEL_COLORS;
+    export let fmtQty; // Formatter cho Số lượng
+    export let fmtRev; // Formatter cho Doanh thu (Triệu)
+    export let fmtPct; // Formatter cho %
+
+    $: isExpanded = expandedRows.has(group.id);
+    $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
+    $: paddingLeft = `${group.level * 24 + 16}px`; 
+    
+    // Tính % trả chậm
+    $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
+</script>
+
+<tr class="hover:bg-gray-50 transition-colors border-b last:border-0 group-row">
+    <td class="py-2 pr-4 border-r relative" style="padding-left: {paddingLeft}">
+        <div class="flex items-center">
+            {#if !group.isLeaf}
+                <button 
+                    on:click={() => toggleRow(group.id)}
+                    class="mr-2 p-1 rounded hover:bg-gray-200 text-gray-500 focus:outline-none transition-transform duration-200"
+                    style="transform: rotate({isExpanded ? '90deg' : '0deg'})"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            {:else}
+                <span class="w-6 inline-block"></span>
+            {/if}
+            
+            <span class="{levelColor} truncate">
+                {group.name}
+            </span>
+        </div>
+        
+        {#if group.level > 0}
+             <div class="absolute left-0 top-0 bottom-0 border-l border-gray-200" style="left: {group.level * 24}px"></div>
+        {/if}
+    </td>
+
+    <td class="py-2 px-4 text-right font-medium text-gray-700">{fmtQty(group.quantity)}</td>
+    
+    <td class="py-2 px-4 text-right font-medium text-gray-800">{fmtRev(group.revenue)}</td>
+    
+    <td class="py-2 px-4 text-right text-gray-600">{fmtRev(group.revenueQD)}</td>
+
+    <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
+    
+    <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold text-xs">
+        {fmtPct(traChamPercent)}
+    </td>
+</tr>
+
+{#if isExpanded && group.children}
+    {#each group.children as child (child.id)}
+        <svelte:self 
+            group={child} 
+            {expandedRows} 
+            {toggleRow} 
+            {LEVEL_COLORS}
+            {fmtQty} {fmtRev} {fmtPct} 
+        />
+    {/each}
+{/if}
+<<< FILE_END: src/components/realtime/brand/TableRowRecursive.svelte
 
 >>> FILE_START: src/components/realtime/category/CategoryTab.svelte
 <script>
@@ -1004,30 +1307,32 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 >>> FILE_START: src/components/realtime/employee/EmployeeDetail.svelte
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { realtimeYCXData, employeeMaNVMap } from '../../../stores.js';
+  import { realtimeYCXData } from '../../../stores.js'; // Bỏ employeeMaNVMap vì không cần nữa
   import { reportService } from '../../../services/reportService.js';
-  // [FIX] Cập nhật đường dẫn đúng: modules -> services
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   
-  export let employeeId;
+  // [GENESIS UPDATE] Nhận object employee trực tiếp
+  export let employee; 
 
   const dispatch = createEventDispatcher();
   let detailData = null;
   let employeeName = 'N/A';
   let goals = {};
 
-  // Reactive: Tính toán dữ liệu chi tiết khi employeeId thay đổi
+  // Reactive: Tính toán dữ liệu chi tiết
   $: {
-    if (employeeId && $realtimeYCXData.length > 0) {
-      const info = $employeeMaNVMap.get(String(employeeId));
-      employeeName = info ? formatters.getShortEmployeeName(info.hoTen, info.maNV) : `NV ${employeeId}`;
+    // Kiểm tra employee object thay vì ID
+    if (employee && $realtimeYCXData.length > 0) {
+      // [GENESIS FIX] Lấy tên trực tiếp, không lookup ngược
+      employeeName = formatters.getShortEmployeeName(employee.hoTen, employee.maNV);
       
-      const warehouse = info ? info.maKho : '';
+      const warehouse = employee.maKho || '';
       const settings = settingsService.getRealtimeGoalSettings(warehouse);
       goals = settings.goals || {};
       
-      detailData = reportService.generateRealtimeEmployeeDetailReport(employeeId, $realtimeYCXData);
+      // Vẫn dùng ID để generate report data
+      detailData = reportService.generateRealtimeEmployeeDetailReport(employee.maNV, $realtimeYCXData);
     }
   }
 
@@ -1036,7 +1341,11 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   }
 </script>
 
-<div class="max-w-4xl mx-auto animate-fade-in pb-10">
+<div 
+    class="max-w-4xl mx-auto animate-fade-in pb-10"
+    data-capture-group="revenue-detail-mobile"
+    data-capture-filename={employee ? `DT_Realtime_${employee.hoTen}_${employee.maNV}` : 'ChiTietNhanVien'}
+>
     <div class="mb-4 flex justify-between items-center">
         <button class="text-blue-600 hover:underline font-semibold flex items-center gap-1" on:click={goBack}>
             ‹ Quay lại bảng tổng hợp
@@ -1075,7 +1384,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
              <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                 <div class="text-sm text-gray-500 font-medium uppercase">Tổng Đơn</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.totalOrders}</div>
-            </div>
+             </div>
             <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                  <div class="text-sm text-gray-500 font-medium uppercase">Đơn Bán Kèm</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.bundledOrderCount}</div>
@@ -1083,7 +1392,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-5">
                 <h4 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Tỷ trọng Nhóm hàng</h4>
                 <div class="space-y-4">
@@ -1098,17 +1406,17 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                                 <div class="bg-blue-600 h-2.5 rounded-full" style="width: {percent}%"></div>
                             </div>
                         </div>
-                    {/each}
+                   {/each}
                 </div>
             </div>
 
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-5">
                 <h4 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Chi tiết Khách hàng ({detailData.byCustomer.length})</h4>
                 <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                     {#each detailData.byCustomer as customer, index}
+                      {#each detailData.byCustomer as customer, index}
                         <details class="group border border-gray-200 rounded-lg bg-gray-50 open:bg-white open:shadow-sm transition-all">
                             <summary class="flex justify-between items-center p-3 cursor-pointer list-none select-none">
-                                <div class="flex items-center gap-2">
+                                 <div class="flex items-center gap-2">
                                     <span class="font-bold text-gray-500 text-sm">{index + 1}.</span>
                                     <span class="font-semibold text-gray-800 text-sm">{customer.name}</span>
                                     <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{customer.totalQuantity} SP</span>
@@ -1149,7 +1457,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
-  // [CODEGENESIS] Import Store & Logic màu sắc mới
   import { kpiStore } from '../../../stores.js';
   import { getCompletionColor } from '../../../utils/kpi.utils.js';
 
@@ -1160,6 +1467,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   let sortDirection = 'desc';
   let groupedData = {};
   let departmentOrder = [];
+  
   // Reactive statement để nhóm dữ liệu
   $: {
       groupedData = {};
@@ -1175,6 +1483,19 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
       }
   }
 
+  // Logic tính tổng toàn bộ
+  $: totalStats = reportData.reduce((acc, item) => {
+      acc.doanhThu += Number(item.doanhThu) || 0;
+      acc.doanhThuQuyDoi += Number(item.doanhThuQuyDoi) || 0;
+      acc.doanhThuTraGop += Number(item.doanhThuTraGop) || 0;
+      acc.doanhThuQuyDoiChuaXuat += Number(item.doanhThuQuyDoiChuaXuat) || 0;
+      return acc;
+  }, { doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuQuyDoiChuaXuat: 0 });
+
+  // Công thức tính % tổng
+  $: totalPctQD = totalStats.doanhThu > 0 ? (totalStats.doanhThuQuyDoi / totalStats.doanhThu) - 1 : 0;
+  $: totalPctTC = totalStats.doanhThu > 0 ? (totalStats.doanhThuTraGop / totalStats.doanhThu) : 0;
+
   function handleSort(key) {
     if (sortKey === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -1184,7 +1505,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     }
   }
 
-  // SỬA LỖI: Thêm tham số key và dir vào hàm để Svelte nhận biết sự thay đổi
   function sortEmployees(employees, key, dir) {
     return [...employees].sort((a, b) => {
       if (key === 'hoTen') {
@@ -1192,11 +1512,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
         const nameB = b.hoTen || '';
         return dir === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
       }
-      
-      // Ép kiểu số an toàn
       let valA = Number(a[key]) || 0;
       let valB = Number(b[key]) || 0;
-      
       return dir === 'asc' ? valA - valB : valB - valA;
     });
   }
@@ -1209,103 +1526,117 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   }
 </script>
 
-<div class="space-y-8">
-  {#each departmentOrder as deptName}
-    {#if groupedData[deptName]}
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="p-4 border-b {getHeaderDeptClass(deptName)}">
-          <h4 class="text-lg font-bold uppercase">{deptName}</h4>
-        </div>
+<div class="space-y-8" data-capture-group="revenue-detail-mobile">
+  <div class="flex flex-col gap-8">
+    
+    {#each departmentOrder as deptName}
+      {#if groupedData[deptName]}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="p-4 border-b {getHeaderDeptClass(deptName)}">
+            <h4 class="text-lg font-bold uppercase">{deptName}</h4>
+          </div>
 
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
-            <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20 shadow-sm">
-              <tr>
-                <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-0 bg-slate-200 z-30 min-w-[180px] select-none" on:click={() => handleSort('hoTen')}>
-                  <div class="flex items-center gap-1">
-                    <span>Nhân viên</span>
-                    <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{sortKey === 'hoTen' && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
-                    </svg>
-                  </div>
-                </th>
-                
-                {#each [
-                  { id: 'doanhThu', label: 'DT Thực', group: 'bg-blue-50 text-blue-800' },
-                  { id: 'doanhThuQuyDoi', label: 'DT QĐ', group: 'bg-blue-50 text-blue-800' },
-                  { id: 'hieuQuaQuyDoi', label: '% QĐ', group: 'bg-blue-50 text-blue-800' },
-                  { id: 'doanhThuTraGop', label: 'DT Trả chậm', group: 'bg-green-50 text-green-800' },
-                  { id: 'tyLeTraCham', label: '% Trả chậm', group: 'bg-green-50 text-green-800' },
-                  { id: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa xuất', group: 'bg-yellow-50 text-yellow-800' }
-                ] as col}
-                  <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition select-none {col.group}" on:click={() => handleSort(col.id)}>
-                    <div class="flex items-center justify-end gap-1 whitespace-nowrap">
-                      <span>{col.label}</span>
-                      <svg class="w-3 h-3 {sortKey === col.id ? 'opacity-100' : 'opacity-40'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="{sortKey === col.id ? 3 : 2}" d="{sortKey === col.id && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
+              <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20 shadow-sm">
+                <tr>
+                  <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-0 bg-slate-200 z-30 select-none" style="width: 25%" on:click={() => handleSort('hoTen')}>
+                    <div class="flex items-center gap-1">
+                      <span>Nhân viên</span>
+                      <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{sortKey === 'hoTen' && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
                       </svg>
                     </div>
                   </th>
-                {/each}
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-              {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item (item.maNV)}
-                {@const userTarget = $kpiStore.targets[item.maNV] || $kpiStore.globalSettings}
-                {@const targetQD = (userTarget?.phanTramQD || 0) / 100}
-                {@const targetTC = (userTarget?.phanTramTC || 0) / 100}
-
-                {@const qdClass = getCompletionColor(item.hieuQuaQuyDoi, targetQD)}
-                {@const tcClass = getCompletionColor(item.tyLeTraCham, targetTC)}
-                 
-                <tr class="hover:bg-blue-50 transition cursor-pointer interactive-row" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
-                  <td class="px-4 py-2 font-semibold text-blue-600 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200">
-                    {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
-                  </td>
-                  <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThu)}</td>
-                  <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
                   
-                  <td class="px-4 py-2 text-right font-bold {qdClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
-                  
-                  <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
-                  
-                  <td class="px-4 py-2 text-right font-bold {tcClass}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
-                  
-                  <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
+                  {#each [
+                    { id: 'doanhThu', label: 'DT Thực', group: 'bg-blue-50 text-blue-800' },
+                    { id: 'doanhThuQuyDoi', label: 'DT QĐ', group: 'bg-blue-50 text-blue-800' },
+                    { id: 'hieuQuaQuyDoi', label: '% QĐ', group: 'bg-blue-50 text-blue-800' },
+                    { id: 'doanhThuTraGop', label: 'DT Trả chậm', group: 'bg-green-50 text-green-800' },
+                    { id: 'tyLeTraCham', label: '% Trả chậm', group: 'bg-green-50 text-green-800' },
+                    { id: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa xuất', group: 'bg-yellow-50 text-yellow-800' }
+                  ] as col}
+                    <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition select-none {col.group}" style="width: 12.5%" on:click={() => handleSort(col.id)}>
+                      <div class="flex items-center justify-end gap-1 whitespace-nowrap">
+                        <span>{col.label}</span>
+                        <svg class="w-3 h-3 {sortKey === col.id ? 'opacity-100' : 'opacity-40'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="{sortKey === col.id ? 3 : 2}" d="{sortKey === col.id && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
+                        </svg>
+                      </div>
+                    </th>
+                  {/each}
                 </tr>
-              {/each}
-            </tbody>
-          </table>
+              </thead>
+              <tbody class="divide-y divide-gray-200">
+                {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item (item.maNV)}
+                  {@const userTarget = $kpiStore.targets[item.maNV] || $kpiStore.globalSettings}
+                  {@const targetQD = (userTarget?.phanTramQD || 0) / 100}
+                  {@const targetTC = (userTarget?.phanTramTC || 0) / 100}
+                  {@const qdClass = getCompletionColor(item.hieuQuaQuyDoi, targetQD)}
+                  {@const tcClass = getCompletionColor(item.tyLeTraCham, targetTC)}
+                  
+                  <tr class="hover:bg-blue-50 transition cursor-pointer interactive-row" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
+                    <td class="px-4 py-2 font-semibold text-blue-600 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200">
+                      {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
+                    </td>
+                    <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThu)}</td>
+                    <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                    <td class="px-4 py-2 text-right font-bold {qdClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                    <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                    <td class="px-4 py-2 text-right font-bold {tcClass}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
+                    <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
         </div>
+      {/if}
+    {/each}
+    
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden -mt-4 z-10 relative">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm text-left font-bold uppercase">
+          <tfoot class="bg-gray-100 font-bold text-gray-900 text-xs uppercase">
+            <tr>
+              <td class="px-4 py-3 border-r border-gray-300" style="width: 25%">TỔNG CỘNG</td>
+              
+              <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThu)}</td>
+              <td class="px-4 py-3 text-right text-base text-blue-700" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
+              <td class="px-4 py-3 text-right text-base text-blue-700" style="width: 12.5%">{formatters.formatPercentage(totalPctQD)}</td>
+              <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuTraGop)}</td>
+              <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatPercentage(totalPctTC)}</td>
+              <td class="px-4 py-3 text-right text-base text-gray-600" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuQuyDoiChuaXuat)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
-    {/if}
-  {/each}
+    </div>
+
+  </div>
 </div>
 <<< FILE_END: src/components/realtime/employee/EmployeeList.svelte
 
 >>> FILE_START: src/components/realtime/employee/EmployeeTab.svelte
 <script>
-  // [FIX] Thêm import selectedWarehouse
   import { realtimeYCXData, selectedWarehouse } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   
   import EmployeeList from './EmployeeList.svelte';
   import EmployeeDetail from './EmployeeDetail.svelte';
-
-  // [FIX] Bỏ export let selectedWarehouse
   
-  let selectedEmployeeId = null;
+  // [GENESIS UPDATE] Lưu trữ object nhân viên thay vì chỉ ID
+  let selectedEmployee = null;
   let filteredReport = [];
 
   $: {
-    // [FIX] Dùng $selectedWarehouse
     const currentWarehouse = $selectedWarehouse;
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
     const goals = settings.goals || {};
     
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
-    
     if (currentWarehouse) {
       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
@@ -1316,18 +1647,25 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   }
 
   function handleViewDetail(event) {
-    selectedEmployeeId = event.detail.employeeId;
+    const empId = event.detail.employeeId;
+    // [GENESIS UPDATE] Tìm object nhân viên từ list đã lọc để đảm bảo có tên đúng
+    const foundEmployee = filteredReport.find(e => String(e.maNV) === String(empId));
+    if (foundEmployee) {
+        selectedEmployee = foundEmployee;
+    } else {
+        console.warn('Không tìm thấy thông tin nhân viên:', empId);
+    }
   }
 
   function handleBack() {
-    selectedEmployeeId = null;
+    selectedEmployee = null;
   }
 </script>
 
 <div class="animate-fade-in">
-  {#if selectedEmployeeId}
+  {#if selectedEmployee}
     <EmployeeDetail 
-      employeeId={selectedEmployeeId} 
+      employee={selectedEmployee} 
       on:back={handleBack}
     />
   {:else}
@@ -1355,7 +1693,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   import { adminService } from '../../../services/admin.service.js';
 
   export let items = []; 
-  export let unexportedItems = []; 
+  export let unexportedItems = [];
   export let rawSource = []; 
 
   let showUnexported = false;
@@ -1365,12 +1703,11 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   
   let isSettingsOpen = false;
   let filterSearch = '';
-  let hiddenCategories = new Set(); 
+  let hiddenCategories = new Set();
   let isLoadingConfig = false;
 
   let chartInstancePie = null;
   let chartInstanceBar = null;
-
   onMount(async () => {
       if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
           try {
@@ -1381,7 +1718,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
           } catch (e) { console.error(e); }
       }
   });
-
   // --- THEME ---
   $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT (QĐ)" : "CHI TIẾT NGÀNH HÀNG";
   $: titleIcon = showUnexported ? "alert-circle" : "layers";
@@ -1423,7 +1759,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
   // --- LOGIC AGGREGATION TRỰC TIẾP ---
   $: sourceData = showUnexported ? unexportedItems : items;
-
   $: allGroups = (() => {
       const macroItems = ($macroCategoryConfig || []).map(m => ({
           key: m.name, 
@@ -1443,11 +1778,9 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
       return [...macroItems, ...simpleItems];
   })();
-  
   $: filterList = allGroups.filter(g => 
       g.label.toLowerCase().includes(filterSearch.toLowerCase())
   );
-
   function toggleCategoryVisibility(key) {
       if (hiddenCategories.has(key)) hiddenCategories.delete(key);
       else hiddenCategories.add(key);
@@ -1487,7 +1820,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
               }
           }
       });
-
       // B. Simple (Luôn hiện nếu không ẩn)
       sourceData.forEach((item, index) => {
           const name = item.name || item.nganhHang || 'Chưa đặt tên';
@@ -1502,7 +1834,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
               });
           }
       });
-
       return result;
   })();
 
@@ -1510,7 +1841,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
       const name = item.name || '';
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
   });
-
   $: sortedItems = [...filteredItems].sort((a, b) => {
       const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
       const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
@@ -1518,10 +1848,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
       if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
       return 0;
   });
-
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
   $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
-
   // --- CHART LOGIC ---
   $: pieData = (() => {
       const sorted = sortedItems.slice(); 
@@ -1531,13 +1859,10 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
       const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
       return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
   })();
-
   // [FIX CHART]
-  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig); 
-
+  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig);
   function calculateBrandData(source, visibleItems, configs) {
       if (!source || source.length === 0) return [];
-
       // Bung nén danh sách được phép
       const allowedNames = new Set();
       visibleItems.forEach(item => {
@@ -1624,7 +1949,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   }
 
   $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
-
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
@@ -1638,7 +1962,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     :global(.filter-dropdown) {
         display: flex;
         flex-direction: column;
-        max-height: 400px; 
+        max-height: 400px;
     }
     :global(.filter-body) {
         flex: 1;
@@ -1648,6 +1972,12 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     :global(.filter-actions) {
         flex-shrink: 0;
         border-top: 1px solid #eee;
+    }
+
+    /* [FIX GENESIS]: Ép lưới 4 cột khi Capture */
+    :global(.capture-container .luyke-cat-grid) {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 12px !important;
     }
 </style>
 
@@ -1684,13 +2014,14 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         <div class="filter-header">
                             <input type="text" class="filter-search" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
                         </div>
+                        
                         <div class="filter-body custom-scrollbar">
                             {#if filterList.length === 0}
                                 <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                             {:else}
                                 {#each filterList as group (group.key)}
                                     <div class="filter-item" on:click={() => toggleCategoryVisibility(group.key)}>
-                                        <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
+                                         <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
                                         {#if group.type === 'macro'}
                                             <label class="text-teal-700 font-bold text-xs flex items-center gap-1 flex-1">
                                                 <i data-feather="layers" class="w-3 h-3"></i> {group.label}
@@ -1742,7 +2073,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                         </div>
                         
                         <h4 class="cat-name-text {textColor}" title={name}>
-                            {name} 
+                             {name} 
                             {#if item.isMacro}<span class="text-[10px] bg-white border px-1 rounded text-gray-500 ml-1 font-normal">GỘP</span>{/if}
                         </h4>
                         
@@ -1812,9 +2143,8 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   let sortKey = 'label';
   let sortDirection = 'asc';
 
-  // [DEBUG] Xác nhận phiên bản Fix đã được nạp
   onMount(() => {
-    console.log('✅ EfficiencyTable (Summary) - SAFE MODE ACTIVE');
+    console.log('✅ EfficiencyTable (Summary) - DENSITY MODE ACTIVE');
   });
 
   function handleSort(event) {
@@ -1829,13 +2159,11 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
   $: sortedItems = [...items].sort((a, b) => {
     let valA, valB;
-
     if (sortKey === 'label') {
         valA = a.label || '';
         valB = b.label || '';
         return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
     } 
-    
     valA = a[sortKey] || 0;
     valB = b[sortKey] || 0;
     return sortDirection === 'asc' ? valA - valB : valB - valA;
@@ -1849,7 +2177,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     <p class="text-gray-500 font-bold p-4 text-center">Vui lòng tải file realtime để xem chi tiết.</p>
   {:else}
     <div class="overflow-x-auto">
-      <table class="min-w-full text-sm table-bordered">
+      <table class="min-w-full text-sm table-bordered eff-table">
         <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold">
           <tr>
             <SortableTh key="label" label="Chỉ số" align="left" {sortKey} {sortDirection} on:sort={handleSort} />
@@ -1860,12 +2188,12 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
         <tbody>
           {#each sortedItems as item, index (index)}
             {@const isBelow = item.value < ((item.target || 0) / 100)}
-            <tr class="border-t hover:bg-gray-50">
-              <td class="px-4 py-2 font-semibold text-gray-800">{item.label}</td>
-              <td class="px-4 py-2 text-right font-bold text-lg {isBelow ? 'bg-red-100 text-red-700' : 'text-blue-600'}">
+            <tr class="border-t hover:bg-gray-50 eff-row">
+              <td class="px-4 py-2 font-semibold text-gray-800 eff-label">{item.label}</td>
+              <td class="px-4 py-2 text-right font-bold text-lg {isBelow ? 'bg-red-100 text-red-700' : 'text-blue-600'} eff-value">
                 {formatters.formatPercentage(item.value)}
               </td>
-              <td class="px-4 py-2 text-right text-gray-600">{item.target || 0}%</td>
+              <td class="px-4 py-2 text-right text-gray-600 eff-target">{item.target || 0}%</td>
             </tr>
           {/each}
         </tbody>
@@ -1873,6 +2201,23 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     </div>
   {/if}
 </div>
+
+<style>
+    /* [FIX GENESIS]: Tối ưu mật độ bảng */
+    :global(.capture-container .eff-row td) {
+        padding: 4px 8px !important; /* Giảm đệm dòng */
+    }
+    :global(.capture-container .eff-label) {
+        font-size: 14px !important;
+    }
+    :global(.capture-container .eff-value) {
+        font-size: 18px !important; /* % Thực hiện to hơn */
+        font-weight: 800 !important;
+    }
+    :global(.capture-container .eff-target) {
+        font-size: 14px !important;
+    }
+</style>
 <<< FILE_END: src/components/realtime/summary/EfficiencyTable.svelte
 
 >>> FILE_START: src/components/realtime/summary/KpiCards.svelte
@@ -1881,17 +2226,14 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
   export let supermarketReport = {};
   export let goals = {};
-
   // Reactive variables để hiển thị
   $: doanhThu = supermarketReport.doanhThu || 0;
   $: doanhThuQD = supermarketReport.doanhThuQuyDoi || 0;
   $: doanhThuTraGop = supermarketReport.doanhThuTraGop || 0;
   $: doanhThuChuaXuat = supermarketReport.doanhThuChuaXuat || 0;
   $: doanhThuQDChuaXuat = supermarketReport.doanhThuQuyDoiChuaXuat || 0;
-  
   $: hieuQuaQuyDoi = supermarketReport.hieuQuaQuyDoi || 0;
   $: tyLeTraCham = supermarketReport.tyLeTraCham || 0;
-
   // Mục tiêu
   $: targetDTT = parseFloat(goals?.doanhThuThuc) || 0;
   $: targetDTQD = parseFloat(goals?.doanhThuQD) || 0;
@@ -1900,51 +2242,50 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   // Tính % Hoàn thành
   $: percentDTT = targetDTT > 0 ? ((doanhThu / 1000000) / targetDTT) : 0;
   $: percentDTQD = targetDTQD > 0 ? ((doanhThuQD / 1000000) / targetDTQD) : 0;
-
 </script>
 
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 capture-kpi-grid">
   <div class="kpi-card p-6 rounded-2xl shadow-lg bg-[#38bdf8]">
     <h4 class="kpi-card-title font-semibold uppercase tracking-wider text-white opacity-90">Doanh thu thực</h4>
-    <p class="font-bold mt-2 mb-3 text-white text-4xl">
+    <p class="font-bold mt-2 mb-3 text-white text-4xl kpi-value">
       {formatters.formatNumber(doanhThu / 1000000, 1)}
     </p>
-    <div class="text-sm text-white opacity-90">
+    <div class="text-sm text-white opacity-90 kpi-sub">
       <p>% HT: <span class="font-bold">{formatters.formatPercentage(percentDTT)}</span> / Target: {formatters.formatNumber(targetDTT)}</p>
-      <p class="mt-1 text-xs border-t border-white/30 pt-1">DT Chưa xuất: <strong>{formatters.formatNumber(doanhThuChuaXuat / 1000000, 1)}</strong></p>
+      <p class="mt-1 text-xs border-t border-white/30 pt-1 kpi-sub-row">DT Chưa xuất: <strong>{formatters.formatNumber(doanhThuChuaXuat / 1000000, 1)}</strong></p>
     </div>
   </div>
 
   <div class="kpi-card p-6 rounded-2xl shadow-lg bg-[#34d399]">
     <h4 class="kpi-card-title font-semibold uppercase tracking-wider text-white opacity-90">Doanh thu Quy đổi</h4>
-    <p class="font-bold mt-2 mb-3 text-white text-4xl">
+    <p class="font-bold mt-2 mb-3 text-white text-4xl kpi-value">
       {formatters.formatNumber(doanhThuQD / 1000000, 1)}
     </p>
-    <div class="text-sm text-white opacity-90">
+    <div class="text-sm text-white opacity-90 kpi-sub">
       <p>% HT: <span class="font-bold">{formatters.formatPercentage(percentDTQD)}</span> / Target: {formatters.formatNumber(targetDTQD)}</p>
-      <p class="mt-1 text-xs border-t border-white/30 pt-1">DTQĐ Chưa xuất: <strong>{formatters.formatNumber(doanhThuQDChuaXuat / 1000000, 1)}</strong></p>
+      <p class="mt-1 text-xs border-t border-white/30 pt-1 kpi-sub-row">DTQĐ Chưa xuất: <strong>{formatters.formatNumber(doanhThuQDChuaXuat / 1000000, 1)}</strong></p>
     </div>
   </div>
 
   <div class="kpi-card p-6 rounded-2xl shadow-lg bg-[#fbbf24]">
     <h4 class="kpi-card-title font-semibold uppercase tracking-wider text-white opacity-90">Tỷ lệ quy đổi</h4>
-    <p class="font-bold mt-2 mb-3 text-white text-4xl">
+    <p class="font-bold mt-2 mb-3 text-white text-4xl kpi-value">
       {formatters.formatPercentage(hieuQuaQuyDoi)}
     </p>
-    <div class="text-sm text-white opacity-90">
+    <div class="text-sm text-white opacity-90 kpi-sub">
       <p>Mục tiêu: <span class="font-bold">{formatters.formatNumber(targetTLQD)}%</span></p>
-      <p class="mt-1 text-xs italic">So với doanh thu thực</p>
+      <p class="mt-1 text-xs italic kpi-sub-row">So với doanh thu thực</p>
     </div>
   </div>
 
   <div class="kpi-card p-6 rounded-2xl shadow-lg bg-[#2dd4bf]">
     <h4 class="kpi-card-title font-semibold uppercase tracking-wider text-white opacity-90">Doanh thu trả chậm</h4>
-    <p class="font-bold mt-2 mb-3 text-white text-4xl">
+    <p class="font-bold mt-2 mb-3 text-white text-4xl kpi-value">
       {formatters.formatNumber(doanhThuTraGop / 1000000, 1)}
     </p>
-    <div class="text-sm text-white opacity-90">
+    <div class="text-sm text-white opacity-90 kpi-sub">
       <p>% thực trả chậm: <span class="font-bold">{formatters.formatPercentage(tyLeTraCham)}</span></p>
-      <p class="mt-1 text-xs italic">Trên tổng doanh thu</p>
+      <p class="mt-1 text-xs italic kpi-sub-row">Trên tổng doanh thu</p>
     </div>
   </div>
 </div>
@@ -1956,6 +2297,44 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   .kpi-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  /* [FIX GENESIS]: Tối ưu mật độ cho chế độ Capture (Ảnh 800px) */
+  :global(.capture-container .capture-kpi-grid) {
+      gap: 12px !important; /* Giảm khoảng cách giữa các thẻ */
+  }
+
+  :global(.capture-container .kpi-card) {
+      padding: 12px 14px !important; /* Giảm padding để tăng diện tích nội dung */
+      min-height: 140px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+  }
+
+  :global(.capture-container .kpi-card-title) {
+      font-size: 14px !important; /* Tiêu đề rõ ràng hơn */
+      font-weight: 700 !important;
+      opacity: 1 !important;
+      margin-bottom: 4px !important;
+  }
+
+  :global(.capture-container .kpi-value) {
+      font-size: 42px !important; /* Số liệu cực lớn */
+      font-weight: 800 !important;
+      line-height: 1 !important; /* Ép dòng sát lại */
+      margin: 8px 0 !important;
+  }
+
+  :global(.capture-container .kpi-sub) {
+      font-size: 14px !important;
+      line-height: 1.3 !important;
+  }
+  
+  :global(.capture-container .kpi-sub-row) {
+      font-size: 13px !important;
+      margin-top: 6px !important;
+      padding-top: 6px !important;
   }
 </style>
 <<< FILE_END: src/components/realtime/summary/KpiCards.svelte
@@ -1973,14 +2352,13 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
   import { datasyncService } from '../../../services/datasync.service.js';
   import { adminService } from '../../../services/admin.service.js';
 
-  export let items = []; 
+  export let items = [];
   export let numDays = 1;
 
   let isSettingsOpen = false;
   let filterSearch = '';
   let saveTimer;
-  let localConfig = []; 
-
+  let localConfig = [];
   // Bảng màu rực rỡ cho thanh tiến trình
   const BAR_COLORS = [
       'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-400',
@@ -1988,7 +2366,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
       'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
       'bg-violet-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
   ];
-
   // 1. Load config Nhóm Hàng Lớn nếu chưa có
   onMount(async () => {
       if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
@@ -2000,7 +2377,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
           }
       }
   });
-
   // 2. Tạo danh sách Filter (Ưu tiên Nhóm Lớn lên đầu)
   $: allGroups = (() => {
       // A. Nhóm Lớn
@@ -2011,6 +2387,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
       // B. Nhóm Thường
       const structureNames = new Set(($categoryStructure || []).map(c => cleanCategoryName(c.nhomHang)).filter(Boolean));
+      
       const presentNames = new Set(items.map(i => i.name).filter(Boolean));
       
       const simpleNames = [...new Set([...structureNames, ...presentNames])]
@@ -2022,11 +2399,9 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
 
       return [...macroNames, ...simpleNames];
   })();
-
   $: filterList = allGroups.filter(g => 
       g.name.toLowerCase().includes(filterSearch.toLowerCase())
   );
-
   // 3. Logic Load/Save Config (Dùng chung config với Lũy kế để đồng bộ trải nghiệm)
   $: if ($selectedWarehouse) {
       loadConfigForWarehouse($selectedWarehouse);
@@ -2059,7 +2434,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
           if ($selectedWarehouse) {
               datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
           }
-      }, 500); 
+      }, 500);
   }
 
   function toggleAllVisibility(show) {
@@ -2105,7 +2480,6 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
               finalResults.push(aggregatedItem);
           } 
       });
-
       // B. Xử lý Simple Items
       selectedSimples.forEach(simpleName => {
           const item = items.find(i => i.name === simpleName);
@@ -2120,13 +2494,11 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
               });
           }
       });
-
       // Sắp xếp giảm dần theo doanh thu QĐ
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
-
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
@@ -2170,7 +2542,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                                     <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} text-xs flex items-center gap-1 cursor-pointer flex-1">
                                         <i data-feather="layers" class="w-3 h-3"></i>
                                         {group.name}
-                                    </label>
+                                     </label>
                                  {:else}
                                     <label class="{isChecked ? 'font-bold text-blue-700' : 'text-gray-700'} text-xs cursor-pointer flex-1">{group.name}</label>
                                  {/if}
@@ -2205,11 +2577,11 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
           <div class="py-2.5 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1.5 rounded
                       {item.isMacro ? 'bg-teal-50/40 hover:bg-teal-50/60' : 'hover:bg-gray-50'}">
             
-            <div class="flex items-center gap-3">
+             <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                
-               <div class="flex-grow min-w-0">
-                   <div class="flex justify-between items-center mb-1.5">
+               <div class="flex-grow min-w-0 qdc-content-wrapper">
+                   <div class="flex justify-between items-center mb-1.5 qdc-info-row">
                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1.5 {item.isMacro ? 'text-teal-800' : 'text-slate-700'}" title={item.name}>
                            {#if item.isMacro}
                                 <i data-feather="layers" class="w-3.5 h-3.5 text-teal-600"></i>
@@ -2221,11 +2593,11 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                        </span>
                    </div>
                    
-                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1.5 shadow-inner">
+                   <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1.5 shadow-inner qdc-bar-row">
                         <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
                    </div>
                    
-                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1 font-medium">
+                   <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1 font-medium qdc-extra-row">
                        <div class="flex gap-3">
                            <span>DT: <strong class="text-slate-600">{formatters.formatRevenue(item.dt)}</strong></span>
                            <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
@@ -2236,7 +2608,7 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
                                 <span>TB: <strong>{formatters.formatNumber(item.quantity / numDays, 0)}</strong>/ngày</span>
                            {/if}
                        </div>
-                    </div>
+                   </div>
                </div>
             </div>
           </div>
@@ -2251,6 +2623,44 @@ GENERATED AT: 1/31/2026, 6:17:34 PM
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* [FIX GENESIS]: Sửa lỗi tranh chấp hiển thị giữa Text và Bar khi Capture */
+    :global(.capture-container .qdc-content-wrapper) {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 6px !important; 
+    }
+
+    /* Đẩy Text lên Layer cao nhất */
+    :global(.capture-container .qdc-info-row) {
+        margin-bottom: 0 !important;
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 50 !important; 
+        width: 100% !important;
+    }
+
+    :global(.capture-container .qdc-info-row span:first-child) {
+        overflow: visible !important;
+        white-space: normal !important; 
+        flex: 1 !important;
+    }
+
+    :global(.capture-container .qdc-info-row span:last-child) {
+        flex-shrink: 0 !important;
+        margin-left: 8px !important;
+        z-index: 51 !important;
+    }
+
+    /* Đảm bảo thanh bar nằm ở tầng dưới cùng */
+    :global(.capture-container .qdc-bar-row) {
+        margin-top: 0 !important;
+        position: relative !important;
+        z-index: 1 !important;
+        width: 100% !important;
+        min-height: 8px !important;
+    }
 </style>
 <<< FILE_END: src/components/realtime/summary/QdcTable.svelte
 

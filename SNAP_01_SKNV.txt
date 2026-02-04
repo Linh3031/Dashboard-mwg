@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_01_SKNV.txt
-GENERATED AT: 1/31/2026, 6:17:34 PM
+GENERATED AT: 2/4/2026, 9:59:00 AM
 
 
 >>> FILE_START: src/components/health-staff/CategoryRevenueView.svelte
@@ -2881,7 +2881,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import AddMetricModal from '../../modals/AddMetricModal.svelte';
 
   export let employeeId;
-
   const dispatch = createEventDispatcher();
 
   let employeeData = null;
@@ -2896,15 +2895,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       'Năng suất': { above: 0, total: 0 },
       'Đơn giá': { above: 0, total: 0 }
   };
-  
   // State quản lý hiển thị Modal
   let isEffModalOpen = false;
   let isMetricModalOpen = false;
   let itemToEdit = null;
-
-  // [KHÔI PHỤC] Hai dòng quan trọng bị thiếu gây lỗi ReferenceError
+  
+  // [KHÔI PHỤC] Logic cũ giữ nguyên
   $: totalAbove = Object.values(kpiCounts).reduce((sum, item) => sum + item.above, 0);
   $: totalCriteria = Object.values(kpiCounts).reduce((sum, item) => sum + item.total, 0);
+  
+  // [GENESIS FIX 1]: Tạo tên file dynamic dựa trên nhân viên đang xem
+  $: filename = employeeData 
+      ? `${employeeData.hoTen} - ${employeeData.maNV}` 
+      : 'Chi_tiet_nhan_vien';
 
   // Logic tải dữ liệu từ Cloud khi Warehouse thay đổi
   $: if ($selectedWarehouse) {
@@ -2918,10 +2921,9 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
   // Reactive: Tính toán lại khi Store metrics thay đổi HOẶC employeeId thay đổi
   $: calculateEmployeeData(employeeId, $masterReportData, $warehouseCustomMetrics);
-
+  
   function calculateEmployeeData(id, masterData, metrics) {
       if (!id || masterData.sknv.length === 0) return;
-
       const rawEmployee = masterData.sknv.find(e => String(e.maNV) === String(id));
       
       if (rawEmployee) {
@@ -2958,14 +2960,15 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                   .map(([name, val]) => ({ name, ...val }))
                   .filter(item => (item.revenue || 0) > 0)
                   .sort((a, b) => b.revenue - a.revenue);
-          } else { nganhHangData = []; }
+          } else { nganhHangData = [];
+          }
       }
   }
 
   function handleCountUpdate(event) {
       const { title, above, total } = event.detail;
       let key = title;
-      if (title === 'Hiệu quả') key = 'Hiệu quả khai thác'; 
+      if (title === 'Hiệu quả') key = 'Hiệu quả khai thác';
       if (kpiCounts[key]) {
           kpiCounts[key] = { above, total };
           kpiCounts = { ...kpiCounts };
@@ -3002,7 +3005,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       let currentMetrics = [...$warehouseCustomMetrics]; 
       
       const existingIndex = currentMetrics.findIndex(m => m.id === savedMetric.id);
-      
       if (existingIndex >= 0) {
           currentMetrics[existingIndex] = savedMetric;
       } else {
@@ -3029,7 +3031,11 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   afterUpdate(() => { if (window.feather) window.feather.replace(); });
 </script>
 
-<div class="animate-fade-in pb-10 max-w-7xl mx-auto">
+<div 
+    class="animate-fade-in pb-10 max-w-7xl mx-auto" 
+    data-capture-group="sknv-detail-view"
+    data-capture-filename={filename}
+>
     <div class="mb-4">
         <button on:click={goBack} class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
            <i data-feather="chevron-left" class="w-4 h-4"></i> Quay lại bảng tổng hợp
@@ -3109,6 +3115,41 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     :global(.sknv-header-yellow) { background-color: #ca8a04; }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [GENESIS FIX]: CSS RIÊNG CHO CHẾ ĐỘ CHỤP ẢNH CỦA CHI TIẾT NHÂN VIÊN */
+    :global(.capture-container [data-capture-group="sknv-detail-view"]) {
+        width: 1050px !important;
+        max-width: 1050px !important;
+        margin: 0 !important;
+        padding: 20px !important;
+        background-color: white;
+    }
+
+    /* 1. Ép Layout Grid 2 cột */
+    :global(.capture-container [data-capture-group="sknv-detail-view"] .grid) {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 24px !important;
+        width: 100% !important;
+    }
+
+    /* 2. [QUAN TRỌNG]: BUNG LỤA TABLE (Expand Scrollable Content)
+       Tìm tất cả các thẻ có thanh cuộn (overflow) và ép nó hiện hết nội dung
+    */
+    :global(.capture-container [data-capture-group="sknv-detail-view"] .overflow-y-auto),
+    :global(.capture-container [data-capture-group="sknv-detail-view"] .overflow-x-auto),
+    :global(.capture-container [data-capture-group="sknv-detail-view"] [class*="max-h-"]) {
+        max-height: none !important;      /* Hủy giới hạn chiều cao */
+        height: auto !important;          /* Chiều cao tự động theo nội dung */
+        overflow: visible !important;     /* Hiển thị phần bị che */
+        display: block !important;
+    }
+
+    /* Đảm bảo table chiếm hết chiều rộng */
+    :global(.capture-container [data-capture-group="sknv-detail-view"] table) {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
 </style>
 <<< FILE_END: src/components/health-staff/detail/DetailView.svelte
 
@@ -4333,7 +4374,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
-  
   import DetailHeader from '../detail/DetailHeader.svelte';
   import RevenueKpiBoard from './RevenueKpiBoard.svelte';
   import DailyPerfChart from './DailyPerfChart.svelte';
@@ -4345,7 +4385,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   let detailData = null;
   let employeeData = null;
   let goals = {};
-
   $: if (employeeId && $ycxData.length > 0) {
       employeeData = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeId));
       if (employeeData) {
@@ -4359,7 +4398,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       dispatch('back');
   }
 
-  // [ĐÃ SỬA] Bỏ điều kiện kiểm tra sâu, đảm bảo lệnh mở Modal luôn được thực thi
   function openUnexportedModal() {
       if (detailData) {
           modalState.update(s => ({ 
@@ -4384,7 +4422,11 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   }
 </script>
 
-<div class="animate-fade-in pb-10 max-w-7xl mx-auto">
+<div 
+    class="animate-fade-in pb-10 max-w-7xl mx-auto"
+    data-capture-group="revenue-detail-mobile"
+    data-capture-filename={employeeData ? `DTLK_ChiTiet_${employeeData.hoTen}_${employeeData.maNV}` : 'ChiTietNhanVien'}
+>
     <div class="mb-4 flex justify-between items-center">
         <button on:click={goBack} class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
             <i data-feather="chevron-left" class="w-4 h-4"></i> Quay lại bảng tổng hợp
@@ -4687,7 +4729,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   
   export let departmentName;
   export let employees = [];
-  
   // Priority styling cho "Tư Vấn - ĐM"
   $: isPriority = departmentName.includes('Tư Vấn');
   $: headerClass = isPriority 
@@ -4702,7 +4743,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   </div>
   
   <div class="p-4 bg-slate-50/30 border-x border-b border-gray-200 rounded-b-lg">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sknv-employee-grid">
       {#each employees as emp, index (emp.maNV)}
         <EmployeeCard employee={emp} rank={index + 1} on:click />
       {/each}
@@ -4714,28 +4755,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 >>> FILE_START: src/components/health-staff/summary/SummaryView.svelte
 <script>
   import DepartmentGroup from './DepartmentGroup.svelte';
-  
-  // [FIX LỖI QUAN TRỌNG]
-  // Sai: import { utils } from '../../../utils.js';
-  // Đúng: Import tất cả hàm (*) và đặt tên là 'utils'
-  import * as utils from '../../../utils.js'; 
+  import * as utils from '../../../utils.js';
   
   export let reportData = [];
-
-  // Gom nhóm nhân viên theo bộ phận
   $: groupedData = reportData.reduce((acc, item) => {
       const dept = item.boPhan || 'Khác';
       if (!acc[dept]) acc[dept] = [];
       acc[dept].push(item);
       return acc;
   }, {});
-
-  // Sắp xếp thứ tự bộ phận (Ưu tiên Tư Vấn)
-  // Hàm này nằm trong utils.js, giờ gọi qua namespace 'utils' sẽ hoạt động
   $: departmentOrder = utils.getSortedDepartmentList(reportData);
 </script>
 
-<div class="animate-fade-in pb-10">
+<div class="animate-fade-in pb-10 sknv-summary-container" data-capture-group="health-staff-summary">
   {#if reportData.length === 0}
     <div class="p-12 text-center bg-gray-50 rounded-lg border border-gray-200">
       <p class="text-gray-500">Không có dữ liệu hiệu suất để hiển thị.</p>
@@ -4750,13 +4782,30 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
           on:click 
         />
       {/if}
-    {/each}
-  {/if}
+    {/each} {/if}
 </div>
 
 <style>
   .animate-fade-in { animation: fadeIn 0.5s ease-out; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* [FIX GENESIS Issue 2]: CSS CỨNG CHO CHẾ ĐỘ CHỤP ẢNH */
+  :global(.capture-container .sknv-summary-container) {
+      /* Tăng chiều rộng lên 1050px để chứa đủ 3 cột mà không quá chật */
+      width: 1050px !important;
+      min-width: 1050px !important;
+      max-width: 1050px !important;
+      padding: 20px !important;
+      background-color: white;
+  }
+
+  /* [MODIFIED]: Chỉ ép Grid 3 cột cho danh sách nhân viên (có class sknv-employee-grid)
+     Thay vì ép tất cả .grid (gây vỡ layout con) */
+  :global(.capture-container .sknv-summary-container .sknv-employee-grid) {
+      display: grid !important;
+      grid-template-columns: repeat(3, 1fr) !important; 
+      gap: 16px !important;
+  }
 </style>
 <<< FILE_END: src/components/health-staff/summary/SummaryView.svelte
 
@@ -4765,19 +4814,26 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import { formatters } from '../../../../utils/formatters.js';
   export let hoTen;
   export let maNV;
-  export let boPhan;
-  export let rank = 999; // [MỚI] Nhận rank để check Top 3
+  // Đã xóa export let boPhan
+  export let rank = 999; 
 
-  // Logic màu tên: Top 3 màu xanh dương đậm, còn lại màu đen xám
   $: nameColorClass = rank <= 3 ? 'text-blue-700 font-extrabold' : 'text-gray-900 font-bold';
+
+  function truncateTextSimple(text, maxLength = 25) {
+      if (!text) return '';
+      let cleanName = formatters.getShortEmployeeName(text, maNV);
+      if (cleanName.length <= maxLength) return cleanName;
+      return cleanName.substring(0, maxLength) + '...';
+  }
 </script>
 
 <div class="flex-grow min-w-0 ml-3">
-  <p class="{nameColorClass} text-base truncate leading-tight" title="{hoTen} - {maNV}">
-    {formatters.getShortEmployeeName(hoTen, maNV)}
+  <p class="{nameColorClass} text-base leading-tight overflow-hidden" 
+     title="{hoTen} - {maNV}"
+     style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+    {truncateTextSimple(hoTen, 50)} 
   </p>
-  <p class="text-xs text-gray-500 truncate">{boPhan}</p>
-</div>
+  </div>
 <<< FILE_END: src/components/health-staff/summary/card/CardHeader.svelte
 
 >>> FILE_START: src/components/health-staff/summary/card/CardMainKpi.svelte
@@ -4803,7 +4859,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 <script>
   export let summary; 
 
-  // Định nghĩa màu nền cố định cho từng loại thẻ (Style đồng bộ)
   const groups = [
     { key: 'doanhthu', label: 'Doanh Thu', icon: 'trending-up', bgClass: 'bg-blue-50 border-blue-100 text-blue-800' },
     { key: 'nangsuat', label: 'Năng Suất', icon: 'dollar-sign', bgClass: 'bg-green-50 border-green-100 text-green-800' },
@@ -4812,7 +4867,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   ];
 </script>
 
-<div class="grid grid-cols-2 gap-2 px-3 pb-3 pt-1 border-t border-gray-100">
+<div class="grid grid-cols-2 gap-2 px-3 pb-3 pt-1 border-t border-gray-100" 
+     style="display: grid; grid-template-columns: repeat(2, 1fr) !important;">
   {#each groups as g}
     {@const data = summary[g.key]}
     {@const ratio = data.total > 0 ? data.above / data.total : 0}
@@ -4820,11 +4876,15 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     {@const valueColor = ratio > 0.5 ? 'text-blue-600' : 'text-red-600'}
     
     <div class="flex items-center justify-between p-1.5 rounded border {g.bgClass}">
-      <div class="flex items-center gap-1">
-        <i data-feather={g.icon} class="w-3 h-3 opacity-70"></i>
-        <span class="text-[10px] font-bold uppercase opacity-90">{g.label}</span>
+      <div class="flex items-center gap-1 min-w-0">
+        <i data-feather={g.icon} class="w-3 h-3 opacity-70 flex-shrink-0"></i>
+        
+        <span class="text-[9px] font-bold uppercase opacity-90" 
+              style="line-height: 1.1 !important; white-space: nowrap !important; display: block !important; padding-top: 1px;">
+            {g.label}
+        </span>
       </div>
-      <span class="text-xs font-extrabold {valueColor}">{data.above}/{data.total}</span>
+      <span class="text-xs font-extrabold {valueColor} flex-shrink-0">{data.above}/{data.total}</span>
     </div>
   {/each}
 </div>
@@ -4839,8 +4899,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import { createEventDispatcher } from 'svelte';
 
   export let employee;
-  export let rank; // 1, 2, 3...
-
+  export let rank;
   const dispatch = createEventDispatcher();
   
   $: summary = employee.summary;
@@ -4852,19 +4911,56 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   }
 </script>
 
+<style>
+    /* 1. Ép wrapper thành Flexbox để căn giữa theo trục dọc/ngang */
+    :global(.capture-container) .rank-wrapper {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 100% !important; /* Chiếm hết chiều cao cha để căn giữa */
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 2. Xuyên thủng vào mọi thứ bên trong MedalIcon (kể cả thẻ span/div/svg) */
+    :global(.capture-container) .rank-wrapper :global(*) {
+        line-height: 1 !important;   /* Reset chiều cao dòng */
+        padding-top: 0 !important;   /* Xóa padding rác */
+        padding-bottom: 0 !important;
+        margin: 0 !important;
+        
+        /* [QUAN TRỌNG]: Kỹ thuật "Nâng visual". 
+           Kéo ngược nội dung lên 2px để bù lại độ lệch do font hệ thống */
+        transform: translateY(-2px) !important; 
+    }
+</style>
+
 <div 
-  class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer overflow-hidden relative group"
+  class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer overflow-hidden relative group h-full flex flex-col"
   on:click={handleClick}
   role="button"
   tabindex="0"
 >
   <div class="p-3 flex items-start relative z-10">
-    <MedalIcon {rank} />
-    <CardHeader hoTen={employee.hoTen} maNV={employee.maNV} boPhan={employee.boPhan} {rank} />
+    <div class="flex-shrink-0 rank-wrapper">
+        <MedalIcon {rank} />
+    </div>
+
+    <CardHeader 
+        hoTen={employee.hoTen} 
+        maNV={employee.maNV} 
+        rank={rank} 
+    />
   </div>
 
-  <CardMainKpi aboveCount={totalAbove} totalCount={totalCriteria} />
-  <CardSubKpiGrid {summary} />
+  <div class="flex-grow flex flex-col justify-end">
+    <CardMainKpi 
+        aboveCount={totalAbove} 
+        totalCount={totalCriteria} 
+    />
+  </div>
+  
+  <CardSubKpiGrid summary={summary} />
 </div>
 <<< FILE_END: src/components/health-staff/summary/card/EmployeeCard.svelte
 
@@ -4885,29 +4981,27 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   } from '../stores.js';
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
-  // [CODEGENESIS] Import settingsService để tải goal
   import { settingsService } from '../services/settings.service.js';
   
   import LuykeSieuThi from './luyke/LuykeSieuThi.svelte';
   import LuykeThiDua from './luyke/LuykeThiDua.svelte';
   import LuykeThiDuaVung from './luyke/LuykeThiDuaVung.svelte';
+  // [NEW] Import component mới
+  import LuykeCategoryView from './luyke/sub/LuykeCategoryView.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-luyke-sieu-thi';
 
+  // ... (Giữ nguyên phần logic load data cũ) ...
   let showPlaceholder = true;
   $: showPlaceholder = ($danhSachNhanVien.length === 0);
 
   let selectedDept = '';
   let selectedDates = [];
   let goals = {};
-  $: goals = ($luykeGoalSettings && $selectedWarehouse) 
-      ? $luykeGoalSettings[$selectedWarehouse] || {} 
-      : {};
+  $: goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
 
-  // [CODEGENESIS] Tự động tải Goal từ Cloud khi chọn kho
   $: if ($selectedWarehouse) {
-      // Gọi hàm load ngầm, không cần await để tránh chặn UI
       settingsService.loadGoalsFromCloud($selectedWarehouse);
   }
 
@@ -4922,15 +5016,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       }
   }
 
+  // ... (Giữ nguyên logic masterReportData) ...
   $: {
       const _mappingTrigger = $categoryNameMapping;
       const _macroTrigger = $macroCategoryConfig;
       if (!showPlaceholder) {
-          const newMasterReport = reportService.generateMasterReportData(
-              filteredYCXData, 
-              goals, 
-              false 
-          );
+          const newMasterReport = reportService.generateMasterReportData(filteredYCXData, goals, false);
           masterReportData.update(current => ({ ...current, luyke: newMasterReport }));
       }
   }
@@ -4945,36 +5036,21 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   $: supermarketReport = reportService.aggregateReport(filteredReport, $selectedWarehouse);
 
   let numDays = 1;
-  $: numDays = selectedDates.length > 0 
-      ? selectedDates.length 
-      : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
+  $: numDays = selectedDates.length > 0 ? selectedDates.length : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
+
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
   }
-
-  function handleWarehouseChange(event) {
-      selectedWarehouse.set(event.target.value);
-  }
-
-  function handleCompose() {
-      modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' }));
-  }
-
-  function handleExport() {
-      actionService.handleExport('luyke');
-  }
-
-  function handleCapture() {
-      actionService.handleCapture('luyke');
-  }
+  
+  // ... (Giữ nguyên các hàm handle khác) ...
+  function handleWarehouseChange(event) { selectedWarehouse.set(event.target.value); }
+  function handleCompose() { modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' })); }
+  function handleExport() { actionService.handleExport('luyke'); }
+  function handleCapture() { actionService.handleCapture('luyke'); }
 
   $: if (activeTab === 'health-section') {
-    Promise.resolve().then(() => {
-      if (typeof window.feather !== 'undefined') {
-        window.feather.replace();
-      }
-    });
+    Promise.resolve().then(() => { if (typeof window.feather !== 'undefined') { window.feather.replace(); } });
   }
 </script>
 
@@ -4988,106 +5064,72 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             <div class="modern-page-header flex flex-wrap justify-between items-center"> 
                 <div class="title-wrapper flex items-center gap-4 flex-wrap">
                     <i data-feather="activity" class="main-icon hidden sm:block"></i>
-                    
                     <div class="flex items-center gap-2">
                         <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2> 
-                        <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"> 
-                              <i data-feather="help-circle"></i> 
-                        </button>
+                        <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"><i data-feather="help-circle"></i></button>
                     </div>
-
                     <div class="flex items-center gap-2 pl-4 border-l-2 border-blue-100 ml-2">
-                        <label for="luyke-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
-                        <select 
-                            id="luyke-warehouse-selector" 
-                            class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" 
-                            value={$selectedWarehouse}
-                            on:change={handleWarehouseChange}
-                        >
+                         <label for="luyke-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
+                        <select id="luyke-warehouse-selector" class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" value={$selectedWarehouse} on:change={handleWarehouseChange}>
                             <option value="">-- Toàn bộ --</option>
-                             {#each $warehouseList as kho}
-                                <option value={kho}>{kho}</option>
-                            {/each}
+                             {#each $warehouseList as kho}<option value={kho}>{kho}</option>{/each}
                         </select>
                     </div>
                 </div>
-
-                <div class="flex items-center gap-2 ml-auto mt-2 sm:mt-0"> 
-                    <button id="compose-luyke-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}> 
-                        <i data-feather="pen-tool" class="w-4 h-4"></i> 
-                        <span class="hidden lg:inline">Nhận xét</span> 
-                    </button> 
-                    <button id="export-luyke-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại" on:click={handleExport}> 
-                        <i data-feather="download" class="w-4 h-4"></i> 
-                        <span class="hidden lg:inline">Xuất Excel</span> 
-                    </button>
-                    <button id="capture-luyke-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại" on:click={handleCapture}> 
-                        <i data-feather="camera" class="w-4 h-4"></i> 
-                        <span class="hidden lg:inline">Chụp ảnh</span> 
-                    </button> 
+                 <div class="flex items-center gap-2 ml-auto mt-2 sm:mt-0"> 
+                    <button id="compose-luyke-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}><i data-feather="pen-tool" class="w-4 h-4"></i><span class="hidden lg:inline">Nhận xét</span></button> 
+                    <button id="export-luyke-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại" on:click={handleExport}><i data-feather="download" class="w-4 h-4"></i><span class="hidden lg:inline">Xuất Excel</span></button>
+                    <button id="capture-luyke-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại" on:click={handleCapture}><i data-feather="camera" class="w-4 h-4"></i><span class="hidden lg:inline">Chụp ảnh</span></button> 
                 </div>
             </div> 
             
             <div class="content-card__body p-4">
                 <div class="mb-6 overflow-x-auto pb-2">
                     <nav id="luyke-subtabs-nav" class="flex space-x-2 border-b border-gray-100 pb-1 w-full min-w-max" aria-label="Tabs">
-                        <button 
-                            class="sub-tab-btn {activeSubTabId === 'subtab-luyke-sieu-thi' ? 'active' : ''}" 
-                            data-target="subtab-luyke-sieu-thi" 
-                            data-title="SieuThiLuyKe"
-                            on:click={handleSubTabClick}
-                        > 
-                            <i data-feather="home"></i> 
-                             <span>Siêu thị Lũy kế</span> 
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-sieu-thi' ? 'active' : ''}" data-target="subtab-luyke-sieu-thi" data-title="SieuThiLuyKe" on:click={handleSubTabClick}> 
+                            <i data-feather="home"></i> <span>Siêu thị Lũy kế</span> 
                         </button>
-                        <button 
-                            class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thi-dua' ? 'active' : ''}" 
-                            data-target="subtab-luyke-thi-dua" 
-                            data-title="ThiDuaLuyKe"
-                            on:click={handleSubTabClick}
-                        > 
-                            <i data-feather="award"></i> 
-                            <span>Thi đua ST Lũy kế</span> 
+                        
+
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thi-dua' ? 'active' : ''}" data-target="subtab-luyke-thi-dua" data-title="ThiDuaLuyKe" on:click={handleSubTabClick}> 
+                            <i data-feather="award"></i> <span>Thi đua ST Lũy kế</span> 
                         </button>
-                        <button 
-                            class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thidua-vung' ? 'active' : ''}" 
-                            data-target="subtab-luyke-thidua-vung" 
-                            data-title="ThiDuaVung"
-                            on:click={handleSubTabClick}
-                        > 
-                            <i data-feather="map"></i> 
-                            <span>Thi Đua Vùng TNB</span> 
+                          <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-category' ? 'active' : ''}" data-target="subtab-luyke-category" data-title="ChiTietNganhHang" on:click={handleSubTabClick}> 
+                            <i data-feather="grid"></i> <span>Chi tiết Ngành hàng</span> 
+                        </button>
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thidua-vung' ? 'active' : ''}" data-target="subtab-luyke-thidua-vung" data-title="ThiDuaVung" on:click={handleSubTabClick}> 
+                            <i data-feather="map"></i> <span>Thi Đua Vùng TNB</span> 
                         </button>
                     </nav>
                 </div>
 
                 <div id="luyke-subtabs-content"> 
                     {#if activeSubTabId === 'subtab-luyke-sieu-thi'}
-                        
                         <div id="subtab-luyke-sieu-thi" class="sub-tab-content">
-                            <LuykeSieuThi 
-                                supermarketReport={supermarketReport} 
-                                filteredYCXData={filteredYCXData} 
-                                goals={goals} 
-                                numDays={numDays}
-                            />
+                            <LuykeSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
                         </div>
                     
+                    {:else if activeSubTabId === 'subtab-luyke-category'}
+                         <div id="subtab-luyke-category" class="sub-tab-content">
+                            <LuykeCategoryView 
+                                data={filteredYCXData} 
+                                selectedWarehouse={$selectedWarehouse} 
+                            />
+                        </div>
+
                     {:else if activeSubTabId === 'subtab-luyke-thi-dua'}
                         <div id="subtab-luyke-thi-dua" class="sub-tab-content">
-                            <div id="luyke-competition-content">
-                                <LuykeThiDua />
-                            </div>
+                            <div id="luyke-competition-content"><LuykeThiDua /></div>
                         </div>
                     
                     {:else if activeSubTabId === 'subtab-luyke-thidua-vung'}
                         <div id="subtab-luyke-thidua-vung" class="sub-tab-content">
-                             <LuykeThiDuaVung />
+                            <LuykeThiDuaVung />
                         </div>
                     {/if}
                 </div>
             </div>
-         </div>
+        </div>
     </div>
 </section>
 <<< FILE_END: src/components/HealthSection.svelte
