@@ -1,9 +1,8 @@
 <script>
     import { createEventDispatcher } from 'svelte';
     // Import component dòng đệ quy từ module Realtime (Tái sử dụng)
-    // Đường dẫn: từ components/luyke/sub -> ra components -> vào realtime/brand
-    import TableRowRecursive from '../../realtime/brand/TableRowRecursive.svelte'; 
-
+    import TableRowRecursive from '../../realtime/brand/TableRowRecursive.svelte';
+    
     export let data = [];
     export let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
     export let allDimensions = [];
@@ -22,7 +21,7 @@
     const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
     const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
-    
+
     // Màu sắc phân cấp
     const LEVEL_COLORS = [
         'text-red-700 font-bold',     
@@ -48,7 +47,9 @@
         expandedRows = expandedRows;
     }
 
-    function collapseAll() { expandedRows = new Set(); }
+    function collapseAll() { 
+        expandedRows = new Set();
+    }
 
     function toggleFilterDropdown(dimId) {
         if (openFilterId === dimId) openFilterId = null;
@@ -92,7 +93,7 @@
     }
 </script>
 
-<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200">
+<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 luyke-filter-section">
     <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
         {#each allDimensions as dim (dim.id)}
@@ -164,7 +165,7 @@
     </div>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200 luyke-table-wrapper">
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
@@ -221,4 +222,56 @@
 <style>
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [FIX GENESIS v3.0]: Tối ưu hiển thị khi chụp ảnh (Capture Mode) */
+    
+    /* 1. Ẩn hoàn toàn bộ lọc */
+    :global(.capture-container .luyke-filter-section) {
+        display: none !important;
+    }
+
+    /* 2. Bóp chiều rộng bảng */
+    :global(.capture-container .luyke-table-wrapper) {
+        width: 750px !important;
+        min-width: 750px !important;
+        max-width: 750px !important;
+        margin: 0 auto !important;
+        border-radius: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* 3. Sửa lỗi font chữ và RESET bảng */
+    :global(.capture-container .luyke-table-wrapper table) {
+        width: 100% !important;
+        font-family: 'Segoe UI', sans-serif !important;
+    }
+
+    :global(.capture-container .luyke-table-wrapper th),
+    :global(.capture-container .luyke-table-wrapper td) {
+        padding: 8px 6px !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        height: auto !important;
+        line-height: 1.5 !important;
+        font-size: 14px !important;
+    }
+
+    /* 4. Tác động SÂU vào các thẻ con (div, span, p) để chống cắt chữ */
+    :global(.capture-container .luyke-table-wrapper td > div),
+    :global(.capture-container .luyke-table-wrapper td span),
+    :global(.capture-container .luyke-table-wrapper td p) {
+         overflow: visible !important;
+         white-space: normal !important;
+         height: auto !important;
+         line-height: 1.5 !important; 
+         padding-bottom: 2px !important;
+         margin-bottom: 0 !important;
+    }
+
+    /* 5. Ép cột đầu tiên co lại */
+    :global(.capture-container .luyke-table-wrapper th:first-child) {
+        min-width: 150px !important;
+        width: auto !important;
+    }
 </style>

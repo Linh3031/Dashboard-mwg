@@ -39,7 +39,6 @@
         // Tab này thường dùng cho Lũy Kế (Đã xuất) hoặc theo yêu cầu cụ thể
         // Ở đây tôi giữ logic chặt nhất là phải "Đã xuất" nếu nguồn dữ liệu là thực tế
         const isDaXuat = (row.trangThaiXuat || "").trim() === 'Đã xuất';
-        
         return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
     };
 
@@ -49,7 +48,6 @@
         treeData = [];
         totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         warnings = [];
-
         if (!data || data.length === 0) return;
 
         // Lấy danh sách hình thức xuất được tính doanh thu từ Core
@@ -77,6 +75,7 @@
                         else if (key === 'nhomHang') colName = 'nhomHang';
                         else if (key === 'nhaSanXuat') colName = 'nhaSanXuat';
                         else if (key === 'nhanVienTao') colName = 'nguoiTao';
+                        else if (key === 'tenSanPham') colName = 'tenSanPham'; // [Fix]: Thêm map cho tên SP
                         
                         if (colName) {
                             const cellVal = row[colName] ? cleanCategoryName(row[colName]) : '(Trống)';
@@ -109,7 +108,6 @@
 
             // --- C. GROUPING LAYER (Lớp gom nhóm đệ quy) ---
             let currentLevel = rootMap;
-            
             activeDimensionIds.forEach((dimId, index) => {
                 // Mapping cột dữ liệu
                 let rawVal = '';
@@ -120,7 +118,7 @@
                 else if (dimId === 'tenSanPham') rawVal = row.tenSanPham;
 
                 const key = rawVal ? cleanCategoryName(rawVal) : '(Trống)';
-                const isLastLevel = index === activeDimensionIds.length - 1;
+                // const isLastLevel = index === activeDimensionIds.length - 1; // Chưa dùng
 
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
@@ -166,7 +164,7 @@
         // --- QUAN TRỌNG: Trigger Reactivity ---
         // Svelte cần phép gán này để nhận biết object đã thay đổi
         totalMetrics = { ...totalMetrics };
-        
+
         // Update Filters Options (Chỉ chạy 1 lần hoặc khi data gốc đổi)
         updateFilterOptions();
     }
@@ -208,7 +206,7 @@
     }
 </script>
 
-<div class="animate-fade-in pb-10">
+<div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
     {#if warnings.length > 0}
         <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
             <strong>⚠️ Cảnh báo cấu trúc:</strong>

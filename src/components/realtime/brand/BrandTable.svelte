@@ -8,22 +8,20 @@
   export let allDimensions = [];
   export let activeIds = [];
   export let filterOptions = {}; 
-  export let currentFilters = {}; 
+  export let currentFilters = {};
 
   const dispatch = createEventDispatcher();
   
   // Trạng thái UI
   let expandedRows = new Set(); 
-  let openFilterId = null; 
+  let openFilterId = null;
   let filterSearchQuery = ''; 
 
   // --- FORMATTERS ---
   // 1. Số lượng: Giữ nguyên
   const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
-  
   // 2. Doanh thu: Chia 1 triệu, làm tròn (Thêm check n || 0 để tránh lỗi crash)
   const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
-  
   // 3. Phần trăm
   const fmtPct = (n) => (n || 0).toFixed(1) + '%';
 
@@ -60,7 +58,7 @@
       if (openFilterId === dimId) openFilterId = null;
       else {
           openFilterId = dimId;
-          filterSearchQuery = ''; 
+          filterSearchQuery = '';
       }
   }
 
@@ -98,7 +96,7 @@
   }
 </script>
 
-<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200">
+<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 brand-filter-section">
     <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
         
@@ -172,7 +170,7 @@
     </div>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200 brand-table-wrapper">
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
@@ -232,4 +230,57 @@
 <style>
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [FIX GENESIS v3.0]: BỘ CSS CHỐNG CẮT CHỮ CHO CAPTURE */
+    
+    /* 1. Ẩn bộ lọc */
+    :global(.capture-container .brand-filter-section) {
+        display: none !important;
+    }
+
+    /* 2. Cố định chiều rộng bảng (Mobile Optimized) */
+    :global(.capture-container .brand-table-wrapper) {
+        width: 750px !important;
+        min-width: 750px !important;
+        max-width: 750px !important;
+        margin: 0 auto !important;
+        border-radius: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* 3. Reset Table Core */
+    :global(.capture-container .brand-table-wrapper table) {
+        width: 100% !important;
+        font-family: 'Segoe UI', sans-serif !important;
+    }
+
+    /* 4. Mở rộng ô bảng và line-height */
+    :global(.capture-container .brand-table-wrapper th),
+    :global(.capture-container .brand-table-wrapper td) {
+        padding: 8px 6px !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        height: auto !important;
+        line-height: 1.5 !important;
+        font-size: 14px !important;
+    }
+
+    /* 5. [CRITICAL] Xuyên thấu vào thẻ con để chống cắt chữ g, y, p */
+    :global(.capture-container .brand-table-wrapper td > div),
+    :global(.capture-container .brand-table-wrapper td span),
+    :global(.capture-container .brand-table-wrapper td p) {
+         overflow: visible !important;
+         white-space: normal !important;
+         height: auto !important;
+         line-height: 1.5 !important; 
+         padding-bottom: 2px !important;
+         margin-bottom: 0 !important;
+    }
+
+    /* 6. Fix cột đầu tiên */
+    :global(.capture-container .brand-table-wrapper th:first-child) {
+        min-width: 150px !important;
+        width: auto !important;
+    }
 </style>
