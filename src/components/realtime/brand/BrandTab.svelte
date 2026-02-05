@@ -22,23 +22,20 @@
     let currentFilters = {};
     let filterOptions = {};
 
-    // --- HELPER: Parse số an toàn (Loại bỏ ký tự lạ trước khi parse) ---
+    // --- HELPER: Parse số an toàn ---
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
-        // Xóa tất cả ký tự không phải số và dấu trừ (để an toàn tuyệt đối với dấu chấm/phẩy)
         return parseFloat(String(val).replace(/[^0-9-]/g, '')) || 0;
     };
 
-    // --- HELPER: Kiểm tra dòng hợp lệ (Logic lõi) ---
+    // --- HELPER: Kiểm tra dòng hợp lệ ---
     const isValidRow = (row) => {
-        // Chuẩn hóa input
         const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || "").trim();
         const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || "").trim();
         const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || "").trim();
         const xuat = (row.trangThaiXuat || row.TRANG_THAI_XUAT || "").trim();
 
-        // Điều kiện nghiêm ngặt
         return thuTien === 'Đã thu' && 
                huy === 'Chưa hủy' && 
                tra === 'Chưa trả' && 
@@ -46,8 +43,25 @@
     };
 
     // --- HELPER: Lấy giá trị linh hoạt từ data thô ---
-    // (Hỗ trợ cả key thường và key viết hoa nếu data chưa chuẩn hóa)
     const getVal = (row, key) => row[key] || row[key.toUpperCase()] || row[key.toLowerCase()] || '';
+
+    // [GENESIS FIX] Hàm lấy giá trị chuẩn (Giữ nguyên bản cho SP/NSX)
+    const getDimensionValue = (row, dimId) => {
+        let fieldName = dimId;
+        if (dimId === 'nhanVienTao') fieldName = 'nguoiTao'; // Mapping alias
+
+        const val = getVal(row, fieldName);
+
+        if (!val) return '(Trống)';
+
+        // [FIX] Nếu là Tên SP hoặc NSX -> Giữ nguyên bản (chỉ trim), không clean
+        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
+            return val.toString().trim();
+        }
+        
+        // Các trường khác -> Clean để gom nhóm tốt hơn
+        return cleanCategoryName(val);
+    };
 
     // --- CORE: Tính toán dữ liệu ---
     function calculateData(sourceData) {
@@ -56,7 +70,7 @@
         totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         
         if (!sourceData || sourceData.length === 0) return;
-
+        
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
 
@@ -69,17 +83,16 @@
             if (!hinhThucXuatTinhDoanhThu.has(htx)) return;
             if (!isValidRow(row)) return;
 
-            // Filter logic
+            // [GENESIS FIX] Filter Logic (Sử dụng getDimensionValue để khớp chính xác)
             if (Object.keys(currentFilters).length > 0) {
                 let skip = false;
-                for (const [key, value] of Object.entries(currentFilters)) {
-                    if (value && value.length > 0) {
-                        // Map key UI sang field data
-                        let fieldName = key;
-                        if (key === 'nhanVienTao') fieldName = 'nguoiTao'; // Alias
-                        
-                        const cellVal = cleanCategoryName(getVal(row, fieldName));
-                        if (!value.includes(cellVal)) { skip = true; break; }
+                for (const [key, selectedValues] of Object.entries(currentFilters)) {
+                    if (selectedValues && selectedValues.length > 0) {
+                        const cellVal = getDimensionValue(row, key);
+                        if (!selectedValues.includes(cellVal)) { 
+                            skip = true; 
+                            break; 
+                        }
                     }
                 }
                 if (skip) return;
@@ -96,7 +109,6 @@
             const isTraGop = htx.toLowerCase().includes('trả góp') || htx.toLowerCase().includes('trả chậm');
             if (isTraGop) heSo += 0.3;
 
-            // Ưu tiên revenueQuyDoi có sẵn, nếu không thì tính
             const rawRevQD = getVal(row, 'revenueQuyDoi') || getVal(row, 'doanhThuQuyDoi');
             const revenueQD = rawRevQD !== '' ? parseMoney(rawRevQD) : (revenue * heSo);
 
@@ -108,13 +120,9 @@
 
             // --- C. GROUPING (Đệ quy theo Dimensions) ---
             let currentLevel = rootMap;
-            
             activeDimensionIds.forEach((dimId, index) => {
-                let fieldName = dimId;
-                if (dimId === 'nhanVienTao') fieldName = 'nguoiTao';
-
-                const rawVal = getVal(row, fieldName);
-                const key = rawVal ? cleanCategoryName(rawVal) : '(Trống)';
+                // [GENESIS FIX] Dùng getDimensionValue để lấy key gom nhóm
+                const key = getDimensionValue(row, dimId);
                 
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
@@ -134,7 +142,6 @@
                 groupObj.revenue += revenue;
                 groupObj.revenueQD += revenueQD;
                 if (isTraGop) groupObj.revenueTraCham += revenue;
-
                 currentLevel = groupObj.children;
             });
         });
@@ -157,21 +164,54 @@
         
         // Trigger Reactivity
         totalMetrics = { ...totalMetrics };
+        
+        // [GENESIS FIX] Cập nhật bộ lọc sau khi tính toán (để áp dụng logic cascading)
         updateFilterOptions(sourceData);
     }
 
+    // [GENESIS FIX] Bộ lọc phụ thuộc (Cascading Filters)
     function updateFilterOptions(sourceData) {
-        if (Object.keys(filterOptions).length > 0) return;
         const options = {};
-        AVAILABLE_DIMENSIONS.forEach(dim => {
+        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+
+        AVAILABLE_DIMENSIONS.forEach(targetDim => {
             const uniqueValues = new Set();
+            
+            // Tạo bộ lọc tạm thời: Loại bỏ chính dimension đang xét
+            const otherFilters = { ...currentFilters };
+            delete otherFilters[targetDim.id];
+
             sourceData.forEach(row => {
-                let fieldName = dim.id === 'nhanVienTao' ? 'nguoiTao' : dim.id;
-                let val = cleanCategoryName(getVal(row, fieldName));
-                if (val && val !== '(Trống)') uniqueValues.add(val);
+                // 1. Validate cơ bản
+                const htx = getVal(row, 'hinhThucXuat');
+                if (!hinhThucXuatTinhDoanhThu.has(htx)) return;
+                if (!isValidRow(row)) return;
+
+                // 2. Kiểm tra xem dòng này có thỏa mãn các bộ lọc KHÁC không
+                let isValid = true;
+                if (Object.keys(otherFilters).length > 0) {
+                    for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
+                        if (filterValues && filterValues.length > 0) {
+                            const valToCheck = getDimensionValue(row, filterKey);
+                            if (!filterValues.includes(valToCheck)) {
+                                isValid = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Nếu hợp lệ -> Lấy giá trị cho targetDim
+                if (isValid) {
+                    const val = getDimensionValue(row, targetDim.id);
+                    if (val && val !== '(Trống)') {
+                        uniqueValues.add(val);
+                    }
+                }
             });
-            options[dim.id] = Array.from(uniqueValues).sort();
+            options[targetDim.id] = Array.from(uniqueValues).sort();
         });
+
         filterOptions = options;
     }
 

@@ -3,15 +3,17 @@
     export let expandedRows;
     export let toggleRow;
     export let LEVEL_COLORS;
-    export let fmtQty; // Formatter cho Số lượng
-    export let fmtRev; // Formatter cho Doanh thu (Triệu)
-    export let fmtPct; // Formatter cho %
+    export let fmtQty;
+    export let fmtRev;
+    export let fmtPct;
+
+    // [NEW] Nhận flag từ cha
+    export let isVelocityMode = false;
 
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
     $: paddingLeft = `${group.level * 24 + 16}px`; 
     
-    // Tính % trả chậm
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
 </script>
 
@@ -43,16 +45,15 @@
     </td>
 
     <td class="py-2 px-4 text-right font-medium text-gray-700">{fmtQty(group.quantity)}</td>
-    
     <td class="py-2 px-4 text-right font-medium text-gray-800">{fmtRev(group.revenue)}</td>
-    
     <td class="py-2 px-4 text-right text-gray-600">{fmtRev(group.revenueQD)}</td>
 
-    <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
-    
-    <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold text-xs">
-        {fmtPct(traChamPercent)}
-    </td>
+    {#if !isVelocityMode}
+        <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
+        <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold text-xs">
+            {fmtPct(traChamPercent)}
+        </td>
+    {/if}
 </tr>
 
 {#if isExpanded && group.children}
@@ -63,6 +64,7 @@
             {toggleRow} 
             {LEVEL_COLORS}
             {fmtQty} {fmtRev} {fmtPct} 
+            {isVelocityMode} 
         />
     {/each}
 {/if}

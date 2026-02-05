@@ -1,6 +1,5 @@
 <script>
     import { createEventDispatcher } from 'svelte';
-    // Import component dòng đệ quy từ module Realtime (Tái sử dụng)
     import TableRowRecursive from '../../realtime/brand/TableRowRecursive.svelte';
     
     export let data = [];
@@ -9,20 +8,31 @@
     export let activeIds = [];
     export let filterOptions = {}; 
     export let currentFilters = {};
+    export let isVelocityMode = false;
 
     const dispatch = createEventDispatcher();
     
-    // UI State
     let expandedRows = new Set(); 
     let openFilterId = null;
-    let filterSearchQuery = ''; 
+    let filterSearchQuery = '';
 
-    // --- FORMATTERS ---
-    const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
-    const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
+    // FORMATTERS
+    $: fmtQty = (n) => new Intl.NumberFormat('vi-VN', { 
+        maximumFractionDigits: isVelocityMode ? 1 : 0,
+        minimumFractionDigits: isVelocityMode ? 1 : 0 
+    }).format(n || 0);
+
+    $: fmtRev = (n) => {
+        if (!n) return '0';
+        const val = n / 1000000;
+        return new Intl.NumberFormat('vi-VN', {
+             maximumFractionDigits: isVelocityMode ? 1 : 0,
+             minimumFractionDigits: isVelocityMode ? 1 : 0
+        }).format(val);
+    };
+
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
 
-    // Màu sắc phân cấp
     const LEVEL_COLORS = [
         'text-red-700 font-bold',     
         'text-blue-700 font-semibold',
@@ -31,13 +41,42 @@
         'text-orange-700'             
     ];
 
+    // --- SORT LOGIC ---
+    let sortKey = 'revenue'; 
+    let sortDirection = 'desc';
+
+    function handleSort(key) {
+        if (sortKey === key) {
+            sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+        } else {
+            sortKey = key;
+            sortDirection = 'desc'; 
+        }
+    }
+
+    function sortTree(nodes, key, dir) {
+        if (!nodes || nodes.length === 0) return [];
+        const sorted = [...nodes].sort((a, b) => {
+            const valA = a[key] || 0;
+            const valB = b[key] || 0;
+            return dir === 'asc' ? valA - valB : valB - valA;
+        });
+        return sorted.map(node => {
+            if (node.children && node.children.length > 0) {
+                return { ...node, children: sortTree(node.children, key, dir) };
+            }
+            return node;
+        });
+    }
+
+    $: sortedData = sortTree(data, sortKey, sortDirection);
+
     // --- ACTIONS ---
     function toggleRow(id) {
         if (expandedRows.has(id)) expandedRows.delete(id);
         else expandedRows.add(id);
         expandedRows = expandedRows; 
     }
-
     function expandAll(nodes) {
         if (!nodes) return;
         nodes.forEach(node => {
@@ -46,37 +85,24 @@
         });
         expandedRows = expandedRows;
     }
-
-    function collapseAll() { 
-        expandedRows = new Set();
-    }
-
+    function collapseAll() { expandedRows = new Set(); }
+    
     function toggleFilterDropdown(dimId) {
         if (openFilterId === dimId) openFilterId = null;
-        else {
-            openFilterId = dimId;
-            filterSearchQuery = '';
-        }
+        else { openFilterId = dimId; filterSearchQuery = ''; }
     }
-
     function toggleFilterItem(dimId, value) {
         const current = currentFilters[dimId] || [];
-        let newSelected;
-        if (current.includes(value)) newSelected = current.filter(x => x !== value);
-        else newSelected = [...current, value];
+        let newSelected = current.includes(value) ? current.filter(x => x !== value) : [...current, value];
         dispatch('filterChange', { key: dimId, selected: newSelected });
     }
-
-    function clearFilter(dimId) {
-        dispatch('filterChange', { key: dimId, selected: [] });
-    }
-
+    function clearFilter(dimId) { dispatch('filterChange', { key: dimId, selected: [] }); }
+    
     $: getDisplayOptions = (dimId) => {
         const options = filterOptions[dimId] || [];
         const selected = currentFilters[dimId] || [];
         const query = filterSearchQuery.toLowerCase();
-        let filtered = options.filter(opt => opt.toLowerCase().includes(query));
-        return filtered.sort((a, b) => {
+        return options.filter(opt => opt.toLowerCase().includes(query)).sort((a, b) => {
             const aSel = selected.includes(a);
             const bSel = selected.includes(b);
             if (aSel && !bSel) return -1;
@@ -84,7 +110,6 @@
             return a.localeCompare(b);
         });
     };
-
     function handleDimensionToggle(dimId) {
         let newIds = [...activeIds];
         if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId);
@@ -103,60 +128,27 @@
             
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
-                    <button 
-                        class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}"
-                        on:click={() => handleDimensionToggle(dim.id)}
-                    >
-                        {#if isActive}
-                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
-                                {activeIndex + 1}
-                            </span>
-                        {:else}
-                            <span class="w-4 h-4 rounded border border-gray-400"></span>
-                        {/if}
+                    <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
+                        {#if isActive}<span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">{activeIndex + 1}</span>
+                        {:else}<span class="w-4 h-4 rounded border border-gray-400"></span>{/if}
                         {dim.label}
                     </button>
-
-                    <button 
-                        class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
-                        on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                        </svg>
-                        {#if hasFilter}
-                            <span class="absolute -top-1 -right-1 flex h-3 w-3">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                            </span>
-                        {/if}
+                    <button class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}" on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}>
+                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                     </button>
                 </div>
-
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
-                            {#if hasFilter}
-                                <button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>
-                            {/if}
-                        </div>
-                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
-                        <div class="max-h-48 overflow-y-auto space-y-1">
+                         <div class="flex justify-between items-center mb-2"><span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>{#if hasFilter}<button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>{/if}</div>
+                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
+                         <div class="max-h-48 overflow-y-auto space-y-1">
                             {#each getDisplayOptions(dim.id) as option}
                                 {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
-                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
-                                    <input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
-                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span>
-                                </label>
+                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/><span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span></label>
                             {/each}
-                            {#if getDisplayOptions(dim.id).length === 0}
-                                <div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>
-                            {/if}
-                        </div>
-                        <div class="mt-2 pt-2 border-t text-right">
-                             <button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button>
-                        </div>
+                            {#if getDisplayOptions(dim.id).length === 0}<div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>{/if}
+                         </div>
+                         <div class="mt-2 pt-2 border-t text-right"><button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button></div>
                     </div>
                     <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
@@ -170,47 +162,89 @@
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
                 <tr>
-                    <th class="py-3 px-4 border-b border-r min-w-[200px]">
+                    <th class="py-3 px-4 border-b border-r {isVelocityMode ? 'w-[300px] max-w-[300px]' : 'w-auto min-w-[200px]'}">
                         <div class="flex items-center gap-2">
-                            <span>Danh mục</span>
-                            <div class="flex gap-1 ml-auto">
-                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
-                                </button>
-                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                                </button>
+                             <span>Danh mục</span>
+                             <div class="flex gap-1 ml-auto">
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
                     </th>
-                    <th class="py-3 px-4 text-right border-b w-32">Số lượng</th>
-                    <th class="py-3 px-4 text-right border-b w-40">Doanh thu <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-right border-b w-40">DT Quy đổi <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50">DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                    
+                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
+                        <div class="flex items-center justify-end gap-1">
+                            {isVelocityMode ? 'SL TB/Ngày' : 'Số lượng'}
+                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                <span class={sortKey === 'quantity' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                <span class={sortKey === 'quantity' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            </div>
+                        </div>
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
+                        <div class="flex items-center justify-end gap-1">
+                            {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
+                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
+                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                <span class={sortKey === 'revenue' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                <span class={sortKey === 'revenue' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            </div>
+                        </div>
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
+                        <div class="flex items-center justify-end gap-1">
+                            {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
+                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
+                             <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                <span class={sortKey === 'revenueQD' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                <span class={sortKey === 'revenueQD' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            </div>
+                        </div>
+                    </th>
+                    
+                    {#if !isVelocityMode}
+                        <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
+                            <div class="flex items-center justify-end gap-1">
+                                DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span>
+                                <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                                </div>
+                            </div>
+                        </th>
+                        <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                    {/if}
                 </tr>
+                
                 <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
+                    
                     <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
-                    <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
-                    <td class="py-3 px-4 text-center bg-yellow-100">
-                        {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
-                    </td>
+                    
+                    {#if !isVelocityMode}
+                        <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
+                        <td class="py-3 px-4 text-center bg-yellow-100">
+                            {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
+                        </td>
+                    {/if}
                 </tr>
             </thead>
             <tbody>
-                {#if data.length === 0}
-                    <tr><td colspan="6" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                {#if sortedData.length === 0}
+                    <tr><td colspan="{isVelocityMode ? 4 : 6}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
-                    {#each data as group (group.id)}
+                    {#each sortedData as group (group.id)}
                         <TableRowRecursive 
                             {group} 
                             {expandedRows} 
                             {toggleRow} 
                             {LEVEL_COLORS}
                             {fmtQty} {fmtRev} {fmtPct}
+                            {isVelocityMode} 
                         />
                     {/each}
                 {/if}
@@ -223,55 +257,30 @@
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-    /* [FIX GENESIS v3.0]: Tối ưu hiển thị khi chụp ảnh (Capture Mode) */
+    /* [CAPTURE STYLE UPDATES] */
     
-    /* 1. Ẩn hoàn toàn bộ lọc */
-    :global(.capture-container .luyke-filter-section) {
-        display: none !important;
-    }
+    /* 1. Ẩn bộ lọc cũ */
+    :global(.capture-container .luyke-filter-section) { display: none !important; }
+    
+    /* 2. [FIXED] Ẩn Toolbar Sức bán (Mới) khi chụp */
+    :global(.capture-container .velocity-toolbar) { display: none !important; }
 
-    /* 2. Bóp chiều rộng bảng */
+    /* 3. Style bảng */
     :global(.capture-container .luyke-table-wrapper) {
-        width: 750px !important;
-        min-width: 750px !important;
-        max-width: 750px !important;
-        margin: 0 auto !important;
-        border-radius: 0 !important;
-        border: none !important;
-        box-shadow: none !important;
+        width: 750px !important; min-width: 750px !important; max-width: 750px !important;
+        margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
     }
-
-    /* 3. Sửa lỗi font chữ và RESET bảng */
-    :global(.capture-container .luyke-table-wrapper table) {
-        width: 100% !important;
-        font-family: 'Segoe UI', sans-serif !important;
-    }
-
+    :global(.capture-container .luyke-table-wrapper table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
     :global(.capture-container .luyke-table-wrapper th),
     :global(.capture-container .luyke-table-wrapper td) {
-        padding: 8px 6px !important;
-        white-space: normal !important;
-        overflow: visible !important;
-        height: auto !important;
-        line-height: 1.5 !important;
-        font-size: 14px !important;
+        padding: 8px 6px !important; white-space: normal !important; overflow: visible !important;
+        height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
     }
-
-    /* 4. Tác động SÂU vào các thẻ con (div, span, p) để chống cắt chữ */
     :global(.capture-container .luyke-table-wrapper td > div),
     :global(.capture-container .luyke-table-wrapper td span),
     :global(.capture-container .luyke-table-wrapper td p) {
-         overflow: visible !important;
-         white-space: normal !important;
-         height: auto !important;
-         line-height: 1.5 !important; 
-         padding-bottom: 2px !important;
-         margin-bottom: 0 !important;
+         overflow: visible !important; white-space: normal !important; height: auto !important;
+         line-height: 1.5 !important; padding-bottom: 2px !important; margin-bottom: 0 !important;
     }
-
-    /* 5. Ép cột đầu tiên co lại */
-    :global(.capture-container .luyke-table-wrapper th:first-child) {
-        min-width: 150px !important;
-        width: auto !important;
-    }
+    :global(.capture-container .luyke-table-wrapper th:first-child) { min-width: 150px !important; width: auto !important; }
 </style>

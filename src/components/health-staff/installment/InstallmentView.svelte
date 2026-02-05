@@ -5,7 +5,8 @@
     import InstallmentDetailModal from './InstallmentDetailModal.svelte';
 
     export let reportData = [];
-    export let inputData = undefined; // Input cho Realtime
+    export let inputData = undefined;
+    // Input cho Realtime
 
     let viewData = {
         kpi: { totalOrders: 0, totalInstallment: 0, totalSuccess: 0, approvalRate: 0 },
@@ -76,9 +77,10 @@
         }
     }
 
+    // [GENESIS FIX] Sửa logic tính %: Dùng doanh thu ĐÃ QUY ĐỔI (Weighted) chia cho Tổng doanh thu
     const calcInstallmentPercent = (emp) => {
         if (!emp.stats.totalRevenue || emp.stats.totalRevenue === 0) return 0;
-        return (emp.stats.installmentRevenueRaw / emp.stats.totalRevenue) * 100;
+        return (emp.stats.installmentRevenueWeighted / emp.stats.totalRevenue) * 100;
     };
 
     $: sortedEmployees = [...viewData.employees].sort((a, b) => {
@@ -172,7 +174,7 @@
                             DT Thực {sortKey === 'totalRevenue' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
                         <th class="p-3 border-b border-r border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentRevenueWeighted')}>
-                            DT Trả chậm (30%) {sortKey === 'installmentRevenueWeighted' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                            DT Trả chậm (130%) {sortKey === 'installmentRevenueWeighted' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
                         <th class="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition select-none" on:click={() => handleSort('installmentPercent')}>
                             % Trả chậm {sortKey === 'installmentPercent' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
@@ -197,10 +199,10 @@
                                 </span>
                             </td>
                             <td class="p-3 text-right text-gray-800 font-medium border-r border-gray-200">
-                                {Math.round(emp.stats.totalRevenue / 1000000)}
+                                {(emp.stats.totalRevenue / 1000000).toFixed(1)}
                             </td>
                             <td class="p-3 text-right font-medium text-gray-800 border-r border-gray-200">
-                                {Math.round(emp.stats.installmentRevenueWeighted / 1000000)}
+                                {(emp.stats.installmentRevenueWeighted / 1000000).toFixed(1)}
                             </td>
                             <td class="p-3 text-center font-bold text-blue-600">
                                 {calcInstallmentPercent(emp).toFixed(1)}%

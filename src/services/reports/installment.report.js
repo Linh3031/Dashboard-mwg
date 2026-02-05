@@ -111,8 +111,8 @@ export const processInstallmentReport = (employeesInput) => {
             }
         });
 
-        // Tính DT Trả chậm quy đổi (30%)
-        newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 0.3;
+        // Tính DT Trả chậm quy đổi (130%)
+        newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 1.3;
 
         // Tính tỷ lệ duyệt
         newEmp.stats.approvalRate = newEmp.stats.installmentTotal > 0

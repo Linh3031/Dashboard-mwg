@@ -1,12 +1,12 @@
 <script>
     import { cleanCategoryName } from '../../../utils.js';
-    import { config } from '../../../config.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
+    import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
 
-    export let data = []; 
+    export let data = [];
     export let selectedWarehouse = '';
-
+    
     const AVAILABLE_DIMENSIONS = [
         { id: 'nganhHang', label: 'Ngành hàng', default: true },
         { id: 'nhomHang', label: 'Nhóm hàng', default: true },
@@ -23,134 +23,119 @@
     let filterOptions = {};
     let warnings = [];
 
-    // --- HELPER: Parse số chuẩn dự án (giống salesProcessor) ---
+    // --- VELOCITY & DATE STATE ---
+    let isVelocityMode = false;
+    let velocityDays = 1; 
+    let dateFilter = { from: '', to: '' }; 
+
+    const PRESET_DAYS = [3, 5, 7, 10];
+
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
-        // Xóa dấu phẩy nghìn (VN) trước khi parse
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
 
-    // --- HELPER: Kiểm tra dòng hợp lệ (giống general.report.js) ---
     const isValidRow = (row) => {
         const isThuTien = (row.trangThaiThuTien || "").trim() === 'Đã thu';
         const isChuaHuy = (row.trangThaiHuy || "").trim() === 'Chưa hủy';
         const isChuaTra = (row.tinhTrangTra || "").trim() === 'Chưa trả';
-        // Tab này thường dùng cho Lũy Kế (Đã xuất) hoặc theo yêu cầu cụ thể
-        // Ở đây tôi giữ logic chặt nhất là phải "Đã xuất" nếu nguồn dữ liệu là thực tế
         const isDaXuat = (row.trangThaiXuat || "").trim() === 'Đã xuất';
         return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
     };
 
-    // --- CORE: Tính toán lại dữ liệu ---
+    // [GENESIS HELPER] Hàm lấy giá trị chuẩn (Có logic giữ nguyên bản cho SP/NSX)
+    const getDimensionValue = (row, dimId) => {
+        let val = '';
+        if (dimId === 'nganhHang') val = row.nganhHang;
+        else if (dimId === 'nhomHang') val = row.nhomHang;
+        else if (dimId === 'nhaSanXuat') val = row.nhaSanXuat;
+        else if (dimId === 'nhanVienTao') val = row.nguoiTao;
+        else if (dimId === 'tenSanPham') val = row.tenSanPham;
+
+        if (!val) return '(Trống)';
+
+        // [FIX YÊU CẦU 1] Nếu là Tên SP hoặc NSX -> Giữ nguyên bản (chỉ trim), không clean
+        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
+            return val.toString().trim();
+        }
+        
+        // Các trường khác (Ngành hàng, Nhóm hàng...) -> Clean để gom nhóm tốt hơn
+        return cleanCategoryName(val);
+    };
+
+    // --- CORE CALCULATION ---
     function calculateData() {
-        // 1. Reset
         treeData = [];
         totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         warnings = [];
+
         if (!data || data.length === 0) return;
 
-        // Lấy danh sách hình thức xuất được tính doanh thu từ Core
+        // 1. [GLOBAL] LỌC NGÀY
+        let processedData = data;
+        if (dateFilter.from || dateFilter.to) {
+            processedData = filterDataByDate(data, dateFilter.from, dateFilter.to);
+        }
+
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
-
-        // 2. Tạo Map gom nhóm
         let rootMap = new Map();
 
-        // 3. Quét dữ liệu
-        data.forEach(row => {
-            // --- A. VALIDATION LAYER (Lớp bảo vệ) ---
-            // Kiểm tra HTX hợp lệ
+        // 2. Gom nhóm
+        processedData.forEach(row => {
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return;
-            // Kiểm tra trạng thái đơn (Thu tiền/Hủy/Trả)
             if (!isValidRow(row)) return;
             
-            // Lọc theo Filters trên UI (nếu có)
+            // Logic lọc dữ liệu dựa trên Current Filters
             if (Object.keys(currentFilters).length > 0) {
-                for (const [key, value] of Object.entries(currentFilters)) {
-                    if (value && value.length > 0) {
-                        // Map lại key từ ID dimension sang tên cột trong Excel
-                        let colName = '';
-                        if (key === 'nganhHang') colName = 'nganhHang';
-                        else if (key === 'nhomHang') colName = 'nhomHang';
-                        else if (key === 'nhaSanXuat') colName = 'nhaSanXuat';
-                        else if (key === 'nhanVienTao') colName = 'nguoiTao';
-                        else if (key === 'tenSanPham') colName = 'tenSanPham'; // [Fix]: Thêm map cho tên SP
-                        
-                        if (colName) {
-                            const cellVal = row[colName] ? cleanCategoryName(row[colName]) : '(Trống)';
-                            if (!value.includes(cellVal)) return; // Skip
-                        }
+                for (const [key, selectedValues] of Object.entries(currentFilters)) {
+                    if (selectedValues && selectedValues.length > 0) {
+                        const cellVal = getDimensionValue(row, key);
+                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua dòng này nếu không khớp lọc
                     }
                 }
             }
 
-            // --- B. CALCULATION LAYER (Lớp tính toán) ---
             const quantity = parseInt(row.soLuong || 0);
-            const revenue = parseMoney(row.thanhTien); // Dùng hàm chuẩn, không dùng parseFloat trực tiếp
-            
-            // Tính quy đổi (Logic từ salesProcessor)
+            const revenue = parseMoney(row.thanhTien);
             let heSo = heSoQuyDoiMap[row.nhomHang] || 1;
-            // Xử lý thưởng trả góp (Core logic: +0.3 nếu là trả góp/trả chậm)
             const htx = (row.hinhThucXuat || '').toLowerCase();
             const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
-            if (isTraGop) {
-                heSo += 0.3;
-            }
-            // Ưu tiên lấy cột revenueQuyDoi nếu Core đã tính sẵn, nếu không thì tự tính
+            if (isTraGop) heSo += 0.3;
             const revenueQD = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (revenue * heSo);
 
-            // Cộng dồn tổng (Global Metrics)
             totalMetrics.quantity += quantity;
             totalMetrics.revenue += revenue;
             totalMetrics.revenueQD += revenueQD;
             if (isTraGop) totalMetrics.revenueTraCham += revenue;
 
-            // --- C. GROUPING LAYER (Lớp gom nhóm đệ quy) ---
             let currentLevel = rootMap;
             activeDimensionIds.forEach((dimId, index) => {
-                // Mapping cột dữ liệu
-                let rawVal = '';
-                if (dimId === 'nganhHang') rawVal = row.nganhHang;
-                else if (dimId === 'nhomHang') rawVal = row.nhomHang;
-                else if (dimId === 'nhaSanXuat') rawVal = row.nhaSanXuat;
-                else if (dimId === 'nhanVienTao') rawVal = row.nguoiTao;
-                else if (dimId === 'tenSanPham') rawVal = row.tenSanPham;
-
-                const key = rawVal ? cleanCategoryName(rawVal) : '(Trống)';
-                // const isLastLevel = index === activeDimensionIds.length - 1; // Chưa dùng
-
+                const key = getDimensionValue(row, dimId);
+                
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
-                        id: key + Math.random(), // Unique ID cho key
+                        id: key + Math.random(),
                         name: key,
-                        quantity: 0,
-                        revenue: 0,
-                        revenueQD: 0,
-                        revenueTraCham: 0,
-                        children: new Map(), // Map cho cấp con
-                        level: index
+                        quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
+                        children: new Map(), level: index
                     });
                 }
-
                 const groupObj = currentLevel.get(key);
                 groupObj.quantity += quantity;
                 groupObj.revenue += revenue;
                 groupObj.revenueQD += revenueQD;
                 if (isTraGop) groupObj.revenueTraCham += revenue;
-
-                // Đi xuống cấp tiếp theo
                 currentLevel = groupObj.children;
             });
         });
 
-        // 4. Chuyển Map thành Array đệ quy cho UI
         const convertMapToArray = (map) => {
             return Array.from(map.values()).map(item => {
                 const newItem = { ...item };
                 if (newItem.children && newItem.children.size > 0) {
                     newItem.children = convertMapToArray(newItem.children);
-                    // Sort theo doanh thu giảm dần
                     newItem.children.sort((a, b) => b.revenue - a.revenue);
                 } else {
                     delete newItem.children;
@@ -158,43 +143,76 @@
                 return newItem;
             }).sort((a, b) => b.revenue - a.revenue);
         };
-
-        treeData = convertMapToArray(rootMap);
         
-        // --- QUAN TRỌNG: Trigger Reactivity ---
-        // Svelte cần phép gán này để nhận biết object đã thay đổi
-        totalMetrics = { ...totalMetrics };
+        let finalTree = convertMapToArray(rootMap);
 
-        // Update Filters Options (Chỉ chạy 1 lần hoặc khi data gốc đổi)
-        updateFilterOptions();
+        // 3. XỬ LÝ SỨC BÁN
+        if (isVelocityMode && velocityDays > 1) {
+            finalTree = transformVelocityTree(finalTree, velocityDays);
+            const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
+            totalMetrics.quantity = div(totalMetrics.quantity);
+            totalMetrics.revenue = div(totalMetrics.revenue);
+            totalMetrics.revenueQD = div(totalMetrics.revenueQD);
+            totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
+        }
+
+        treeData = finalTree;
+        totalMetrics = { ...totalMetrics };
+        
+        // Cập nhật bộ lọc sau khi tính toán xong
+        updateFilterOptions(processedData);
     }
 
-    function updateFilterOptions() {
-        if (Object.keys(filterOptions).length > 0) return; // Đã có option thì thôi
+    // [FIX YÊU CẦU 3] Bộ lọc phụ thuộc (Cascading Filters)
+    function updateFilterOptions(sourceData) {
+        // sourceData ở đây là data đã qua lọc ngày, nhưng CHƯA qua lọc dimension
+        // Chúng ta cần tính toán option cho từng dimension dựa trên ngữ cảnh của các dimension còn lại
         
         const options = {};
-        AVAILABLE_DIMENSIONS.forEach(dim => {
+
+        AVAILABLE_DIMENSIONS.forEach(targetDim => {
             const uniqueValues = new Set();
-            data.forEach(row => {
-                // Logic mapping cột tương tự như trên
-                let val = '';
-                if (dim.id === 'nganhHang') val = row.nganhHang;
-                else if (dim.id === 'nhomHang') val = row.nhomHang;
-                else if (dim.id === 'nhaSanXuat') val = row.nhaSanXuat;
-                else if (dim.id === 'nhanVienTao') val = row.nguoiTao;
-                
-                if (val) val = cleanCategoryName(val);
-                if (val && val !== '(Trống)') {
-                    uniqueValues.add(val);
+            
+            // Tạo bộ lọc tạm thời: Loại bỏ chính dimension đang xét ra khỏi điều kiện lọc
+            // Để người dùng vẫn nhìn thấy các lựa chọn khác của chính dimension đó
+            const otherFilters = { ...currentFilters };
+            delete otherFilters[targetDim.id]; 
+
+            sourceData.forEach(row => {
+                // 1. Kiểm tra xem dòng này có thỏa mãn các bộ lọc KHÁC không
+                let isValid = true;
+                const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; // Bỏ qua đơn không tính DT
+                if (!isValidRow(row)) return;
+
+                if (Object.keys(otherFilters).length > 0) {
+                    for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
+                        if (filterValues && filterValues.length > 0) {
+                            const valToCheck = getDimensionValue(row, filterKey);
+                            if (!filterValues.includes(valToCheck)) {
+                                isValid = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Nếu dòng này hợp lệ với các filter kia -> Lấy giá trị cho targetDim
+                if (isValid) {
+                    const val = getDimensionValue(row, targetDim.id);
+                    if (val && val !== '(Trống)') {
+                        uniqueValues.add(val);
+                    }
                 }
             });
-            options[dim.id] = Array.from(uniqueValues).sort();
+            options[targetDim.id] = Array.from(uniqueValues).sort();
         });
+
         filterOptions = options;
     }
 
     $: {
-        if (data || selectedWarehouse || currentFilters || activeDimensionIds) {
+        if (data || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || velocityDays || dateFilter) {
             calculateData();
         }
     }
@@ -204,6 +222,22 @@
         const { key, selected } = event.detail;
         currentFilters = { ...currentFilters, [key]: selected };
     }
+    
+    // Hàm lấy ngày hiện tại trừ 1 (tối thiểu là 1)
+    const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
+
+    function toggleVelocityMode() {
+        isVelocityMode = !isVelocityMode;
+        if (isVelocityMode) {
+            velocityDays = getCurrentMinusOne();
+        } else {
+            velocityDays = 1;
+        }
+    }
+
+    function setToCurrentDays() {
+        velocityDays = getCurrentMinusOne();
+    }
 </script>
 
 <div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
@@ -211,12 +245,74 @@
         <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
             <strong>⚠️ Cảnh báo cấu trúc:</strong>
             <ul class="list-disc pl-5 mt-1">
-                {#each warnings as w}
-                    <li>{w}</li>
-                {/each}
+                {#each warnings as w}<li>{w}</li>{/each}
             </ul>
         </div>
     {/if}
+
+    <div class="velocity-toolbar flex flex-wrap items-end gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+        <div class="flex flex-col gap-1">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
+            <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
+                <input 
+                    type="date" 
+                    bind:value={dateFilter.from}
+                    class="bg-transparent text-sm text-gray-700 outline-none w-32"
+                />
+                <span class="mx-2 text-gray-400">➝</span>
+                <input 
+                    type="date" 
+                    bind:value={dateFilter.to}
+                    class="bg-transparent text-sm text-gray-700 outline-none w-32"
+                />
+            </div>
+        </div>
+
+        <div class="w-px h-10 bg-gray-200 mx-2"></div>
+
+        <div class="flex items-center gap-3 h-full pb-1">
+            <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
+            <button 
+                class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                on:click={toggleVelocityMode}
+            >
+                <span class="{isVelocityMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+            </button>
+        </div>
+
+        {#if isVelocityMode}
+            <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
+                <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
+                
+                <button 
+                    on:click={setToCurrentDays}
+                    class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                    title="Tính theo ngày hiện tại - 1"
+                >
+                    Hiện tại ({getCurrentMinusOne()})
+                </button>
+
+                {#each PRESET_DAYS as d}
+                    <button 
+                        on:click={() => velocityDays = d}
+                        class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}"
+                    >
+                        {d} ngày
+                    </button>
+                {/each}
+                
+                <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
+                    <span class="text-xs text-gray-400 mr-1">Khác:</span>
+                    <input 
+                        type="number" 
+                        min="1" 
+                        class="w-10 text-sm font-bold text-center outline-none text-orange-700"
+                        bind:value={velocityDays}
+                    />
+                </div>
+            </div>
+        {/if}
+    </div>
 
     <LuykeCategoryTreeTable 
         data={treeData} 
@@ -225,6 +321,7 @@
         activeIds={activeDimensionIds}
         {filterOptions}
         {currentFilters}
+        {isVelocityMode} 
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}
     />
@@ -232,5 +329,7 @@
 
 <style>
   .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+  .animate-fade-in-down { animation: fadeInDown 0.3s ease-out; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
