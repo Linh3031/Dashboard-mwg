@@ -1,6 +1,10 @@
 // src/stores.js
 import { writable } from 'svelte/store';
 
+// --- [NEW] CHẾ ĐỘ DEMO ---
+export const isDemoMode = writable(false); 
+// -------------------------
+
 // QUAN TRỌNG: Phải có chữ 'export' ở đầu dòng này
 export const currentCluster = writable(null);
 export const activeTab = writable('data-section');

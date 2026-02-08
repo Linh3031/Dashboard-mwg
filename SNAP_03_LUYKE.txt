@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 2/4/2026, 9:59:00 AM
+GENERATED AT: 2/5/2026, 5:34:49 PM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
@@ -2232,30 +2232,39 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
 >>> FILE_START: src/components/luyke/sub/LuykeCategoryTreeTable.svelte
 <script>
     import { createEventDispatcher } from 'svelte';
-    // Import component dòng đệ quy từ module Realtime (Tái sử dụng)
-    // Đường dẫn: từ components/luyke/sub -> ra components -> vào realtime/brand
-    import TableRowRecursive from '../../realtime/brand/TableRowRecursive.svelte'; 
-
+    import TableRowRecursive from '../../realtime/brand/TableRowRecursive.svelte';
+    
     export let data = [];
     export let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
     export let allDimensions = [];
     export let activeIds = [];
     export let filterOptions = {}; 
     export let currentFilters = {};
+    export let isVelocityMode = false;
 
     const dispatch = createEventDispatcher();
     
-    // UI State
     let expandedRows = new Set(); 
     let openFilterId = null;
-    let filterSearchQuery = ''; 
+    let filterSearchQuery = '';
 
-    // --- FORMATTERS ---
-    const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
-    const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
+    // FORMATTERS
+    $: fmtQty = (n) => new Intl.NumberFormat('vi-VN', { 
+        maximumFractionDigits: isVelocityMode ? 1 : 0,
+        minimumFractionDigits: isVelocityMode ? 1 : 0 
+    }).format(n || 0);
+
+    $: fmtRev = (n) => {
+        if (!n) return '0';
+        const val = n / 1000000;
+        return new Intl.NumberFormat('vi-VN', {
+             maximumFractionDigits: isVelocityMode ? 1 : 0,
+             minimumFractionDigits: isVelocityMode ? 1 : 0
+        }).format(val);
+    };
+
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
-    
-    // Màu sắc phân cấp
+
     const LEVEL_COLORS = [
         'text-red-700 font-bold',     
         'text-blue-700 font-semibold',
@@ -2264,13 +2273,42 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
         'text-orange-700'             
     ];
 
+    // --- SORT LOGIC ---
+    let sortKey = 'revenue'; 
+    let sortDirection = 'desc';
+
+    function handleSort(key) {
+        if (sortKey === key) {
+            sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+        } else {
+            sortKey = key;
+            sortDirection = 'desc'; 
+        }
+    }
+
+    function sortTree(nodes, key, dir) {
+        if (!nodes || nodes.length === 0) return [];
+        const sorted = [...nodes].sort((a, b) => {
+            const valA = a[key] || 0;
+            const valB = b[key] || 0;
+            return dir === 'asc' ? valA - valB : valB - valA;
+        });
+        return sorted.map(node => {
+            if (node.children && node.children.length > 0) {
+                return { ...node, children: sortTree(node.children, key, dir) };
+            }
+            return node;
+        });
+    }
+
+    $: sortedData = sortTree(data, sortKey, sortDirection);
+
     // --- ACTIONS ---
     function toggleRow(id) {
         if (expandedRows.has(id)) expandedRows.delete(id);
         else expandedRows.add(id);
         expandedRows = expandedRows; 
     }
-
     function expandAll(nodes) {
         if (!nodes) return;
         nodes.forEach(node => {
@@ -2279,35 +2317,24 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
         });
         expandedRows = expandedRows;
     }
-
     function collapseAll() { expandedRows = new Set(); }
-
+    
     function toggleFilterDropdown(dimId) {
         if (openFilterId === dimId) openFilterId = null;
-        else {
-            openFilterId = dimId;
-            filterSearchQuery = '';
-        }
+        else { openFilterId = dimId; filterSearchQuery = ''; }
     }
-
     function toggleFilterItem(dimId, value) {
         const current = currentFilters[dimId] || [];
-        let newSelected;
-        if (current.includes(value)) newSelected = current.filter(x => x !== value);
-        else newSelected = [...current, value];
+        let newSelected = current.includes(value) ? current.filter(x => x !== value) : [...current, value];
         dispatch('filterChange', { key: dimId, selected: newSelected });
     }
-
-    function clearFilter(dimId) {
-        dispatch('filterChange', { key: dimId, selected: [] });
-    }
-
+    function clearFilter(dimId) { dispatch('filterChange', { key: dimId, selected: [] }); }
+    
     $: getDisplayOptions = (dimId) => {
         const options = filterOptions[dimId] || [];
         const selected = currentFilters[dimId] || [];
         const query = filterSearchQuery.toLowerCase();
-        let filtered = options.filter(opt => opt.toLowerCase().includes(query));
-        return filtered.sort((a, b) => {
+        return options.filter(opt => opt.toLowerCase().includes(query)).sort((a, b) => {
             const aSel = selected.includes(a);
             const bSel = selected.includes(b);
             if (aSel && !bSel) return -1;
@@ -2315,7 +2342,6 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
             return a.localeCompare(b);
         });
     };
-
     function handleDimensionToggle(dimId) {
         let newIds = [...activeIds];
         if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId);
@@ -2324,7 +2350,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
     }
 </script>
 
-<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200">
+<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 luyke-filter-section">
     <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
         {#each allDimensions as dim (dim.id)}
@@ -2334,60 +2360,27 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
             
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
-                    <button 
-                        class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}"
-                        on:click={() => handleDimensionToggle(dim.id)}
-                    >
-                        {#if isActive}
-                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
-                                {activeIndex + 1}
-                            </span>
-                        {:else}
-                            <span class="w-4 h-4 rounded border border-gray-400"></span>
-                        {/if}
+                    <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
+                        {#if isActive}<span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">{activeIndex + 1}</span>
+                        {:else}<span class="w-4 h-4 rounded border border-gray-400"></span>{/if}
                         {dim.label}
                     </button>
-
-                    <button 
-                        class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
-                        on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                        </svg>
-                        {#if hasFilter}
-                            <span class="absolute -top-1 -right-1 flex h-3 w-3">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                            </span>
-                        {/if}
+                    <button class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}" on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}>
+                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                     </button>
                 </div>
-
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
-                            {#if hasFilter}
-                                <button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>
-                            {/if}
-                        </div>
-                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
-                        <div class="max-h-48 overflow-y-auto space-y-1">
+                         <div class="flex justify-between items-center mb-2"><span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>{#if hasFilter}<button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>{/if}</div>
+                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
+                         <div class="max-h-48 overflow-y-auto space-y-1">
                             {#each getDisplayOptions(dim.id) as option}
                                 {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
-                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer">
-                                    <input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/>
-                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span>
-                                </label>
+                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/><span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span></label>
                             {/each}
-                            {#if getDisplayOptions(dim.id).length === 0}
-                                <div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>
-                            {/if}
-                        </div>
-                        <div class="mt-2 pt-2 border-t text-right">
-                             <button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button>
-                        </div>
+                            {#if getDisplayOptions(dim.id).length === 0}<div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>{/if}
+                         </div>
+                         <div class="mt-2 pt-2 border-t text-right"><button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button></div>
                     </div>
                     <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
@@ -2396,52 +2389,94 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
     </div>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200 luyke-table-wrapper">
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
                 <tr>
-                    <th class="py-3 px-4 border-b border-r min-w-[200px]">
+                    <th class="py-3 px-4 border-b border-r {isVelocityMode ? 'w-[300px] max-w-[300px]' : 'w-auto min-w-[200px]'}">
                         <div class="flex items-center gap-2">
-                            <span>Danh mục</span>
-                            <div class="flex gap-1 ml-auto">
-                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
-                                </button>
-                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
-                                </button>
+                             <span>Danh mục</span>
+                             <div class="flex gap-1 ml-auto">
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
                     </th>
-                    <th class="py-3 px-4 text-right border-b w-32">Số lượng</th>
-                    <th class="py-3 px-4 text-right border-b w-40">Doanh thu <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-right border-b w-40">DT Quy đổi <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50">DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                    
+                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
+                        <div class="flex items-center justify-end gap-1">
+                            {isVelocityMode ? 'SL TB/Ngày' : 'Số lượng'}
+                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                <span class={sortKey === 'quantity' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                <span class={sortKey === 'quantity' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            </div>
+                        </div>
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
+                        <div class="flex items-center justify-end gap-1">
+                            {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
+                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
+                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                <span class={sortKey === 'revenue' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                <span class={sortKey === 'revenue' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            </div>
+                        </div>
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
+                        <div class="flex items-center justify-end gap-1">
+                            {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
+                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
+                             <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                <span class={sortKey === 'revenueQD' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                <span class={sortKey === 'revenueQD' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            </div>
+                        </div>
+                    </th>
+                    
+                    {#if !isVelocityMode}
+                        <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
+                            <div class="flex items-center justify-end gap-1">
+                                DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span>
+                                <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
+                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
+                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                                </div>
+                            </div>
+                        </th>
+                        <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                    {/if}
                 </tr>
+                
                 <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
+                    
                     <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
-                    <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
-                    <td class="py-3 px-4 text-center bg-yellow-100">
-                        {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
-                    </td>
+                    
+                    {#if !isVelocityMode}
+                        <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
+                        <td class="py-3 px-4 text-center bg-yellow-100">
+                            {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
+                        </td>
+                    {/if}
                 </tr>
             </thead>
             <tbody>
-                {#if data.length === 0}
-                    <tr><td colspan="6" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                {#if sortedData.length === 0}
+                    <tr><td colspan="{isVelocityMode ? 4 : 6}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
-                    {#each data as group (group.id)}
+                    {#each sortedData as group (group.id)}
                         <TableRowRecursive 
                             {group} 
                             {expandedRows} 
                             {toggleRow} 
                             {LEVEL_COLORS}
                             {fmtQty} {fmtRev} {fmtPct}
+                            {isVelocityMode} 
                         />
                     {/each}
                 {/if}
@@ -2453,19 +2488,46 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
 <style>
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [CAPTURE STYLE UPDATES] */
+    
+    /* 1. Ẩn bộ lọc cũ */
+    :global(.capture-container .luyke-filter-section) { display: none !important; }
+    
+    /* 2. [FIXED] Ẩn Toolbar Sức bán (Mới) khi chụp */
+    :global(.capture-container .velocity-toolbar) { display: none !important; }
+
+    /* 3. Style bảng */
+    :global(.capture-container .luyke-table-wrapper) {
+        width: 750px !important; min-width: 750px !important; max-width: 750px !important;
+        margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
+    }
+    :global(.capture-container .luyke-table-wrapper table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
+    :global(.capture-container .luyke-table-wrapper th),
+    :global(.capture-container .luyke-table-wrapper td) {
+        padding: 8px 6px !important; white-space: normal !important; overflow: visible !important;
+        height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
+    }
+    :global(.capture-container .luyke-table-wrapper td > div),
+    :global(.capture-container .luyke-table-wrapper td span),
+    :global(.capture-container .luyke-table-wrapper td p) {
+         overflow: visible !important; white-space: normal !important; height: auto !important;
+         line-height: 1.5 !important; padding-bottom: 2px !important; margin-bottom: 0 !important;
+    }
+    :global(.capture-container .luyke-table-wrapper th:first-child) { min-width: 150px !important; width: auto !important; }
 </style>
 <<< FILE_END: src/components/luyke/sub/LuykeCategoryTreeTable.svelte
 
 >>> FILE_START: src/components/luyke/sub/LuykeCategoryView.svelte
 <script>
     import { cleanCategoryName } from '../../../utils.js';
-    import { config } from '../../../config.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
+    import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
 
-    export let data = []; 
+    export let data = [];
     export let selectedWarehouse = '';
-
+    
     const AVAILABLE_DIMENSIONS = [
         { id: 'nganhHang', label: 'Ngành hàng', default: true },
         { id: 'nhomHang', label: 'Nhóm hàng', default: true },
@@ -2473,8 +2535,6 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-
-    const findCol = dataProcessing.findColumnName;
 
     // State
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
@@ -2484,213 +2544,196 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
     let filterOptions = {};
     let warnings = [];
 
-    // --- HELPER: Tìm cột chính xác ---
-    function resolveCol(headers, type, standardKey, exactNameInFile = null) {
-        // 1. Tìm chính xác theo tên file (có xử lý khoảng trắng thừa)
-        if (exactNameInFile) {
-            const searchKey = exactNameInFile.trim().toLowerCase();
-            const found = headers.find(h => h.trim().toLowerCase() === searchKey);
-            if (found) return found;
-        }
+    // --- VELOCITY & DATE STATE ---
+    let isVelocityMode = false;
+    let velocityDays = 1; 
+    let dateFilter = { from: '', to: '' }; 
 
-        // 2. Tìm theo config
-        const fromConfig = findCol(headers, type, standardKey);
-        if (fromConfig) return fromConfig;
-        
-        // 3. Fallback: Tìm theo key chuẩn (cho dữ liệu đã normalized)
-        if (headers.includes(standardKey)) return standardKey;
-        
-        return null;
-    }
+    const PRESET_DAYS = [3, 5, 7, 10];
 
-    // --- HÀM XỬ LÝ 1 DÒNG (CORE LOGIC - STRICT MODE) ---
-    function processItemMetrics(item, cols) {
-        // 1. Check trạng thái Hủy
-        if (cols.trangThaiHuy) {
-            const valTrangThaiHuy = item[cols.trangThaiHuy];
-            if (valTrangThaiHuy && String(valTrangThaiHuy).trim() !== '') return null;
-        }
+    const parseMoney = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        return parseFloat(String(val).replace(/,/g, '')) || 0;
+    };
 
-        // 2. Check hình thức xuất (CHẶT CHẼ)
-        const valHinhThucXuat = cols.hinhThucXuat ? item[cols.hinhThucXuat] : '';
-        const allowedHTX = config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || [];
-        
-        // [FIX QUAN TRỌNG] Chuyển từ .some(include) sang .includes() trực tiếp
-        // Đảm bảo chỉ những hình thức xuất CHÍNH XÁC trong danh sách mới được tính
-        const isAllowed = allowedHTX.includes(valHinhThucXuat);
-        
-        if (!isAllowed) return null;
+    const isValidRow = (row) => {
+        const isThuTien = (row.trangThaiThuTien || "").trim() === 'Đã thu';
+        const isChuaHuy = (row.trangThaiHuy || "").trim() === 'Chưa hủy';
+        const isChuaTra = (row.tinhTrangTra || "").trim() === 'Chưa trả';
+        const isDaXuat = (row.trangThaiXuat || "").trim() === 'Đã xuất';
+        return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
+    };
 
-        // 3. Lấy giá trị số
-        let qty = parseFloat(item[cols.soLuong]) || 0;
-        let rev = parseFloat(item[cols.thanhTien]) || 0;
-        let revQD = parseFloat(item[cols.revenueQD]) || 0;
-
-        // 4. Tự tính DTQĐ nếu thiếu (dùng hệ số quy đổi)
-        if (!revQD && rev !== 0) {
-            // Logic cũ: Tự tính lại nếu file thiếu cột revenueQuyDoi
-            const tenSP = item[cols.tenSanPham];
-            const nganhHang = item[cols.nganhHang];
-            const heSo = dataProcessing.getHeSoQuyDoi({ tenSanPham: tenSP, nganhHang: nganhHang });
-            revQD = rev * heSo;
-        }
-
-        // 5. Check Trả Góp (Vẫn giữ logic tìm chuỗi con cho nhóm này vì config thường ngắn gọn)
-        const listTraGop = config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || [];
-        const strHTX = String(valHinhThucXuat || '').toLowerCase();
-        const isTraGop = listTraGop.some(tg => strHTX.includes(tg.toLowerCase()));
-        
-        return {
-            qty: qty,
-            rev: rev,
-            revQD: revQD,
-            revTraCham: isTraGop ? rev : 0
-        };
-    }
-
-    function getRawValue(item, dimId, cols) {
+    // [GENESIS HELPER] Hàm lấy giá trị chuẩn (Có logic giữ nguyên bản cho SP/NSX)
+    const getDimensionValue = (row, dimId) => {
         let val = '';
-        if (dimId === 'nganhHang') val = item[cols.nganhHang];
-        else if (dimId === 'nhomHang') val = item[cols.nhomHang];
-        else if (dimId === 'nhaSanXuat') val = item[cols.nhaSanXuat];
-        else if (dimId === 'nhanVienTao') val = item[cols.nguoiTao];
-        else if (dimId === 'tenSanPham') val = item[cols.tenSanPham];
-        return (val === undefined || val === null) ? '(Khác)' : String(val);
-    }
+        if (dimId === 'nganhHang') val = row.nganhHang;
+        else if (dimId === 'nhomHang') val = row.nhomHang;
+        else if (dimId === 'nhaSanXuat') val = row.nhaSanXuat;
+        else if (dimId === 'nhanVienTao') val = row.nguoiTao;
+        else if (dimId === 'tenSanPham') val = row.tenSanPham;
 
-    // --- HÀM TÍNH TOÁN ---
+        if (!val) return '(Trống)';
+
+        // [FIX YÊU CẦU 1] Nếu là Tên SP hoặc NSX -> Giữ nguyên bản (chỉ trim), không clean
+        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
+            return val.toString().trim();
+        }
+        
+        // Các trường khác (Ngành hàng, Nhóm hàng...) -> Clean để gom nhóm tốt hơn
+        return cleanCategoryName(val);
+    };
+
+    // --- CORE CALCULATION ---
     function calculateData() {
-        if (!data || data.length === 0) {
-            treeData = [];
-            totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
-            return;
-        }
-
-        const sample = data[0];
-        const headers = Object.keys(sample);
-
-        // Mapping Cột
-        const cols = {
-            soLuong: resolveCol(headers, 'ycx', 'soLuong', 'Số lượng'),
-            thanhTien: resolveCol(headers, 'ycx', 'thanhTien', 'Giá bán'),
-            revenueQD: resolveCol(headers, 'ycx', 'doanhThuQuyDoi', 'Doanh thu quy đổi'),
-            trangThaiHuy: resolveCol(headers, 'ycx', 'trangThaiHuy', 'Trạng thái hủy'),
-            hinhThucXuat: resolveCol(headers, 'ycx', 'hinhThucXuat', 'Hình thức xuất'),
-            nganhHang: resolveCol(headers, 'ycx', 'nganhHang', 'Ngành hàng'),
-            nhomHang: resolveCol(headers, 'ycx', 'nhomHang', 'Nhóm hàng'),
-            nhaSanXuat: resolveCol(headers, 'ycx', 'nhaSanXuat', 'Nhà sản xuất'),
-            nguoiTao: resolveCol(headers, 'ycx', 'nguoiTao', 'Người tạo'),
-            tenSanPham: resolveCol(headers, 'ycx', 'tenSanPham', 'Tên sản phẩm'),
-            // [FIX] Cố gắng tìm cột mã kho, nhưng chấp nhận nếu không có (do dữ liệu đã normalized)
-            maKho: resolveCol(headers, 'ycx', 'maKho', 'Mã kho tạo')
-        };
-
-        // Reset cảnh báo
+        treeData = [];
+        totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         warnings = [];
-        // [FIX] Tắt cảnh báo đỏ gây khó chịu vì ta biết chắc chắn cột này đã bị mất trong quá trình normalized
-        // Nếu cần debug thì bật lại console.log
-        if (!cols.maKho && selectedWarehouse) {
-             console.warn("LuykeCategoryView: Dữ liệu đầu vào thiếu cột 'Mã kho tạo'. Bỏ qua bộ lọc kho cục bộ.");
+
+        if (!data || data.length === 0) return;
+
+        // 1. [GLOBAL] LỌC NGÀY
+        let processedData = data;
+        if (dateFilter.from || dateFilter.to) {
+            processedData = filterDataByDate(data, dateFilter.from, dateFilter.to);
         }
 
-        let processedItems = [];
-        let totals = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+        const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
+        let rootMap = new Map();
 
-        for (const item of data) {
-            // [LOGIC LỌC KHO AN TOÀN]
-            // Chỉ lọc khi CÓ chọn kho VÀ CÓ cột kho trong dữ liệu
-            if (selectedWarehouse && cols.maKho) {
-                const itemKho = item[cols.maKho];
-                if (itemKho && String(itemKho).trim() !== String(selectedWarehouse).trim()) continue;
-            }
-            // Nếu không có cột maKho, ta mặc định dữ liệu đã được lọc từ Parent Component
-            // hoặc là dữ liệu tổng hợp, nên vẫn cho phép đi tiếp (không continue)
-
-            const metrics = processItemMetrics(item, cols);
-            // Nếu metrics null (do hủy hoặc sai hình thức xuất) -> Bỏ qua
-            if (!metrics) continue;
-
-            // Filter UI
-            let passFilter = true;
-            for (const dim of AVAILABLE_DIMENSIONS) {
-                const selectedValues = currentFilters[dim.id];
-                if (selectedValues && selectedValues.length > 0) {
-                    let val = getRawValue(item, dim.id, cols);
-                    if (dim.id === 'nganhHang') val = cleanCategoryName(val);
-                    if (!selectedValues.includes(val)) {
-                        passFilter = false;
-                        break;
+        // 2. Gom nhóm
+        processedData.forEach(row => {
+            if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return;
+            if (!isValidRow(row)) return;
+            
+            // Logic lọc dữ liệu dựa trên Current Filters
+            if (Object.keys(currentFilters).length > 0) {
+                for (const [key, selectedValues] of Object.entries(currentFilters)) {
+                    if (selectedValues && selectedValues.length > 0) {
+                        const cellVal = getDimensionValue(row, key);
+                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua dòng này nếu không khớp lọc
                     }
                 }
             }
-            if (!passFilter) continue;
 
-            processedItems.push({ item, metrics });
-            totals.quantity += metrics.qty;
-            totals.revenue += metrics.rev;
-            totals.revenueQD += metrics.revQD;
-            totals.revenueTraCham += metrics.revTraCham;
-        }
+            const quantity = parseInt(row.soLuong || 0);
+            const revenue = parseMoney(row.thanhTien);
+            let heSo = heSoQuyDoiMap[row.nhomHang] || 1;
+            const htx = (row.hinhThucXuat || '').toLowerCase();
+            const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
+            if (isTraGop) heSo += 0.3;
+            const revenueQD = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (revenue * heSo);
 
-        totalMetrics = totals;
-        treeData = buildHierarchy(processedItems, activeDimensionIds, 0, 'root', cols);
-        extractFilterOptions(processedItems, cols);
-    }
+            totalMetrics.quantity += quantity;
+            totalMetrics.revenue += revenue;
+            totalMetrics.revenueQD += revenueQD;
+            if (isTraGop) totalMetrics.revenueTraCham += revenue;
 
-    function buildHierarchy(pItems, dimIds, level, parentId, cols) {
-        if (level >= dimIds.length || pItems.length === 0) return [];
-
-        const currentDimId = dimIds[level];
-        const groups = {};
-
-        for (const { item, metrics } of pItems) {
-            let val = getRawValue(item, currentDimId, cols);
-            if (!val) val = '(Trống)';
-            if (currentDimId === 'nganhHang') val = cleanCategoryName(val);
-
-            if (!groups[val]) {
-                groups[val] = {
-                    id: `${parentId}_${val}`,
-                    name: val,
-                    level: level,
-                    childrenRaw: [],
-                    quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0
-                };
-            }
-            groups[val].childrenRaw.push({ item, metrics });
-            groups[val].quantity += metrics.qty;
-            groups[val].revenue += metrics.rev;
-            groups[val].revenueQD += metrics.revQD;
-            groups[val].revenueTraCham += metrics.revTraCham;
-        }
-
-        return Object.values(groups)
-            .sort((a, b) => b.revenue - a.revenue)
-            .map(group => {
-                const children = buildHierarchy(group.childrenRaw, dimIds, level + 1, group.id, cols);
-                delete group.childrenRaw; 
-                return { ...group, children, isLeaf: children.length === 0 };
+            let currentLevel = rootMap;
+            activeDimensionIds.forEach((dimId, index) => {
+                const key = getDimensionValue(row, dimId);
+                
+                if (!currentLevel.has(key)) {
+                    currentLevel.set(key, {
+                        id: key + Math.random(),
+                        name: key,
+                        quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
+                        children: new Map(), level: index
+                    });
+                }
+                const groupObj = currentLevel.get(key);
+                groupObj.quantity += quantity;
+                groupObj.revenue += revenue;
+                groupObj.revenueQD += revenueQD;
+                if (isTraGop) groupObj.revenueTraCham += revenue;
+                currentLevel = groupObj.children;
             });
+        });
+
+        const convertMapToArray = (map) => {
+            return Array.from(map.values()).map(item => {
+                const newItem = { ...item };
+                if (newItem.children && newItem.children.size > 0) {
+                    newItem.children = convertMapToArray(newItem.children);
+                    newItem.children.sort((a, b) => b.revenue - a.revenue);
+                } else {
+                    delete newItem.children;
+                }
+                return newItem;
+            }).sort((a, b) => b.revenue - a.revenue);
+        };
+        
+        let finalTree = convertMapToArray(rootMap);
+
+        // 3. XỬ LÝ SỨC BÁN
+        if (isVelocityMode && velocityDays > 1) {
+            finalTree = transformVelocityTree(finalTree, velocityDays);
+            const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
+            totalMetrics.quantity = div(totalMetrics.quantity);
+            totalMetrics.revenue = div(totalMetrics.revenue);
+            totalMetrics.revenueQD = div(totalMetrics.revenueQD);
+            totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
+        }
+
+        treeData = finalTree;
+        totalMetrics = { ...totalMetrics };
+        
+        // Cập nhật bộ lọc sau khi tính toán xong
+        updateFilterOptions(processedData);
     }
 
-    function extractFilterOptions(pItems, cols) {
+    // [FIX YÊU CẦU 3] Bộ lọc phụ thuộc (Cascading Filters)
+    function updateFilterOptions(sourceData) {
+        // sourceData ở đây là data đã qua lọc ngày, nhưng CHƯA qua lọc dimension
+        // Chúng ta cần tính toán option cho từng dimension dựa trên ngữ cảnh của các dimension còn lại
+        
         const options = {};
-        AVAILABLE_DIMENSIONS.forEach(dim => {
+
+        AVAILABLE_DIMENSIONS.forEach(targetDim => {
             const uniqueValues = new Set();
-            pItems.forEach(({ item }) => {
-                let val = getRawValue(item, dim.id, cols);
-                if (dim.id === 'nganhHang') val = cleanCategoryName(val);
-                if (val && val !== '(Khác)' && val !== '(Trống)') {
-                    uniqueValues.add(val);
+            
+            // Tạo bộ lọc tạm thời: Loại bỏ chính dimension đang xét ra khỏi điều kiện lọc
+            // Để người dùng vẫn nhìn thấy các lựa chọn khác của chính dimension đó
+            const otherFilters = { ...currentFilters };
+            delete otherFilters[targetDim.id]; 
+
+            sourceData.forEach(row => {
+                // 1. Kiểm tra xem dòng này có thỏa mãn các bộ lọc KHÁC không
+                let isValid = true;
+                const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; // Bỏ qua đơn không tính DT
+                if (!isValidRow(row)) return;
+
+                if (Object.keys(otherFilters).length > 0) {
+                    for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
+                        if (filterValues && filterValues.length > 0) {
+                            const valToCheck = getDimensionValue(row, filterKey);
+                            if (!filterValues.includes(valToCheck)) {
+                                isValid = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Nếu dòng này hợp lệ với các filter kia -> Lấy giá trị cho targetDim
+                if (isValid) {
+                    const val = getDimensionValue(row, targetDim.id);
+                    if (val && val !== '(Trống)') {
+                        uniqueValues.add(val);
+                    }
                 }
             });
-            options[dim.id] = Array.from(uniqueValues).sort();
+            options[targetDim.id] = Array.from(uniqueValues).sort();
         });
+
         filterOptions = options;
     }
 
     $: {
-        if (data || selectedWarehouse || currentFilters || activeDimensionIds) {
+        if (data || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || velocityDays || dateFilter) {
             calculateData();
         }
     }
@@ -2700,19 +2743,97 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
         const { key, selected } = event.detail;
         currentFilters = { ...currentFilters, [key]: selected };
     }
+    
+    // Hàm lấy ngày hiện tại trừ 1 (tối thiểu là 1)
+    const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
+
+    function toggleVelocityMode() {
+        isVelocityMode = !isVelocityMode;
+        if (isVelocityMode) {
+            velocityDays = getCurrentMinusOne();
+        } else {
+            velocityDays = 1;
+        }
+    }
+
+    function setToCurrentDays() {
+        velocityDays = getCurrentMinusOne();
+    }
 </script>
 
-<div class="animate-fade-in pb-10">
+<div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
     {#if warnings.length > 0}
         <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
             <strong>⚠️ Cảnh báo cấu trúc:</strong>
             <ul class="list-disc pl-5 mt-1">
-                {#each warnings as w}
-                    <li>{w}</li>
-                {/each}
+                {#each warnings as w}<li>{w}</li>{/each}
             </ul>
         </div>
     {/if}
+
+    <div class="velocity-toolbar flex flex-wrap items-end gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+        <div class="flex flex-col gap-1">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
+            <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
+                <input 
+                    type="date" 
+                    bind:value={dateFilter.from}
+                    class="bg-transparent text-sm text-gray-700 outline-none w-32"
+                />
+                <span class="mx-2 text-gray-400">➝</span>
+                <input 
+                    type="date" 
+                    bind:value={dateFilter.to}
+                    class="bg-transparent text-sm text-gray-700 outline-none w-32"
+                />
+            </div>
+        </div>
+
+        <div class="w-px h-10 bg-gray-200 mx-2"></div>
+
+        <div class="flex items-center gap-3 h-full pb-1">
+            <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
+            <button 
+                class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                on:click={toggleVelocityMode}
+            >
+                <span class="{isVelocityMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+            </button>
+        </div>
+
+        {#if isVelocityMode}
+            <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
+                <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
+                
+                <button 
+                    on:click={setToCurrentDays}
+                    class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                    title="Tính theo ngày hiện tại - 1"
+                >
+                    Hiện tại ({getCurrentMinusOne()})
+                </button>
+
+                {#each PRESET_DAYS as d}
+                    <button 
+                        on:click={() => velocityDays = d}
+                        class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}"
+                    >
+                        {d} ngày
+                    </button>
+                {/each}
+                
+                <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
+                    <span class="text-xs text-gray-400 mr-1">Khác:</span>
+                    <input 
+                        type="number" 
+                        min="1" 
+                        class="w-10 text-sm font-bold text-center outline-none text-orange-700"
+                        bind:value={velocityDays}
+                    />
+                </div>
+            </div>
+        {/if}
+    </div>
 
     <LuykeCategoryTreeTable 
         data={treeData} 
@@ -2721,6 +2842,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
         activeIds={activeDimensionIds}
         {filterOptions}
         {currentFilters}
+        {isVelocityMode} 
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}
     />
@@ -2728,7 +2850,9 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
 
 <style>
   .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-fade-in-down { animation: fadeInDown 0.3s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 <<< FILE_END: src/components/luyke/sub/LuykeCategoryView.svelte
 

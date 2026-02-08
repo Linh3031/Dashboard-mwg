@@ -1,31 +1,33 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  // IMPORT TRỰC TIẾP Ở ĐÂY (QUAN TRỌNG)
   import TableRowRecursive from './TableRowRecursive.svelte';
-  
+
   export let data = [];
   export let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
   export let allDimensions = [];
   export let activeIds = [];
   export let filterOptions = {}; 
   export let currentFilters = {};
+  export let sortConfig = { key: 'revenue', direction: 'desc' };
+  
+  // Nhận state expandedRows từ cha
+  export let expandedRows = new Set(); 
 
   const dispatch = createEventDispatcher();
   
-  // Trạng thái UI
-  let expandedRows = new Set(); 
   let openFilterId = null;
-  let filterSearchQuery = ''; 
+  let filterSearchQuery = '';
 
-  // --- FORMATTERS ---
-  // 1. Số lượng: Giữ nguyên
   const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
-  // 2. Doanh thu: Chia 1 triệu, làm tròn (Thêm check n || 0 để tránh lỗi crash)
-  const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
-  // 3. Phần trăm
+  const fmtRev = (n) => {
+      const val = (n || 0) / 1000000;
+      return new Intl.NumberFormat('vi-VN', { 
+          minimumFractionDigits: 0, 
+          maximumFractionDigits: 1 
+      }).format(val);
+  };
   const fmtPct = (n) => (n || 0).toFixed(1) + '%';
 
-  // Màu sắc phân cấp
   const LEVEL_COLORS = [
       'text-red-700 font-bold',     
       'text-blue-700 font-semibold',
@@ -34,7 +36,6 @@
       'text-orange-700'             
   ];
 
-  // --- LOGIC UI ---
   function toggleRow(id) {
       if (expandedRows.has(id)) expandedRows.delete(id);
       else expandedRows.add(id);
@@ -50,16 +51,11 @@
       expandedRows = expandedRows;
   }
 
-  function collapseAll() {
-      expandedRows = new Set();
-  }
+  function collapseAll() { expandedRows = new Set(); }
 
   function toggleFilterDropdown(dimId) {
       if (openFilterId === dimId) openFilterId = null;
-      else {
-          openFilterId = dimId;
-          filterSearchQuery = '';
-      }
+      else { openFilterId = dimId; filterSearchQuery = ''; }
   }
 
   function toggleFilterItem(dimId, value) {
@@ -70,9 +66,7 @@
       dispatch('filterChange', { key: dimId, selected: newSelected });
   }
 
-  function clearFilter(dimId) {
-      dispatch('filterChange', { key: dimId, selected: [] });
-  }
+  function clearFilter(dimId) { dispatch('filterChange', { key: dimId, selected: [] }); }
 
   $: getDisplayOptions = (dimId) => {
       const options = filterOptions[dimId] || [];
@@ -94,17 +88,27 @@
       else newIds.push(dimId);
       dispatch('configChange', newIds);
   }
+
+  function handleSort(key) { dispatch('sort', key); }
+
+  function SortIcon({ active, direction }) {
+      return `
+        <svg class="w-3 h-3 ml-1 ${active ? 'text-blue-600' : 'text-gray-300'}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            ${direction === 'asc' 
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />' 
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />'}
+        </svg>
+      `;
+  }
 </script>
 
 <div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 brand-filter-section">
     <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
-        
         {#each allDimensions as dim (dim.id)}
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
             {@const hasFilter = (currentFilters[dim.id] || []).length > 0}
-            
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
                     <button 
@@ -118,10 +122,8 @@
                         {:else}
                             <span class="w-4 h-4 rounded border border-gray-400"></span>
                         {/if}
-                        
                         {dim.label}
                     </button>
-
                     <button 
                         class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
                         on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
@@ -137,7 +139,6 @@
                         {/if}
                     </button>
                 </div>
-
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
                         <div class="flex justify-between items-center mb-2">
@@ -175,30 +176,68 @@
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
                 <tr>
-                    <th class="py-3 px-4 border-b border-r min-w-[200px]">
+                    <th class="py-3 px-4 border-b border-r min-w-[200px] cursor-pointer hover:bg-gray-200" on:click={() => handleSort('name')}>
                         <div class="flex items-center gap-2">
                             <span>Danh mục</span>
-                            <div class="flex gap-1 ml-auto">
-                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng">
+                            {@html SortIcon({ active: sortConfig.key === 'name', direction: sortConfig.direction })}
+                            <div class="flex gap-1 ml-auto" on:click|stopPropagation>
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-300 rounded" title="Mở rộng">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
                                 </button>
-                                <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn">
+                                <button on:click={collapseAll} class="p-1 hover:bg-gray-300 rounded" title="Thu gọn">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
                                 </button>
                             </div>
                         </div>
                     </th>
-                    <th class="py-3 px-4 text-right border-b w-32">Số lượng</th>
-                    <th class="py-3 px-4 text-right border-b w-40">Doanh thu <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-right border-b w-40">DT Quy đổi <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50">DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span></th>
-                    <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                    
+                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('quantity')}>
+                        <div class="flex items-center justify-end">
+                            Số lượng {@html SortIcon({ active: sortConfig.key === 'quantity', direction: sortConfig.direction })}
+                        </div>
+                    </th>
+                    
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('revenue')}>
+                         <div class="flex items-center justify-end">
+                            Doanh thu {@html SortIcon({ active: sortConfig.key === 'revenue', direction: sortConfig.direction })}
+                        </div>
+                    </th>
+                    
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('revenueQD')}>
+                         <div class="flex items-center justify-end">
+                            DTQĐ {@html SortIcon({ active: sortConfig.key === 'revenueQD', direction: sortConfig.direction })}
+                        </div>
+                    </th>
+                    
+                    <th class="py-3 px-4 text-center border-b w-24 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('percentQD')}>
+                        <div class="flex items-center justify-center">
+                            % QĐ {@html SortIcon({ active: sortConfig.key === 'percentQD', direction: sortConfig.direction })}
+                        </div>
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham')}>
+                         <div class="flex items-center justify-end">
+                            DT Trả chậm {@html SortIcon({ active: sortConfig.key === 'revenueTraCham', direction: sortConfig.direction })}
+                        </div>
+                    </th>
+                    
+                    <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50 cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('percentTraCham')}>
+                        <div class="flex items-center justify-center">
+                            % Trả chậm {@html SortIcon({ active: sortConfig.key === 'percentTraCham', direction: sortConfig.direction })}
+                        </div>
+                    </th>
                 </tr>
+                
                 <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
                     <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
+                    
+                    <td class="py-3 px-4 text-center">
+                        {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueQD / totalMetrics.revenue) * 100) : '0%'}
+                    </td>
+                    
                     <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
                     <td class="py-3 px-4 text-center bg-yellow-100">
                         {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
@@ -208,7 +247,7 @@
             
             <tbody>
                 {#if data.length === 0}
-                    <tr><td colspan="6" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="7" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
                     {#each data as group (group.id)}
                         <TableRowRecursive 
@@ -232,13 +271,7 @@
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
     /* [FIX GENESIS v3.0]: BỘ CSS CHỐNG CẮT CHỮ CHO CAPTURE */
-    
-    /* 1. Ẩn bộ lọc */
-    :global(.capture-container .brand-filter-section) {
-        display: none !important;
-    }
-
-    /* 2. Cố định chiều rộng bảng (Mobile Optimized) */
+    :global(.capture-container .brand-filter-section) { display: none !important; }
     :global(.capture-container .brand-table-wrapper) {
         width: 750px !important;
         min-width: 750px !important;
@@ -248,14 +281,10 @@
         border: none !important;
         box-shadow: none !important;
     }
-
-    /* 3. Reset Table Core */
     :global(.capture-container .brand-table-wrapper table) {
         width: 100% !important;
         font-family: 'Segoe UI', sans-serif !important;
     }
-
-    /* 4. Mở rộng ô bảng và line-height */
     :global(.capture-container .brand-table-wrapper th),
     :global(.capture-container .brand-table-wrapper td) {
         padding: 8px 6px !important;
@@ -265,8 +294,6 @@
         line-height: 1.5 !important;
         font-size: 14px !important;
     }
-
-    /* 5. [CRITICAL] Xuyên thấu vào thẻ con để chống cắt chữ g, y, p */
     :global(.capture-container .brand-table-wrapper td > div),
     :global(.capture-container .brand-table-wrapper td span),
     :global(.capture-container .brand-table-wrapper td p) {
@@ -277,8 +304,6 @@
          padding-bottom: 2px !important;
          margin-bottom: 0 !important;
     }
-
-    /* 6. Fix cột đầu tiên */
     :global(.capture-container .brand-table-wrapper th:first-child) {
         min-width: 150px !important;
         width: auto !important;

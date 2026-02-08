@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_02_REALTIME.txt
-GENERATED AT: 2/4/2026, 9:59:00 AM
+GENERATED AT: 2/5/2026, 5:34:49 PM
 
 
 >>> FILE_START: src/components/realtime/RealtimeSection.svelte
@@ -253,206 +253,234 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
 
 >>> FILE_START: src/components/realtime/brand/BrandTab.svelte
 <script>
-  import { realtimeYCXData } from '../../../stores.js';
-  import { cleanCategoryName } from '../../../utils.js';
-  import BrandTable from './BrandTable.svelte';
+    import { realtimeYCXData } from '../../../stores.js';
+    import { cleanCategoryName } from '../../../utils.js';
+    import { dataProcessing } from '../../../services/dataProcessing.js';
+    import BrandTable from './BrandTable.svelte';
 
-  export let selectedWarehouse = '';
+    export let selectedWarehouse = '';
 
-  // 1. CẤU HÌNH DIMENSIONS (Các chiều dữ liệu)
-  const AVAILABLE_DIMENSIONS = [
-      { id: 'nganhHang', label: 'Ngành hàng', default: true },
-      { id: 'nhomHang', label: 'Nhóm hàng', default: true },
-      { id: 'nhaSanXuat', label: 'Nhà sản xuất', default: true },
-      { id: 'nhanVienTao', label: 'Người tạo', default: false },
-      { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
-  ];
+    // 1. CẤU HÌNH DIMENSIONS
+    const AVAILABLE_DIMENSIONS = [
+        { id: 'nganhHang', label: 'Ngành hàng', default: true },
+        { id: 'nhomHang', label: 'Nhóm hàng', default: true },
+        { id: 'nhaSanXuat', label: 'Nhà sản xuất', default: true },
+        { id: 'nhanVienTao', label: 'Người tạo', default: false },
+        { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
+    ];
 
-  // 2. CẤU HÌNH METRICS (Mapping keys từ CSV/Excel)
-  const METRIC_KEYS = {
-      quantity: ['soLuong', 'so_luong', 'Số lượng', 'Quantity', 'SL', 'soluong'],
-      revenue: ['doanhThu', 'thanhTien', 'Thành tiền', 'Doanh thu', 'Revenue', 'TIEN_SAU_CK', 'tongTien', 'Total', 'Giá bán', 'Phải thu'],
-      revenueQD: ['doanhThuQuyDoi', 'dtqd', 'Doanh thu quy đổi', 'DTQD', 'DoanhThuQuyDoi', 'revenueQuyDoi'],
-      warehouse: ['maKho', 'ma_kho', 'Mã kho', 'Warehouse', 'Kho', 'MaKho', 'Mã kho tạo'],
-      // Cột hình thức xuất để lọc trả góp
-      hinhThucXuat: ['hinhThucXuat', 'Hình thức xuất', 'HinhThucXuat']
-  };
+    // State
+    let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
+    let treeData = [];
+    let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+    let currentFilters = {};
+    let filterOptions = {};
 
-  // State
-  let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
-  let treeData = [];
-  let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
-  let currentFilters = {}; 
-  let filterOptions = {};
+    // --- HELPER: Parse số an toàn ---
+    const parseMoney = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        return parseFloat(String(val).replace(/[^0-9-]/g, '')) || 0;
+    };
 
-  // --- HÀM TÌM KIẾM KEY THÔNG MINH ---
-  function findValue(item, possibleKeys) {
-      // 1. Tìm chính xác
-      for (const key of possibleKeys) {
-          if (item[key] !== undefined && item[key] !== null) return item[key];
-      }
-      // 2. Tìm không phân biệt hoa thường
-      const itemKeys = Object.keys(item);
-      for (const key of possibleKeys) {
-          const lowerKey = key.toLowerCase();
-          const foundKey = itemKeys.find(k => k.toLowerCase() === lowerKey);
-          if (foundKey) return item[foundKey];
-      }
-      return null;
-  }
+    // --- HELPER: Kiểm tra dòng hợp lệ ---
+    const isValidRow = (row) => {
+        const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || "").trim();
+        const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || "").trim();
+        const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || "").trim();
+        const xuat = (row.trangThaiXuat || row.TRANG_THAI_XUAT || "").trim();
 
-  // --- LOGIC KIỂM TRA TRẢ CHẬM (CHUẨN HÓA THEO YÊU CẦU MỚI) ---
-  function checkTraCham(item) {
-      // Lấy giá trị cột "Hình thức xuất"
-      const val = String(findValue(item, METRIC_KEYS.hinhThucXuat) || '').toLowerCase();
-      
-      // Danh sách các hình thức xuất được tính là trả góp:
-      // 1. Xuất bán hàng trả góp tại siêu thị
-      // 2. Xuất bán trả góp ưu đãi cho nhân viên
-      // 3. Xuất bán trả góp cho NV phục vụ công việc
-      // 4. Xuất bán pre-order trả góp tại siêu thị
-      // 5. Xuất bán pre-order trả góp tại siêu thị (TCĐM)
-      
-      // -> Tất cả đều chứa từ khóa "trả góp". 
-      // -> Logic: Chỉ cần "Hình thức xuất" có chứa chữ "trả góp" là ĐÚNG.
-      return val.includes('trả góp');
-  }
+        return thuTien === 'Đã thu' && 
+               huy === 'Chưa hủy' && 
+               tra === 'Chưa trả' && 
+               xuat === 'Đã xuất';
+    };
 
-  function getRawValue(item, dimId) {
-      const keyMap = {
-          'nganhHang': ['nganhHang', 'Ngành hàng', 'NGANH HANG', 'NganhHang'],
-          'nhomHang': ['nhomHang', 'nhom_hang', 'Nhóm hàng', 'NhomHang'],
-          'nhaSanXuat': ['nhaSanXuat', 'hang', 'Hãng', 'Nhà sản xuất', 'NhaSanXuat'],
-          'nhanVienTao': ['nhanVienTao', 'nguoiTao', 'Nhân viên', 'Người tạo', 'NhanVien'],
-          'tenSanPham': ['tenSanPham', 'ten_sp', 'Tên sản phẩm', 'Product Name', 'TenSP']
-      };
-      const possibleKeys = keyMap[dimId] || [dimId];
-      const val = findValue(item, possibleKeys);
-      return val !== null ? String(val) : '(Khác)';
-  }
+    // --- HELPER: Lấy giá trị linh hoạt từ data thô ---
+    const getVal = (row, key) => row[key] || row[key.toUpperCase()] || row[key.toLowerCase()] || '';
 
-  function extractFilterOptions(data) {
-      const options = {};
-      AVAILABLE_DIMENSIONS.forEach(dim => {
-          const uniqueValues = new Set();
-          data.forEach(item => {
-              let val = getRawValue(item, dim.id);
-              if (dim.id === 'nganhHang') val = cleanCategoryName(val);
-              if (val && val !== '(Khác)' && val !== '(Trống)') {
-                  uniqueValues.add(val);
-              }
-          });
-          options[dim.id] = Array.from(uniqueValues).sort();
-      });
-      return options;
-  }
+    // [GENESIS FIX] Hàm lấy giá trị chuẩn (Giữ nguyên bản cho SP/NSX)
+    const getDimensionValue = (row, dimId) => {
+        let fieldName = dimId;
+        if (dimId === 'nhanVienTao') fieldName = 'nguoiTao'; // Mapping alias
 
-  // --- THUẬT TOÁN GOM NHÓM ---
-  function buildHierarchy(items, dimensionIds, level = 0, parentId = 'root') {
-      if (level >= dimensionIds.length || items.length === 0) return [];
-      const currentDimId = dimensionIds[level];
-      const groups = {};
+        const val = getVal(row, fieldName);
 
-      items.forEach(item => {
-          let val = getRawValue(item, currentDimId);
-          if (!val) val = '(Trống)';
-          if (currentDimId === 'nganhHang') val = cleanCategoryName(val);
+        if (!val) return '(Trống)';
 
-          if (!groups[val]) {
-              groups[val] = {
-                  id: `${parentId}_${val}`,
-                  name: val,
-                  level: level,
-                  items: [],
-                  quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0
-              };
-          }
-          groups[val].items.push(item);
-          
-          // Metrics
-          const sl = Number(findValue(item, METRIC_KEYS.quantity) || 0);
-          const dt = Number(findValue(item, METRIC_KEYS.revenue) || 0);
-          const dtqd = Number(findValue(item, METRIC_KEYS.revenueQD) || dt);
-          
-          // Check trả chậm
-          const isTraCham = checkTraCham(item);
+        // [FIX] Nếu là Tên SP hoặc NSX -> Giữ nguyên bản (chỉ trim), không clean
+        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
+            return val.toString().trim();
+        }
+        
+        // Các trường khác -> Clean để gom nhóm tốt hơn
+        return cleanCategoryName(val);
+    };
 
-          groups[val].quantity += sl;
-          groups[val].revenue += dt;
-          groups[val].revenueQD += dtqd;
-          if (isTraCham) groups[val].revenueTraCham += dt;
-      });
+    // --- CORE: Tính toán dữ liệu ---
+    function calculateData(sourceData) {
+        // 1. Reset
+        treeData = [];
+        totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+        
+        if (!sourceData || sourceData.length === 0) return;
+        
+        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+        const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
 
-      return Object.values(groups)
-          .sort((a, b) => b.revenue - a.revenue)
-          .map(group => {
-              const children = buildHierarchy(group.items, dimensionIds, level + 1, group.id);
-              delete group.items; 
-              return { ...group, children, isLeaf: children.length === 0 };
-          });
-  }
+        let rootMap = new Map();
 
-  // --- REACTIVE MAIN FLOW ---
-  $: {
-      if ($realtimeYCXData && $realtimeYCXData.length > 0) {
-          let processedData = $realtimeYCXData;
+        // 2. Scan & Process
+        sourceData.forEach(row => {
+            // --- A. VALIDATION ---
+            const htx = getVal(row, 'hinhThucXuat');
+            if (!hinhThucXuatTinhDoanhThu.has(htx)) return;
+            if (!isValidRow(row)) return;
 
-          // 1. Lọc theo Kho
-          const sampleItem = processedData[0];
-          const hasWarehouseKey = findValue(sampleItem, METRIC_KEYS.warehouse) !== null;
-          if (selectedWarehouse && hasWarehouseKey) {
-              processedData = processedData.filter(x => {
-                  const khoVal = findValue(x, METRIC_KEYS.warehouse);
-                  return (khoVal || '').toString().includes(selectedWarehouse);
-              });
-          }
+            // [GENESIS FIX] Filter Logic (Sử dụng getDimensionValue để khớp chính xác)
+            if (Object.keys(currentFilters).length > 0) {
+                let skip = false;
+                for (const [key, selectedValues] of Object.entries(currentFilters)) {
+                    if (selectedValues && selectedValues.length > 0) {
+                        const cellVal = getDimensionValue(row, key);
+                        if (!selectedValues.includes(cellVal)) { 
+                            skip = true; 
+                            break; 
+                        }
+                    }
+                }
+                if (skip) return;
+            }
 
-          // 2. Filter Options
-          filterOptions = extractFilterOptions(processedData);
+            // --- B. CALCULATION ---
+            const quantity = parseInt(getVal(row, 'soLuong') || 0);
+            const revenue = parseMoney(getVal(row, 'thanhTien')); 
 
-          // 3. Apply Filters
-          processedData = processedData.filter(item => {
-              return AVAILABLE_DIMENSIONS.every(dim => {
-                  const selectedValues = currentFilters[dim.id];
-                  if (!selectedValues || selectedValues.length === 0) return true;
-                  let val = getRawValue(item, dim.id);
-                  if (dim.id === 'nganhHang') val = cleanCategoryName(val);
-                  return selectedValues.includes(val);
-              });
-          });
+            // Tính quy đổi
+            const nhomHang = getVal(row, 'nhomHang');
+            let heSo = heSoQuyDoiMap[nhomHang] || 1;
+            
+            const isTraGop = htx.toLowerCase().includes('trả góp') || htx.toLowerCase().includes('trả chậm');
+            if (isTraGop) heSo += 0.3;
 
-          // 4. Global Totals
-          totalMetrics = processedData.reduce((acc, item) => {
-              const sl = Number(findValue(item, METRIC_KEYS.quantity) || 0);
-              const dt = Number(findValue(item, METRIC_KEYS.revenue) || 0);
-              const dtqd = Number(findValue(item, METRIC_KEYS.revenueQD) || dt);
-              
-              const isTraCham = checkTraCham(item);
+            const rawRevQD = getVal(row, 'revenueQuyDoi') || getVal(row, 'doanhThuQuyDoi');
+            const revenueQD = rawRevQD !== '' ? parseMoney(rawRevQD) : (revenue * heSo);
 
-              acc.quantity += sl;
-              acc.revenue += dt;
-              acc.revenueQD += dtqd;
-              if (isTraCham) acc.revenueTraCham += dt;
-              return acc;
-          }, { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 });
+            // Cộng tổng
+            totalMetrics.quantity += quantity;
+            totalMetrics.revenue += revenue;
+            totalMetrics.revenueQD += revenueQD;
+            if (isTraGop) totalMetrics.revenueTraCham += revenue;
 
-          // 5. Build Tree
-          treeData = buildHierarchy(processedData, activeDimensionIds);
-      } else {
-          treeData = [];
-          totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
-          filterOptions = {};
-      }
-  }
+            // --- C. GROUPING (Đệ quy theo Dimensions) ---
+            let currentLevel = rootMap;
+            activeDimensionIds.forEach((dimId, index) => {
+                // [GENESIS FIX] Dùng getDimensionValue để lấy key gom nhóm
+                const key = getDimensionValue(row, dimId);
+                
+                if (!currentLevel.has(key)) {
+                    currentLevel.set(key, {
+                        id: key + Math.random(),
+                        name: key,
+                        quantity: 0,
+                        revenue: 0,
+                        revenueQD: 0,
+                        revenueTraCham: 0,
+                        children: new Map(),
+                        level: index
+                    });
+                }
 
-  function handleConfigChange(event) {
-      activeDimensionIds = event.detail;
-  }
+                const groupObj = currentLevel.get(key);
+                groupObj.quantity += quantity;
+                groupObj.revenue += revenue;
+                groupObj.revenueQD += revenueQD;
+                if (isTraGop) groupObj.revenueTraCham += revenue;
+                currentLevel = groupObj.children;
+            });
+        });
 
-  function handleFilterChange(event) {
-      const { key, selected } = event.detail;
-      currentFilters = { ...currentFilters, [key]: selected };
-  }
+        // 3. Convert Map -> Sorted Array
+        const convert = (map) => {
+            return Array.from(map.values()).map(item => {
+                const newItem = { ...item };
+                if (newItem.children && newItem.children.size > 0) {
+                    newItem.children = convert(newItem.children);
+                    newItem.children.sort((a, b) => b.revenue - a.revenue);
+                } else {
+                    delete newItem.children;
+                }
+                return newItem;
+            }).sort((a, b) => b.revenue - a.revenue);
+        };
+
+        treeData = convert(rootMap);
+        
+        // Trigger Reactivity
+        totalMetrics = { ...totalMetrics };
+        
+        // [GENESIS FIX] Cập nhật bộ lọc sau khi tính toán (để áp dụng logic cascading)
+        updateFilterOptions(sourceData);
+    }
+
+    // [GENESIS FIX] Bộ lọc phụ thuộc (Cascading Filters)
+    function updateFilterOptions(sourceData) {
+        const options = {};
+        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+
+        AVAILABLE_DIMENSIONS.forEach(targetDim => {
+            const uniqueValues = new Set();
+            
+            // Tạo bộ lọc tạm thời: Loại bỏ chính dimension đang xét
+            const otherFilters = { ...currentFilters };
+            delete otherFilters[targetDim.id];
+
+            sourceData.forEach(row => {
+                // 1. Validate cơ bản
+                const htx = getVal(row, 'hinhThucXuat');
+                if (!hinhThucXuatTinhDoanhThu.has(htx)) return;
+                if (!isValidRow(row)) return;
+
+                // 2. Kiểm tra xem dòng này có thỏa mãn các bộ lọc KHÁC không
+                let isValid = true;
+                if (Object.keys(otherFilters).length > 0) {
+                    for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
+                        if (filterValues && filterValues.length > 0) {
+                            const valToCheck = getDimensionValue(row, filterKey);
+                            if (!filterValues.includes(valToCheck)) {
+                                isValid = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Nếu hợp lệ -> Lấy giá trị cho targetDim
+                if (isValid) {
+                    const val = getDimensionValue(row, targetDim.id);
+                    if (val && val !== '(Trống)') {
+                        uniqueValues.add(val);
+                    }
+                }
+            });
+            options[targetDim.id] = Array.from(uniqueValues).sort();
+        });
+
+        filterOptions = options;
+    }
+
+    // Reactivity: Chạy lại khi data store thay đổi
+    $: {
+        if ($realtimeYCXData || selectedWarehouse || activeDimensionIds || currentFilters) {
+            calculateData($realtimeYCXData || []);
+        }
+    }
+
+    function handleConfigChange(event) { activeDimensionIds = event.detail; }
+    function handleFilterChange(event) {
+        const { key, selected } = event.detail;
+        currentFilters = { ...currentFilters, [key]: selected };
+    }
 </script>
 
 <div class="animate-fade-in pb-10">
@@ -470,7 +498,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
 
 <style>
   .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
 <<< FILE_END: src/components/realtime/brand/BrandTab.svelte
 
@@ -485,22 +513,20 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
   export let allDimensions = [];
   export let activeIds = [];
   export let filterOptions = {}; 
-  export let currentFilters = {}; 
+  export let currentFilters = {};
 
   const dispatch = createEventDispatcher();
   
   // Trạng thái UI
   let expandedRows = new Set(); 
-  let openFilterId = null; 
+  let openFilterId = null;
   let filterSearchQuery = ''; 
 
   // --- FORMATTERS ---
   // 1. Số lượng: Giữ nguyên
   const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
-  
   // 2. Doanh thu: Chia 1 triệu, làm tròn (Thêm check n || 0 để tránh lỗi crash)
   const fmtRev = (n) => new Intl.NumberFormat('vi-VN').format(Math.round((n || 0) / 1000000));
-  
   // 3. Phần trăm
   const fmtPct = (n) => (n || 0).toFixed(1) + '%';
 
@@ -537,7 +563,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
       if (openFilterId === dimId) openFilterId = null;
       else {
           openFilterId = dimId;
-          filterSearchQuery = ''; 
+          filterSearchQuery = '';
       }
   }
 
@@ -575,7 +601,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
   }
 </script>
 
-<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200">
+<div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 brand-filter-section">
     <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold text-gray-700 mr-2">Cấu hình & Lọc:</span>
         
@@ -649,7 +675,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
     </div>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200 brand-table-wrapper">
     <div class="overflow-x-auto">
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
@@ -709,6 +735,59 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
 <style>
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [FIX GENESIS v3.0]: BỘ CSS CHỐNG CẮT CHỮ CHO CAPTURE */
+    
+    /* 1. Ẩn bộ lọc */
+    :global(.capture-container .brand-filter-section) {
+        display: none !important;
+    }
+
+    /* 2. Cố định chiều rộng bảng (Mobile Optimized) */
+    :global(.capture-container .brand-table-wrapper) {
+        width: 750px !important;
+        min-width: 750px !important;
+        max-width: 750px !important;
+        margin: 0 auto !important;
+        border-radius: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* 3. Reset Table Core */
+    :global(.capture-container .brand-table-wrapper table) {
+        width: 100% !important;
+        font-family: 'Segoe UI', sans-serif !important;
+    }
+
+    /* 4. Mở rộng ô bảng và line-height */
+    :global(.capture-container .brand-table-wrapper th),
+    :global(.capture-container .brand-table-wrapper td) {
+        padding: 8px 6px !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        height: auto !important;
+        line-height: 1.5 !important;
+        font-size: 14px !important;
+    }
+
+    /* 5. [CRITICAL] Xuyên thấu vào thẻ con để chống cắt chữ g, y, p */
+    :global(.capture-container .brand-table-wrapper td > div),
+    :global(.capture-container .brand-table-wrapper td span),
+    :global(.capture-container .brand-table-wrapper td p) {
+         overflow: visible !important;
+         white-space: normal !important;
+         height: auto !important;
+         line-height: 1.5 !important; 
+         padding-bottom: 2px !important;
+         margin-bottom: 0 !important;
+    }
+
+    /* 6. Fix cột đầu tiên */
+    :global(.capture-container .brand-table-wrapper th:first-child) {
+        min-width: 150px !important;
+        width: auto !important;
+    }
 </style>
 <<< FILE_END: src/components/realtime/brand/BrandTable.svelte
 
@@ -718,15 +797,17 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
     export let expandedRows;
     export let toggleRow;
     export let LEVEL_COLORS;
-    export let fmtQty; // Formatter cho Số lượng
-    export let fmtRev; // Formatter cho Doanh thu (Triệu)
-    export let fmtPct; // Formatter cho %
+    export let fmtQty;
+    export let fmtRev;
+    export let fmtPct;
+
+    // [NEW] Nhận flag từ cha
+    export let isVelocityMode = false;
 
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
     $: paddingLeft = `${group.level * 24 + 16}px`; 
     
-    // Tính % trả chậm
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
 </script>
 
@@ -758,16 +839,15 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
     </td>
 
     <td class="py-2 px-4 text-right font-medium text-gray-700">{fmtQty(group.quantity)}</td>
-    
     <td class="py-2 px-4 text-right font-medium text-gray-800">{fmtRev(group.revenue)}</td>
-    
     <td class="py-2 px-4 text-right text-gray-600">{fmtRev(group.revenueQD)}</td>
 
-    <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
-    
-    <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold text-xs">
-        {fmtPct(traChamPercent)}
-    </td>
+    {#if !isVelocityMode}
+        <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
+        <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold text-xs">
+            {fmtPct(traChamPercent)}
+        </td>
+    {/if}
 </tr>
 
 {#if isExpanded && group.children}
@@ -778,6 +858,7 @@ GENERATED AT: 2/4/2026, 9:59:00 AM
             {toggleRow} 
             {LEVEL_COLORS}
             {fmtQty} {fmtRev} {fmtPct} 
+            {isVelocityMode} 
         />
     {/each}
 {/if}

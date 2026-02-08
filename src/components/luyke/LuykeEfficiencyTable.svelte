@@ -13,6 +13,7 @@
   let hiddenIds = new Set(); 
 
   const STORAGE_KEY = 'luyke_efficiency_hidden_ids';
+
   onMount(() => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -29,37 +30,45 @@
       'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
   };
 
-  // --- [FIX DUPLICATE] Lọc trùng lặp ID ---
+  // --- [FIX DUPLICATE & MERGE] Logic hợp nhất items tĩnh và động ---
   $: displayItems = (() => {
       const uniqueMap = new Map();
 
-      // 1. Thêm items thường (User config/Hardcoded)
+      // 1. Thêm items thường (Static/Hardcoded)
       (items || []).forEach(item => {
-          uniqueMap.set(item.id, { ...item, isDynamic: false });
+          if(item && item.id) {
+              uniqueMap.set(item.id, { ...item, isDynamic: false });
+          }
       });
 
-      // 2. Thêm items động (Admin config) - Sẽ ghi đè nếu trùng ID (hoặc giữ nguyên tùy logic)
-      // Ở đây tôi chọn logic: Nếu đã có rồi thì cập nhật, chưa có thì thêm mới.
+      // 2. Thêm items động (Admin config) - Ghi đè hoặc thêm mới
       (dynamicItems || []).forEach(cfg => {
-          const metric = supermarketData.dynamicMetrics?.[cfg.id];
+          if (!cfg || !cfg.id) return;
+
+          const metric = supermarketData?.dynamicMetrics?.[cfg.id];
           const existing = uniqueMap.get(cfg.id);
           
           uniqueMap.set(cfg.id, {
-              ...existing, // Giữ lại thuộc tính cũ nếu có
+              ...existing, // Giữ lại thuộc tính cũ
               id: cfg.id,
-              label: cfg.label,
+              label: cfg.label || existing?.label || 'Chưa đặt tên', // [SAFE] Fallback tên
               value: metric ? metric.value : (existing?.value || 0),
               target: cfg.target || existing?.target || 0,
-              isDynamic: true, // Đánh dấu là dynamic để hiện nút sửa/xóa
+              isDynamic: true, // Đánh dấu là dynamic
               rawConfig: cfg
           });
       });
 
       return Array.from(uniqueMap.values());
   })();
-  // ------------------------------------------
 
-  $: filterList = displayItems.filter(item => item.label.toLowerCase().includes(filterSearch.toLowerCase()));
+  // [CRITICAL FIX] Sửa lỗi Crash .toLowerCase() khi label bị null/undefined
+  $: filterList = displayItems.filter(item => {
+      const label = item.label || ''; // Ép kiểu về chuỗi rỗng nếu null
+      const search = filterSearch || '';
+      return label.toLowerCase().includes(search.toLowerCase());
+  });
+
   $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
 
   function toggleVisibility(id) {
@@ -76,7 +85,7 @@
   function getProgressColor(val, target) {
       const t = (target || 0) / 100;
       if (t <= 0) return '#3b82f6'; 
-      return val >= t ? '#2563eb' : '#ef4444'; 
+      return val >= t ? '#2563eb' : '#ef4444';
   }
 
   function handleWindowClick(e) {
@@ -108,11 +117,14 @@
             <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen}><i data-feather="filter" class="w-4 h-4"></i></button>
             {#if isSettingsOpen}
                 <div class="filter-dropdown">
-                    <div class="filter-header"><input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} /></div>
+                    <div class="filter-header">
+                        <input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} />
+                    </div>
                     <div class="filter-body custom-scrollbar" style="max-height: 250px;">
-                        {#each filterList as item, index (index)}
+                        {#each filterList as item (item.id)}
                             <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
-                                <input type="checkbox" checked={!hiddenIds.has(item.id)} /> <label>{item.label}</label>
+                                 <input type="checkbox" checked={!hiddenIds.has(item.id)} /> 
+                                 <label>{item.label}</label>
                             </div>
                         {/each}
                     </div>
@@ -131,7 +143,7 @@
        <div class="flex flex-col items-center justify-center h-full text-gray-400"><p class="text-sm">Đã ẩn hết dữ liệu.</p></div>
     {:else}
       <div class="flex flex-col gap-0">
-        {#each visibleItems as item, index (index)}
+        {#each visibleItems as item (item.id)}
           {@const color = getProgressColor(item.value, item.target)}
           {@const percent = Math.min((item.value * 100), 100)}
           

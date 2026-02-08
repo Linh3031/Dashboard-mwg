@@ -9,12 +9,15 @@
 
     // [NEW] Nhận flag từ cha
     export let isVelocityMode = false;
-
+    
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
-    $: paddingLeft = `${group.level * 24 + 16}px`; 
+    $: paddingLeft = `${group.level * 24 + 16}px`;
     
+    // Tính toán phần trăm
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
+    // [NEW] Tính % Quy đổi
+    $: qdPercent = group.revenue > 0 ? (group.revenueQD / group.revenue) * 100 : 0;
 </script>
 
 <tr class="hover:bg-gray-50 transition-colors border-b last:border-0 group-row">
@@ -45,8 +48,14 @@
     </td>
 
     <td class="py-2 px-4 text-right font-medium text-gray-700">{fmtQty(group.quantity)}</td>
+    
     <td class="py-2 px-4 text-right font-medium text-gray-800">{fmtRev(group.revenue)}</td>
+    
     <td class="py-2 px-4 text-right text-gray-600">{fmtRev(group.revenueQD)}</td>
+
+    <td class="py-2 px-4 text-center font-bold text-xs {qdPercent >= 100 ? 'text-green-700' : 'text-orange-600'}">
+        {fmtPct(qdPercent)}
+    </td>
 
     {#if !isVelocityMode}
         <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
@@ -65,6 +74,6 @@
             {LEVEL_COLORS}
             {fmtQty} {fmtRev} {fmtPct} 
             {isVelocityMode} 
-        />
+         />
     {/each}
 {/if}

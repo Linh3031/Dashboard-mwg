@@ -1,6 +1,5 @@
 <script>
-  import { onMount, afterUpdate } from 'svelte';
-  
+  import { onMount, afterUpdate, tick } from 'svelte';
   import { 
       activeTab, 
       modalState, 
@@ -10,14 +9,16 @@
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse,
-      // [FIX] Thêm import store dữ liệu để xử lý bộ lọc kho
       danhSachNhanVien,
-      warehouseList
+      warehouseList,
+      isDemoMode
   } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
   import { datasyncService } from './services/datasync.service.js';
+  import { demoService } from './services/demo.service.js';
+  import { DEMO_SNAPSHOT } from './data/demoFixtures.js';
 
   // --- COMPONENTS CHÍNH ---
   import Sidebar from './components/Sidebar.svelte';
@@ -29,7 +30,6 @@
   import DeclarationSection from './components/DeclarationSection.svelte';
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
-  // [MỚI] Import trình quản lý phiên bản
   import VersionManager from './components/common/VersionManager.svelte';
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
@@ -43,34 +43,99 @@
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
-  // [FIX] Import 2 Modal chi tiết còn thiếu
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
+  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte'; // <-- [TẮT DEMO] Comment import
+
+  // Kiểm tra localStorage ngay khi khởi tạo
+  // let isBootingDemo = typeof localStorage !== 'undefined' && localStorage.getItem('isDemoMode') === 'true';
+  let isBootingDemo = false; // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
+  
+  // Nếu đang boot demo thì chưa sẵn sàng (false)
+  let isAppReady = !isBootingDemo;
 
   onMount(async () => {
-    try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
-    const isLoggedIn = authService.initAuth();
-    if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
-    
-    // [FIX CRITICAL] Tải toàn bộ cấu hình hệ thống (Quy đổi, Ngành hàng) cho TẤT CẢ user
-    // Điều này đảm bảo user thường cũng nhận được logic tính toán mới nhất
-    await loadGlobalSystemConfig();
-
-    // Load bảng hiệu quả khi khởi động
-    loadInitialTables();
+    // [LOGIC PHÂN LUỒNG]
+    if (isBootingDemo) {
+        // --- LUỒNG 1: CHẾ ĐỘ DEMO (OFFLINE FIRST) ---
+        await initDemoMode();
+    } else {
+        // --- LUỒNG 2: CHẾ ĐỘ THỰC (ONLINE) ---
+        // Đảm bảo xóa cờ demo nếu lỡ còn lưu
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('isDemoMode');
+        await initRealMode();
+    }
   });
 
-  // [FIX] Hàm tải cấu hình hệ thống dùng chung
+  // [FIX] Hàm khởi tạo riêng cho Demo - Bỏ qua Auth và Fetch Server
+  async function initDemoMode() {
+      console.log("🚀 [Bootloader] Đang khởi động chế độ Demo...");
+      isDemoMode.set(true);
+      
+      try {
+          // 1. Nạp Snapshot
+          await demoService.loadSnapshot(DEMO_SNAPSHOT);
+          
+          // 2. Chờ Store cập nhật
+          await tick();
+
+          // 3. Chọn kho mặc định từ dữ liệu vừa nạp
+          const currentList = get(danhSachNhanVien);
+          if (currentList && currentList.length > 0) {
+              const firstWarehouse = currentList[0].maKho || "908";
+              selectedWarehouse.set(firstWarehouse);
+              // Cập nhật danh sách kho cho Select Box
+              warehouseList.set([firstWarehouse]); 
+          } else {
+              selectedWarehouse.set("908");
+          }
+          
+          // 4. Mở khóa giao diện
+          isAppReady = true;
+          console.log("✅ [Bootloader] Demo Ready -> Unlocking UI");
+
+          // 5. Chuyển Tab (Delay nhẹ để UI render xong)
+          setTimeout(() => {
+              activeTab.set('realtime-section');
+          }, 200);
+
+      } catch (e) {
+          console.error("❌ Lỗi nạp Demo:", e);
+          alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
+          // Fallback về chế độ thật nếu lỗi
+          localStorage.removeItem('isDemoMode');
+          window.location.reload();
+      }
+  }
+
+  // [FIX] Hàm khởi tạo cho App thật
+  async function initRealMode() {
+      try { 
+          await authService.ensureAnonymousAuth(); 
+      } catch (e) { 
+          console.error("Firebase Auth Error:", e); 
+      }
+      
+      const isLoggedIn = authService.initAuth();
+      if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
+
+      // Load cấu hình từ Server (Chỉ chạy ở chế độ thật)
+      await loadGlobalSystemConfig();
+      await loadInitialTables();
+      
+      // Mở khóa giao diện ngay lập tức
+      isAppReady = true;
+  }
+
+  // Hàm tải cấu hình hệ thống (CHỈ DÙNG CHO REAL MODE)
   async function loadGlobalSystemConfig() {
       try {
-          console.log("[App] Đang tải cấu hình hệ thống...");
           await Promise.all([
-              adminService.loadCategoryDataFromFirestore(), // Cấu trúc ngành hàng (Mới thêm)
-              adminService.loadEfficiencyConfig(),          // Hệ số quy đổi & Hiệu quả
-              adminService.loadSpecialProductList(),        // Sản phẩm đặc quyền
-              adminService.loadHomeConfig()                 // Cấu hình trang chủ
+              adminService.loadCategoryDataFromFirestore(),
+              adminService.loadEfficiencyConfig(),
+              adminService.loadSpecialProductList(),
+              adminService.loadHomeConfig()       
           ]);
-          console.log("[App] Đã đồng bộ cấu hình hệ thống thành công.");
       } catch (error) {
           console.error("[App] Lỗi tải cấu hình hệ thống:", error);
       }
@@ -84,6 +149,7 @@
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
+
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
       if ($activeTab === 'declaration-section') {
@@ -165,20 +231,24 @@
       }
   }
 
-  // Hàm đóng modal chung
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
-  // [FIX] Logic tự động cập nhật danh sách kho khi có dữ liệu nhân viên
+
   $: {
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
-          // Lọc danh sách mã kho duy nhất
           const uniqueWarehouses = [...new Set($danhSachNhanVien
               .map(nv => nv.maKho)
               .filter(k => k && String(k).trim() !== '')
           )].sort();
-          
           warehouseList.set(uniqueWarehouses);
-          // console.log("[App] Warehouse list updated:", uniqueWarehouses);
       }
+  }
+
+  function exitDemoMode() {
+    if(confirm('Bạn có chắc muốn thoát chế độ Demo?')) {
+        isDemoMode.set(false);
+        localStorage.removeItem('isDemoMode');
+        window.location.reload();
+    }
   }
 </script>
 
@@ -232,6 +302,22 @@
     on:save={handleSaveEffConfig}
 />
 
+{#if $isDemoMode}
+<div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-indigo-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-500 animate-bounce-in">
+    <div class="flex flex-col">
+        <span class="text-xs font-bold text-indigo-300 uppercase tracking-wider">Môi trường</span>
+        <span class="font-bold">ĐANG CHẠY DEMO</span>
+    </div>
+    <div class="h-8 w-[1px] bg-indigo-700 mx-1"></div>
+    <button 
+        on:click={exitDemoMode}
+        class="bg-white text-indigo-900 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors"
+    >
+        Thoát
+    </button>
+</div>
+{/if}
+
 <div class="flex min-h-screen">
   <div id="sidebar-container">
     <Sidebar />
@@ -240,12 +326,22 @@
   <main id="main-content">
     <div class="flex-1 p-6">
       <div class="max-w-full mx-auto">
-        <HomeSection activeTab={$activeTab} />
-        <DataSection activeTab={$activeTab} />
-        <HealthSection activeTab={$activeTab} />
-        <HealthEmployeeSection activeTab={$activeTab} />
-        <RealtimeSection activeTab={$activeTab} />
-        <DeclarationSection activeTab={$activeTab} />
+        {#if isAppReady}
+            <HomeSection activeTab={$activeTab} />
+            <DataSection activeTab={$activeTab} />
+            <HealthSection activeTab={$activeTab} />
+            <HealthEmployeeSection activeTab={$activeTab} />
+            <RealtimeSection activeTab={$activeTab} />
+            <DeclarationSection activeTab={$activeTab} />
+        {:else}
+            <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
+                <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="font-medium">Đang thiết lập môi trường Demo...</p>
+            </div>
+        {/if}
       </div>
     </div>
   </main>
@@ -282,5 +378,13 @@
     font-size: 1.75rem; 
     font-weight: 700; 
     color: #1f2937;
+  }
+  
+  @keyframes bounceIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-bounce-in {
+      animation: bounceIn 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
   }
 </style>

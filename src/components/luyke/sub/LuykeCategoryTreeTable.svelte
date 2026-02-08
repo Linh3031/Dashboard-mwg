@@ -9,10 +9,12 @@
     export let filterOptions = {}; 
     export let currentFilters = {};
     export let isVelocityMode = false;
+    
+    // Nhận state từ cha
+    export let expandedRows = new Set(); 
 
     const dispatch = createEventDispatcher();
     
-    let expandedRows = new Set(); 
     let openFilterId = null;
     let filterSearchQuery = '';
 
@@ -21,7 +23,6 @@
         maximumFractionDigits: isVelocityMode ? 1 : 0,
         minimumFractionDigits: isVelocityMode ? 1 : 0 
     }).format(n || 0);
-
     $: fmtRev = (n) => {
         if (!n) return '0';
         const val = n / 1000000;
@@ -32,7 +33,6 @@
     };
 
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
-
     const LEVEL_COLORS = [
         'text-red-700 font-bold',     
         'text-blue-700 font-semibold',
@@ -166,7 +166,7 @@
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
                              <div class="flex gap-1 ml-auto">
-                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                 <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
@@ -181,11 +181,10 @@
                             </div>
                         </div>
                     </th>
-
+                    
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
-                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
                             <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
                                 <span class={sortKey === 'revenue' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
                                 <span class={sortKey === 'revenue' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
@@ -196,7 +195,6 @@
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
-                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
                              <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
                                 <span class={sortKey === 'revenueQD' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
                                 <span class={sortKey === 'revenueQD' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
@@ -207,7 +205,7 @@
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
-                                DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span>
+                                 DT Trả chậm 
                                 <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
                                     <span class={sortKey === 'revenueTraCham' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
                                     <span class={sortKey === 'revenueTraCham' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
@@ -258,14 +256,9 @@
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
     /* [CAPTURE STYLE UPDATES] */
-    
-    /* 1. Ẩn bộ lọc cũ */
     :global(.capture-container .luyke-filter-section) { display: none !important; }
-    
-    /* 2. [FIXED] Ẩn Toolbar Sức bán (Mới) khi chụp */
     :global(.capture-container .velocity-toolbar) { display: none !important; }
 
-    /* 3. Style bảng */
     :global(.capture-container .luyke-table-wrapper) {
         width: 750px !important; min-width: 750px !important; max-width: 750px !important;
         margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;

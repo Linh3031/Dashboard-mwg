@@ -27,6 +27,7 @@ src/components/HealthSection.svelte
 src/components/admin
 src/components/admin/AdminGoalSettings.svelte
 src/components/admin/AdminCategory.svelte
+src/components/admin/DemoManagement.svelte
 src/components/admin/AdminConfig.svelte
 src/components/admin/category
 src/components/admin/category/CategoryUploader.svelte
@@ -58,6 +59,7 @@ src/components/modals/UnexportedDetailModal.svelte
 src/components/modals/UserCompetitionModal.svelte
 src/components/modals/LoginModal.svelte
 src/components/modals/UserSpecialProgramModal.svelte
+src/components/modals/DemoWelcomeModal.svelte
 src/components/modals/AdminModal.svelte
 src/components/modals/AddRevenueTableModal.svelte
 src/components/realtime
@@ -158,6 +160,8 @@ src/components/luyke/LuykeEfficiencyTable.svelte
 src/components/luyke/LuykeSieuThi.svelte
 src/global.d.ts
 src/utils.js
+src/data
+src/data/demoFixtures.js
 src/assets
 src/services
 src/services/capture.service.js
@@ -186,6 +190,7 @@ src/services/processing/logic/competition.processor.js
 src/services/processing/logic/timekeeping.processor.js
 src/services/processing/logic/cluster.processor.js
 src/services/processing/logic/dynamicTable.processor.js
+src/services/processing/logic/salesVelocity.helper.js
 src/services/processing/logic/regional.processor.js
 src/services/processing/processors.js
 src/services/processing/helpers.js
@@ -206,6 +211,7 @@ src/services/sknv.service.js
 src/services/firebase.service.js
 src/services/reportService.js
 src/services/settings.service.js
+src/services/demo.service.js
 src/services/excel.service.js
 src/services/data
 src/services/data/cacheHandler.js

@@ -1,10 +1,14 @@
 CONTEXT GROUP: SNAP_00_CORE.txt
-GENERATED AT: 2/4/2026, 9:59:00 AM
+GENERATED AT: 2/5/2026, 5:34:49 PM
 
 
 >>> FILE_START: src/stores.js
 // src/stores.js
 import { writable } from 'svelte/store';
+
+// --- [NEW] CHẾ ĐỘ DEMO ---
+export const isDemoMode = writable(false); 
+// -------------------------
 
 // QUAN TRỌNG: Phải có chữ 'export' ở đầu dòng này
 export const currentCluster = writable(null);
@@ -198,10 +202,12 @@ initializeApp();
       isAdmin, 
       warehouseCustomMetrics,
       selectedWarehouse,
-      // [FIX] Thêm import store dữ liệu để xử lý bộ lọc kho
       danhSachNhanVien,
-      warehouseList
+      warehouseList,
+      isDemoMode, // Store Demo
+      currentUser // Thêm currentUser để hiển thị tên trên Header
   } from './stores.js';
+  
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
@@ -215,13 +221,15 @@ initializeApp();
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
+  
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
-  // [MỚI] Import trình quản lý phiên bản
   import VersionManager from './components/common/VersionManager.svelte';
+  
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
+  
   // --- MODALS ---
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
@@ -231,36 +239,36 @@ initializeApp();
   import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
   import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
-  // [FIX] Import 2 Modal chi tiết còn thiếu
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
+  
+  // Modal Chào mừng Demo
+  import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte';
+
+  // --- LOCAL STATE ---
+  let isSidebarOpen = true; // Trạng thái đóng mở Sidebar
 
   onMount(async () => {
     try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
     const isLoggedIn = authService.initAuth();
+    
+    // Nếu chưa đăng nhập -> Hiện Login Modal
     if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
     
-    // [FIX CRITICAL] Tải toàn bộ cấu hình hệ thống (Quy đổi, Ngành hàng) cho TẤT CẢ user
-    // Điều này đảm bảo user thường cũng nhận được logic tính toán mới nhất
     await loadGlobalSystemConfig();
-
-    // Load bảng hiệu quả khi khởi động
     loadInitialTables();
   });
 
-  // [FIX] Hàm tải cấu hình hệ thống dùng chung
   async function loadGlobalSystemConfig() {
       try {
-          console.log("[App] Đang tải cấu hình hệ thống...");
           await Promise.all([
-              adminService.loadCategoryDataFromFirestore(), // Cấu trúc ngành hàng (Mới thêm)
-              adminService.loadEfficiencyConfig(),          // Hệ số quy đổi & Hiệu quả
-              adminService.loadSpecialProductList(),        // Sản phẩm đặc quyền
-              adminService.loadHomeConfig()                 // Cấu hình trang chủ
+              adminService.loadCategoryDataFromFirestore(), 
+              adminService.loadEfficiencyConfig(),          
+              adminService.loadSpecialProductList(),        
+              adminService.loadHomeConfig()                 
           ]);
-          console.log("[App] Đã đồng bộ cấu hình hệ thống thành công.");
       } catch (error) {
-          console.error("[App] Lỗi tải cấu hình hệ thống:", error);
+          console.error("[App] Lỗi tải cấu hình:", error);
       }
   }
 
@@ -272,6 +280,12 @@ initializeApp();
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
+
+  // --- HANDLERS ---
+  function toggleSidebar() {
+      isSidebarOpen = !isSidebarOpen;
+  }
+
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
       if ($activeTab === 'declaration-section') {
@@ -316,7 +330,6 @@ initializeApp();
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
-          console.log("Đã lưu bảng hệ thống lên Admin Cloud");
       } else {
           const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
           localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
@@ -324,7 +337,6 @@ initializeApp();
           if (wh) {
               await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
           }
-          console.log("Đã lưu bảng cá nhân");
       }
   }
 
@@ -353,19 +365,24 @@ initializeApp();
       }
   }
 
-  // Hàm đóng modal chung
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
-  // [FIX] Logic tự động cập nhật danh sách kho khi có dữ liệu nhân viên
+  
+  // Logic update kho
   $: {
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
-          // Lọc danh sách mã kho duy nhất
           const uniqueWarehouses = [...new Set($danhSachNhanVien
               .map(nv => nv.maKho)
               .filter(k => k && String(k).trim() !== '')
           )].sort();
-          
           warehouseList.set(uniqueWarehouses);
-          // console.log("[App] Warehouse list updated:", uniqueWarehouses);
+      }
+  }
+
+  // Hàm thoát Demo
+  function exitDemoMode() {
+      if(confirm('Bạn có chắc muốn thoát Chế độ Demo? Dữ liệu mẫu sẽ bị xóa.')) {
+          isDemoMode.set(false);
+          window.location.reload();
       }
   }
 </script>
@@ -420,22 +437,80 @@ initializeApp();
     on:save={handleSaveEffConfig}
 />
 
-<div class="flex min-h-screen">
-  <div id="sidebar-container">
-    <Sidebar />
-  </div>
+<DemoWelcomeModal />
 
-  <main id="main-content">
-    <div class="flex-1 p-6">
-      <div class="max-w-full mx-auto">
-        <HomeSection activeTab={$activeTab} />
-        <DataSection activeTab={$activeTab} />
-        <HealthSection activeTab={$activeTab} />
-        <HealthEmployeeSection activeTab={$activeTab} />
-        <RealtimeSection activeTab={$activeTab} />
-        <DeclarationSection activeTab={$activeTab} />
-      </div>
+{#if $isDemoMode}
+  <div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-yellow-50 border border-yellow-400 px-4 py-3 rounded-xl shadow-2xl animate-bounce-in">
+    <div class="flex flex-col">
+        <span class="text-xs font-bold text-yellow-800 uppercase tracking-wider">Demo Mode</span>
+        <span class="text-xs text-yellow-700">Đang xem dữ liệu mẫu</span>
     </div>
+    <button 
+        on:click={exitDemoMode}
+        class="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+    >
+        Thoát
+    </button>
+  </div>
+{/if}
+
+<div class="flex min-h-screen bg-gray-50 overflow-hidden">
+  
+  <aside 
+    class="flex-shrink-0 z-30 transition-all duration-300 ease-in-out bg-white border-r border-gray-200"
+    class:w-64={isSidebarOpen}
+    class:w-0={!isSidebarOpen}
+  >
+      <div class="h-full overflow-y-auto overflow-x-hidden w-64">
+          <Sidebar />
+      </div>
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0 transition-all duration-300">
+    
+    <header class="bg-white h-16 border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-20 sticky top-0">
+        <div class="flex items-center gap-4">
+            <button 
+                on:click={toggleSidebar} 
+                class="p-2 rounded-lg hover:bg-gray-100 text-gray-600 focus:outline-none transition-colors"
+            >
+                <i data-feather="menu"></i>
+            </button>
+            
+            <h1 class="text-xl font-bold text-gray-800 uppercase tracking-tight">
+                {#if $activeTab === 'realtime'} Báo cáo Realtime
+                {:else if $activeTab === 'sknv'} Sức khỏe nhân viên
+                {:else if $activeTab === 'luyke'} Báo cáo Lũy kế
+                {:else if $activeTab === 'admin'} Cấu hình Admin
+                {:else if $activeTab === 'declaration-section'} Nạp dữ liệu
+                {:else} Dashboard {/if}
+            </h1>
+        </div>
+
+        <div class="flex items-center gap-4">
+             {#if $isDemoMode}
+                <span class="hidden md:inline-block px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-full border border-yellow-200 shadow-sm">
+                    DEMO DATA
+                </span>
+             {/if}
+             
+             <div class="text-right hidden sm:block">
+                <div class="text-sm font-bold text-gray-700">{$currentUser?.displayName || 'Khách'}</div>
+                <div class="text-xs text-gray-500">{$isAdmin ? 'Administrator' : ($selectedWarehouse || 'Chưa chọn kho')}</div>
+             </div>
+        </div>
+    </header>
+
+    <div class="flex-1 p-6 overflow-y-auto scroll-smooth">
+        <div class="max-w-full mx-auto pb-20"> <HomeSection activeTab={$activeTab} />
+            <DataSection activeTab={$activeTab} />
+            <HealthSection activeTab={$activeTab} />
+            <HealthEmployeeSection activeTab={$activeTab} />
+            <RealtimeSection activeTab={$activeTab} />
+            <DeclarationSection activeTab={$activeTab} />
+        </div>
+    </div>
+
   </main>
 </div> 
 
@@ -448,28 +523,17 @@ initializeApp();
 <div id="modal-unexported-detail-container"></div>
 
 <style>
-  :global(#main-content) { 
-    transition: margin-left 0.3s ease-in-out;
-    margin-left: 68px; 
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 0%;
-  }
-
+  /* Chỉ giữ lại các style cần thiết */
   :global(.page-header) { 
-    display: flex; 
-    flex-wrap: wrap; 
-    justify-content: space-between; 
-    align-items: center; 
-    gap: 1rem; 
-    margin-bottom: 1.5rem;
+    display: none; /* Ẩn header cũ nếu có component con dùng nó */
   }
-
-  :global(.page-header__title) { 
-    font-size: 1.75rem; 
-    font-weight: 700; 
-    color: #1f2937;
+  
+  @keyframes bounceIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+  }
+  .animate-bounce-in {
+      animation: bounceIn 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
   }
 </style>
 <<< FILE_END: src/App.svelte
@@ -4898,6 +4962,103 @@ export const regionalProcessor = {
 };
 <<< FILE_END: src/services/processing/logic/regional.processor.js
 
+>>> FILE_START: src/services/processing/logic/salesVelocity.helper.js
+// File: src/services/processing/logic/salesVelocity.helper.js
+
+// [GENESIS HELPER] Chuẩn hóa key (bỏ dấu, viết thường, bỏ khoảng trắng)
+const normalizeKey = (key) => {
+    if (!key) return '';
+    return key.toString().toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Bỏ dấu
+        .replace(/\s+/g, ""); // Bỏ khoảng trắng
+};
+
+// [GENESIS HELPER] Parse ngày Việt Nam (dd/mm/yyyy) an toàn
+const parseDateVN = (dateStr) => {
+    if (!dateStr) return null;
+    // Nếu là object Date sẵn
+    if (dateStr instanceof Date && !isNaN(dateStr)) return dateStr.getTime();
+
+    const str = String(dateStr).trim();
+    
+    // Thử regex dd/mm/yyyy
+    const parts = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+    if (parts) {
+        const day = parseInt(parts[1], 10);
+        const month = parseInt(parts[2], 10) - 1; // JS month 0-11
+        const year = parseInt(parts[3], 10);
+        return new Date(year, month, day).getTime();
+    }
+    
+    // Fallback cho format chuẩn (yyyy-mm-dd hoặc ISO)
+    const timestamp = Date.parse(str);
+    return isNaN(timestamp) ? null : timestamp;
+};
+
+export const filterDataByDate = (data, fromDate, toDate) => {
+    if (!data || data.length === 0) return [];
+    if (!fromDate && !toDate) return data;
+
+    // Chuyển mốc thời gian lọc về timestamp (đầu ngày và cuối ngày)
+    const from = fromDate ? new Date(fromDate).setHours(0,0,0,0) : null;
+    const to = toDate ? new Date(toDate).setHours(23,59,59,999) : null;
+
+    // Cache key ngày tháng tìm được để không phải loop keys mỗi dòng
+    let foundDateKey = null;
+
+    return data.filter(row => {
+        let dateVal = null;
+
+        // 1. Nếu đã tìm được key ngày trước đó, dùng luôn cho nhanh
+        if (foundDateKey) {
+            dateVal = row[foundDateKey];
+        } else {
+            // 2. Nếu chưa, quét keys để tìm cột "Ngày tạo"
+            const keys = Object.keys(row);
+            for (const key of keys) {
+                const cleanKey = normalizeKey(key);
+                // Ưu tiên các từ khóa: ngaytao, ngaychungtu, date
+                if (cleanKey === 'ngaytao' || cleanKey === 'ngaychungtu' || cleanKey === 'date' || cleanKey === 'ngay') {
+                    foundDateKey = key;
+                    dateVal = row[key];
+                    break;
+                }
+            }
+        }
+
+        // Nếu không có ngày, mặc định giữ lại (an toàn)
+        if (!dateVal) return true;
+
+        const rowTime = parseDateVN(dateVal);
+        if (rowTime === null) return true; // Parse lỗi thì giữ lại
+
+        if (from && rowTime < from) return false;
+        if (to && rowTime > to) return false;
+        return true;
+    });
+};
+
+export const transformVelocityTree = (nodes, divisor) => {
+    if (!nodes || nodes.length === 0) return [];
+    if (divisor <= 1) return nodes;
+
+    return nodes.map(node => {
+        const newNode = { ...node };
+        const divide = (val) => parseFloat(((val || 0) / divisor).toFixed(1));
+
+        newNode.quantity = divide(node.quantity);
+        newNode.revenue = divide(node.revenue);
+        newNode.revenueQD = divide(node.revenueQD);
+        newNode.revenueTraCham = divide(node.revenueTraCham);
+
+        if (newNode.children && newNode.children.length > 0) {
+            newNode.children = transformVelocityTree(newNode.children, divisor);
+        }
+        return newNode;
+    });
+};
+<<< FILE_END: src/services/processing/logic/salesVelocity.helper.js
+
 >>> FILE_START: src/services/processing/logic/timekeeping.processor.js
 // src/services/processing/logic/timekeeping.processor.js
 import { get } from 'svelte/store';
@@ -6501,8 +6662,8 @@ export const processInstallmentReport = (employeesInput) => {
             }
         });
 
-        // Tính DT Trả chậm quy đổi (30%)
-        newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 0.3;
+        // Tính DT Trả chậm quy đổi (130%)
+        newEmp.stats.installmentRevenueWeighted = newEmp.stats.installmentRevenueRaw * 1.3;
 
         // Tính tỷ lệ duyệt
         newEmp.stats.approvalRate = newEmp.stats.installmentTotal > 0

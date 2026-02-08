@@ -1,7 +1,9 @@
 <script>
+    import { onMount } from 'svelte';
     import { cleanCategoryName } from '../../../utils.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
     import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
+    import { formatters } from '../../../utils/formatters.js'; 
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
 
     export let data = [];
@@ -14,7 +16,6 @@
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-
     // State
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
@@ -22,6 +23,13 @@
     let currentFilters = {};
     let filterOptions = {};
     let warnings = [];
+    
+    // Expanded Rows State & Storage
+    let expandedRows = new Set();
+    // [FIX STATE] Cờ hiệu
+    let isConfigLoaded = false;
+    
+    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V1';
 
     // --- VELOCITY & DATE STATE ---
     let isVelocityMode = false;
@@ -30,12 +38,45 @@
 
     const PRESET_DAYS = [3, 5, 7, 10];
 
+    // Restore config from session storage
+    onMount(() => {
+        const saved = sessionStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            try {
+                const config = JSON.parse(saved);
+                if (config.activeDimensionIds) activeDimensionIds = config.activeDimensionIds;
+                if (config.currentFilters) currentFilters = config.currentFilters;
+                if (config.isVelocityMode !== undefined) isVelocityMode = config.isVelocityMode;
+                if (config.velocityDays) velocityDays = config.velocityDays;
+                if (config.dateFilter) dateFilter = config.dateFilter;
+                if (config.expandedRows) expandedRows = new Set(config.expandedRows);
+            } catch (e) { console.error('Error loading config', e); }
+        }
+        // [FIX STATE] Đã load xong, cho phép save
+        isConfigLoaded = true;
+    });
+
+    // Auto save config
+    $: {
+        // [FIX STATE] Chỉ lưu khi đã load config cũ
+        if (isConfigLoaded && typeof sessionStorage !== 'undefined') {
+            const configToSave = {
+                activeDimensionIds,
+                currentFilters,
+                isVelocityMode,
+                velocityDays,
+                dateFilter,
+                expandedRows: Array.from(expandedRows)
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(configToSave));
+        }
+    }
+
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
-
     const isValidRow = (row) => {
         const isThuTien = (row.trangThaiThuTien || "").trim() === 'Đã thu';
         const isChuaHuy = (row.trangThaiHuy || "").trim() === 'Chưa hủy';
@@ -44,7 +85,7 @@
         return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
     };
 
-    // [GENESIS HELPER] Hàm lấy giá trị chuẩn (Có logic giữ nguyên bản cho SP/NSX)
+    // Hàm lấy giá trị chuẩn (Fix Name Format & Clean Logic)
     const getDimensionValue = (row, dimId) => {
         let val = '';
         if (dimId === 'nganhHang') val = row.nganhHang;
@@ -55,12 +96,16 @@
 
         if (!val) return '(Trống)';
 
-        // [FIX YÊU CẦU 1] Nếu là Tên SP hoặc NSX -> Giữ nguyên bản (chỉ trim), không clean
+        if (dimId === 'nhanVienTao') {
+             const maNVMatch = val.match(/(\d+)/);
+             const maNV = maNVMatch ? maNVMatch[1] : '';
+             return formatters.getShortEmployeeName(val, maNV);
+        }
+
         if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
             return val.toString().trim();
         }
         
-        // Các trường khác (Ngành hàng, Nhóm hàng...) -> Clean để gom nhóm tốt hơn
         return cleanCategoryName(val);
     };
 
@@ -69,7 +114,6 @@
         treeData = [];
         totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         warnings = [];
-
         if (!data || data.length === 0) return;
 
         // 1. [GLOBAL] LỌC NGÀY
@@ -92,7 +136,7 @@
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
                     if (selectedValues && selectedValues.length > 0) {
                         const cellVal = getDimensionValue(row, key);
-                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua dòng này nếu không khớp lọc
+                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua 
                     }
                 }
             }
@@ -114,9 +158,12 @@
             activeDimensionIds.forEach((dimId, index) => {
                 const key = getDimensionValue(row, dimId);
                 
+                // Tạo ID cố định để Sort không bị đóng hàng
+                const stableId = `${index}_${key}`;
+
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
-                        id: key + Math.random(),
+                        id: stableId,
                         name: key,
                         quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
                         children: new Map(), level: index
@@ -158,31 +205,22 @@
 
         treeData = finalTree;
         totalMetrics = { ...totalMetrics };
-        
         // Cập nhật bộ lọc sau khi tính toán xong
         updateFilterOptions(processedData);
     }
 
-    // [FIX YÊU CẦU 3] Bộ lọc phụ thuộc (Cascading Filters)
+    // Bộ lọc phụ thuộc (Cascading Filters)
     function updateFilterOptions(sourceData) {
-        // sourceData ở đây là data đã qua lọc ngày, nhưng CHƯA qua lọc dimension
-        // Chúng ta cần tính toán option cho từng dimension dựa trên ngữ cảnh của các dimension còn lại
-        
         const options = {};
-
         AVAILABLE_DIMENSIONS.forEach(targetDim => {
             const uniqueValues = new Set();
-            
-            // Tạo bộ lọc tạm thời: Loại bỏ chính dimension đang xét ra khỏi điều kiện lọc
-            // Để người dùng vẫn nhìn thấy các lựa chọn khác của chính dimension đó
             const otherFilters = { ...currentFilters };
             delete otherFilters[targetDim.id]; 
 
             sourceData.forEach(row => {
-                // 1. Kiểm tra xem dòng này có thỏa mãn các bộ lọc KHÁC không
                 let isValid = true;
                 const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; // Bỏ qua đơn không tính DT
+                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; 
                 if (!isValidRow(row)) return;
 
                 if (Object.keys(otherFilters).length > 0) {
@@ -197,7 +235,6 @@
                     }
                 }
 
-                // 2. Nếu dòng này hợp lệ với các filter kia -> Lấy giá trị cho targetDim
                 if (isValid) {
                     const val = getDimensionValue(row, targetDim.id);
                     if (val && val !== '(Trống)') {
@@ -225,7 +262,6 @@
     
     // Hàm lấy ngày hiện tại trừ 1 (tối thiểu là 1)
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
-
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
         if (isVelocityMode) {
@@ -322,6 +358,7 @@
         {filterOptions}
         {currentFilters}
         {isVelocityMode} 
+        bind:expandedRows={expandedRows}
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}
     />
