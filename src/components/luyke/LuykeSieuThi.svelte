@@ -23,12 +23,13 @@
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
   import LuykeQdcTable from './LuykeQdcTable.svelte';
   import LuykeCategoryTable from './LuykeCategoryTable.svelte';
+  import DailyTargetSimulator from './sub/DailyTargetSimulator.svelte';
 
   export let supermarketReport = {};
   export let filteredYCXData = []; 
   export let goals = {};
   export let numDays = 1;
-
+  
   let localSupermarketReport = {};
   let localGoals = {};
   let luykeCardData = {};
@@ -37,14 +38,13 @@
   let luotKhachData = { value: 0, percentage: 'N/A' };
   
   let chuaXuatReport = [];
-  let categoryItems = []; 
+  let categoryItems = [];
   let qdcItems = []; 
 
   let channelStats = {
       dxm: { val: 0, pct: 0 },
       tgdd: { val: 0, pct: 0 }
   };
-
   let combinedEfficiencyItems = [];
 
   onMount(async () => {
@@ -85,6 +85,11 @@
       return isNaN(val) ? 0 : val;
   };
 
+  // Khai báo biến global cho component dùng
+  let finalDtThuc = 0; 
+  let finalDtQd = 0; // [Quan trọng] Biến dùng cho giả lập
+  let finalDtGop, finalTyLeGop, finalTyLeQd;
+
   $: {
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
@@ -98,7 +103,6 @@
     const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
     const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
     const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
-    
     const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
 
     comparisonData = pastedData.comparisonData || { value: 0, percentage: 'N/A' };
@@ -112,8 +116,6 @@
         tyLeQd: localSupermarketReport.hieuQuaQuyDoi || 0,
         chuaXuatQd: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0
     };
-
-    let finalDtThuc, finalDtQd, finalDtGop, finalTyLeGop, finalTyLeQd;
 
     if (hasPasteData) {
         finalDtThuc = cleanValue(mainKpis['Thực hiện DT thực']) * 1000000;
@@ -160,9 +162,7 @@
       tyLeThiDuaDat: tyLeThiDuaDat
     };
 
-    // [FIX] Cập nhật logic tính Tỷ trọng kênh theo ID
     const calcChannelStat = (keywords) => {
-        // Tìm nhóm cấu hình (Macro Group) dựa trên tên (VD: ĐMX, TGDD)
         const groupConfig = ($macroCategoryConfig || []).find(g => {
             if (!g.name) return false;
             const normName = g.name.trim().toLowerCase().normalize("NFC");
@@ -174,10 +174,7 @@
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
 
-        // groupConfig.items bây giờ chứa ID (ví dụ '1491', '42'...)
         groupConfig.items.forEach(itemId => {
-            // Tra cứu trực tiếp trong details bằng ID
-            // (Vì data đã được xử lý trong salesProcessor.js với key là ID)
             if (details[itemId]) {
                 totalVal += (details[itemId].revenueQuyDoi || 0);
             }
@@ -193,23 +190,21 @@
         dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
         tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
     };
-
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
       .map(([id, values]) => ({ 
           id: id,
-          name: values.name, // Lấy tên từ object value
+          name: values.name,
           dtqd: values.revenueQuyDoi, 
           sl: values.quantity, 
           dt: values.revenue, 
           ...values 
       }));
-
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
       .map(([id, values]) => ({ 
           id: id,
-          name: values.name, // Lấy tên từ object value
+          name: values.name,
           dtqd: values.revenueQuyDoi, 
           ...values 
       }));
@@ -344,6 +339,12 @@
 
       </div>
   </div>
+
+  <DailyTargetSimulator 
+    totalTarget={parseFloat(localGoals?.doanhThuQD || 0) * 1000000}
+    currentRevenue={finalDtQd || 0}
+    warehouseId={$selectedWarehouse}
+  />
 
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
       <LuykeEfficiencyTable 

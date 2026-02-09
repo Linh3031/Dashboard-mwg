@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 2/5/2026, 5:34:49 PM
+GENERATED AT: 2/8/2026, 8:05:50 PM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
@@ -356,6 +356,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
   let hiddenIds = new Set(); 
 
   const STORAGE_KEY = 'luyke_efficiency_hidden_ids';
+
   onMount(() => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -372,37 +373,45 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
       'pctSim': 'cpu', 'pctVAS': 'layers', 'pctBaoHiem': 'shield', 'tyLeTraCham': 'credit-card'
   };
 
-  // --- [FIX DUPLICATE] Lọc trùng lặp ID ---
+  // --- [FIX DUPLICATE & MERGE] Logic hợp nhất items tĩnh và động ---
   $: displayItems = (() => {
       const uniqueMap = new Map();
 
-      // 1. Thêm items thường (User config/Hardcoded)
+      // 1. Thêm items thường (Static/Hardcoded)
       (items || []).forEach(item => {
-          uniqueMap.set(item.id, { ...item, isDynamic: false });
+          if(item && item.id) {
+              uniqueMap.set(item.id, { ...item, isDynamic: false });
+          }
       });
 
-      // 2. Thêm items động (Admin config) - Sẽ ghi đè nếu trùng ID (hoặc giữ nguyên tùy logic)
-      // Ở đây tôi chọn logic: Nếu đã có rồi thì cập nhật, chưa có thì thêm mới.
+      // 2. Thêm items động (Admin config) - Ghi đè hoặc thêm mới
       (dynamicItems || []).forEach(cfg => {
-          const metric = supermarketData.dynamicMetrics?.[cfg.id];
+          if (!cfg || !cfg.id) return;
+
+          const metric = supermarketData?.dynamicMetrics?.[cfg.id];
           const existing = uniqueMap.get(cfg.id);
           
           uniqueMap.set(cfg.id, {
-              ...existing, // Giữ lại thuộc tính cũ nếu có
+              ...existing, // Giữ lại thuộc tính cũ
               id: cfg.id,
-              label: cfg.label,
+              label: cfg.label || existing?.label || 'Chưa đặt tên', // [SAFE] Fallback tên
               value: metric ? metric.value : (existing?.value || 0),
               target: cfg.target || existing?.target || 0,
-              isDynamic: true, // Đánh dấu là dynamic để hiện nút sửa/xóa
+              isDynamic: true, // Đánh dấu là dynamic
               rawConfig: cfg
           });
       });
 
       return Array.from(uniqueMap.values());
   })();
-  // ------------------------------------------
 
-  $: filterList = displayItems.filter(item => item.label.toLowerCase().includes(filterSearch.toLowerCase()));
+  // [CRITICAL FIX] Sửa lỗi Crash .toLowerCase() khi label bị null/undefined
+  $: filterList = displayItems.filter(item => {
+      const label = item.label || ''; // Ép kiểu về chuỗi rỗng nếu null
+      const search = filterSearch || '';
+      return label.toLowerCase().includes(search.toLowerCase());
+  });
+
   $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
 
   function toggleVisibility(id) {
@@ -419,7 +428,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
   function getProgressColor(val, target) {
       const t = (target || 0) / 100;
       if (t <= 0) return '#3b82f6'; 
-      return val >= t ? '#2563eb' : '#ef4444'; 
+      return val >= t ? '#2563eb' : '#ef4444';
   }
 
   function handleWindowClick(e) {
@@ -451,11 +460,14 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
             <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen}><i data-feather="filter" class="w-4 h-4"></i></button>
             {#if isSettingsOpen}
                 <div class="filter-dropdown">
-                    <div class="filter-header"><input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} /></div>
+                    <div class="filter-header">
+                        <input type="text" class="filter-search" placeholder="Tìm chỉ số..." bind:value={filterSearch} />
+                    </div>
                     <div class="filter-body custom-scrollbar" style="max-height: 250px;">
-                        {#each filterList as item, index (index)}
+                        {#each filterList as item (item.id)}
                             <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
-                                <input type="checkbox" checked={!hiddenIds.has(item.id)} /> <label>{item.label}</label>
+                                 <input type="checkbox" checked={!hiddenIds.has(item.id)} /> 
+                                 <label>{item.label}</label>
                             </div>
                         {/each}
                     </div>
@@ -474,7 +486,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
        <div class="flex flex-col items-center justify-center h-full text-gray-400"><p class="text-sm">Đã ẩn hết dữ liệu.</p></div>
     {:else}
       <div class="flex flex-col gap-0">
-        {#each visibleItems as item, index (index)}
+        {#each visibleItems as item (item.id)}
           {@const color = getProgressColor(item.value, item.target)}
           {@const percent = Math.min((item.value * 100), 100)}
           
@@ -2241,10 +2253,12 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
     export let filterOptions = {}; 
     export let currentFilters = {};
     export let isVelocityMode = false;
+    
+    // Nhận state từ cha
+    export let expandedRows = new Set(); 
 
     const dispatch = createEventDispatcher();
     
-    let expandedRows = new Set(); 
     let openFilterId = null;
     let filterSearchQuery = '';
 
@@ -2253,7 +2267,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
         maximumFractionDigits: isVelocityMode ? 1 : 0,
         minimumFractionDigits: isVelocityMode ? 1 : 0 
     }).format(n || 0);
-
     $: fmtRev = (n) => {
         if (!n) return '0';
         const val = n / 1000000;
@@ -2264,7 +2277,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
     };
 
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
-
     const LEVEL_COLORS = [
         'text-red-700 font-bold',     
         'text-blue-700 font-semibold',
@@ -2398,7 +2410,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
                              <div class="flex gap-1 ml-auto">
-                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                 <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
@@ -2413,11 +2425,10 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
                             </div>
                         </div>
                     </th>
-
+                    
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
-                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
                             <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
                                 <span class={sortKey === 'revenue' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
                                 <span class={sortKey === 'revenue' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
@@ -2428,7 +2439,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
-                            <span class="text-[10px] lowercase font-normal ml-1">(Triệu)</span>
                              <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
                                 <span class={sortKey === 'revenueQD' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
                                 <span class={sortKey === 'revenueQD' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
@@ -2439,7 +2449,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
-                                DT Trả chậm <span class="text-[10px] lowercase font-normal">(Triệu)</span>
+                                 DT Trả chậm 
                                 <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
                                     <span class={sortKey === 'revenueTraCham' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
                                     <span class={sortKey === 'revenueTraCham' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
@@ -2490,14 +2500,9 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
     /* [CAPTURE STYLE UPDATES] */
-    
-    /* 1. Ẩn bộ lọc cũ */
     :global(.capture-container .luyke-filter-section) { display: none !important; }
-    
-    /* 2. [FIXED] Ẩn Toolbar Sức bán (Mới) khi chụp */
     :global(.capture-container .velocity-toolbar) { display: none !important; }
 
-    /* 3. Style bảng */
     :global(.capture-container .luyke-table-wrapper) {
         width: 750px !important; min-width: 750px !important; max-width: 750px !important;
         margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
@@ -2520,9 +2525,11 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
 
 >>> FILE_START: src/components/luyke/sub/LuykeCategoryView.svelte
 <script>
+    import { onMount } from 'svelte';
     import { cleanCategoryName } from '../../../utils.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
     import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
+    import { formatters } from '../../../utils/formatters.js'; 
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
 
     export let data = [];
@@ -2535,7 +2542,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-
     // State
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
@@ -2543,6 +2549,13 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
     let currentFilters = {};
     let filterOptions = {};
     let warnings = [];
+    
+    // Expanded Rows State & Storage
+    let expandedRows = new Set();
+    // [FIX STATE] Cờ hiệu
+    let isConfigLoaded = false;
+    
+    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V1';
 
     // --- VELOCITY & DATE STATE ---
     let isVelocityMode = false;
@@ -2551,12 +2564,45 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
 
     const PRESET_DAYS = [3, 5, 7, 10];
 
+    // Restore config from session storage
+    onMount(() => {
+        const saved = sessionStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            try {
+                const config = JSON.parse(saved);
+                if (config.activeDimensionIds) activeDimensionIds = config.activeDimensionIds;
+                if (config.currentFilters) currentFilters = config.currentFilters;
+                if (config.isVelocityMode !== undefined) isVelocityMode = config.isVelocityMode;
+                if (config.velocityDays) velocityDays = config.velocityDays;
+                if (config.dateFilter) dateFilter = config.dateFilter;
+                if (config.expandedRows) expandedRows = new Set(config.expandedRows);
+            } catch (e) { console.error('Error loading config', e); }
+        }
+        // [FIX STATE] Đã load xong, cho phép save
+        isConfigLoaded = true;
+    });
+
+    // Auto save config
+    $: {
+        // [FIX STATE] Chỉ lưu khi đã load config cũ
+        if (isConfigLoaded && typeof sessionStorage !== 'undefined') {
+            const configToSave = {
+                activeDimensionIds,
+                currentFilters,
+                isVelocityMode,
+                velocityDays,
+                dateFilter,
+                expandedRows: Array.from(expandedRows)
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(configToSave));
+        }
+    }
+
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
-
     const isValidRow = (row) => {
         const isThuTien = (row.trangThaiThuTien || "").trim() === 'Đã thu';
         const isChuaHuy = (row.trangThaiHuy || "").trim() === 'Chưa hủy';
@@ -2565,7 +2611,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
         return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
     };
 
-    // [GENESIS HELPER] Hàm lấy giá trị chuẩn (Có logic giữ nguyên bản cho SP/NSX)
+    // Hàm lấy giá trị chuẩn (Fix Name Format & Clean Logic)
     const getDimensionValue = (row, dimId) => {
         let val = '';
         if (dimId === 'nganhHang') val = row.nganhHang;
@@ -2576,12 +2622,16 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
 
         if (!val) return '(Trống)';
 
-        // [FIX YÊU CẦU 1] Nếu là Tên SP hoặc NSX -> Giữ nguyên bản (chỉ trim), không clean
+        if (dimId === 'nhanVienTao') {
+             const maNVMatch = val.match(/(\d+)/);
+             const maNV = maNVMatch ? maNVMatch[1] : '';
+             return formatters.getShortEmployeeName(val, maNV);
+        }
+
         if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
             return val.toString().trim();
         }
         
-        // Các trường khác (Ngành hàng, Nhóm hàng...) -> Clean để gom nhóm tốt hơn
         return cleanCategoryName(val);
     };
 
@@ -2590,7 +2640,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
         treeData = [];
         totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         warnings = [];
-
         if (!data || data.length === 0) return;
 
         // 1. [GLOBAL] LỌC NGÀY
@@ -2613,7 +2662,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
                     if (selectedValues && selectedValues.length > 0) {
                         const cellVal = getDimensionValue(row, key);
-                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua dòng này nếu không khớp lọc
+                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua 
                     }
                 }
             }
@@ -2635,9 +2684,12 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
             activeDimensionIds.forEach((dimId, index) => {
                 const key = getDimensionValue(row, dimId);
                 
+                // Tạo ID cố định để Sort không bị đóng hàng
+                const stableId = `${index}_${key}`;
+
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, {
-                        id: key + Math.random(),
+                        id: stableId,
                         name: key,
                         quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
                         children: new Map(), level: index
@@ -2679,31 +2731,22 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
 
         treeData = finalTree;
         totalMetrics = { ...totalMetrics };
-        
         // Cập nhật bộ lọc sau khi tính toán xong
         updateFilterOptions(processedData);
     }
 
-    // [FIX YÊU CẦU 3] Bộ lọc phụ thuộc (Cascading Filters)
+    // Bộ lọc phụ thuộc (Cascading Filters)
     function updateFilterOptions(sourceData) {
-        // sourceData ở đây là data đã qua lọc ngày, nhưng CHƯA qua lọc dimension
-        // Chúng ta cần tính toán option cho từng dimension dựa trên ngữ cảnh của các dimension còn lại
-        
         const options = {};
-
         AVAILABLE_DIMENSIONS.forEach(targetDim => {
             const uniqueValues = new Set();
-            
-            // Tạo bộ lọc tạm thời: Loại bỏ chính dimension đang xét ra khỏi điều kiện lọc
-            // Để người dùng vẫn nhìn thấy các lựa chọn khác của chính dimension đó
             const otherFilters = { ...currentFilters };
             delete otherFilters[targetDim.id]; 
 
             sourceData.forEach(row => {
-                // 1. Kiểm tra xem dòng này có thỏa mãn các bộ lọc KHÁC không
                 let isValid = true;
                 const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; // Bỏ qua đơn không tính DT
+                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; 
                 if (!isValidRow(row)) return;
 
                 if (Object.keys(otherFilters).length > 0) {
@@ -2718,7 +2761,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
                     }
                 }
 
-                // 2. Nếu dòng này hợp lệ với các filter kia -> Lấy giá trị cho targetDim
                 if (isValid) {
                     const val = getDimensionValue(row, targetDim.id);
                     if (val && val !== '(Trống)') {
@@ -2746,7 +2788,6 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
     
     // Hàm lấy ngày hiện tại trừ 1 (tối thiểu là 1)
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
-
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
         if (isVelocityMode) {
@@ -2843,6 +2884,7 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
         {filterOptions}
         {currentFilters}
         {isVelocityMode} 
+        bind:expandedRows={expandedRows}
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}
     />

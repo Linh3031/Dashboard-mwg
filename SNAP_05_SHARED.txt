@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_05_SHARED.txt
-GENERATED AT: 2/5/2026, 5:34:49 PM
+GENERATED AT: 2/8/2026, 8:05:50 PM
 
 
 >>> FILE_START: src/components/modals/AddEfficiencyColumnModal.svelte
@@ -1890,37 +1890,33 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
 >>> FILE_START: src/components/modals/DemoWelcomeModal.svelte
 <script>
   import { onMount } from 'svelte';
-  import { isDemoMode, danhSachNhanVien, realtimeYCXData, declarations, categoryStructure } from '../../stores.js';
-  import { DEMO_DATA } from '../../data/demoFixtures.js';
-
+  // Không cần import store hay service phức tạp nữa
+  
   let showModal = false;
 
   onMount(() => {
-    // Chỉ hiện nếu chưa có dữ liệu nhân viên (User mới tinh)
-    const hasData = localStorage.getItem('danhSachNhanVien'); // Hoặc check store
-    if (!hasData) {
+    const hasData = localStorage.getItem('danhSachNhanVien'); 
+    const isDemo = localStorage.getItem('isDemoMode') === 'true';
+    
+    // Nếu chưa có dữ liệu và chưa phải demo thì hiện modal
+    if (!hasData && !isDemo) {
       showModal = true;
     }
   });
 
   function startDemo() {
-    // 1. Bật cờ Demo
-    isDemoMode.set(true);
+    // 1. Bật cờ Demo lưu vào LocalStorage
+    localStorage.setItem('isDemoMode', 'true');
 
-    // 2. Nạp dữ liệu giả vào các Store
-    danhSachNhanVien.set(DEMO_DATA.employees);
-    realtimeYCXData.set(DEMO_DATA.ycx);
-    declarations.set(DEMO_DATA.categories); // Map vào config admin
-    categoryStructure.set(DEMO_DATA.categories); // Map vào config admin
-
-    // 3. Ẩn modal
-    showModal = false;
-    
-    alert("Đã kích hoạt chế độ Demo! Bạn có thể trải nghiệm các tính năng ngay.");
+    // 2. [QUAN TRỌNG] Reload trang ngay lập tức
+    // Việc này buộc App.svelte chạy lại từ đầu (Cold Start)
+    // Giúp tránh lỗi treo máy và đảm bảo dữ liệu được nạp sạch sẽ
+    window.location.reload();
   }
 
   function skipDemo() {
     showModal = false;
+    localStorage.setItem('hasSkippedDemo', 'true');
   }
 </script>
 
@@ -1937,7 +1933,8 @@ GENERATED AT: 2/5/2026, 5:34:49 PM
     
     <h2 class="text-2xl font-bold text-gray-800 mb-2">Chào mừng bạn!</h2>
     <p class="text-gray-500 mb-8 leading-relaxed">
-      Hệ thống phát hiện bạn chưa có dữ liệu. Bạn có muốn sử dụng <b>Dữ liệu Demo</b> để trải nghiệm ngay các tính năng không?
+      Hệ thống phát hiện bạn chưa có dữ liệu.
+      Bạn có muốn sử dụng <b>Dữ liệu Mẫu (Demo)</b> để trải nghiệm ngay các tính năng không?
     </p>
 
     <div class="flex flex-col gap-3">

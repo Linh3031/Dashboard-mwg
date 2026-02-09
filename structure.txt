@@ -151,6 +151,7 @@ src/components/luyke/LuykeThiDuaVung.svelte
 src/components/luyke/LuykeQdcTable.svelte
 src/components/luyke/TdvInfographic.svelte
 src/components/luyke/sub
+src/components/luyke/sub/DailyTargetSimulator.svelte
 src/components/luyke/sub/LuykeCategoryToolbar.svelte
 src/components/luyke/sub/LuykeCategoryCharts.svelte
 src/components/luyke/sub/LuykeCategoryTreeTable.svelte

@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_00_CORE.txt
-GENERATED AT: 2/5/2026, 5:34:49 PM
+GENERATED AT: 2/8/2026, 8:05:50 PM
 
 
 >>> FILE_START: src/stores.js
@@ -127,7 +127,7 @@ export const fileSyncState = writable({});
 
 >>> FILE_START: src/main.js
 // src/main.js
-// Version 5.1 - Fix Crash & Feather Fallback
+// Version 5.2 - Fix Demo Mode Conflict & Crash Guard
 import './app.css'
 import App from './App.svelte'
 import { mount } from 'svelte'
@@ -161,24 +161,41 @@ async function initializeApp() {
 
   } catch (e) {
     console.error("Lỗi khởi tạo:", e);
-    // [FIX] Fallback nếu crash: Ít nhất cũng hiển thị thông báo lỗi đẹp
-    document.getElementById('app').innerHTML = `<div style="padding: 20px; color: red;"><h3>Hệ thống gặp sự cố khởi động.</h3><p>${e.message}</p><button onclick="location.reload()">Tải lại trang</button></div>`;
+    // [FIX] Fallback nếu crash: Hiển thị thông báo lỗi thân thiện
+    const appEl = document.getElementById('app');
+    if (appEl) {
+        appEl.innerHTML = `<div style="padding: 20px; color: #dc2626; font-family: sans-serif;">
+            <h3>⚠️ Hệ thống gặp sự cố khởi động.</h3>
+            <p>${e.message}</p>
+            <button onclick="localStorage.removeItem('isDemoMode'); location.reload()" style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Thoát chế độ Demo & Tải lại
+            </button>
+        </div>`;
+    }
   }
 }
 
 async function startDataFlow() {
     try {
+        // [CRITICAL FIX] CHỐT CHẶN CHẾ ĐỘ DEMO
+        // Nếu đang chạy Demo, TUYỆT ĐỐI KHÔNG kết nối Auth hay tải dữ liệu thật
+        if (localStorage.getItem('isDemoMode') === 'true') {
+            console.log("🛑 [Main] Phát hiện chế độ Demo. Đã chặn luồng dữ liệu thực (Real Data Flow).");
+            return; 
+        }
+
+        // --- LUỒNG CHÍNH THỨC (CHỈ CHẠY KHI KHÔNG PHẢI DEMO) ---
         await auth.ensureAnonymousAuth();
         const isLoggedIn = auth.initAuth();
         
         if (isLoggedIn) {
-            console.log("[Main] User logged in. Starting data load sequence...");
+            console.log("[Main] User logged in. Starting real data load sequence...");
             await dataService.loadAllFromCache();
             
             const email = localStorage.getItem('userEmail');
             if(email) analyticsService.upsertUserRecord(email);
         } else {
-            console.log("[Main] User not logged in (waiting for LoginModal). Data load deferred.");
+            console.log("[Main] User not logged in. Data load deferred.");
         }
 
     } catch (e) {
@@ -191,8 +208,7 @@ initializeApp();
 
 >>> FILE_START: src/App.svelte
 <script>
-  import { onMount, afterUpdate } from 'svelte';
-  
+  import { onMount, afterUpdate, tick } from 'svelte';
   import { 
       activeTab, 
       modalState, 
@@ -204,14 +220,14 @@ initializeApp();
       selectedWarehouse,
       danhSachNhanVien,
       warehouseList,
-      isDemoMode, // Store Demo
-      currentUser // Thêm currentUser để hiển thị tên trên Header
+      isDemoMode
   } from './stores.js';
-  
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
   import { datasyncService } from './services/datasync.service.js';
+  import { demoService } from './services/demo.service.js';
+  import { DEMO_SNAPSHOT } from './data/demoFixtures.js';
 
   // --- COMPONENTS CHÍNH ---
   import Sidebar from './components/Sidebar.svelte';
@@ -221,15 +237,12 @@ initializeApp();
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
-  
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
   import VersionManager from './components/common/VersionManager.svelte';
-  
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
-  
   // --- MODALS ---
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
@@ -241,34 +254,99 @@ initializeApp();
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
-  
-  // Modal Chào mừng Demo
-  import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte';
+  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte'; // <-- [TẮT DEMO] Comment import
 
-  // --- LOCAL STATE ---
-  let isSidebarOpen = true; // Trạng thái đóng mở Sidebar
+  // Kiểm tra localStorage ngay khi khởi tạo
+  // let isBootingDemo = typeof localStorage !== 'undefined' && localStorage.getItem('isDemoMode') === 'true';
+  let isBootingDemo = false; // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
+  
+  // Nếu đang boot demo thì chưa sẵn sàng (false)
+  let isAppReady = !isBootingDemo;
 
   onMount(async () => {
-    try { await authService.ensureAnonymousAuth(); } catch (e) { console.error("Firebase Auth Error:", e); }
-    const isLoggedIn = authService.initAuth();
-    
-    // Nếu chưa đăng nhập -> Hiện Login Modal
-    if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
-    
-    await loadGlobalSystemConfig();
-    loadInitialTables();
+    // [LOGIC PHÂN LUỒNG]
+    if (isBootingDemo) {
+        // --- LUỒNG 1: CHẾ ĐỘ DEMO (OFFLINE FIRST) ---
+        await initDemoMode();
+    } else {
+        // --- LUỒNG 2: CHẾ ĐỘ THỰC (ONLINE) ---
+        // Đảm bảo xóa cờ demo nếu lỡ còn lưu
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('isDemoMode');
+        await initRealMode();
+    }
   });
 
+  // [FIX] Hàm khởi tạo riêng cho Demo - Bỏ qua Auth và Fetch Server
+  async function initDemoMode() {
+      console.log("🚀 [Bootloader] Đang khởi động chế độ Demo...");
+      isDemoMode.set(true);
+      
+      try {
+          // 1. Nạp Snapshot
+          await demoService.loadSnapshot(DEMO_SNAPSHOT);
+          
+          // 2. Chờ Store cập nhật
+          await tick();
+
+          // 3. Chọn kho mặc định từ dữ liệu vừa nạp
+          const currentList = get(danhSachNhanVien);
+          if (currentList && currentList.length > 0) {
+              const firstWarehouse = currentList[0].maKho || "908";
+              selectedWarehouse.set(firstWarehouse);
+              // Cập nhật danh sách kho cho Select Box
+              warehouseList.set([firstWarehouse]); 
+          } else {
+              selectedWarehouse.set("908");
+          }
+          
+          // 4. Mở khóa giao diện
+          isAppReady = true;
+          console.log("✅ [Bootloader] Demo Ready -> Unlocking UI");
+
+          // 5. Chuyển Tab (Delay nhẹ để UI render xong)
+          setTimeout(() => {
+              activeTab.set('realtime-section');
+          }, 200);
+
+      } catch (e) {
+          console.error("❌ Lỗi nạp Demo:", e);
+          alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
+          // Fallback về chế độ thật nếu lỗi
+          localStorage.removeItem('isDemoMode');
+          window.location.reload();
+      }
+  }
+
+  // [FIX] Hàm khởi tạo cho App thật
+  async function initRealMode() {
+      try { 
+          await authService.ensureAnonymousAuth(); 
+      } catch (e) { 
+          console.error("Firebase Auth Error:", e); 
+      }
+      
+      const isLoggedIn = authService.initAuth();
+      if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
+
+      // Load cấu hình từ Server (Chỉ chạy ở chế độ thật)
+      await loadGlobalSystemConfig();
+      await loadInitialTables();
+      
+      // Mở khóa giao diện ngay lập tức
+      isAppReady = true;
+  }
+
+  // Hàm tải cấu hình hệ thống (CHỈ DÙNG CHO REAL MODE)
   async function loadGlobalSystemConfig() {
       try {
           await Promise.all([
-              adminService.loadCategoryDataFromFirestore(), 
-              adminService.loadEfficiencyConfig(),          
-              adminService.loadSpecialProductList(),        
-              adminService.loadHomeConfig()                 
+              adminService.loadCategoryDataFromFirestore(),
+              adminService.loadEfficiencyConfig(),
+              adminService.loadSpecialProductList(),
+              adminService.loadHomeConfig()       
           ]);
       } catch (error) {
-          console.error("[App] Lỗi tải cấu hình:", error);
+          console.error("[App] Lỗi tải cấu hình hệ thống:", error);
       }
   }
 
@@ -280,11 +358,6 @@ initializeApp();
   afterUpdate(() => {
     if (window.feather) window.feather.replace();
   });
-
-  // --- HANDLERS ---
-  function toggleSidebar() {
-      isSidebarOpen = !isSidebarOpen;
-  }
 
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
@@ -330,6 +403,7 @@ initializeApp();
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
+          console.log("Đã lưu bảng hệ thống lên Admin Cloud");
       } else {
           const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
           localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
@@ -337,6 +411,7 @@ initializeApp();
           if (wh) {
               await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
           }
+          console.log("Đã lưu bảng cá nhân");
       }
   }
 
@@ -366,8 +441,7 @@ initializeApp();
   }
 
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
-  
-  // Logic update kho
+
   $: {
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
           const uniqueWarehouses = [...new Set($danhSachNhanVien
@@ -378,12 +452,12 @@ initializeApp();
       }
   }
 
-  // Hàm thoát Demo
   function exitDemoMode() {
-      if(confirm('Bạn có chắc muốn thoát Chế độ Demo? Dữ liệu mẫu sẽ bị xóa.')) {
-          isDemoMode.set(false);
-          window.location.reload();
-      }
+    if(confirm('Bạn có chắc muốn thoát chế độ Demo?')) {
+        isDemoMode.set(false);
+        localStorage.removeItem('isDemoMode');
+        window.location.reload();
+    }
   }
 </script>
 
@@ -437,80 +511,48 @@ initializeApp();
     on:save={handleSaveEffConfig}
 />
 
-<DemoWelcomeModal />
-
 {#if $isDemoMode}
-  <div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-yellow-50 border border-yellow-400 px-4 py-3 rounded-xl shadow-2xl animate-bounce-in">
+<div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-indigo-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-500 animate-bounce-in">
     <div class="flex flex-col">
-        <span class="text-xs font-bold text-yellow-800 uppercase tracking-wider">Demo Mode</span>
-        <span class="text-xs text-yellow-700">Đang xem dữ liệu mẫu</span>
+        <span class="text-xs font-bold text-indigo-300 uppercase tracking-wider">Môi trường</span>
+        <span class="font-bold">ĐANG CHẠY DEMO</span>
     </div>
+    <div class="h-8 w-[1px] bg-indigo-700 mx-1"></div>
     <button 
         on:click={exitDemoMode}
-        class="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+        class="bg-white text-indigo-900 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors"
     >
         Thoát
     </button>
-  </div>
+</div>
 {/if}
 
-<div class="flex min-h-screen bg-gray-50 overflow-hidden">
-  
-  <aside 
-    class="flex-shrink-0 z-30 transition-all duration-300 ease-in-out bg-white border-r border-gray-200"
-    class:w-64={isSidebarOpen}
-    class:w-0={!isSidebarOpen}
-  >
-      <div class="h-full overflow-y-auto overflow-x-hidden w-64">
-          <Sidebar />
-      </div>
-  </aside>
+<div class="flex min-h-screen">
+  <div id="sidebar-container">
+    <Sidebar />
+  </div>
 
-  <main class="flex-1 flex flex-col min-w-0 transition-all duration-300">
-    
-    <header class="bg-white h-16 border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-20 sticky top-0">
-        <div class="flex items-center gap-4">
-            <button 
-                on:click={toggleSidebar} 
-                class="p-2 rounded-lg hover:bg-gray-100 text-gray-600 focus:outline-none transition-colors"
-            >
-                <i data-feather="menu"></i>
-            </button>
-            
-            <h1 class="text-xl font-bold text-gray-800 uppercase tracking-tight">
-                {#if $activeTab === 'realtime'} Báo cáo Realtime
-                {:else if $activeTab === 'sknv'} Sức khỏe nhân viên
-                {:else if $activeTab === 'luyke'} Báo cáo Lũy kế
-                {:else if $activeTab === 'admin'} Cấu hình Admin
-                {:else if $activeTab === 'declaration-section'} Nạp dữ liệu
-                {:else} Dashboard {/if}
-            </h1>
-        </div>
-
-        <div class="flex items-center gap-4">
-             {#if $isDemoMode}
-                <span class="hidden md:inline-block px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-full border border-yellow-200 shadow-sm">
-                    DEMO DATA
-                </span>
-             {/if}
-             
-             <div class="text-right hidden sm:block">
-                <div class="text-sm font-bold text-gray-700">{$currentUser?.displayName || 'Khách'}</div>
-                <div class="text-xs text-gray-500">{$isAdmin ? 'Administrator' : ($selectedWarehouse || 'Chưa chọn kho')}</div>
-             </div>
-        </div>
-    </header>
-
-    <div class="flex-1 p-6 overflow-y-auto scroll-smooth">
-        <div class="max-w-full mx-auto pb-20"> <HomeSection activeTab={$activeTab} />
+  <main id="main-content">
+    <div class="flex-1 p-6">
+      <div class="max-w-full mx-auto">
+        {#if isAppReady}
+            <HomeSection activeTab={$activeTab} />
             <DataSection activeTab={$activeTab} />
             <HealthSection activeTab={$activeTab} />
             <HealthEmployeeSection activeTab={$activeTab} />
             <RealtimeSection activeTab={$activeTab} />
             <DeclarationSection activeTab={$activeTab} />
-        </div>
+        {:else}
+            <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
+                <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="font-medium">Đang thiết lập môi trường Demo...</p>
+            </div>
+        {/if}
+      </div>
     </div>
-
   </main>
 </div> 
 
@@ -523,14 +565,33 @@ initializeApp();
 <div id="modal-unexported-detail-container"></div>
 
 <style>
-  /* Chỉ giữ lại các style cần thiết */
+  :global(#main-content) { 
+    transition: margin-left 0.3s ease-in-out;
+    margin-left: 68px; 
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+  }
+
   :global(.page-header) { 
-    display: none; /* Ẩn header cũ nếu có component con dùng nó */
+    display: flex; 
+    flex-wrap: wrap; 
+    justify-content: space-between; 
+    align-items: center; 
+    gap: 1rem; 
+    margin-bottom: 1.5rem;
+  }
+
+  :global(.page-header__title) { 
+    font-size: 1.75rem; 
+    font-weight: 700; 
+    color: #1f2937;
   }
   
   @keyframes bounceIn {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
   }
   .animate-bounce-in {
       animation: bounceIn 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
@@ -3875,6 +3936,98 @@ export const checkAdmin = () => {
 };
 
 <<< FILE_END: src/services/declarations/utils.js
+
+>>> FILE_START: src/services/demo.service.js
+// src/services/demo.service.js
+import { get } from 'svelte/store';
+import { 
+    danhSachNhanVien, 
+    realtimeYCXData, 
+    ycxData,
+    masterReportData, 
+    declarations, 
+    categoryStructure, 
+    kpiStore, 
+    efficiencyConfig, 
+    customRevenueTables, 
+    customPerformanceTables,
+    isDemoMode,
+    selectedWarehouse,
+    activeTab
+} from '../stores.js';
+
+export const demoService = {
+    // 1. CHỨC NĂNG CHỤP ẢNH DỮ LIỆU (Dùng cho Admin)
+    createSnapshot: () => {
+        const snapshot = {
+            timestamp: new Date().toISOString(),
+            version: '2.0',
+            data: {
+                danhSachNhanVien: get(danhSachNhanVien),
+                realtimeYCXData: get(realtimeYCXData), // Dữ liệu thô Realtime
+                ycxData: get(ycxData),                 // Dữ liệu thô Lũy kế
+                masterReportData: get(masterReportData), // [QUAN TRỌNG] Báo cáo ĐÃ XỬ LÝ
+                declarations: get(declarations),
+                categoryStructure: get(categoryStructure),
+                kpiStore: get(kpiStore),
+                efficiencyConfig: get(efficiencyConfig),
+                customRevenueTables: get(customRevenueTables),
+                customPerformanceTables: get(customPerformanceTables)
+            }
+        };
+        return snapshot;
+    },
+
+    // Hàm tải xuống file JSON
+    downloadSnapshot: () => {
+        try {
+            const data = demoService.createSnapshot();
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `demo_snapshot_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            return true;
+        } catch (e) {
+            console.error("Lỗi xuất dữ liệu Demo:", e);
+            return false;
+        }
+    },
+
+    // 2. CHỨC NĂNG NẠP DỮ LIỆU (Dùng cho User Demo)
+    loadSnapshot: async (snapshotData) => {
+        if (!snapshotData || !snapshotData.data) {
+            console.error("Dữ liệu Snapshot không hợp lệ");
+            return false;
+        }
+
+        const d = snapshotData.data;
+
+        // Bật chế độ Demo
+        isDemoMode.set(true);
+
+        // Nạp dữ liệu vào từng Store
+        if (d.danhSachNhanVien) danhSachNhanVien.set(d.danhSachNhanVien);
+        if (d.realtimeYCXData) realtimeYCXData.set(d.realtimeYCXData);
+        if (d.ycxData) ycxData.set(d.ycxData);
+        if (d.masterReportData) masterReportData.set(d.masterReportData); // Quan trọng nhất
+        if (d.declarations) declarations.set(d.declarations);
+        if (d.categoryStructure) categoryStructure.set(d.categoryStructure);
+        if (d.kpiStore) kpiStore.set(d.kpiStore);
+        if (d.efficiencyConfig) efficiencyConfig.set(d.efficiencyConfig);
+        if (d.customRevenueTables) customRevenueTables.set(d.customRevenueTables);
+        if (d.customPerformanceTables) customPerformanceTables.set(d.customPerformanceTables);
+
+        return true;
+    }
+};
+<<< FILE_END: src/services/demo.service.js
 
 >>> FILE_START: src/services/employeeService.js
 import { get } from 'svelte/store';
