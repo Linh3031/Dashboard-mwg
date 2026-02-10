@@ -300,7 +300,7 @@
              <h3 class="content-card__header data-header--blue flex items-center">
                 <i data-feather="zap" class="h-5 w-5 feather mr-2"></i>
                 <span>SỬ DỤNG NHANH MỖI NGÀY</span>
-                <span class="ml-2 text-sm font-normal italic opacity-100 pt-2">
+                <span class="ml-2 text-sm font-normal italic opacity-100 pt-0">
                     (Đủ 90% dữ liệu cần thiết)
                 </span>
             </h3>
