@@ -26,8 +26,10 @@
 
   // --- STATE ---
   let columnSettings = [];
-  let sortKey = 'hoTen';
-  let sortDirection = 'asc';
+  // [GENESIS FIX 2] Thay đổi sort mặc định: Theo điểm Đạt (totalScore) từ cao xuống thấp
+  let sortKey = 'totalScore';
+  let sortDirection = 'desc';
+
   // Dữ liệu phẳng
   let allEmployees = [];
   let deptAverages = {};
@@ -121,7 +123,6 @@
                  boPhan: realDept || 'Chưa phân loại'
              };
           });
-
           // --- [LOGIC 2] CẤU HÌNH CỘT & MAPPING TÊN CỘT ---
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
           if (!savedSettings || savedSettings.length === 0) {
@@ -133,14 +134,12 @@
               ...col,
               label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
-
           const groups = {};
           mappedReportData.forEach(item => {
               const dept = item.boPhan || 'Chưa phân loại';
               if (!groups[dept]) groups[dept] = [];
               groups[dept].push(item);
           });
-
           const avgs = {};
           Object.keys(groups).forEach(deptName => {
               const deptData = groups[deptName];
@@ -169,7 +168,6 @@
   }
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
-
   // --- SORT LOGIC ---
   function handleSort(key) {
       if (sortKey === key) {
@@ -208,7 +206,6 @@
             return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
   });
-
   // --- TOGGLE LOGIC ---
   function toggleColumn(col) {
       const newSettings = columnSettings.map(c => 
@@ -278,23 +275,7 @@
                     </h3>
                     <p class="text-xs text-gray-500 mt-0.5 ml-7">Theo dõi tiến độ các chương trình thi đua</p>
                 </div>
-
-                <div class="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">
-                    <button 
-                        type="button"
-                        class="px-4 py-1.5 rounded-md text-xs font-bold transition-all shadow-sm bg-white text-blue-700 cursor-default"
-                    >
-                        Nhân viên
-                    </button>
-                    <button 
-                        type="button"
-                        class="px-4 py-1.5 rounded-md text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-200 transition-colors cursor-pointer"
-                        on:click={switchToProgram}
-                    >
-                        Chương trình
-                    </button>
                 </div>
-            </div>
             
             <div class="overflow-x-auto sknv-pasted-competition-scroller relative" style="max-height: 700px;">
                 <table class="w-full text-sm text-left border-separate border-spacing-0">
@@ -348,11 +329,11 @@
                                     {@const textColorClass = isRevenue ? 'text-blue-700' : 'text-gray-900'}
                                     
                                     <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-50' : ''} {textColorClass} whitespace-nowrap overflow-hidden">
-                                        {#if val === 0}
+                                         {#if val === 0}
                                             <span class="text-gray-300 font-normal">-</span>
-                                        {:else}
+                                         {:else}
                                             {formatters.formatNumber(val)}
-                                        {/if}
+                                         {/if}
                                     </td>
                                 {/each}
                             </tr>

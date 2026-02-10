@@ -39,6 +39,12 @@ export const injectCaptureStyles = () => {
             z-index: -1;
             font-family: 'Segoe UI', Roboto, sans-serif;
         }
+        
+        /* [GENESIS FIX 3] Ép hiển thị toàn bộ nội dung bảng cuộn khi chụp */
+        .capture-container .sknv-pasted-competition-scroller {
+            max-height: none !important;
+            overflow: visible !important;
+        }
 
         .capture-title { 
             font-size: 26px; 

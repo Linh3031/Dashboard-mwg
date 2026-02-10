@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 2/8/2026, 8:05:50 PM
+GENERATED AT: 2/9/2026, 9:54:34 PM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
@@ -798,12 +798,13 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
   import LuykeQdcTable from './LuykeQdcTable.svelte';
   import LuykeCategoryTable from './LuykeCategoryTable.svelte';
+  import DailyTargetSimulator from './sub/DailyTargetSimulator.svelte';
 
   export let supermarketReport = {};
   export let filteredYCXData = []; 
   export let goals = {};
   export let numDays = 1;
-
+  
   let localSupermarketReport = {};
   let localGoals = {};
   let luykeCardData = {};
@@ -812,14 +813,13 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
   let luotKhachData = { value: 0, percentage: 'N/A' };
   
   let chuaXuatReport = [];
-  let categoryItems = []; 
+  let categoryItems = [];
   let qdcItems = []; 
 
   let channelStats = {
       dxm: { val: 0, pct: 0 },
       tgdd: { val: 0, pct: 0 }
   };
-
   let combinedEfficiencyItems = [];
 
   onMount(async () => {
@@ -860,6 +860,11 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
       return isNaN(val) ? 0 : val;
   };
 
+  // Khai báo biến global cho component dùng
+  let finalDtThuc = 0; 
+  let finalDtQd = 0; // [Quan trọng] Biến dùng cho giả lập
+  let finalDtGop, finalTyLeGop, finalTyLeQd;
+
   $: {
     const _triggerMacroCat = $macroCategoryConfig;
     const _triggerMacroProd = $macroProductGroupConfig;
@@ -873,7 +878,6 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
     const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
     const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
     const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
-    
     const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
 
     comparisonData = pastedData.comparisonData || { value: 0, percentage: 'N/A' };
@@ -887,8 +891,6 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
         tyLeQd: localSupermarketReport.hieuQuaQuyDoi || 0,
         chuaXuatQd: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0
     };
-
-    let finalDtThuc, finalDtQd, finalDtGop, finalTyLeGop, finalTyLeQd;
 
     if (hasPasteData) {
         finalDtThuc = cleanValue(mainKpis['Thực hiện DT thực']) * 1000000;
@@ -935,9 +937,7 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
       tyLeThiDuaDat: tyLeThiDuaDat
     };
 
-    // [FIX] Cập nhật logic tính Tỷ trọng kênh theo ID
     const calcChannelStat = (keywords) => {
-        // Tìm nhóm cấu hình (Macro Group) dựa trên tên (VD: ĐMX, TGDD)
         const groupConfig = ($macroCategoryConfig || []).find(g => {
             if (!g.name) return false;
             const normName = g.name.trim().toLowerCase().normalize("NFC");
@@ -949,10 +949,7 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
 
-        // groupConfig.items bây giờ chứa ID (ví dụ '1491', '42'...)
         groupConfig.items.forEach(itemId => {
-            // Tra cứu trực tiếp trong details bằng ID
-            // (Vì data đã được xử lý trong salesProcessor.js với key là ID)
             if (details[itemId]) {
                 totalVal += (details[itemId].revenueQuyDoi || 0);
             }
@@ -968,23 +965,21 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
         dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
         tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
     };
-
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
       .map(([id, values]) => ({ 
           id: id,
-          name: values.name, // Lấy tên từ object value
+          name: values.name,
           dtqd: values.revenueQuyDoi, 
           sl: values.quantity, 
           dt: values.revenue, 
           ...values 
       }));
-
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
       .map(([id, values]) => ({ 
           id: id,
-          name: values.name, // Lấy tên từ object value
+          name: values.name,
           dtqd: values.revenueQuyDoi, 
           ...values 
       }));
@@ -1119,6 +1114,12 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
 
       </div>
   </div>
+
+  <DailyTargetSimulator 
+    totalTarget={parseFloat(localGoals?.doanhThuQD || 0) * 1000000}
+    currentRevenue={finalDtQd || 0}
+    warehouseId={$selectedWarehouse}
+  />
 
   <div class="luyke-tier-1-grid" data-capture-group="tier1">
       <LuykeEfficiencyTable 
@@ -1997,6 +1998,150 @@ GENERATED AT: 2/8/2026, 8:05:50 PM
     :global(.capture-container) .tdv-root .card-money { font-size: 24px !important; }
 </style>
 <<< FILE_END: src/components/luyke/TdvInfographic.svelte
+
+>>> FILE_START: src/components/luyke/sub/DailyTargetSimulator.svelte
+<script>
+    import { formatters } from '../../../utils/formatters.js';
+    import { selectedWarehouse } from '../../../stores.js';
+
+    // Props nhận từ cha
+    export let totalTarget = 0;   // Mục tiêu tháng (Quy đổi)
+    export let currentRevenue = 0; // Đã đạt (Quy đổi)
+    export let warehouseId = '';
+
+    // State nội bộ
+    let targetRatio = 100;
+    let remainingDays = 1;
+
+    // --- HELPER FORMAT ---
+    // Yêu cầu: Số nguyên (0 số lẻ) cho gọn
+    const fmt = (val) => formatters.formatNumber(val / 1000000, 0);
+
+    // --- LOGIC TÍNH NGÀY ---
+    function calculateDays() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const currentDay = now.getDate();
+        let remain = daysInMonth - currentDay;
+        return remain > 0 ? remain : 0; 
+    }
+
+    // --- TÍNH TOÁN SỐ LIỆU ---
+    function calculateMetrics(ratio, tTarget, cRevenue) {
+        const adjustedTarget = tTarget * (ratio / 100);
+        const missing = adjustedTarget - cRevenue;
+        const finalMissing = missing > 0 ? missing : 0;
+        const daily = (remainingDays > 0) ? (finalMissing / remainingDays) : 0;
+
+        return {
+            ratio: ratio,
+            targetTotal: adjustedTarget,
+            missing: finalMissing,
+            daily: daily,
+            isDone: missing <= 0
+        };
+    }
+
+    // --- REACTIVE ---
+    $: remainingDays = calculateDays();
+    $: mainMetrics = calculateMetrics(targetRatio, totalTarget, currentRevenue);
+    $: prevMetrics = calculateMetrics(targetRatio - 10, totalTarget, currentRevenue);
+    $: nextMetrics = calculateMetrics(targetRatio + 10, totalTarget, currentRevenue);
+
+    // --- PERSISTENCE ---
+    $: if ($selectedWarehouse || warehouseId) {
+        const key = `target_ratio_${$selectedWarehouse || warehouseId}`;
+        const saved = localStorage.getItem(key);
+        if (saved) targetRatio = parseFloat(saved);
+        else targetRatio = 100;
+    }
+
+    function handleRatioChange() {
+        const key = `target_ratio_${$selectedWarehouse || warehouseId}`;
+        localStorage.setItem(key, targetRatio.toString());
+    }
+</script>
+
+<div class="bg-slate-50 border border-indigo-100 rounded-lg p-4 my-4 shadow-sm">
+    
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
+        
+        <div class="flex flex-col justify-center gap-3 pr-2">
+            <div class="flex items-center gap-2 text-indigo-700">
+                <div class="p-1.5 bg-indigo-100 rounded-md">
+                    <i data-feather="crosshair" class="w-4 h-4"></i>
+                </div>
+                <span class="font-bold uppercase text-sm whitespace-nowrap">Mục tiêu hoàn thành (%)</span>
+            </div>
+
+            <div class="flex items-center gap-2 w-full">
+                <input 
+                    type="range" 
+                    min="50" max="200" step="5"
+                    bind:value={targetRatio}
+                    on:change={handleRatioChange}
+                    class="flex-grow h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                >
+                <div class="relative flex-shrink-0">
+                    <input 
+                        type="number" 
+                        bind:value={targetRatio}
+                        on:change={handleRatioChange}
+                        class="w-12 py-1 px-1 text-center font-bold text-indigo-700 bg-white border border-indigo-200 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
+                    >
+                    <span class="absolute right-0.5 top-0.5 text-[9px] text-gray-400 font-bold">%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between px-4 py-3 rounded-lg border border-purple-200 bg-white shadow-sm h-full">
+            <div class="flex flex-col justify-center gap-1">
+                <span class="text-xs font-bold text-purple-600 uppercase tracking-wide">{prevMetrics.ratio}% Target</span>
+                <div class="mt-1">
+                    <span class="text-[10px] text-gray-400 block">Còn lại (QĐ)</span>
+                    <span class="text-sm font-bold text-gray-600">{fmt(prevMetrics.missing)}</span>
+                </div>
+            </div>
+            <div class="text-right pl-2">
+                <span class="text-3xl font-black text-purple-700 leading-none block">{fmt(prevMetrics.daily)}</span>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between px-4 py-3 rounded-lg border-2 border-indigo-500 bg-indigo-50 shadow-md transform md:-translate-y-1 h-full z-10 relative overflow-hidden">
+            <span class="absolute top-0 right-0 text-[9px] bg-indigo-200 text-indigo-800 px-1.5 py-0.5 rounded-bl font-bold">
+                {remainingDays} ngày
+            </span>
+
+            <div class="flex flex-col justify-center gap-1">
+                <span class="text-sm font-black text-indigo-800 uppercase tracking-wide">{mainMetrics.ratio}% Target</span>
+                <div class="mt-1">
+                    <span class="text-[10px] text-indigo-500 font-medium block">Còn lại (QĐ)</span>
+                    <span class="text-lg font-bold text-indigo-900">{fmt(mainMetrics.missing)}</span>
+                </div>
+            </div>
+            <div class="text-right pl-2">
+                <span class="text-4xl font-black text-indigo-700 leading-none block drop-shadow-sm">{fmt(mainMetrics.daily)}</span>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between px-4 py-3 rounded-lg border border-orange-200 bg-white shadow-sm h-full">
+            <div class="flex flex-col justify-center gap-1">
+                <span class="text-xs font-bold text-orange-600 uppercase tracking-wide">{nextMetrics.ratio}% Target</span>
+                <div class="mt-1">
+                    <span class="text-[10px] text-gray-400 block">Còn lại (QĐ)</span>
+                    <span class="text-sm font-bold text-gray-600">{fmt(nextMetrics.missing)}</span>
+                </div>
+            </div>
+            <div class="text-right pl-2">
+                <span class="text-3xl font-black text-orange-700 leading-none block">{fmt(nextMetrics.daily)}</span>
+            </div>
+        </div>
+
+    </div>
+</div>
+<<< FILE_END: src/components/luyke/sub/DailyTargetSimulator.svelte
 
 >>> FILE_START: src/components/luyke/sub/LuykeCategoryCharts.svelte
 <script>
