@@ -297,8 +297,12 @@
    
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
         <div class="content-card data-card--blue flex flex-col gap-4"> 
-             <h3 class="content-card__header data-header--blue">
-                <i data-feather="zap" class="h-5 w-5 feather"></i>SỬ DỤNG NHANH MỖI NGÀY
+             <h3 class="content-card__header data-header--blue flex items-center">
+                <i data-feather="zap" class="h-5 w-5 feather mr-2"></i>
+                <span>SỬ DỤNG NHANH MỖI NGÀY</span>
+                <span class="ml-2 text-sm font-normal italic opacity-100 pt-2">
+                    (Đủ 90% dữ liệu cần thiết)
+                </span>
             </h3>
             
             <FileInput 
