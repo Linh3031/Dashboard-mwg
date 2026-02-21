@@ -7,17 +7,23 @@
     export let fmtRev;
     export let fmtPct;
 
-    // [NEW] Nhận flag từ cha
     export let isVelocityMode = false;
+    export let hasInventoryData = false;
     
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
     $: paddingLeft = `${group.level * 24 + 16}px`;
     
-    // Tính toán phần trăm
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
-    // [NEW] Tính % Quy đổi
     $: qdPercent = group.revenue > 0 ? (group.revenueQD / group.revenue) * 100 : 0;
+
+    const getAlertClass = (info) => {
+        if (!info || !info.isAlert) return 'text-gray-400';
+        return 'text-red-600 font-bold bg-red-50';
+    };
+
+    // [FIX DISPLAY] Hàm format số nguyên cho tồn kho (bỏ số lẻ)
+    const fmtInt = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
 </script>
 
 <tr class="hover:bg-gray-50 transition-colors border-b last:border-0 group-row">
@@ -36,12 +42,8 @@
             {:else}
                 <span class="w-6 inline-block"></span>
             {/if}
-            
-            <span class="{levelColor} truncate">
-                {group.name}
-            </span>
+            <span class="{levelColor} truncate" title={group.name}>{group.name}</span>
         </div>
-        
         {#if group.level > 0}
              <div class="absolute left-0 top-0 bottom-0 border-l border-gray-200" style="left: {group.level * 24}px"></div>
         {/if}
@@ -53,9 +55,29 @@
     
     <td class="py-2 px-4 text-right text-gray-600">{fmtRev(group.revenueQD)}</td>
 
-    <td class="py-2 px-4 text-center font-bold text-xs {qdPercent >= 100 ? 'text-green-700' : 'text-orange-600'}">
-        {fmtPct(qdPercent)}
-    </td>
+    {#if !isVelocityMode}
+        <td class="py-2 px-4 text-center font-bold text-xs {qdPercent >= 100 ? 'text-green-700' : 'text-orange-600'}">
+            {fmtPct(qdPercent)}
+        </td>
+    {/if}
+
+    {#if hasInventoryData}
+        <td class="py-2 px-4 text-right font-bold text-emerald-700 bg-emerald-50/30">
+            {group.inventoryQty !== undefined ? fmtInt(group.inventoryQty) : '-'}
+        </td>
+        <td class="py-2 px-4 text-center text-xs {getAlertClass(group.alertInfo)}">
+            {#if group.alertInfo && group.alertInfo.isAlert}
+                <div class="flex flex-col items-center">
+                    <span>Thiếu: {fmtInt(group.alertInfo.missingQty)}</span>
+                    <span class="text-[10px] font-normal text-gray-500">
+                        (Còn {group.alertInfo.daysCovered} ngày)
+                    </span>
+                </div>
+            {:else}
+                <span class="text-green-600">Đủ hàng</span>
+            {/if}
+        </td>
+    {/if}
 
     {#if !isVelocityMode}
         <td class="py-2 px-4 text-right text-yellow-700 bg-yellow-50/50">{fmtRev(group.revenueTraCham)}</td>
@@ -73,7 +95,8 @@
             {toggleRow} 
             {LEVEL_COLORS}
             {fmtQty} {fmtRev} {fmtPct} 
-            {isVelocityMode} 
+            {isVelocityMode}
+            {hasInventoryData} 
          />
     {/each}
 {/if}

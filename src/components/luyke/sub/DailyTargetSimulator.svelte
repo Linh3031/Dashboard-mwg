@@ -22,7 +22,7 @@
         const month = now.getMonth() + 1;
         const daysInMonth = new Date(year, month, 0).getDate();
         const currentDay = now.getDate();
-        let remain = daysInMonth - currentDay;
+        let remain = daysInMonth - currentDay+1;
         return remain > 0 ? remain : 0; 
     }
 

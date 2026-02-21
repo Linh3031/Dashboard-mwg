@@ -9,12 +9,10 @@
     export let filterOptions = {}; 
     export let currentFilters = {};
     export let isVelocityMode = false;
-    
-    // Nhận state từ cha
-    export let expandedRows = new Set(); 
+    export let expandedRows = new Set();
+    export let hasInventoryData = false;
 
     const dispatch = createEventDispatcher();
-    
     let openFilterId = null;
     let filterSearchQuery = '';
 
@@ -23,6 +21,7 @@
         maximumFractionDigits: isVelocityMode ? 1 : 0,
         minimumFractionDigits: isVelocityMode ? 1 : 0 
     }).format(n || 0);
+
     $: fmtRev = (n) => {
         if (!n) return '0';
         const val = n / 1000000;
@@ -41,7 +40,7 @@
         'text-orange-700'             
     ];
 
-    // --- SORT LOGIC ---
+    // --- SORT LOGIC (Đã nâng cấp) ---
     let sortKey = 'revenue'; 
     let sortDirection = 'desc';
 
@@ -57,10 +56,20 @@
     function sortTree(nodes, key, dir) {
         if (!nodes || nodes.length === 0) return [];
         const sorted = [...nodes].sort((a, b) => {
-            const valA = a[key] || 0;
-            const valB = b[key] || 0;
+            let valA, valB;
+
+            // [FIX] Logic sort đặc biệt cho cột %QĐ (Tính toán động)
+            if (key === 'percentQD') {
+                valA = a.revenue ? (a.revenueQD / a.revenue) : 0;
+                valB = b.revenue ? (b.revenueQD / b.revenue) : 0;
+            } else {
+                valA = a[key] || 0;
+                valB = b[key] || 0;
+            }
+
             return dir === 'asc' ? valA - valB : valB - valA;
         });
+
         return sorted.map(node => {
             if (node.children && node.children.length > 0) {
                 return { ...node, children: sortTree(node.children, key, dir) };
@@ -116,6 +125,13 @@
         else newIds.push(dimId);
         dispatch('configChange', newIds);
     }
+
+    function SortIcon(currentKey) {
+        if (sortKey !== currentKey) return '';
+        return sortDirection === 'asc' ? '▲' : '▼';
+    }
+    
+    $: iconClass = (key) => sortKey === key ? 'text-blue-600' : 'text-gray-300 group-hover:text-gray-500';
 </script>
 
 <div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 luyke-filter-section">
@@ -140,7 +156,7 @@
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
                          <div class="flex justify-between items-center mb-2"><span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>{#if hasFilter}<button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>{/if}</div>
-                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
+                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
                          <div class="max-h-48 overflow-y-auto space-y-1">
                             {#each getDisplayOptions(dim.id) as option}
                                 {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
@@ -166,7 +182,7 @@
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
                              <div class="flex gap-1 ml-auto">
-                                 <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
@@ -175,9 +191,8 @@
                     <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'SL TB/Ngày' : 'Số lượng'}
-                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                <span class={sortKey === 'quantity' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                <span class={sortKey === 'quantity' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('quantity')}">
+                                ▲▼
                             </div>
                         </div>
                     </th>
@@ -185,9 +200,8 @@
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
-                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                <span class={sortKey === 'revenue' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                <span class={sortKey === 'revenue' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenue')}">
+                                ▲▼
                             </div>
                         </div>
                     </th>
@@ -195,20 +209,34 @@
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
-                             <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                <span class={sortKey === 'revenueQD' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                <span class={sortKey === 'revenueQD' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueQD')}">
+                                ▲▼
                             </div>
                         </div>
                     </th>
+
+                    {#if !isVelocityMode}
+                        <th class="py-3 px-4 text-center border-b w-24 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('percentQD')} title="Sắp xếp theo % Quy đổi">
+                            <div class="flex items-center justify-center gap-1">
+                                % QĐ
+                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">
+                                    ▲▼
+                                </div>
+                            </div>
+                        </th>
+                    {/if}
                     
+                    {#if hasInventoryData}
+                        <th class="py-3 px-4 text-right border-b w-32 bg-emerald-50 text-emerald-800">SL Tồn kho</th>
+                        <th class="py-3 px-4 text-center border-b w-32 bg-red-50 text-red-800">Cảnh báo</th>
+                    {/if}
+      
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
-                                 DT Trả chậm 
-                                <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                                DT Trả chậm 
+                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueTraCham')}">
+                                    ▲▼
                                 </div>
                             </div>
                         </th>
@@ -218,11 +246,21 @@
                 
                 <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
-                    
                     <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
                     
+                    {#if !isVelocityMode}
+                        <td class="py-3 px-4 text-center">
+                            {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueQD / totalMetrics.revenue) * 100) : '0%'}
+                        </td>
+                    {/if}
+
+                    {#if hasInventoryData}
+                        <td class="py-3 px-4 bg-emerald-100 border-r border-white"></td>
+                        <td class="py-3 px-4 bg-red-100"></td>
+                    {/if}
+
                     {#if !isVelocityMode}
                         <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
                         <td class="py-3 px-4 text-center bg-yellow-100">
@@ -233,7 +271,7 @@
             </thead>
             <tbody>
                 {#if sortedData.length === 0}
-                    <tr><td colspan="{isVelocityMode ? 4 : 6}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 6 : 4) : 7}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
                     {#each sortedData as group (group.id)}
                         <TableRowRecursive 
@@ -243,6 +281,7 @@
                             {LEVEL_COLORS}
                             {fmtQty} {fmtRev} {fmtPct}
                             {isVelocityMode} 
+                            {hasInventoryData}
                         />
                     {/each}
                 {/if}
@@ -252,8 +291,18 @@
 </div>
 
 <style>
+    /* [QUAN TRỌNG] ĐÃ XÓA CSS ẨN CỘT THỨ 5 GÂY LỖI */
+    
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [INVENTORY] CSS cho cột cảnh báo */
+    :global(.cell-alert) {
+        color: #c02424; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    :global(.cell-ok) {
+        color: #059669; font-weight: bold; text-align: center;
+    }
 
     /* [CAPTURE STYLE UPDATES] */
     :global(.capture-container .luyke-filter-section) { display: none !important; }
@@ -268,12 +317,6 @@
     :global(.capture-container .luyke-table-wrapper td) {
         padding: 8px 6px !important; white-space: normal !important; overflow: visible !important;
         height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
-    }
-    :global(.capture-container .luyke-table-wrapper td > div),
-    :global(.capture-container .luyke-table-wrapper td span),
-    :global(.capture-container .luyke-table-wrapper td p) {
-         overflow: visible !important; white-space: normal !important; height: auto !important;
-         line-height: 1.5 !important; padding-bottom: 2px !important; margin-bottom: 0 !important;
     }
     :global(.capture-container .luyke-table-wrapper th:first-child) { min-width: 150px !important; width: auto !important; }
 </style>
