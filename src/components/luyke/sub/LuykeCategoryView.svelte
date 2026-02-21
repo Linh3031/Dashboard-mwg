@@ -42,6 +42,13 @@
     let hasInventoryData = false;
 
     const PRESET_DAYS = [3, 5, 7, 10];
+    
+    // [GENESIS SURGICAL] Phản ứng: Khóa cột Nhà sản xuất & Người tạo nếu đang có Dữ liệu Tồn Kho
+    $: displayedDimensions = AVAILABLE_DIMENSIONS.filter(d => {
+        if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
+        return true;
+    });
+
     // 1. Restore config from session storage
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
@@ -163,7 +170,7 @@
             let currentLevel = rootMap;
             // Tạo Tree Nodes
             activeDimensionIds.forEach((dimId, index) => {
-                const rawValue = row[dimId] || ''; // [GENESIS] Lấy chuỗi thô để extract ID
+                const rawValue = row[dimId] || ''; 
                 const key = getDimensionValue(row, dimId);
                 const stableId = `${index}_${key}`;
 
@@ -177,7 +184,6 @@
                         children: new Map(), level: index
                     };
 
-                    // [GENESIS SURGICAL] Bắt ID ghim vào node để làm mỏ neo cho InventoryLogic tính toán
                     if (dimId === 'tenSanPham') {
                         nodeData.productCode = row.maSanPham || ''; 
                     } else if (dimId === 'nhomHang') {
@@ -226,10 +232,8 @@
             totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
         }
 
-        // [INVENTORY] D. Trộn dữ liệu Tồn kho & Cảnh báo
+        // D. Trộn dữ liệu Tồn kho & Cảnh báo
         if (isVelocityMode && inventoryIndex) {
-            console.log("[View] Bắt đầu trộn dữ liệu tồn kho...");
-            // Gọi Helper để map dữ liệu
             inventoryHelper.enrichTreeWithInventory(finalTree, inventoryIndex, velocityDays, alertDays);
             hasInventoryData = true;
             finalTree = [...finalTree]; // Trigger Reactivity
@@ -239,7 +243,6 @@
 
         treeData = finalTree;
         totalMetrics = { ...totalMetrics };
-        // Trigger Reactivity
         
         updateFilterOptions(processedData);
     }
@@ -254,8 +257,7 @@
 
             sourceData.forEach(row => {
                 let isValid = true;
-                const hinhThucXuatTinhDoanhThu 
-= dataProcessing.getHinhThucXuatTinhDoanhThu();
+                const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
                 if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; 
                 if (!isValidRow(row)) return;
 
@@ -290,11 +292,13 @@
     async function handleInventoryUpload(event) {
         const file = event.detail;
         try {
-            console.log("[View] Nhận file upload, đang xử lý...");
-            // Gọi processFile
             const index = await inventoryHelper.processFile(file);
             if (index) {
                 inventoryIndex = index;
+                
+                // [GENESIS SURGICAL] Gỡ bỏ nhaSanXuat và nhanVienTao khỏi các tab đang xem ngay lập tức
+                activeDimensionIds = activeDimensionIds.filter(id => id !== 'nhaSanXuat' && id !== 'nhanVienTao');
+                
                 calculateData(); // Tính toán lại để hiển thị
                 
                 alert(`Cập nhật tồn kho thành công!`);
@@ -305,21 +309,18 @@
         }
     }
 
-    // [INVENTORY] Thay đổi ngày cảnh báo
     function handleInventorySettings(event) {
         alertDays = event.detail.alertDays;
         if (inventoryIndex) calculateData();
     }
 
-    // Trigger Re-calculate
     $: {
         if (data || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || velocityDays || dateFilter) {
             calculateData();
         }
     }
 
-    function handleConfigChange(event) { activeDimensionIds = event.detail;
-    }
+    function handleConfigChange(event) { activeDimensionIds = event.detail; }
     function handleFilterChange(event) {
         const { key, selected } = event.detail;
         currentFilters = { ...currentFilters, [key]: selected };
@@ -336,9 +337,7 @@
         }
     }
 
-    function setToCurrentDays() {
-        velocityDays = getCurrentMinusOne();
-    }
+    function setToCurrentDays() { velocityDays = getCurrentMinusOne(); }
 </script>
 
 <div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
@@ -349,7 +348,6 @@
                 {#each warnings as w}<li>{w}</li>{/each}
             </ul>
         </div>
-    
     {/if}
 
     <div class="velocity-toolbar flex flex-wrap items-end gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
@@ -357,20 +355,17 @@
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
             <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
                 <input 
-                
                     type="date" 
                     bind:value={dateFilter.from}
                     class="bg-transparent text-sm text-gray-700 outline-none w-32"
                 />
                 <span class="mx-2 text-gray-400">➝</span>
                 <input 
-
                     type="date" 
                     bind:value={dateFilter.to}
                     class="bg-transparent text-sm text-gray-700 outline-none w-32"
                 />
             </div>
-       
         </div>
 
         <div class="w-px h-10 bg-gray-200 mx-2"></div>
@@ -378,12 +373,10 @@
         <div class="flex items-center gap-3 h-full pb-1">
             <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
             <button 
-                class="{isVelocityMode ?
-'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
                 on:click={toggleVelocityMode}
             >
-                <span class="{isVelocityMode ?
-'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                <span class="{isVelocityMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
             </button>
         </div>
 
@@ -391,38 +384,31 @@
             <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
                 <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
              
-                
                 <button 
                     on:click={setToCurrentDays}
                     class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
                     title="Tính theo ngày hiện tại - 1"
-    
                 >
                     Hiện tại ({getCurrentMinusOne()})
                 </button>
 
                 {#each PRESET_DAYS as d}
                     <button 
-          
                         on:click={() => velocityDays = d}
-                        class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ?
-'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}"
+                        class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}"
                     >
                         {d} ngày
                     </button>
                 {/each}
           
-                
                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
                     <input 
                         type="number" 
-
                         min="1" 
                         class="w-10 text-sm font-bold text-center outline-none text-orange-700"
                         bind:value={velocityDays}
                     />
-  
                 </div>
             </div>
 
@@ -430,15 +416,14 @@
                 {isVelocityMode} 
                 on:upload={handleInventoryUpload}
                 on:settingsChange={handleInventorySettings}
-            
-/>
+            />
         {/if}
     </div>
 
     <LuykeCategoryTreeTable 
         data={treeData} 
         {totalMetrics}
-        allDimensions={AVAILABLE_DIMENSIONS}
+        allDimensions={displayedDimensions} 
         activeIds={activeDimensionIds}
         {filterOptions}
         {currentFilters}
@@ -446,17 +431,13 @@
         bind:expandedRows={expandedRows}
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}
- 
         hasInventoryData={hasInventoryData}
     />
 </div>
 
 <style>
-  .animate-fade-in { animation: fadeIn 0.3s ease-out;
-}
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
   .animate-fade-in-down { animation: fadeInDown 0.3s ease-out; }
-  @keyframes fadeIn { from { opacity: 0;
-} to { opacity: 1; } }
-  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px);
-} to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 </style>

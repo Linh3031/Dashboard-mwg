@@ -17,9 +17,11 @@
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
     $: qdPercent = group.revenue > 0 ? (group.revenueQD / group.revenue) * 100 : 0;
 
-    const getAlertClass = (info) => {
-        if (!info || !info.isAlert) return 'text-gray-400';
-        return 'text-red-600 font-bold bg-red-50';
+    // [GENESIS SURGICAL] Sửa hàm nhận diện Class theo đúng định dạng trả về của InventoryLogic
+    const getAlertClass = (status) => {
+        if (status === 'alert') return 'text-red-600 font-bold bg-red-50';
+        if (status === 'ok') return 'text-emerald-600 font-bold';
+        return 'text-gray-400';
     };
 
     // [FIX DISPLAY] Hàm format số nguyên cho tồn kho (bỏ số lẻ)
@@ -65,16 +67,15 @@
         <td class="py-2 px-4 text-right font-bold text-emerald-700 bg-emerald-50/30">
             {group.inventoryQty !== undefined ? fmtInt(group.inventoryQty) : '-'}
         </td>
-        <td class="py-2 px-4 text-center text-xs {getAlertClass(group.alertInfo)}">
-            {#if group.alertInfo && group.alertInfo.isAlert}
-                <div class="flex flex-col items-center">
-                    <span>Thiếu: {fmtInt(group.alertInfo.missingQty)}</span>
-                    <span class="text-[10px] font-normal text-gray-500">
-                        (Còn {group.alertInfo.daysCovered} ngày)
-                    </span>
+        <td class="py-2 px-4 text-center text-xs {getAlertClass(group.inventoryStatus)}">
+            {#if group.inventoryStatus === 'alert'}
+                <div class="flex items-center justify-center gap-1">
+                    ⚠️ {group.inventoryMessage}
                 </div>
+            {:else if group.inventoryStatus === 'ok'}
+                <span>✓ {group.inventoryMessage}</span>
             {:else}
-                <span class="text-green-600">Đủ hàng</span>
+                <span>{group.inventoryMessage || '-'}</span>
             {/if}
         </td>
     {/if}
