@@ -1,6 +1,6 @@
 <script>
   import { afterUpdate } from 'svelte';
-  import { competitionData } from '../../stores.js';
+  import { competitionData, luykeNameMappings } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
 
   let viewType = 'completion'; 
@@ -126,13 +126,15 @@
     {@const targetRemaining = (item.target || 0) - (item.luyKe || 0)}
     {@const daysLeft = Math.max(30 - (new Date().getDate()), 1)}
     {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
+    
+    {@const displayTitle = $luykeNameMappings && $luykeNameMappings[item.name] ? $luykeNameMappings[item.name] : item.name}
 
     <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
         <div class="flex justify-between items-start gap-3 mb-4">
             <h4 class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
                 title={item.name}
                 style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
-                {truncateTextSimple(item.name)}
+                {truncateTextSimple(displayTitle)}
             </h4>
             <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
                {formatters.formatPercentage(item.hoanThanhValue / 100)}
@@ -217,7 +219,7 @@
 
             <div class="luyke-toolbar-right flex items-center gap-2">
                 <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-                    <button 
+                     <button 
                         class="view-mode-btn {viewType === 'completion' ? 'active' : ''}" 
                         on:click={() => setViewType('completion')}
                     >

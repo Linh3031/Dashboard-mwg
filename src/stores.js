@@ -29,6 +29,7 @@ export const composerTemplates = writable(savedTemplates);
 // -------------------------------------------------------------
 
 export const competitionNameMappings = writable({}); 
+export const luykeNameMappings = writable({}); // [NEW] Dành riêng cho Thi đua Siêu thị
 export const homeConfig = writable({ videoUrl: '', timeline: [], sliderImages: [], changelogs: [] });
 export const danhSachNhanVien = writable([]);
 export const ycxData = writable([]);
@@ -76,7 +77,6 @@ export const kpiStore = writable(savedKpi || {
 });
 
 kpiStore.subscribe(value => {
-    // console.log('[STORE] KPI Update:', value); // Uncomment nếu muốn log chi tiết thay đổi
     if (typeof localStorage !== 'undefined') {
         localStorage.setItem('kpiStore_cache', JSON.stringify(value));
     }

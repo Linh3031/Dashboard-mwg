@@ -9,7 +9,8 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    competitionNameMappings
+    competitionNameMappings,
+    luykeNameMappings // [NEW] Import store mới
 } from '../../stores.js';
 import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
 
@@ -70,7 +71,8 @@ export const categoryService = {
             const docsToLoad = [
                 "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping", 
                 "groupNameMapping", "brandNameMapping", "efficiencyConfig", 
-                "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList"
+                "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList",
+                "luykeNameMappings" // [NEW] Thêm file cấu hình thi đua siêu thị vào tiến trình tải lúc khởi động
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
@@ -85,6 +87,7 @@ export const categoryService = {
             competitionNameMappings.set(safeGet(results[7], {}));
             categoryStructure.set(safeGet(results[8]));
             brandList.set(safeGet(results[9]));
+            luykeNameMappings.set(safeGet(results[10], {})); // [NEW] Nạp dữ liệu vào store
 
             console.log("[declarations.category] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -179,6 +182,38 @@ export const categoryService = {
         } catch (error) {
             console.error("Lỗi khi lưu Bảng Ánh Xạ Tên Thi Đua:", error);
             notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
+        }
+    },
+
+    // [NEW] Lưu và tải mapping riêng biệt cho Thi đua Siêu thị
+    async saveLuykeNameMappings(mappings) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "luykeNameMappings");
+            await setDoc(docRef, { mappings: sanitizeForFirestore(mappings) });
+            notify('Đã lưu Tên rút gọn Thi đua Siêu thị thành công!', 'success');
+        } catch (error) {
+            console.error("Lỗi khi lưu Tên rút gọn Thi đua Siêu thị:", error);
+            notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
+        }
+    },
+
+    async loadLuykeNameMappings() {
+        const db = getDB();
+        if (!db) return {};
+        try {
+            const docRef = doc(db, "declarations", "luykeNameMappings");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.mappings || {};
+            }
+            return {};
+        } catch (error) {
+            console.error("Lỗi khi tải Tên rút gọn Thi đua Siêu thị:", error);
+            return {};
         }
     },
 

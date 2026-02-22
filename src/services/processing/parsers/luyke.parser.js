@@ -1,5 +1,6 @@
 // src/services/processing/parsers/luyke.parser.js
-import { competitionData } from '../../../stores.js';
+import { competitionData, luykeNameMappings } from '../../../stores.js';
+import { get } from 'svelte/store';
 
 export const luykeParser = {
     // 1. Phân tích các chỉ số KPI chính (DT, DTQĐ, %HT)
@@ -110,6 +111,19 @@ export const luykeParser = {
             }
         }
         if (currentCompetition) results.push(currentCompetition);
+
+        // [NEW] Tự động nạp tên chương trình vào danh sách Rút gọn Siêu thị
+        const currentMappings = get(luykeNameMappings) || {};
+        let hasChanges = false;
+        results.forEach(item => {
+            if (!currentMappings[item.name]) {
+                currentMappings[item.name] = item.name;
+                hasChanges = true;
+            }
+        });
+        if (hasChanges) {
+            luykeNameMappings.set(currentMappings);
+        }
 
         competitionData.set(results);
         return results;

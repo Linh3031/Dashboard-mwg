@@ -36,6 +36,10 @@ export const adminService = {
 
     saveNameMapping: categoryService.saveNameMapping,
     saveCompetitionNameMappings: categoryService.saveCompetitionNameMappings,
+    
+    // [NEW] Lưu và tải mapping riêng biệt cho Thi đua Siêu thị
+    saveLuykeNameMappings: categoryService.saveLuykeNameMappings,
+    loadLuykeNameMappings: categoryService.loadLuykeNameMappings,
 
     // --- 6. LOGIC & CALCULATION ---
     loadDeclarationsFromFirestore: performanceService.loadDeclarationsFromFirestore,
