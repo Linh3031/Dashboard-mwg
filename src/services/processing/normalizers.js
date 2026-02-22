@@ -163,9 +163,18 @@ export const normalizers = {
                 }
                 newRow.revenue = revenue; 
 
-                // 2. Xác định Hệ số gốc (Base Rate)
+                // 2. Xác định Hệ số gốc (Base Rate) - Trang bị cơ chế Regex tìm mã số
                 const productKey = String(newRow.nhomHang || '').trim();
-                const baseRate = heSoMap[productKey] || 1;
+                let baseRate = heSoMap[productKey];
+
+                if (baseRate === undefined && productKey) {
+                    const matchId = productKey.match(/^(\d+)/);
+                    if (matchId) {
+                        const foundKey = Object.keys(heSoMap).find(k => k.startsWith(matchId[1] + ' -'));
+                        if (foundKey) baseRate = heSoMap[foundKey];
+                    }
+                }
+                baseRate = baseRate || 1;
 
                 // 3. Xác định thưởng Trả Góp (Bonus Rate) - Dùng includes thay vì Set
                 const exportModeRaw = String(newRow.hinhThucXuat || '');

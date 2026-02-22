@@ -156,6 +156,9 @@ src/components/luyke/sub/LuykeCategoryToolbar.svelte
 src/components/luyke/sub/LuykeCategoryCharts.svelte
 src/components/luyke/sub/LuykeCategoryTreeTable.svelte
 src/components/luyke/sub/LuykeCategoryView.svelte
+src/components/luyke/inventory
+src/components/luyke/inventory/InventoryToolbar.svelte
+src/components/luyke/inventory/InventoryLogic.js
 src/components/luyke/LuykeCategoryTable.svelte
 src/components/luyke/LuykeEfficiencyTable.svelte
 src/components/luyke/LuykeSieuThi.svelte

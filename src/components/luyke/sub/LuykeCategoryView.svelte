@@ -156,11 +156,23 @@
             const revenue = parseMoney(row.thanhTien);
             
        
-            let heSo = heSoQuyDoiMap[row.nhomHang] || 1;
+            // [CƠ CHẾ TÌM KIẾM DỰ PHÒNG BẰNG MÃ SỐ]
+            let heSo = heSoQuyDoiMap[row.nhomHang];
+            if (heSo === undefined && row.nhomHang) {
+                const matchId = String(row.nhomHang).match(/^(\d+)/);
+                if (matchId) {
+                    const foundKey = Object.keys(heSoQuyDoiMap).find(k => k.startsWith(matchId[1] + ' -'));
+                    if (foundKey) heSo = heSoQuyDoiMap[foundKey];
+                }
+            }
+            heSo = heSo || 1;
+
             const htx = (row.hinhThucXuat || '').toLowerCase();
             const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
             if (isTraGop) heSo += 0.3;
-            const revenueQD = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (revenue * heSo);
+            
+            // Ép tính toán lại trực tiếp bằng hệ số mới nhất (Bỏ qua dữ liệu lỗi từ Parser)
+            const revenueQD = revenue * heSo;
 
             totalMetrics.quantity += quantity;
             totalMetrics.revenue += revenue;

@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 2/9/2026, 9:54:34 PM
+GENERATED AT: 2/22/2026, 4:12:10 PM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
@@ -1999,6 +1999,241 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
 </style>
 <<< FILE_END: src/components/luyke/TdvInfographic.svelte
 
+>>> FILE_START: src/components/luyke/inventory/InventoryLogic.js
+// src/components/inventory/InventoryLogic.js
+/* global XLSX */
+
+function extractId(rawString) {
+    if (!rawString) return 'UNKNOWN';
+    const str = rawString.toString().trim();
+    const match = str.match(/^(\d+)/);
+    return match ? match[1] : 'UNKNOWN';
+}
+
+function robustParseFloat(val) {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return val;
+    const str = String(val).replace(/,/g, '.').replace(/[^0-9.-]/g, '');
+    return parseFloat(str) || 0;
+}
+
+export const inventoryHelper = {
+    async processFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    if (!json || json.length === 0) throw new Error("File Excel trống dữ liệu.");
+
+                    let headerRowIndex = -1;
+                    let colMap = { nganhHang: -1, nhomHang: -1, maSp: -1, sl: -1 };
+                    
+                    for (let i = 0; i < Math.min(json.length, 20); i++) {
+                        const row = json[i];
+                        if (!row) continue;
+                        const rowStr = row.map(cell => (cell || '').toString().toLowerCase().trim());
+                        
+                        const nganhHangIdx = rowStr.findIndex(c => c === 'ngành hàng');
+                        const nhomHangIdx = rowStr.findIndex(c => c === 'nhóm hàng');
+                        const maSpIdx = rowStr.findIndex(c => c === 'mã sản phẩm' || c === 'mã sp' || c === 'mã');
+                        const slIdx = rowStr.findIndex(c => c === 'số lượng' || c === 'tồn' || c === 'sl');
+
+                        if (slIdx !== -1 && (maSpIdx !== -1 || nhomHangIdx !== -1 || nganhHangIdx !== -1)) {
+                            headerRowIndex = i;
+                            colMap = { nganhHang: nganhHangIdx, nhomHang: nhomHangIdx, maSp: maSpIdx, sl: slIdx };
+                            break;
+                        }
+                    }
+
+                    if (headerRowIndex === -1) {
+                        throw new Error("Không tìm thấy cấu trúc cột chuẩn.");
+                    }
+
+                    const index = { products: {}, groups: {}, categories: {} };
+
+                    for (let i = headerRowIndex + 1; i < json.length; i++) {
+                        const row = json[i];
+                        if (!row || row.length === 0) continue;
+
+                        const sl = parseFloat(row[colMap.sl]) || 0;
+                        if (sl <= 0) continue; 
+
+                        const spId = colMap.maSp !== -1 ? (row[colMap.maSp] || '').toString().trim() : '';
+                        const groupId = colMap.nhomHang !== -1 ? extractId(row[colMap.nhomHang]) : 'UNKNOWN';
+                        const catId = colMap.nganhHang !== -1 ? extractId(row[colMap.nganhHang]) : 'UNKNOWN';
+
+                        if (spId) index.products[spId] = (index.products[spId] || 0) + sl;
+                        if (groupId !== 'UNKNOWN') index.groups[groupId] = (index.groups[groupId] || 0) + sl;
+                        if (catId !== 'UNKNOWN') index.categories[catId] = (index.categories[catId] || 0) + sl;
+                    }
+
+                    console.log("[InventoryLogic] Build Index OK. Total Products mapped:", Object.keys(index.products).length);
+                    resolve(index);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            
+            reader.onerror = (err) => reject(err);
+            reader.readAsArrayBuffer(file);
+        });
+    },
+
+    enrichTreeWithInventory(treeNodes, index, velocityDays, alertDays) {
+        if (!treeNodes || !index) return;
+
+        treeNodes.forEach(node => {
+            // 1. Duyệt sâu xuống con trước
+            if (node.children && node.children.length > 0) {
+                this.enrichTreeWithInventory(node.children, index, velocityDays, alertDays);
+            }
+
+            // 2. Tìm Tồn Kho bằng ID
+            let inv = 0;
+            let matchSource = 'none';
+
+            if (node.productCode && index.products[node.productCode] !== undefined) {
+                inv = index.products[node.productCode];
+                matchSource = 'productCode';
+            } else if (node.groupId && index.groups[node.groupId] !== undefined) {
+                inv = index.groups[node.groupId];
+                matchSource = 'groupId';
+            } else if (node.categoryId && index.categories[node.categoryId] !== undefined) {
+                inv = index.categories[node.categoryId];
+                matchSource = 'categoryId';
+            } else if (node.children && node.children.length > 0) {
+                inv = node.children.reduce((sum, child) => sum + robustParseFloat(child.inventoryQty), 0);
+                matchSource = 'bottom-up-children';
+            }
+
+            node.inventoryQty = robustParseFloat(inv);
+
+            // 3. Tính toán
+            const currentInv = node.inventoryQty;
+            const dailySales = robustParseFloat(node.quantity); 
+            const alertD = robustParseFloat(alertDays) || 1;
+            const dailyInv = currentInv / alertD;
+
+            // Log Console ĐỂ BẮT LỖI (chỉ log những sản phẩm có dữ liệu để tránh lag)
+            // Nếu bạn đang xem iPhone 17, nó sẽ in ra chi tiết phép tính của dòng này.
+            if (node.name && (node.name.toLowerCase().includes('iphone 17') || (dailySales > 0 && currentInv === 0))) {
+                console.warn(`[DEBUG INVENTORY] 🔍 Phân tích node: ${node.name}`);
+                console.table({
+                    "1. Match Type": matchSource,
+                    "2. Raw Quantity (Sức Bán)": typeof node.quantity === 'object' ? JSON.stringify(node.quantity) : node.quantity,
+                    "3. Parsed Daily Sales": dailySales,
+                    "4. Raw Inventory (Tồn)": inv,
+                    "5. Parsed Inventory": currentInv,
+                    "6. Alert Days": alertD,
+                    "7. Daily Inv Capacity (Tồn / Ngày)": dailyInv,
+                    "8. Toán tử So sánh (dailyInv < dailySales)": `${dailyInv} < ${dailySales}`,
+                    "9. Kết quả So sánh": dailyInv < dailySales
+                });
+            }
+
+            if (dailySales <= 0 && currentInv <= 0) {
+                node.inventoryStatus = 'none';
+                node.inventoryMessage = '-';
+            } else if (dailyInv < dailySales) {
+                node.inventoryStatus = 'alert';
+                node.inventoryMessage = `Thiếu hàng`; 
+            } else {
+                node.inventoryStatus = 'ok';
+                node.inventoryMessage = `Đủ hàng`;
+            }
+        });
+    }
+};
+<<< FILE_END: src/components/luyke/inventory/InventoryLogic.js
+
+>>> FILE_START: src/components/luyke/inventory/InventoryToolbar.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    export let isVelocityMode = false;
+
+    const dispatch = createEventDispatcher();
+    let fileInput;
+    let alertDays = 3; // Mặc định 3 ngày
+    let fileName = '';
+
+    const PRESET_ALERT_DAYS = [3, 5, 7, 10, 15, 30];
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            fileName = file.name;
+            dispatch('upload', file);
+        }
+    }
+
+    function triggerUpload() {
+        fileInput.click();
+    }
+
+    function handleDaysChange() {
+        dispatch('settingsChange', { alertDays });
+    }
+</script>
+
+{#if isVelocityMode}
+    <div class="flex items-center gap-3 border-l border-gray-300 ml-3 pl-3 animate-fade-in">
+        <input 
+            type="file" 
+            accept=".xlsx, .xls" 
+            class="hidden" 
+            bind:this={fileInput} 
+            on:change={handleFileSelect}
+        />
+
+        <a 
+            href="https://report.mwgroup.vn/home/dashboard/6" 
+            target="_blank"
+            class="flex items-center gap-1 text-xs text-blue-600 hover:underline hover:text-blue-800"
+            title="Tải file mẫu tồn kho chi tiết"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Mẫu
+        </a>
+
+        <button 
+            on:click={triggerUpload}
+            class="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 transition-colors text-xs font-bold"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {fileName ? 'Đã tải file' : 'Up Tồn kho'}
+        </button>
+
+        <div class="flex items-center gap-1 bg-white border border-gray-300 rounded px-2 py-1">
+            <span class="text-[10px] font-bold text-gray-500 uppercase">Cảnh báo:</span>
+            <select 
+                bind:value={alertDays} 
+                on:change={handleDaysChange}
+                class="text-xs font-bold text-red-600 outline-none bg-transparent cursor-pointer"
+            >
+                {#each PRESET_ALERT_DAYS as d}
+                    <option value={d}>{d} ngày</option>
+                {/each}
+            </select>
+        </div>
+    </div>
+{/if}
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+</style>
+<<< FILE_END: src/components/luyke/inventory/InventoryToolbar.svelte
+
 >>> FILE_START: src/components/luyke/sub/DailyTargetSimulator.svelte
 <script>
     import { formatters } from '../../../utils/formatters.js';
@@ -2024,7 +2259,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         const month = now.getMonth() + 1;
         const daysInMonth = new Date(year, month, 0).getDate();
         const currentDay = now.getDate();
-        let remain = daysInMonth - currentDay;
+        let remain = daysInMonth - currentDay+1;
         return remain > 0 ? remain : 0; 
     }
 
@@ -2398,12 +2633,10 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
     export let filterOptions = {}; 
     export let currentFilters = {};
     export let isVelocityMode = false;
-    
-    // Nhận state từ cha
-    export let expandedRows = new Set(); 
+    export let expandedRows = new Set();
+    export let hasInventoryData = false;
 
     const dispatch = createEventDispatcher();
-    
     let openFilterId = null;
     let filterSearchQuery = '';
 
@@ -2412,6 +2645,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         maximumFractionDigits: isVelocityMode ? 1 : 0,
         minimumFractionDigits: isVelocityMode ? 1 : 0 
     }).format(n || 0);
+
     $: fmtRev = (n) => {
         if (!n) return '0';
         const val = n / 1000000;
@@ -2430,7 +2664,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         'text-orange-700'             
     ];
 
-    // --- SORT LOGIC ---
+    // --- SORT LOGIC (Đã nâng cấp) ---
     let sortKey = 'revenue'; 
     let sortDirection = 'desc';
 
@@ -2446,10 +2680,20 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
     function sortTree(nodes, key, dir) {
         if (!nodes || nodes.length === 0) return [];
         const sorted = [...nodes].sort((a, b) => {
-            const valA = a[key] || 0;
-            const valB = b[key] || 0;
+            let valA, valB;
+
+            // [FIX] Logic sort đặc biệt cho cột %QĐ (Tính toán động)
+            if (key === 'percentQD') {
+                valA = a.revenue ? (a.revenueQD / a.revenue) : 0;
+                valB = b.revenue ? (b.revenueQD / b.revenue) : 0;
+            } else {
+                valA = a[key] || 0;
+                valB = b[key] || 0;
+            }
+
             return dir === 'asc' ? valA - valB : valB - valA;
         });
+
         return sorted.map(node => {
             if (node.children && node.children.length > 0) {
                 return { ...node, children: sortTree(node.children, key, dir) };
@@ -2505,6 +2749,13 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         else newIds.push(dimId);
         dispatch('configChange', newIds);
     }
+
+    function SortIcon(currentKey) {
+        if (sortKey !== currentKey) return '';
+        return sortDirection === 'asc' ? '▲' : '▼';
+    }
+    
+    $: iconClass = (key) => sortKey === key ? 'text-blue-600' : 'text-gray-300 group-hover:text-gray-500';
 </script>
 
 <div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 luyke-filter-section">
@@ -2529,7 +2780,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
                          <div class="flex justify-between items-center mb-2"><span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>{#if hasFilter}<button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>{/if}</div>
-                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
+                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
                          <div class="max-h-48 overflow-y-auto space-y-1">
                             {#each getDisplayOptions(dim.id) as option}
                                 {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
@@ -2555,7 +2806,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
                              <div class="flex gap-1 ml-auto">
-                                 <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
@@ -2564,9 +2815,8 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                     <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'SL TB/Ngày' : 'Số lượng'}
-                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                <span class={sortKey === 'quantity' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                <span class={sortKey === 'quantity' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('quantity')}">
+                                ▲▼
                             </div>
                         </div>
                     </th>
@@ -2574,9 +2824,8 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
-                            <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                <span class={sortKey === 'revenue' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                <span class={sortKey === 'revenue' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenue')}">
+                                ▲▼
                             </div>
                         </div>
                     </th>
@@ -2584,20 +2833,34 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
-                             <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                <span class={sortKey === 'revenueQD' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                <span class={sortKey === 'revenueQD' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueQD')}">
+                                ▲▼
                             </div>
                         </div>
                     </th>
+
+                    {#if !isVelocityMode}
+                        <th class="py-3 px-4 text-center border-b w-24 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('percentQD')} title="Sắp xếp theo % Quy đổi">
+                            <div class="flex items-center justify-center gap-1">
+                                % QĐ
+                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">
+                                    ▲▼
+                                </div>
+                            </div>
+                        </th>
+                    {/if}
                     
+                    {#if hasInventoryData}
+                        <th class="py-3 px-4 text-right border-b w-32 bg-emerald-50 text-emerald-800">SL Tồn kho</th>
+                        <th class="py-3 px-4 text-center border-b w-32 bg-red-50 text-red-800">Cảnh báo</th>
+                    {/if}
+      
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
-                                 DT Trả chậm 
-                                <div class="flex flex-col text-[10px] leading-[8px] text-gray-300 group-hover:text-gray-500">
-                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'asc' ? 'text-blue-600' : ''}>▲</span>
-                                    <span class={sortKey === 'revenueTraCham' && sortDirection === 'desc' ? 'text-blue-600' : ''}>▼</span>
+                                DT Trả chậm 
+                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueTraCham')}">
+                                    ▲▼
                                 </div>
                             </div>
                         </th>
@@ -2607,11 +2870,21 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                 
                 <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
-                    
                     <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
                     
+                    {#if !isVelocityMode}
+                        <td class="py-3 px-4 text-center">
+                            {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueQD / totalMetrics.revenue) * 100) : '0%'}
+                        </td>
+                    {/if}
+
+                    {#if hasInventoryData}
+                        <td class="py-3 px-4 bg-emerald-100 border-r border-white"></td>
+                        <td class="py-3 px-4 bg-red-100"></td>
+                    {/if}
+
                     {#if !isVelocityMode}
                         <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
                         <td class="py-3 px-4 text-center bg-yellow-100">
@@ -2622,7 +2895,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
             </thead>
             <tbody>
                 {#if sortedData.length === 0}
-                    <tr><td colspan="{isVelocityMode ? 4 : 6}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 6 : 4) : 7}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
                     {#each sortedData as group (group.id)}
                         <TableRowRecursive 
@@ -2632,6 +2905,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                             {LEVEL_COLORS}
                             {fmtQty} {fmtRev} {fmtPct}
                             {isVelocityMode} 
+                            {hasInventoryData}
                         />
                     {/each}
                 {/if}
@@ -2641,8 +2915,18 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
 </div>
 
 <style>
+    /* [QUAN TRỌNG] ĐÃ XÓA CSS ẨN CỘT THỨ 5 GÂY LỖI */
+    
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* [INVENTORY] CSS cho cột cảnh báo */
+    :global(.cell-alert) {
+        color: #c02424; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    :global(.cell-ok) {
+        color: #059669; font-weight: bold; text-align: center;
+    }
 
     /* [CAPTURE STYLE UPDATES] */
     :global(.capture-container .luyke-filter-section) { display: none !important; }
@@ -2658,12 +2942,6 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         padding: 8px 6px !important; white-space: normal !important; overflow: visible !important;
         height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
     }
-    :global(.capture-container .luyke-table-wrapper td > div),
-    :global(.capture-container .luyke-table-wrapper td span),
-    :global(.capture-container .luyke-table-wrapper td p) {
-         overflow: visible !important; white-space: normal !important; height: auto !important;
-         line-height: 1.5 !important; padding-bottom: 2px !important; margin-bottom: 0 !important;
-    }
     :global(.capture-container .luyke-table-wrapper th:first-child) { min-width: 150px !important; width: auto !important; }
 </style>
 <<< FILE_END: src/components/luyke/sub/LuykeCategoryTreeTable.svelte
@@ -2674,12 +2952,15 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
     import { cleanCategoryName } from '../../../utils.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
     import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
-    import { formatters } from '../../../utils/formatters.js'; 
+    import { formatters } from '../../../utils/formatters.js';
+    // Components
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
+    // [INVENTORY] Import Module Logic & Toolbar
+    import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
+    import { inventoryHelper } from '../inventory/InventoryLogic.js';
 
     export let data = [];
     export let selectedWarehouse = '';
-    
     const AVAILABLE_DIMENSIONS = [
         { id: 'nganhHang', label: 'Ngành hàng', default: true },
         { id: 'nhomHang', label: 'Nhóm hàng', default: true },
@@ -2687,54 +2968,63 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-    // State
+    // --- STATE ---
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+    // Filters
     let currentFilters = {};
     let filterOptions = {};
     let warnings = [];
-    
-    // Expanded Rows State & Storage
+    // UI State
     let expandedRows = new Set();
-    // [FIX STATE] Cờ hiệu
     let isConfigLoaded = false;
-    
     const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V1';
-
     // --- VELOCITY & DATE STATE ---
     let isVelocityMode = false;
-    let velocityDays = 1; 
+    let velocityDays = 1;
     let dateFilter = { from: '', to: '' }; 
 
-    const PRESET_DAYS = [3, 5, 7, 10];
+    // --- INVENTORY STATE ---
+    let inventoryIndex = null;
+    let alertDays = 3;
+    let hasInventoryData = false;
 
-    // Restore config from session storage
+    const PRESET_DAYS = [3, 5, 7, 10];
+    
+    // Khóa cột Nhà sản xuất & Người tạo nếu đang có Dữ liệu Tồn Kho
+    $: displayedDimensions = AVAILABLE_DIMENSIONS.filter(d => {
+        if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
+        return true;
+    });
+
+    // 1. Restore config from session storage
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) {
             try {
                 const config = JSON.parse(saved);
                 if (config.activeDimensionIds) activeDimensionIds = config.activeDimensionIds;
+               
                 if (config.currentFilters) currentFilters = config.currentFilters;
                 if (config.isVelocityMode !== undefined) isVelocityMode = config.isVelocityMode;
                 if (config.velocityDays) velocityDays = config.velocityDays;
                 if (config.dateFilter) dateFilter = config.dateFilter;
                 if (config.expandedRows) expandedRows = new Set(config.expandedRows);
-            } catch (e) { console.error('Error loading config', e); }
+            
+            } 
+            catch (e) { console.error('Error loading config', e); }
         }
-        // [FIX STATE] Đã load xong, cho phép save
         isConfigLoaded = true;
     });
-
-    // Auto save config
+    // 2. Auto save config
     $: {
-        // [FIX STATE] Chỉ lưu khi đã load config cũ
         if (isConfigLoaded && typeof sessionStorage !== 'undefined') {
             const configToSave = {
                 activeDimensionIds,
                 currentFilters,
                 isVelocityMode,
+             
                 velocityDays,
                 dateFilter,
                 expandedRows: Array.from(expandedRows)
@@ -2743,6 +3033,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         }
     }
 
+    // Helpers
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
@@ -2755,8 +3046,6 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         const isDaXuat = (row.trangThaiXuat || "").trim() === 'Đã xuất';
         return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
     };
-
-    // Hàm lấy giá trị chuẩn (Fix Name Format & Clean Logic)
     const getDimensionValue = (row, dimId) => {
         let val = '';
         if (dimId === 'nganhHang') val = row.nganhHang;
@@ -2766,7 +3055,6 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         else if (dimId === 'tenSanPham') val = row.tenSanPham;
 
         if (!val) return '(Trống)';
-
         if (dimId === 'nhanVienTao') {
              const maNVMatch = val.match(/(\d+)/);
              const maNV = maNVMatch ? maNVMatch[1] : '';
@@ -2779,7 +3067,6 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         
         return cleanCategoryName(val);
     };
-
     // --- CORE CALCULATION ---
     function calculateData() {
         treeData = [];
@@ -2787,7 +3074,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         warnings = [];
         if (!data || data.length === 0) return;
 
-        // 1. [GLOBAL] LỌC NGÀY
+        // A. Lọc theo Ngày
         let processedData = data;
         if (dateFilter.from || dateFilter.to) {
             processedData = filterDataByDate(data, dateFilter.from, dateFilter.to);
@@ -2797,28 +3084,44 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
         let rootMap = new Map();
 
-        // 2. Gom nhóm
+        // B. Gom nhóm & Tính toán
         processedData.forEach(row => {
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return;
             if (!isValidRow(row)) return;
             
             // Logic lọc dữ liệu dựa trên Current Filters
             if (Object.keys(currentFilters).length > 0) {
+   
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
                     if (selectedValues && selectedValues.length > 0) {
                         const cellVal = getDimensionValue(row, key);
-                        if (!selectedValues.includes(cellVal)) return; // Bỏ qua 
+                        if (!selectedValues.includes(cellVal)) 
+                            return; 
                     }
                 }
             }
 
             const quantity = parseInt(row.soLuong || 0);
             const revenue = parseMoney(row.thanhTien);
-            let heSo = heSoQuyDoiMap[row.nhomHang] || 1;
+            
+       
+            // [CƠ CHẾ TÌM KIẾM DỰ PHÒNG BẰNG MÃ SỐ]
+            let heSo = heSoQuyDoiMap[row.nhomHang];
+            if (heSo === undefined && row.nhomHang) {
+                const matchId = String(row.nhomHang).match(/^(\d+)/);
+                if (matchId) {
+                    const foundKey = Object.keys(heSoQuyDoiMap).find(k => k.startsWith(matchId[1] + ' -'));
+                    if (foundKey) heSo = heSoQuyDoiMap[foundKey];
+                }
+            }
+            heSo = heSo || 1;
+
             const htx = (row.hinhThucXuat || '').toLowerCase();
             const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
             if (isTraGop) heSo += 0.3;
-            const revenueQD = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (revenue * heSo);
+            
+            // Ép tính toán lại trực tiếp bằng hệ số mới nhất (Bỏ qua dữ liệu lỗi từ Parser)
+            const revenueQD = revenue * heSo;
 
             totalMetrics.quantity += quantity;
             totalMetrics.revenue += revenue;
@@ -2826,21 +3129,36 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
             if (isTraGop) totalMetrics.revenueTraCham += revenue;
 
             let currentLevel = rootMap;
+            // Tạo Tree Nodes
             activeDimensionIds.forEach((dimId, index) => {
+                const rawValue = row[dimId] || ''; 
                 const key = getDimensionValue(row, dimId);
-                
-                // Tạo ID cố định để Sort không bị đóng hàng
                 const stableId = `${index}_${key}`;
 
                 if (!currentLevel.has(key)) {
-                    currentLevel.set(key, {
+                    let nodeData = {
+  
                         id: stableId,
                         name: key,
                         quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
+                     
                         children: new Map(), level: index
-                    });
+                    };
+
+                    if (dimId === 'tenSanPham') {
+                        nodeData.productCode = row.maSanPham || ''; 
+                    } else if (dimId === 'nhomHang') {
+                        const m = rawValue.toString().match(/^(\d+)/);
+                        if (m) nodeData.groupId = m[1];
+                    } else if (dimId === 'nganhHang') {
+                        const m = rawValue.toString().match(/^(\d+)/);
+                        if (m) nodeData.categoryId = m[1];
+                    }
+
+                    currentLevel.set(key, nodeData);
                 }
                 const groupObj = currentLevel.get(key);
+          
                 groupObj.quantity += quantity;
                 groupObj.revenue += revenue;
                 groupObj.revenueQD += revenueQD;
@@ -2848,23 +3166,24 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                 currentLevel = groupObj.children;
             });
         });
-
+        // Convert Map -> Array
         const convertMapToArray = (map) => {
             return Array.from(map.values()).map(item => {
                 const newItem = { ...item };
                 if (newItem.children && newItem.children.size > 0) {
                     newItem.children = convertMapToArray(newItem.children);
+   
                     newItem.children.sort((a, b) => b.revenue - a.revenue);
                 } else {
                     delete newItem.children;
                 }
                 return newItem;
+      
             }).sort((a, b) => b.revenue - a.revenue);
         };
         
         let finalTree = convertMapToArray(rootMap);
-
-        // 3. XỬ LÝ SỨC BÁN
+        // C. Xử lý Sức bán (Velocity Mode)
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
             const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
@@ -2874,13 +3193,22 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
             totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
         }
 
+        // D. Trộn dữ liệu Tồn kho & Cảnh báo
+        if (isVelocityMode && inventoryIndex) {
+            inventoryHelper.enrichTreeWithInventory(finalTree, inventoryIndex, velocityDays, alertDays);
+            hasInventoryData = true;
+            finalTree = [...finalTree]; // Trigger Reactivity
+        } else {
+            hasInventoryData = false;
+        }
+
         treeData = finalTree;
         totalMetrics = { ...totalMetrics };
-        // Cập nhật bộ lọc sau khi tính toán xong
+        
         updateFilterOptions(processedData);
     }
 
-    // Bộ lọc phụ thuộc (Cascading Filters)
+    // Bộ lọc phụ thuộc (Cascading)
     function updateFilterOptions(sourceData) {
         const options = {};
         AVAILABLE_DIMENSIONS.forEach(targetDim => {
@@ -2896,13 +3224,16 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
 
                 if (Object.keys(otherFilters).length > 0) {
                     for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
+                
                         if (filterValues && filterValues.length > 0) {
                             const valToCheck = getDimensionValue(row, filterKey);
                             if (!filterValues.includes(valToCheck)) {
+                        
                                 isValid = false;
                                 break;
                             }
                         }
+      
                     }
                 }
 
@@ -2915,8 +3246,33 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
             });
             options[targetDim.id] = Array.from(uniqueValues).sort();
         });
-
         filterOptions = options;
+    }
+
+    // [INVENTORY] Xử lý Upload file Excel
+    async function handleInventoryUpload(event) {
+        const file = event.detail;
+        try {
+            const index = await inventoryHelper.processFile(file);
+            if (index) {
+                inventoryIndex = index;
+                
+                // Gỡ bỏ nhaSanXuat và nhanVienTao khỏi các tab đang xem ngay lập tức
+                activeDimensionIds = activeDimensionIds.filter(id => id !== 'nhaSanXuat' && id !== 'nhanVienTao');
+                
+                calculateData(); // Tính toán lại để hiển thị
+                
+                alert(`Cập nhật tồn kho thành công!`);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Lỗi đọc file tồn kho: " + e.message);
+        }
+    }
+
+    function handleInventorySettings(event) {
+        alertDays = event.detail.alertDays;
+        if (inventoryIndex) calculateData();
     }
 
     $: {
@@ -2931,7 +3287,6 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         currentFilters = { ...currentFilters, [key]: selected };
     }
     
-    // Hàm lấy ngày hiện tại trừ 1 (tối thiểu là 1)
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
@@ -2939,12 +3294,11 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
             velocityDays = getCurrentMinusOne();
         } else {
             velocityDays = 1;
+            hasInventoryData = false;
         }
     }
 
-    function setToCurrentDays() {
-        velocityDays = getCurrentMinusOne();
-    }
+    function setToCurrentDays() { velocityDays = getCurrentMinusOne(); }
 </script>
 
 <div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
@@ -2957,7 +3311,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         </div>
     {/if}
 
-    <div class="velocity-toolbar flex flex-wrap items-end gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+    <div class="velocity-toolbar flex flex-wrap items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
         <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
             <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
@@ -2990,7 +3344,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         {#if isVelocityMode}
             <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
                 <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
-                
+             
                 <button 
                     on:click={setToCurrentDays}
                     class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
@@ -3007,7 +3361,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                         {d} ngày
                     </button>
                 {/each}
-                
+          
                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
                     <input 
@@ -3018,13 +3372,23 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
                     />
                 </div>
             </div>
+
+            <InventoryToolbar 
+                {isVelocityMode} 
+                on:upload={handleInventoryUpload}
+                on:settingsChange={handleInventorySettings}
+            />
+
+            {#if !hasInventoryData}
+                <span class="text-xs italic text-red-500 ml-2 animate-fade-in">* Thêm file tồn kho để xem cảnh báo tồn kho</span>
+            {/if}
         {/if}
     </div>
 
     <LuykeCategoryTreeTable 
         data={treeData} 
         {totalMetrics}
-        allDimensions={AVAILABLE_DIMENSIONS}
+        allDimensions={displayedDimensions} 
         activeIds={activeDimensionIds}
         {filterOptions}
         {currentFilters}
@@ -3032,6 +3396,7 @@ GENERATED AT: 2/9/2026, 9:54:34 PM
         bind:expandedRows={expandedRows}
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}
+        hasInventoryData={hasInventoryData}
     />
 </div>
 
