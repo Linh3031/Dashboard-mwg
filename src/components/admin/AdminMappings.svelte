@@ -45,6 +45,22 @@
         }
     }
 
+    // [THÊM MỚI] Hàm dọn dẹp dữ liệu tháng cũ
+    async function clearAllMappings() {
+        if (confirm("⚠️ BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ TÊN RÚT GỌN THI ĐUA?\n\nHành động này dùng để dọn rác khi sang tháng mới. Sau khi xóa, bạn cần ra tab Cập Nhật Dữ Liệu dán lại data Thi đua để hệ thống tạo danh sách mới.")) {
+            competitionNameMappings.set({});
+            isSaving = true;
+            try {
+                await adminService.saveCompetitionNameMappings({});
+            } catch (e) {
+                console.error(e);
+                alert("Có lỗi xảy ra khi xóa dữ liệu trên Cloud.");
+            } finally {
+                isSaving = false;
+            }
+        }
+    }
+
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
@@ -79,17 +95,29 @@
                         bind:value={mappingSearch}
                     >
                 </div>
-                <button 
-                    class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
-                    on:click={saveAllMappings}
-                    disabled={isSaving}
-                >
-                    {#if isSaving}
-                        <span class="animate-spin">↻</span> Đang lưu...
-                    {:else}
-                        <i data-feather="save" class="w-4 h-4"></i> Lưu Thay Đổi
-                    {/if}
-                </button>
+                
+                <div class="flex items-center gap-2">
+                    <button 
+                        class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
+                        on:click={clearAllMappings}
+                        disabled={isSaving}
+                        title="Dọn dẹp danh sách khi sang tháng mới"
+                    >
+                        <i data-feather="trash-2" class="w-4 h-4"></i> Dọn Tháng Cũ
+                    </button>
+
+                    <button 
+                        class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
+                        on:click={saveAllMappings}
+                        disabled={isSaving}
+                    >
+                        {#if isSaving}
+                            <span class="animate-spin">↻</span> Đang lưu...
+                        {:else}
+                          <span><i data-feather="save" class="w-4 h-4"></i></span> Lưu Thay Đổi
+                        {/if}
+                    </button>
+                </div>
             </div>
 
             <div class="border border-slate-200 rounded-lg bg-white shadow-inner overflow-hidden">
