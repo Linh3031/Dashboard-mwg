@@ -43,7 +43,7 @@
 
     const PRESET_DAYS = [3, 5, 7, 10];
     
-    // [GENESIS SURGICAL] Phản ứng: Khóa cột Nhà sản xuất & Người tạo nếu đang có Dữ liệu Tồn Kho
+    // Khóa cột Nhà sản xuất & Người tạo nếu đang có Dữ liệu Tồn Kho
     $: displayedDimensions = AVAILABLE_DIMENSIONS.filter(d => {
         if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
         return true;
@@ -296,7 +296,7 @@
             if (index) {
                 inventoryIndex = index;
                 
-                // [GENESIS SURGICAL] Gỡ bỏ nhaSanXuat và nhanVienTao khỏi các tab đang xem ngay lập tức
+                // Gỡ bỏ nhaSanXuat và nhanVienTao khỏi các tab đang xem ngay lập tức
                 activeDimensionIds = activeDimensionIds.filter(id => id !== 'nhaSanXuat' && id !== 'nhanVienTao');
                 
                 calculateData(); // Tính toán lại để hiển thị
@@ -350,7 +350,7 @@
         </div>
     {/if}
 
-    <div class="velocity-toolbar flex flex-wrap items-end gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+    <div class="velocity-toolbar flex flex-wrap items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
         <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
             <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
@@ -417,6 +417,10 @@
                 on:upload={handleInventoryUpload}
                 on:settingsChange={handleInventorySettings}
             />
+
+            {#if !hasInventoryData}
+                <span class="text-xs italic text-red-500 ml-2 animate-fade-in">* Thêm file tồn kho để xem cảnh báo tồn kho</span>
+            {/if}
         {/if}
     </div>
 
