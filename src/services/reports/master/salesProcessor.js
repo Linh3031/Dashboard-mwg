@@ -31,6 +31,7 @@ export const salesProcessor = {
             // Map chi tiết
             doanhThuTheoNganhHang: {}, 
             doanhThuTheoNhomHang: {}, 
+            tongSoLuong: 0, // [GENESIS FIX]: Thêm biến lưu tổng số lượng
             
             // Quy đổi chuẩn (QDC)
             qdc: {},
@@ -115,6 +116,7 @@ export const salesProcessor = {
 
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
+                        data.tongSoLuong += soLuong; // [GENESIS FIX]: Cộng dồn số lượng để chia đơn giá TB
 
                         if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
                             data.doanhThuTraGop += thanhTien;
@@ -196,6 +198,16 @@ export const salesProcessor = {
                 }
             });
         }
+
+        // [GENESIS FIX]: Bơm tính toán Đơn Giá vào đây trước khi xuất data ra ngoài
+        data.donGiaTrungBinh = data.tongSoLuong > 0 ? data.doanhThu / data.tongSoLuong : 0;
+        data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
+        data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
+        data.donGiaMayGiat = data.slMayGiat > 0 ? data.dtMayGiat / data.slMayGiat : 0;
+        data.donGiaMayLanh = data.slMayLanh > 0 ? data.dtMayLanh / data.slMayLanh : 0;
+        data.donGiaDienThoai = data.slDienThoai > 0 ? data.dtDienThoai / data.slDienThoai : 0;
+        data.donGiaLaptop = data.slLaptop > 0 ? data.dtLaptop / data.slLaptop : 0;
+
         return data;
     },
 

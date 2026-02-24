@@ -11,20 +11,29 @@
   $: summary = employee.summary;
   $: totalAbove = employee.totalAbove;
   $: totalCriteria = employee.totalCriteria;
+  
+  // Tính % để tô màu cho các thẻ hạng 4 trở lên
+  $: percentage = totalCriteria > 0 ? totalAbove / totalCriteria : 0;
 
   function handleClick() {
     dispatch('click', { employeeId: employee.maNV });
   }
 
-  // [MODIFIED] Hàm lấy style nền và icon theo thứ hạng (Gamification)
-  function getRankStyle(r) {
+  // [MODIFIED] Áp dụng màu sắc phân loại hiệu suất cho các thẻ hạng 4+
+  function getRankStyle(r, pct) {
+      // Top 3 vẫn giữ huy chương lộng lẫy
       if (r === 1) return { bg: 'bg-gradient-to-br from-yellow-100 to-yellow-50 border-yellow-300', icon: '🏆', rankText: 'text-yellow-600' };
       if (r === 2) return { bg: 'bg-gradient-to-br from-slate-200 to-slate-100 border-slate-300', icon: '🥈', rankText: 'text-slate-500' };
       if (r === 3) return { bg: 'bg-gradient-to-br from-orange-100 to-orange-50 border-orange-300', icon: '🥉', rankText: 'text-orange-600' };
-      return { bg: 'bg-white border-gray-200', icon: `#${r}`, rankText: 'text-slate-300' };
+      
+      // Hạng 4 trở đi: Tô màu nền theo hiệu suất giống bảng Thi Đua
+      if (pct >= 0.7) return { bg: 'bg-emerald-50 border-emerald-200', icon: `#${r}`, rankText: 'text-emerald-600' };
+      if (pct >= 0.4) return { bg: 'bg-blue-50 border-blue-200', icon: `#${r}`, rankText: 'text-blue-600' };
+      if (pct >= 0.2) return { bg: 'bg-yellow-50 border-yellow-200', icon: `#${r}`, rankText: 'text-yellow-600' };
+      return { bg: 'bg-red-50 border-red-200', icon: `#${r}`, rankText: 'text-red-600' };
   }
 
-  $: rankConfig = getRankStyle(rank);
+  $: rankConfig = getRankStyle(rank, percentage);
 </script>
 
 <div 
@@ -38,7 +47,7 @@
   </div>
 
   <div class="p-3 flex items-start relative z-10">
-    <div class="flex-shrink-0 flex items-center justify-center w-8 h-8 font-black {rank <= 3 ? 'text-2xl -mt-1' : 'text-sm text-gray-500 bg-gray-100/70 rounded-lg'}">
+    <div class="flex-shrink-0 flex items-center justify-center w-8 h-8 font-black {rank <= 3 ? 'text-2xl -mt-1' : 'text-sm text-slate-500 bg-white/60 rounded-lg shadow-sm'}">
         {rankConfig.icon}
     </div>
 
@@ -49,14 +58,14 @@
     />
   </div>
 
-  <div class="flex-grow flex flex-col justify-end relative z-10">
+  <div class="relative z-10">
     <CardMainKpi 
         aboveCount={totalAbove} 
         totalCount={totalCriteria} 
     />
   </div>
   
-  <div class="relative z-10">
+  <div class="relative z-10 mt-auto">
     <CardSubKpiGrid summary={summary} />
   </div>
 </div>

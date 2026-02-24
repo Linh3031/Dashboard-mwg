@@ -3,14 +3,17 @@
   export let totalCount = 0;
 
   $: percentage = totalCount > 0 ? aboveCount / totalCount : 0;
-  $: colorClass = percentage >= 0.7 ? 'text-green-600' : percentage >= 0.4 ? 'text-yellow-500' : 'text-red-500';
-  $: borderColorClass = percentage >= 0.7 ? 'border-t-green-500' : percentage >= 0.4 ? 'border-t-yellow-500' : 'border-t-red-500';
+  
+  // Đồng bộ màu chữ và màu viền theo màu nền của EmployeeCard
+  $: colorClass = percentage >= 0.7 ? 'text-emerald-700' : percentage >= 0.4 ? 'text-blue-700' : percentage >= 0.2 ? 'text-yellow-700' : 'text-red-700';
+  $: borderColorClass = percentage >= 0.7 ? 'border-emerald-200' : percentage >= 0.4 ? 'border-blue-200' : percentage >= 0.2 ? 'border-yellow-200' : 'border-red-200';
 </script>
 
-<div class="text-center py-2 border-t-4 {borderColorClass} bg-slate-50/50 mt-2">
-  <div class="flex items-baseline justify-center gap-1">
-    <span class="text-3xl font-extrabold {colorClass} leading-none">{aboveCount}</span>
-    <span class="text-sm font-bold text-gray-400">/ {totalCount}</span>
+<div class="flex items-center justify-between px-3 py-2 border-t border-dashed {borderColorClass} bg-white/40 backdrop-blur-sm">
+  <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Chỉ số đạt</span>
+  
+  <div class="flex items-baseline gap-1">
+    <span class="text-2xl font-extrabold {colorClass} leading-none">{aboveCount}</span>
+    <span class="text-sm font-bold text-slate-400">/ {totalCount}</span>
   </div>
-  <span class="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Chỉ số đạt</span>
 </div>
