@@ -9,15 +9,13 @@
     $: displayTitle = payload.title || targetProgram;
     $: totalTarget = payload.totalTarget || 0;
 
-    // Biến lưu trạng thái đếm nhân sự để hiển thị ra UI
     let currentEmployeeCount = 1;
     let currentPersonalTarget = 0;
 
-    // [MODIFIED] Logic tính Target và lấy Lũy kế thực tế
+    // 1. Logic xử lý Data (Tính Target & Lấy Lũy kế Thực tế)
     $: employeeList = (() => {
         if (!isOpen || !targetProgram) return [];
 
-        // 1. TÍNH TOÁN "MẪU SỐ" (SỐ LƯỢNG NHÂN SỰ VÀ TARGET CÁ NHÂN)
         let validEmployees = $danhSachNhanVien || [];
         if ($selectedWarehouse) {
             validEmployees = validEmployees.filter(nv => nv.maKho === $selectedWarehouse);
@@ -31,36 +29,26 @@
         let results = [];
         const searchKey = String(targetProgram).normalize('NFC').trim().toLowerCase();
 
-        // 2. TÌM LŨY KẾ THỰC TẾ TRONG DATA DÁN
         $pastedThiDuaReportData.forEach((emp) => {
             let progData = null;
 
-            // Quét array emp.competitions
             if (Array.isArray(emp.competitions)) {
                 progData = emp.competitions.find(p => 
                     (p.tenNganhHang && String(p.tenNganhHang).normalize('NFC').trim().toLowerCase() === searchKey) ||
                     (p.tenGoc && String(p.tenGoc).normalize('NFC').trim().toLowerCase() === searchKey)
                 );
             }
-
-            // Quét array emp.programs
             if (!progData && Array.isArray(emp.programs)) {
                 progData = emp.programs.find(p => p.name && String(p.name).normalize('NFC').trim().toLowerCase() === searchKey);
             }
-            
-            // Quét object emp.programs
             else if (!progData && emp.programs && typeof emp.programs === 'object') {
                 const key = Object.keys(emp.programs).find(k => String(k).normalize('NFC').trim().toLowerCase() === searchKey);
                 if (key) progData = emp.programs[key];
             }
-            
-            // Quét thẳng ở root object
             if (!progData) {
                 const key = Object.keys(emp).find(k => String(k).normalize('NFC').trim().toLowerCase() === searchKey);
                 if (key) progData = emp[key];
             }
-            
-            // Quét mờ (contains)
             if (!progData && Array.isArray(emp.competitions)) {
                  progData = emp.competitions.find(p => 
                     (p.tenNganhHang && String(p.tenNganhHang).normalize('NFC').trim().toLowerCase().includes(searchKey)) ||
@@ -74,10 +62,8 @@
                     Object.keys(progData).forEach(k => { normData[k.toLowerCase()] = progData[k]; });
                 }
 
-                // 3. CHỈ LẤY "THỰC TẾ", BỎ "TARGET" VÀ "TYLE" CỦA DATA DÁN
                 const luyKe = parseFloat(normData['thuchien'] ?? normData['luyke'] ?? normData['doanhthu'] ?? normData['soluong'] ?? normData['actual'] ?? progData[0] ?? 0);
                 
-                // 4. TỰ ĐỘNG TÍNH LẠI % HOÀN THÀNH
                 let tyLe = 0;
                 if (currentPersonalTarget > 0) {
                     tyLe = (luyKe / currentPersonalTarget) * 100;
@@ -85,32 +71,51 @@
                     tyLe = 100;
                 }
 
-                // Chỉ đưa người này vào bảng xếp hạng nếu họ có làm phát sinh Lũy kế HOẶC Target lớn hơn 0
                 if (currentPersonalTarget > 0 || luyKe > 0) {
+                    // [FIXED] Chặt bỏ phần mã nhân viên bị dính vào đuôi tên từ file data dán
+                    let rawHoTen = emp.hoTen || emp.name || emp.ten || 'Chưa cập nhật';
+                    let cleanHoTen = rawHoTen.split(' - ')[0].trim();
+
                     results.push({
                         maNV: emp.maNV || emp.id || 'N/A',
-                        hoTen: emp.hoTen || emp.name || emp.ten || 'Chưa cập nhật',
+                        hoTen: cleanHoTen,
                         luyKe, 
-                        target: currentPersonalTarget, // Target đã được chia tự động
+                        target: currentPersonalTarget, 
                         tyLe
                     });
                 }
             }
         });
 
-        // 5. SẮP XẾP LẠI THEO % MỚI TÍNH TỪ CAO XUỐNG THẤP
         return results.sort((a, b) => b.tyLe - a.tyLe);
     })();
+
+    // 2. Phân tách danh sách theo UI/Gamification
+    $: topCount = employeeList.length <= 15 ? 3 : 5;
+    $: topPerformers = employeeList.slice(0, topCount);
+    $: restOfList = employeeList.slice(topCount);
+    
+    // Tự động chia 2 hoặc 3 cột cho danh sách còn lại
+    $: gridClass = employeeList.length <= 10 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
     function close() {
         modalState.update(s => ({ ...s, activeModal: null, payload: null }));
     }
 
-    function getRowColor(tyLe) {
+    // Style cho các thẻ Compact (Danh sách dưới)
+    function getCompactRowColor(tyLe) {
         if (tyLe >= 100) return 'bg-emerald-50 text-emerald-800 border-emerald-100';
         if (tyLe >= 80) return 'bg-blue-50 text-blue-800 border-blue-100';
         if (tyLe >= 50) return 'bg-yellow-50 text-yellow-800 border-yellow-100';
         return 'bg-red-50 text-red-800 border-red-100';
+    }
+
+    // Style cho thẻ Vinh Danh Top (Danh sách trên)
+    function getRankStyle(index) {
+        if (index === 0) return { bg: 'bg-gradient-to-br from-yellow-100 to-yellow-50 border-yellow-300 shadow-sm', text: 'text-yellow-700', icon: '🏆', rankText: 'text-yellow-600' };
+        if (index === 1) return { bg: 'bg-gradient-to-br from-slate-200 to-slate-100 border-slate-300 shadow-sm', text: 'text-slate-700', icon: '🥈', rankText: 'text-slate-500' };
+        if (index === 2) return { bg: 'bg-gradient-to-br from-orange-100 to-orange-50 border-orange-300 shadow-sm', text: 'text-orange-800', icon: '🥉', rankText: 'text-orange-600' };
+        return { bg: 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-sm', text: 'text-blue-700', icon: '⭐', rankText: 'text-blue-500' };
     }
 
     afterUpdate(() => { if (typeof feather !== 'undefined' && isOpen) feather.replace(); });
@@ -118,7 +123,7 @@
 
 {#if isOpen}
     <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in" on:click={close}>
-       <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] mx-4" on:click|stopPropagation>
+       <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] mx-4" on:click|stopPropagation>
            
            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
                <div class="flex items-center gap-3">
@@ -147,32 +152,71 @@
                         <p class="text-sm mt-2">Đảm bảo bạn đã dán Data ở Tab Thi Đua NV Lũy Kế.</p>
                     </div>
                 {:else}
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {#each employeeList as emp, index}
-                            {@const style = getRowColor(emp.tyLe)}
-                            <div class="flex items-center justify-between p-3 rounded-lg border shadow-sm {style} transition-transform hover:-translate-y-0.5">
-                                <div class="flex items-center gap-3">
-                                    <div class="font-black text-lg opacity-40 w-6 text-center">#{index + 1}</div>
-                                    <div>
-                                        <div class="font-bold text-sm">{emp.hoTen}</div>
-                                        <div class="text-xs opacity-80 uppercase tracking-wider font-semibold">{emp.maNV}</div>
+                    {#if topPerformers.length > 0}
+                        <div class="mb-6">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <i data-feather="award" class="w-4 h-4 text-yellow-500"></i> Vinh danh dẫn đầu
+                            </h4>
+                            <div class="grid gap-3 {topCount === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5'}">
+                                {#each topPerformers as emp, index}
+                                    {@const rankConfig = getRankStyle(index)}
+                                    <div class="flex flex-col p-4 rounded-xl border {rankConfig.bg} transition-transform hover:-translate-y-1 relative overflow-hidden group">
+                                        <div class="absolute -right-2 -bottom-4 text-6xl font-black opacity-10 {rankConfig.rankText} select-none">#{index + 1}</div>
+                                        
+                                        <div class="flex items-start justify-between mb-2 relative z-10">
+                                            <span class="text-lg" title="Hạng {index + 1}">{rankConfig.icon}</span>
+                                            <div class="text-2xl font-black {rankConfig.text} leading-none">{formatters.formatPercentage(emp.tyLe / 100)}</div>
+                                        </div>
+                                        
+                                        <div class="relative z-10 mt-auto">
+                                            <div class="font-bold text-sm text-slate-800 truncate" title="{emp.hoTen}">
+                                                {formatters.getShortEmployeeName(emp.hoTen, emp.maNV)}
+                                            </div>
+                                            <div class="text-[11px] font-semibold text-slate-500 mt-1">
+                                                <span class="text-slate-700">{formatters.formatNumberOrDash(emp.luyKe)}</span> / {formatters.formatNumberOrDash(emp.target)}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="text-right">
-                                    <div class="text-xl font-black">{formatters.formatPercentage(emp.tyLe / 100)}</div>
-                                    <div class="text-[10px] font-semibold opacity-80">
-                                        {formatters.formatNumberOrDash(emp.luyKe)} / {formatters.formatNumberOrDash(emp.target)}
-                                    </div>
-                                </div>
+                                {/each}
                             </div>
-                        {/each}
-                    </div>
+                        </div>
+                    {/if}
+
+                    {#if restOfList.length > 0}
+                        <div>
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <i data-feather="list" class="w-4 h-4"></i> Danh sách chi tiết
+                            </h4>
+                            <div class="grid gap-2 {gridClass}">
+                                {#each restOfList as emp, index}
+                                    {@const actualIndex = index + topCount}
+                                    {@const style = getCompactRowColor(emp.tyLe)}
+                                    <div class="flex items-center justify-between p-2.5 px-3 rounded-lg border shadow-sm {style} hover:brightness-95 transition-all">
+                                        <div class="flex items-center gap-3 overflow-hidden">
+                                            <div class="font-black text-sm opacity-40 w-5 text-left shrink-0">#{actualIndex + 1}</div>
+                                            <div class="truncate">
+                                                <div class="font-bold text-xs truncate" title="{emp.hoTen}">
+                                                    {formatters.getShortEmployeeName(emp.hoTen, emp.maNV)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="text-right shrink-0 ml-2">
+                                            <div class="text-base font-black leading-none">{formatters.formatPercentage(emp.tyLe / 100)}</div>
+                                            <div class="text-[10px] font-semibold opacity-80 mt-0.5">
+                                                {formatters.formatNumberOrDash(emp.luyKe)} <span class="opacity-50">/</span> {formatters.formatNumberOrDash(emp.target)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
                 {/if}
            </div>
 
            <div class="px-6 py-3 border-t border-slate-200 bg-white flex justify-between items-center text-xs text-slate-500">
                <span>Tổng cộng: <strong>{employeeList.length}</strong> nhân sự tham gia</span>
-               <button on:click={close} class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">Đóng</button>
+               <button on:click={close} class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">Đóng</button>
            </div>
        </div>
     </div>
