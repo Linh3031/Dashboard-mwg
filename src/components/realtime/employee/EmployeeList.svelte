@@ -36,11 +36,11 @@
       acc.doanhThuQuyDoiChuaXuat += Number(item.doanhThuQuyDoiChuaXuat) || 0;
       return acc;
   }, { doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuQuyDoiChuaXuat: 0 });
-
+  
   // Công thức tính % tổng
   $: totalPctQD = totalStats.doanhThu > 0 ? (totalStats.doanhThuQuyDoi / totalStats.doanhThu) - 1 : 0;
   $: totalPctTC = totalStats.doanhThu > 0 ? (totalStats.doanhThuTraGop / totalStats.doanhThu) : 0;
-
+  
   function handleSort(key) {
     if (sortKey === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -59,6 +59,7 @@
       }
       let valA = Number(a[key]) || 0;
       let valB = Number(b[key]) || 0;
+     
       return dir === 'asc' ? valA - valB : valB - valA;
     });
   }
@@ -69,6 +70,35 @@
     if (deptName.includes('Trang Trí')) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     return 'bg-gray-100 text-gray-800 border-gray-200';
   }
+
+  // --- [NEW] LOGIC GAMIFICATION TÍNH THEO TỪNG BỘ PHẬN ---
+  function getRowStyle(index, totalCount) {
+      const topCount = totalCount <= 15 ? 3 : 5;
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
+  }
+
+  // Hàm style nền chuyên biệt dành cho các cột bị ghim (Sticky)
+  function getStickyClass(index, totalCount) {
+      const topCount = totalCount <= 15 ? 3 : 5;
+      if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50 group-hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white group-hover:bg-blue-50' : 'bg-slate-50 group-hover:bg-blue-50';
+  }
+
+  function getRankIcon(index, totalCount) {
+      const topCount = totalCount <= 15 ? 3 : 5;
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
 </script>
 
 <div class="space-y-8" data-capture-group="revenue-detail-mobile">
@@ -76,6 +106,7 @@
     
     {#each departmentOrder as deptName}
       {#if groupedData[deptName]}
+        {@const deptTotal = groupedData[deptName].length}
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div class="p-4 border-b {getHeaderDeptClass(deptName)}">
             <h4 class="text-lg font-bold uppercase">{deptName}</h4>
@@ -85,7 +116,11 @@
             <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
               <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20 shadow-sm">
                 <tr>
-                  <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-0 bg-slate-200 z-30 select-none" style="width: 25%" on:click={() => handleSort('hoTen')}>
+                  <th class="px-2 py-3 text-center sticky left-0 bg-slate-200 z-30 select-none border-r border-slate-300" style="width: 50px; min-width: 50px;">
+                    Hạng
+                  </th>
+                  
+                  <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-[50px] bg-slate-200 z-30 select-none border-r border-slate-300" style="width: calc(25% - 50px); min-width: 120px;" on:click={() => handleSort('hoTen')}>
                     <div class="flex items-center gap-1">
                       <span>Nhân viên</span>
                       <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,17 +149,23 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200">
-                {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item (item.maNV)}
+                {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item, index (item.maNV)}
                   {@const userTarget = $kpiStore.targets[item.maNV] || $kpiStore.globalSettings}
                   {@const targetQD = (userTarget?.phanTramQD || 0) / 100}
                   {@const targetTC = (userTarget?.phanTramTC || 0) / 100}
                   {@const qdClass = getCompletionColor(item.hieuQuaQuyDoi, targetQD)}
                   {@const tcClass = getCompletionColor(item.tyLeTraCham, targetTC)}
                   
-                  <tr class="hover:bg-blue-50 transition cursor-pointer interactive-row" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
-                    <td class="px-4 py-2 font-semibold text-blue-600 sticky left-0 bg-white hover:bg-blue-50 z-10 border-r border-gray-200">
+                  <tr class="transition cursor-pointer interactive-row group {getRowStyle(index, deptTotal)}" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
+                    
+                    <td class="px-2 py-2 text-center font-bold sticky left-0 z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}">
+                        {getRankIcon(index, deptTotal)}
+                    </td>
+
+                    <td class="px-4 py-2 font-semibold text-blue-600 sticky left-[50px] z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)}">
                       {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                     </td>
+                    
                     <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThu)}</td>
                     <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
                     <td class="px-4 py-2 text-right font-bold {qdClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
@@ -145,7 +186,7 @@
         <table class="min-w-full text-sm text-left font-bold uppercase">
           <tfoot class="bg-gray-100 font-bold text-gray-900 text-xs uppercase">
             <tr>
-              <td class="px-4 py-3 border-r border-gray-300" style="width: 25%">TỔNG CỘNG</td>
+              <td class="px-4 py-3 border-r border-gray-300 text-center tracking-wider" style="width: 25%" colspan="2">TỔNG CỘNG</td>
               
               <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThu)}</td>
               <td class="px-4 py-3 text-right text-base text-blue-700" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
