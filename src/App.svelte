@@ -45,6 +45,7 @@
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
+  import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
   // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte'; // <-- [TẮT DEMO] Comment import
 
   // Kiểm tra localStorage ngay khi khởi tạo
@@ -263,6 +264,7 @@
 <UserCompetitionModal />
 <UserSpecialProgramModal />
 <ComposerModal /> 
+<StEmpCompetitionModal />
 
 {#if $modalState.activeModal === 'unexported-detail-modal'}
     <UnexportedDetailModal 

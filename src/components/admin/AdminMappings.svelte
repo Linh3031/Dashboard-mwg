@@ -5,16 +5,30 @@
 
     let mappingSearch = '';
     let isSaving = false;
-    let activeTab = 'nhanvien'; // 'nhanvien' hoặc 'sieuthi'
-    
-    // Dynamic Subscribe theo Tab
-    $: mappings = activeTab === 'nhanvien' ? ($competitionNameMappings || {}) : ($luykeNameMappings || {});
+    let activeTab = 'nhanvien';
 
-    $: mappingList = Object.entries(mappings).map(([original, short], index) => ({
-        originalName: original,
-        shortName: short || original,
-        index: index + 1
-    }));
+    // [MODIFIED] Quét các chương trình đã được liên kết để loại trừ
+    $: selectedPrograms = Object.values($luykeNameMappings || {})
+        .map(v => (typeof v === 'object' && v !== null) ? v.linkedEmpProgram : null)
+        .filter(Boolean);
+
+    $: mappings = activeTab === 'nhanvien' ? ($competitionNameMappings || {}) : ($luykeNameMappings || {});
+    // Tương thích ngược: Cho phép đọc cả String (chuỗi cũ) và Object (chuỗi mới có liên kết)
+    $: mappingList = Object.entries(mappings).map(([original, val], index) => {
+        if (activeTab === 'nhanvien') {
+            return { originalName: original, shortName: val || original, index: index + 1 };
+        } else {
+            let shortName = original;
+            let linkedEmpProgram = '';
+            if (typeof val === 'string') {
+                shortName = val;
+            } else if (val && typeof val === 'object') {
+                shortName = val.shortName || original;
+                linkedEmpProgram = val.linkedEmpProgram || '';
+            }
+            return { originalName: original, shortName, linkedEmpProgram, index: index + 1 };
+        }
+    });
 
     $: filteredList = mappingList.filter(item => {
         const term = mappingSearch.toLowerCase();
@@ -22,23 +36,37 @@
                item.shortName.toLowerCase().includes(term);
     });
 
+    // Cập nhật Tên rút gọn
     function handleMappingInput(originalName, event) {
         const newShortName = event.target.value;
         if (activeTab === 'nhanvien') {
             competitionNameMappings.update(current => ({ ...current, [originalName]: newShortName }));
         } else {
-            luykeNameMappings.update(current => ({ ...current, [originalName]: newShortName }));
+            luykeNameMappings.update(current => {
+                const existing = current[originalName];
+                const newObj = (typeof existing === 'object' && existing !== null) ? { ...existing } : { shortName: existing || originalName, linkedEmpProgram: '' };
+                newObj.shortName = newShortName;
+                return { ...current, [originalName]: newObj };
+            });
         }
+    }
+
+    // Cập nhật Cột Liên kết
+    function handleLinkChange(originalName, event) {
+        const newLink = event.target.value;
+        luykeNameMappings.update(current => {
+            const existing = current[originalName];
+            const newObj = (typeof existing === 'object' && existing !== null) ? { ...existing } : { shortName: existing || originalName, linkedEmpProgram: '' };
+            newObj.linkedEmpProgram = newLink;
+            return { ...current, [originalName]: newObj };
+        });
     }
 
     async function saveAllMappings() {
         isSaving = true;
         try {
-            if (activeTab === 'nhanvien') {
-                await adminService.saveCompetitionNameMappings($competitionNameMappings);
-            } else {
-                await adminService.saveLuykeNameMappings($luykeNameMappings);
-            }
+            if (activeTab === 'nhanvien') await adminService.saveCompetitionNameMappings($competitionNameMappings);
+            else await adminService.saveLuykeNameMappings($luykeNameMappings);
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu mapping.");
@@ -90,56 +118,29 @@
         
         <div class="bg-slate-50/50"> 
             <div class="flex border-b border-slate-200 px-6 pt-4 gap-6">
-                <button 
-                    class="pb-3 text-sm font-bold transition-colors {activeTab === 'nhanvien' ? 'text-teal-700 border-b-2 border-teal-600' : 'text-slate-500 hover:text-slate-700'}"
-                    on:click={() => { activeTab = 'nhanvien'; mappingSearch = ''; }}
-                >
-                    <i data-feather="users" class="w-4 h-4 inline-block mr-1"></i>
-                    Thi Đua Nhân Viên
+                <button class="pb-3 text-sm font-bold transition-colors {activeTab === 'nhanvien' ? 'text-teal-700 border-b-2 border-teal-600' : 'text-slate-500 hover:text-slate-700'}"
+                    on:click={() => { activeTab = 'nhanvien'; mappingSearch = ''; }}>
+                    <i data-feather="users" class="w-4 h-4 inline-block mr-1"></i> Thi Đua Nhân Viên
                 </button>
-                <button 
-                    class="pb-3 text-sm font-bold transition-colors {activeTab === 'sieuthi' ? 'text-teal-700 border-b-2 border-teal-600' : 'text-slate-500 hover:text-slate-700'}"
-                    on:click={() => { activeTab = 'sieuthi'; mappingSearch = ''; }}
-                >
-                    <i data-feather="home" class="w-4 h-4 inline-block mr-1"></i>
-                    Thi Đua Siêu Thị
+                <button class="pb-3 text-sm font-bold transition-colors {activeTab === 'sieuthi' ? 'text-teal-700 border-b-2 border-teal-600' : 'text-slate-500 hover:text-slate-700'}"
+                    on:click={() => { activeTab = 'sieuthi'; mappingSearch = ''; }}>
+                    <i data-feather="home" class="w-4 h-4 inline-block mr-1"></i> Thi Đua Siêu Thị
                 </button>
             </div>
 
             <div class="p-6">
                 <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                     <div class="relative flex-grow w-full sm:w-auto">
-                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                            <i data-feather="search" class="w-4 h-4"></i>
-                        </span>
-                        <input 
-                            type="text" 
-                            class="w-full pl-10 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none bg-white" 
-                            placeholder="Tìm kiếm tên thi đua..." 
-                            bind:value={mappingSearch}
-                        >
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><i data-feather="search" class="w-4 h-4"></i></span>
+                        <input type="text" class="w-full pl-10 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none bg-white" placeholder="Tìm kiếm tên thi đua..." bind:value={mappingSearch}>
                     </div>
                     
                     <div class="flex items-center gap-2">
-                        <button 
-                            class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors"
-                            on:click={clearAllMappings}
-                            disabled={isSaving}
-                            title="Dọn dẹp danh sách khi sang tháng mới"
-                        >
+                        <button class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors" on:click={clearAllMappings} disabled={isSaving} title="Dọn dẹp danh sách">
                             <span><i data-feather="trash-2" class="w-4 h-4"></i></span> Dọn Tháng Cũ
                         </button>
-
-                        <button 
-                            class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
-                            on:click={saveAllMappings}
-                            disabled={isSaving}
-                        >
-                            {#if isSaving}
-                                <span class="animate-spin">↻</span> Đang lưu...
-                            {:else}
-                                <span><i data-feather="save" class="w-4 h-4"></i></span> Lưu Thay Đổi
-                            {/if}
+                        <button class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50" on:click={saveAllMappings} disabled={isSaving}>
+                            {#if isSaving} <span class="animate-spin">↻</span> Đang lưu... {:else} <span><i data-feather="save" class="w-4 h-4"></i></span> Lưu Thay Đổi {/if}
                         </button>
                     </div>
                 </div>
@@ -150,35 +151,45 @@
                             <div class="flex flex-col items-center justify-center p-12 text-slate-400">
                                 <i data-feather="inbox" class="w-10 h-10 mb-3 opacity-50"></i>
                                 <p class="text-sm font-medium">Chưa có dữ liệu thi đua.</p>
-                                <p class="text-xs mt-1">
-                                    {activeTab === 'nhanvien' ? 'Dán dữ liệu "Thi đua nhân viên"' : 'Dán dữ liệu "Lũy kế"'} ở tab Cập nhật để hệ thống trích xuất tên.
-                                </p>
                             </div>
                         {:else}
                             <table class="min-w-full text-sm border-collapse">
                                 <thead class="text-xs text-slate-600 uppercase bg-slate-100 font-bold sticky top-0 z-10 shadow-sm">
                                     <tr>
                                         <th class="px-4 py-3 border-b text-center w-16">STT</th>
-                                        <th class="px-4 py-3 border-b text-left w-1/2">Tên Gốc (Từ dữ liệu dán)</th>
-                                        <th class="px-4 py-3 border-b text-left w-1/2 text-teal-700">Tên Rút Gọn (Hiển thị)</th>
+                                        <th class="px-4 py-3 border-b text-left {activeTab === 'sieuthi' ? 'w-1/3' : 'w-1/2'}">Tên Gốc (Từ dữ liệu dán)</th>
+                                        <th class="px-4 py-3 border-b text-left {activeTab === 'sieuthi' ? 'w-1/3' : 'w-1/2'} text-teal-700">Tên Rút Gọn (Hiển thị)</th>
+                                        {#if activeTab === 'sieuthi'}
+                                            <th class="px-4 py-3 border-b text-left w-1/3 text-blue-700"><i data-feather="link" class="w-3 h-3 inline"></i> Link Data Nhân Viên</th>
+                                        {/if}
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100">
                                     {#each filteredList as item}
                                         <tr class="hover:bg-slate-50 transition-colors group">
                                             <td class="px-4 py-3 text-center text-slate-400 text-xs font-mono">{item.index}</td>
-                                            <td class="px-4 py-3 text-slate-700 text-xs leading-relaxed font-medium break-words select-all">
-                                                {item.originalName}
-                                            </td>
+                                            <td class="px-4 py-3 text-slate-700 text-xs leading-relaxed font-medium break-words select-all">{item.originalName}</td>
                                             <td class="px-4 py-2">
-                                                <input 
-                                                    type="text" 
-                                                    class="w-full p-2 border border-slate-200 rounded-md text-sm font-semibold text-teal-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 focus:bg-white transition-all placeholder-slate-300" 
-                                                    value={item.shortName} 
-                                                    on:input={(e) => handleMappingInput(item.originalName, e)}
-                                                    placeholder={item.originalName}
-                                                >
+                                                <input type="text" class="w-full p-2 border border-slate-200 rounded-md text-sm font-semibold text-teal-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 focus:bg-white transition-all placeholder-slate-300" 
+                                                    value={item.shortName} on:input={(e) => handleMappingInput(item.originalName, e)} placeholder={item.originalName}>
                                             </td>
+                                            {#if activeTab === 'sieuthi'}
+                                                <td class="px-4 py-2">
+                                                    <input list="link-list-{item.index}" 
+                                                           class="w-full p-2 border border-slate-200 rounded-md text-sm text-gray-700 outline-none focus:ring-1 focus:ring-blue-500 bg-white placeholder-slate-400" 
+                                                           value={item.linkedEmpProgram} 
+                                                           on:input={(e) => handleLinkChange(item.originalName, e)} 
+                                                           placeholder="Tìm kiếm liên kết...">
+                                                    
+                                                    <datalist id="link-list-{item.index}">
+                                                        {#each Object.keys($competitionNameMappings || {}) as empProg}
+                                                            {#if item.linkedEmpProgram === empProg || !selectedPrograms.includes(empProg)}
+                                                                <option value={empProg}>{($competitionNameMappings[empProg] || empProg)}</option>
+                                                            {/if}
+                                                        {/each}
+                                                    </datalist>
+                                                </td>
+                                            {/if}
                                         </tr>
                                     {/each}
                                 </tbody>
