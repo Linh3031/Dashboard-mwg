@@ -91,7 +91,7 @@
                 {linkedProgram ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-400' : 'hover:shadow-sm'}"
          on:click={() => {
              if (linkedProgram) {
-                 // [MODIFIED] Bổ sung totalTarget vào payload để truyền qua Modal
+                 // [MODIFIED] Bổ sung totalTarget vào payload giữ nguyên logic chia Target tự động
                  modalState.update(s => ({ 
                      ...s, 
                      activeModal: 'st-emp-competition-modal', 
@@ -104,11 +104,11 @@
              }
          }}
     >
-        <div class="flex justify-between items-center gap-3 mb-4 relative">
+        <div class="flex justify-between items-start gap-3 mb-4 relative">
             <h4 class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
                 title={item.name}
-                style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
-                {truncateTextSimple(displayTitle)}
+                style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                 {truncateTextSimple(displayTitle)}
             </h4>
             
             <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
@@ -117,28 +117,28 @@
         </div>
 
         <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
-            <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
+             <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
         </div>
 
         <div class="mt-auto pt-2 border-t border-dashed border-gray-100 grid grid-cols-2 gap-2 text-xs items-end">
             <div>
                 <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
                 <div class="text-gray-700 font-bold whitespace-nowrap">
-                    <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
+                     <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
                     <span class="text-gray-300 font-normal mx-0.5">/</span>
                     <span>{formatters.formatNumberOrDash(item.target)}</span>
                 </div>
             </div>
             <div class="text-right">
-                {#if !isActualCompleted}
+                 {#if !isActualCompleted}
                     <div class="inline-block bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold border border-red-200">
                         Cần: {formatters.formatNumberOrDash(dailyTarget)}/ngày
                     </div>
-                {:else}
+                 {:else}
                     <div class="inline-block bg-blue-50 text-blue-600 px-2 py-1 rounded text-[10px] font-bold border border-blue-200 flex items-center justify-end gap-1">
                         <i data-feather="check-circle" class="w-3 h-3"></i> Đã đạt
                     </div>
-                {/if}
+                 {/if}
             </div>
         </div>
     </div>
@@ -172,7 +172,7 @@
             </div>
         </div>
 
-        <div class="p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl min-h-[400px]">
+         <div class="p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl min-h-[400px]">
             {#if sortedData.length === 0}
                 <div class="p-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                     <p class="text-gray-500 font-bold mb-2">Chưa có dữ liệu hiển thị.</p>
@@ -181,7 +181,7 @@
             {:else}
                 <div class="flex flex-col gap-8">
                     {#if viewType === 'summary'}
-                        {@const dataDoanhThu = sortData(sortedData.filter(d => d.type === 'doanhThu'))}
+                         {@const dataDoanhThu = sortData(sortedData.filter(d => d.type === 'doanhThu'))}
                         {@const dataSoLuong = sortData(sortedData.filter(d => d.type === 'soLuong'))}
 
                         {#if dataDoanhThu.length > 0}
@@ -194,16 +194,16 @@
                                 </div>
                             </div>
                         {/if}
-                        {#if dataSoLuong.length > 0}
+                         {#if dataSoLuong.length > 0}
                             <div>
                                 <h4 class="text-sm font-bold text-orange-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-orange-100">
-                                    <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span> Thi Đua Số Lượng ({dataSoLuong.length})
+                                     <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span> Thi Đua Số Lượng ({dataSoLuong.length})
                                 </h4>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each dataSoLuong as item} {@render competitionCard(item)} {/each}
+                                     {#each dataSoLuong as item} {@render competitionCard(item)} {/each}
                                 </div>
                             </div>
-                        {/if}
+                         {/if}
                     {:else if viewType === 'completion'}
                         {@const completed = sortData(sortedData.filter(d => d.hoanThanhValue >= 100))}
                         {@const pending = sortData(sortedData.filter(d => d.hoanThanhValue < 100))}
@@ -216,19 +216,19 @@
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {#each completed as item} {@render competitionCard(item)} {/each}
                                 </div>
-                            </div>
+                             </div>
                         {/if}
                         {#if pending.length > 0}
                             <div>
-                                <h4 class="text-sm font-bold text-red-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-red-100">
+                                 <h4 class="text-sm font-bold text-red-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-red-100">
                                     <span class="bg-red-100 p-1 rounded"><i data-feather="clock" class="w-4 h-4"></i></span> Cần nỗ lực thêm ({pending.length})
-                                </h4>
+                                 </h4>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {#each pending as item} {@render competitionCard(item)} {/each}
                                 </div>
                             </div>
                         {/if}
-                    {/if}
+                     {/if}
                 </div>
             {/if}
         </div>
