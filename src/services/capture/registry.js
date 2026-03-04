@@ -30,5 +30,5 @@ export const getProcessor = (groupName) => {
 };
 
 export const SPLIT_GROUPS = [
-    'category-revenue', 'competition-program', 'efficiency-program'
+    'category-revenue', 'competition-program', 'efficiency-program', 'performance-table'
 ];
