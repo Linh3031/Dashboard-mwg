@@ -5,7 +5,7 @@
 </script>
 
 <script>
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
     import { homeConfig } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
 
@@ -18,15 +18,29 @@
     let showDetails = false;
     showVersionDetails.subscribe(val => showDetails = val);
 
+    // [GENESIS FIX 1] Biến lưu trữ đồng hồ ngầm
+    let pollingInterval; 
+
     onMount(async () => {
         // 1. Lấy version hiện tại của máy khách (trong LocalStorage)
         clientVersion = localStorage.getItem('app_client_version') || '0.0';
 
-        // 2. Đảm bảo load config mới nhất từ Cloud
+        // 2. Đảm bảo load config mới nhất từ Cloud (Lần chạy đầu tiên)
         await adminService.loadHomeConfig();
+
+        // [GENESIS FIX 2] Thiết lập đồng hồ ngầm (Polling) mỗi 15 phút (900,000 ms)
+        pollingInterval = setInterval(async () => {
+            console.log("[VersionManager] ⏳ Đang kiểm tra phiên bản mới ngầm...");
+            await adminService.loadHomeConfig(); // Kích hoạt thay đổi $homeConfig
+        }, 900000); 
     });
 
-    // 3. Theo dõi sự thay đổi của Config từ Server
+    // [GENESIS FIX 3] Dọn dẹp đồng hồ ngầm khi Component bị hủy để tránh rò rỉ RAM
+    onDestroy(() => {
+        if (pollingInterval) clearInterval(pollingInterval);
+    });
+
+    // 3. Theo dõi sự thay đổi của Config từ Server (Tự động kích hoạt mỗi 15p nhờ đồng hồ ngầm)
     $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
         // Lấy bản ghi mới nhất (phần tử đầu tiên)
         latestVersionData = $homeConfig.changelogs[0];
@@ -38,21 +52,24 @@
     function checkVersion(serverVersion) {
         if (!serverVersion) return;
         
+        // Nếu version local bằng 0.0 (lần đầu vào web), lưu luôn không hỏi
+        if (clientVersion === '0.0') {
+            localStorage.setItem('app_client_version', serverVersion);
+            clientVersion = serverVersion;
+            return;
+        }
+
         // Nếu version server khác version client -> BẮT BUỘC CẬP NHẬT
-        // (So sánh chuỗi đơn giản, nếu muốn chặt chẽ hơn có thể dùng semver)
         if (serverVersion !== clientVersion) {
             showForceUpdateModal = true;
         }
     }
 
-    function performUpdate() {
-        if (!latestVersionData) return;
-        
-        // 1. Lưu version mới vào máy khách
-        localStorage.setItem('app_client_version', latestVersionData.version);
-        
-        // 2. Reload trang để tải code mới
-        window.location.reload();
+    function forceUpdate() {
+        if (latestVersionData && latestVersionData.version) {
+            localStorage.setItem('app_client_version', latestVersionData.version);
+        }
+        window.location.reload(true);
     }
 
     function closeDetails() {
@@ -61,59 +78,46 @@
 </script>
 
 {#if showForceUpdateModal && latestVersionData}
-    <div class="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-bounce-in">
-            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-center">
-                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-                    <i data-feather="download-cloud" class="w-8 h-8 text-white"></i>
-                </div>
-                <h2 class="text-2xl font-bold text-white mb-1">Cập nhật hệ thống</h2>
-                <p class="text-blue-100 text-sm">Đã có phiên bản mới: <span class=" font-bold bg-white/20 px-2 py-0.5 rounded">{latestVersionData.version}</span></p>
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/80 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md p-6 flex flex-col items-center text-center animate-bounce-in">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
             </div>
-            
-            <div class="p-6">
-                <div class="mb-6">
-                    <h3 class="text-sm font-bold text-gray-500 uppercase mb-2">Nội dung thay đổi:</h3>
-                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-100 max-h-40 overflow-y-auto text-sm text-slate-600 leading-relaxed custom-content">
-                        {@html latestVersionData.content}
-                    </div>
-                </div>
-
-                <button 
-                    on:click={performUpdate}
-                    class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2"
-                >
-                    <i data-feather="refresh-cw" class="w-4 h-4 animate-spin-slow"></i>
-                    Cập nhật ngay
-                </button>
-                <p class="text-center text-xs text-slate-400 mt-3">Yêu cầu tải lại trang để áp dụng thay đổi.</p>
-            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">Đã có phiên bản mới!</h3>
+            <p class="text-gray-600 mb-2">Hệ thống vừa được nâng cấp lên phiên bản <strong class="text-blue-600">{latestVersionData.version}</strong>.</p>
+            <p class="text-sm text-gray-500 mb-6">Để đảm bảo tính năng hoạt động ổn định và không bị lỗi, vui lòng tải lại trang.</p>
+            <button class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2" on:click={forceUpdate}>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Cập nhật hệ thống ngay
+            </button>
         </div>
     </div>
 {/if}
 
-{#if showDetails && !showForceUpdateModal && latestVersionData}
-    <div class="fixed inset-0 z-[9000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" on:click={closeDetails}>
-        <div class="bg-white rounded-xl shadow-xl max-w-lg w-full relative animate-fade-in" on:click|stopPropagation>
-            <button class="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition" on:click={closeDetails}>
-                <i data-feather="x" class="w-6 h-6"></i>
-            </button>
-
-            <div class="p-6 border-b border-gray-100">
-                <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <span class="bg-green-100 text-green-700 p-1.5 rounded-lg"><i data-feather="info" class="w-5 h-5"></i></span>
+{#if showDetails && latestVersionData}
+    <div class="fixed inset-0 z-[9998] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm" on:click={closeDetails}>
+        <div class="bg-white rounded-2xl shadow-xl w-11/12 max-w-2xl max-h-[85vh] flex flex-col animate-bounce-in" on:click|stopPropagation>
+            <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-blue-50/50 rounded-t-2xl">
+                <h3 class="text-xl font-bold text-blue-900 flex items-center gap-2">
+                    <i data-feather="info" class="w-5 h-5"></i>
                     Thông tin phiên bản
                 </h3>
+                <button class="text-gray-400 hover:text-red-500 transition-colors" on:click={closeDetails}>
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
             </div>
-
-            <div class="p-6 space-y-4">
-                <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    <div>
-                        <p class="text-xs text-slate-500 uppercase font-bold">Phiên bản hiện tại</p>
-                        <p class="text-lg font-bold text-blue-600 ">{latestVersionData.version}</p>
+            
+            <div class="p-6 overflow-y-auto custom-scrollbar">
+                <div class="flex items-center gap-4 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="flex-1">
+                        <p class="text-[10px] text-slate-500 uppercase font-bold">Phiên bản</p>
+                        <p class="text-lg font-black text-blue-600">{latestVersionData.version}</p>
                     </div>
-                    <div class="text-right">
-                        <p class="text-xs text-slate-500 uppercase font-bold">Ngày cập nhật</p>
+                    <div class="w-px h-8 bg-slate-200"></div>
+                    <div class="flex-1">
+                        <p class="text-[10px] text-slate-500 uppercase font-bold">Ngày cập nhật</p>
                         <p class="text-sm font-medium text-slate-700">{latestVersionData.date}</p>
                     </div>
                 </div>
@@ -139,8 +143,11 @@
     .animate-spin-slow { animation: spin 3s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     
-    /* Style cho nội dung HTML từ admin */
-    :global(.custom-content ul) { list-style-type: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
-    :global(.custom-content li) { margin-bottom: 0.25rem; }
-    :global(.custom-content strong) { color: #1e293b; font-weight: 700; }
+    /* Style cho nội dung HTML từ CkEditor */
+    :global(.custom-content ul) { list-style-type: disc; padding-left: 1.5rem; margin-top: 0.5rem; }
+    :global(.custom-content p) { margin-bottom: 0.5rem; }
+    :global(.custom-content strong) { color: #1e293b; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 </style>
