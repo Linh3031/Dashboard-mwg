@@ -28,12 +28,15 @@
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
+
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
   import VersionManager from './components/common/VersionManager.svelte';
+
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
+
   // --- MODALS ---
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
@@ -46,7 +49,11 @@
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
   import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
-  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte'; // <-- [TẮT DEMO] Comment import
+  // [GENESIS IMPORT] Import cửa sổ Xem trước Ảnh
+  import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
+  
+  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte';
+  // <-- [TẮT DEMO] Comment import
 
   // Kiểm tra localStorage ngay khi khởi tạo
   // let isBootingDemo = typeof localStorage !== 'undefined' && localStorage.getItem('isDemoMode') === 'true';
@@ -76,7 +83,6 @@
       try {
           // 1. Nạp Snapshot
           await demoService.loadSnapshot(DEMO_SNAPSHOT);
-          
           // 2. Chờ Store cập nhật
           await tick();
 
@@ -86,7 +92,7 @@
               const firstWarehouse = currentList[0].maKho || "908";
               selectedWarehouse.set(firstWarehouse);
               // Cập nhật danh sách kho cho Select Box
-              warehouseList.set([firstWarehouse]); 
+              warehouseList.set([firstWarehouse]);
           } else {
               selectedWarehouse.set("908");
           }
@@ -99,7 +105,6 @@
           setTimeout(() => {
               activeTab.set('realtime-section');
           }, 200);
-
       } catch (e) {
           console.error("❌ Lỗi nạp Demo:", e);
           alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
@@ -112,9 +117,9 @@
   // [FIX] Hàm khởi tạo cho App thật
   async function initRealMode() {
       try { 
-          await authService.ensureAnonymousAuth(); 
+          await authService.ensureAnonymousAuth();
       } catch (e) { 
-          console.error("Firebase Auth Error:", e); 
+          console.error("Firebase Auth Error:", e);
       }
       
       const isLoggedIn = authService.initAuth();
@@ -192,6 +197,7 @@
               return [...items, newItem]; 
           }
       });
+
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
@@ -218,6 +224,7 @@
              return [...items, newItem];
           }
       });
+
       if (newItem.isSystem) {
           const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
           await adminService.saveSystemPerformanceTables(systemTables);
@@ -265,6 +272,10 @@
 <UserSpecialProgramModal />
 <ComposerModal /> 
 <StEmpCompetitionModal />
+
+{#if $modalState.activeModal === 'capture-preview'}
+    <CapturePreviewModal payload={$modalState.payload} />
+{/if}
 
 {#if $modalState.activeModal === 'unexported-detail-modal'}
     <UnexportedDetailModal 

@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
-import { viewingDetailFor } from '../stores.js';
+// [GENESIS FIX 1] Import thêm modalState để điều khiển bật tắt UI
+import { viewingDetailFor, modalState } from '../stores.js';
 import { captureService } from './capture.service.js';
 import { excelService } from './excel.service.js';
 
@@ -42,7 +43,7 @@ export const actionService = {
         };
     },
 
-    // [FIX CRITICAL] Hàm Capture được viết lại để chống treo và xử lý logic view phức tạp
+    // [FIX CRITICAL] Hàm Capture được viết lại để mở Modal Preview thay vì tải trực tiếp
     async handleCapture(sectionId) {
         console.log(`[ActionService] ➤ Bắt đầu chụp ảnh section: ${sectionId}`);
         
@@ -96,21 +97,14 @@ export const actionService = {
             // 3. Thực thi chụp (Safe Call)
             console.log(`[ActionService] Gọi service chụp cho element:`, elementToCapture);
             
-            // [DEBUG & FIX] Kiểm tra method nào khả dụng trong captureService
-            if (typeof captureService.captureDashboardInParts === 'function') {
-                await captureService.captureDashboardInParts(elementToCapture, title);
-            } 
-            else if (typeof captureService.capture === 'function') {
-                // Fallback nếu code cũ dùng .capture
-                console.warn('[ActionService] captureDashboardInParts không tồn tại, dùng fallback .capture()');
-                await captureService.capture(elementToCapture, title);
-            }
-            else {
-                console.error('[ActionService] Available methods:', Object.keys(captureService));
-                throw new Error('Service chụp ảnh lỗi: Không tìm thấy hàm captureDashboardInParts hoặc capture.');
-            }
+            // [GENESIS FIX 2] Kích hoạt Modal Capture Preview thay vì gọi hàm download
+            modalState.update(s => ({ 
+                ...s, 
+                activeModal: 'capture-preview', 
+                payload: { container: elementToCapture, baseTitle: title } 
+            }));
             
-            console.log('[ActionService] ➤ Chụp ảnh hoàn tất.');
+            console.log('[ActionService] ➤ Mở Modal Xem trước hoàn tất.');
 
         } catch (error) {
             console.error('[ActionService] Lỗi chụp ảnh:', error);

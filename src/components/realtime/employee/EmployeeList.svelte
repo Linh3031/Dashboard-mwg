@@ -71,7 +71,7 @@
     return 'bg-gray-100 text-gray-800 border-gray-200';
   }
 
-  // --- [NEW] LOGIC GAMIFICATION TÍNH THEO TỪNG BỘ PHẬN ---
+  // --- LOGIC GAMIFICATION TÍNH THEO TỪNG BỘ PHẬN ---
   function getRowStyle(index, totalCount) {
       const topCount = totalCount <= 15 ? 3 : 5;
       if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
@@ -81,7 +81,6 @@
       return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
   }
 
-  // Hàm style nền chuyên biệt dành cho các cột bị ghim (Sticky)
   function getStickyClass(index, totalCount) {
       const topCount = totalCount <= 15 ? 3 : 5;
       if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100'; 
@@ -116,14 +115,14 @@
             <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
               <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20 shadow-sm">
                 <tr>
-                  <th class="px-2 py-3 text-center sticky left-0 bg-slate-200 z-30 select-none border-r border-slate-300" style="width: 50px; min-width: 50px;">
+                  <th class="px-2 py-3 text-center sticky left-0 bg-slate-200 z-30 select-none border-r border-slate-300 min-w-[50px] whitespace-nowrap">
                     Hạng
                   </th>
                   
-                  <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-[50px] bg-slate-200 z-30 select-none border-r border-slate-300" style="width: calc(25% - 50px); min-width: 120px;" on:click={() => handleSort('hoTen')}>
+                  <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-[50px] bg-slate-200 z-30 select-none border-r border-slate-300 min-w-[160px] whitespace-nowrap" on:click={() => handleSort('hoTen')}>
                     <div class="flex items-center gap-1">
                       <span>Nhân viên</span>
-                      <svg class="w-3 h-3 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg class="w-3 h-3 flex-shrink-0 {sortKey === 'hoTen' ? 'text-blue-600 opacity-100' : 'text-gray-400 opacity-50'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{sortKey === 'hoTen' && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
                       </svg>
                     </div>
@@ -136,11 +135,11 @@
                     { id: 'doanhThuTraGop', label: 'DT Trả chậm', group: 'bg-green-50 text-green-800' },
                     { id: 'tyLeTraCham', label: '% Trả chậm', group: 'bg-green-50 text-green-800' },
                     { id: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa xuất', group: 'bg-yellow-50 text-yellow-800' }
-                  ] as col}
-                    <th class="px-4 py-3 cursor-pointer hover:opacity-80 transition select-none {col.group}" style="width: 12.5%" on:click={() => handleSort(col.id)}>
-                      <div class="flex items-center justify-end gap-1 whitespace-nowrap">
-                        <span>{col.label}</span>
-                        <svg class="w-3 h-3 {sortKey === col.id ? 'opacity-100' : 'opacity-40'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  ] as col, i}
+                    <th class="px-2 py-3 cursor-pointer hover:opacity-80 transition select-none {col.group} min-w-[95px] max-w-[110px] {i === 5 ? 'pr-6' : ''}" on:click={() => handleSort(col.id)}>
+                      <div class="flex items-center justify-end gap-1">
+                        <span class="text-right leading-relaxed whitespace-normal pb-0.5">{col.label}</span>
+                        <svg class="w-3 h-3 flex-shrink-0 {sortKey === col.id ? 'opacity-100' : 'opacity-40'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="{sortKey === col.id ? 3 : 2}" d="{sortKey === col.id && sortDirection === 'asc' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'}" />
                         </svg>
                       </div>
@@ -158,20 +157,20 @@
                   
                   <tr class="transition cursor-pointer interactive-row group {getRowStyle(index, deptTotal)}" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
                     
-                    <td class="px-2 py-2 text-center font-bold sticky left-0 z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}">
+                    <td class="px-2 py-3 text-center font-bold sticky left-0 z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'} whitespace-nowrap">
                         {getRankIcon(index, deptTotal)}
                     </td>
 
-                    <td class="px-4 py-2 font-semibold text-blue-600 sticky left-[50px] z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)}">
-                      {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
+                    <td class="px-4 py-3 font-semibold text-blue-600 sticky left-[50px] z-10 border-r border-gray-200 transition-colors whitespace-nowrap {getStickyClass(index, deptTotal)}">
+                      <span class="leading-relaxed">{formatters.getShortEmployeeName(item.hoTen, item.maNV)}</span>
                     </td>
                     
-                    <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThu)}</td>
-                    <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
-                    <td class="px-4 py-2 text-right font-bold {qdClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
-                    <td class="px-4 py-2 text-right font-bold text-gray-900">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
-                    <td class="px-4 py-2 text-right font-bold {tcClass}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
-                    <td class="px-4 py-2 text-right font-bold text-gray-500">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
+                    <td class="px-3 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatters.formatRevenue(item.doanhThu)}</td>
+                    <td class="px-3 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
+                    <td class="px-3 py-3 text-right font-bold {qdClass} whitespace-nowrap">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
+                    <td class="px-3 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
+                    <td class="px-3 py-3 text-right font-bold {tcClass} whitespace-nowrap">{formatters.formatPercentage(item.tyLeTraCham)}</td>
+                    <td class="px-3 py-3 pr-6 text-right font-bold text-gray-500 whitespace-nowrap">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -186,14 +185,14 @@
         <table class="min-w-full text-sm text-left font-bold uppercase">
           <tfoot class="bg-gray-100 font-bold text-gray-900 text-xs uppercase">
             <tr>
-              <td class="px-4 py-3 border-r border-gray-300 text-center tracking-wider" style="width: 25%" colspan="2">TỔNG CỘNG</td>
+              <td class="px-4 py-3 border-r border-gray-300 text-center tracking-wider min-w-[210px] whitespace-nowrap" colspan="2">TỔNG CỘNG</td>
               
-              <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThu)}</td>
-              <td class="px-4 py-3 text-right text-base text-blue-700" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
-              <td class="px-4 py-3 text-right text-base text-blue-700" style="width: 12.5%">{formatters.formatPercentage(totalPctQD)}</td>
-              <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuTraGop)}</td>
-              <td class="px-4 py-3 text-right text-base" style="width: 12.5%">{formatters.formatPercentage(totalPctTC)}</td>
-              <td class="px-4 py-3 text-right text-base text-gray-600" style="width: 12.5%">{formatters.formatRevenue(totalStats.doanhThuQuyDoiChuaXuat)}</td>
+              <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThu)}</td>
+              <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
+              <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctQD)}</td>
+              <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuTraGop)}</td>
+              <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctTC)}</td>
+              <td class="px-3 py-3 pr-6 text-right text-base text-gray-600 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoiChuaXuat)}</td>
             </tr>
           </tfoot>
         </table>
