@@ -5,7 +5,6 @@
     import { datasyncService } from '../../../services/datasync.service.js';
     
     import DynamicPerformanceTable from './DynamicPerformanceTable.svelte';
-
     export let reportData = [];
 
     // [FIX 1] Mặc định là đang tải để tránh hiện thông báo lỗi ngay khi mở
@@ -29,7 +28,8 @@
     }
 
     async function loadData(kho) {
-        isLoading = true; // [FIX] Luôn bật loading khi bắt đầu tải
+        isLoading = true;
+        // [FIX] Luôn bật loading khi bắt đầu tải
         try {
             // 1. Load System Tables (Admin)
             const sysTables = await adminService.loadSystemPerformanceTables();
@@ -48,7 +48,8 @@
         } catch (e) {
             console.error("[PerformanceView] Lỗi tải dữ liệu:", e);
         } finally {
-            isLoading = false; // [FIX] Đảm bảo luôn tắt loading khi xong
+            isLoading = false;
+            // [FIX] Đảm bảo luôn tắt loading khi xong
         }
     }
 
@@ -125,10 +126,8 @@
             {#each $customPerformanceTables as table}
                 <button 
                     class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                    {table.isVisible ?
-                        'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
-                    {table.isSystem ?
-                        'border-dashed' : ''}"
+                    {table.isVisible ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
+                    {table.isSystem ? 'border-dashed' : ''}"
                     on:click={() => toggleTableVisibility(table.id)}
                     title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
                 >
@@ -166,7 +165,7 @@
     {:else}
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
             {#each visibleTables as table, index (table.id)}
-                <div data-capture-group="performance-table">
+                <div data-capture-group="performance-table" data-capture-filename={table.title}>
                     <DynamicPerformanceTable 
                         config={table} 
                         {reportData} 
