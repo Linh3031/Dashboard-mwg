@@ -1,6 +1,7 @@
 <script>
   /* global XLSX, feather */
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { 
     thiDuaVungChiTiet, 
     thiDuaVungTong 
@@ -11,22 +12,17 @@
   let fileStatus = "";
   let isLoading = false;
   
-  // Đổi tên biến để quản lý rõ ràng: Danh sách gốc vs Danh sách đã lọc
   let allSupermarketNames = []; 
-  
   let selectedSupermarket = ""; 
   let reportData = null;
   let localTongData = [];
 
-  // --- LOGIC LỌC NGHIÊM NGẶT (STRICT FILTER) ---
-  // Chỉ hiển thị những siêu thị có tên CHỨA ĐÚNG cụm từ khóa (theo thứ tự)
   $: filteredSupermarketNames = selectedSupermarket
       ? allSupermarketNames.filter(name => 
           name.toLowerCase().includes(selectedSupermarket.trim().toLowerCase())
         )
       : allSupermarketNames;
 
-  // --- HÀM XỬ LÝ FILE ---
   async function _handleFileRead(file) {
       return new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -52,6 +48,7 @@
     fileStatus = "Đang xử lý...";
     reportData = null;
     selectedSupermarket = "";
+    localStorage.removeItem('tdv_selected_st'); // Clear filter cũ khi up file mới
 
     try {
       const workbook = await _handleFileRead(file);
@@ -63,7 +60,6 @@
       thiDuaVungTong.set(tongData);
       localTongData = tongData;
 
-      // Lưu vào danh sách gốc
       allSupermarketNames = tongData
           .map(row => row.sieuThi)
           .filter(Boolean)
@@ -81,11 +77,28 @@
     }
   }
 
-  // --- HÀM XỬ LÝ CHỌN VỚI AN TOÀN DỮ LIỆU ---
   function handleSelectChange() {
-      // Tìm chính xác trong data gốc
+      // [FIX 4] Lưu trạng thái siêu thị đang chọn vào LocalStorage
+      if (selectedSupermarket) {
+          localStorage.setItem('tdv_selected_st', selectedSupermarket);
+      }
+
       const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
       if (row) {
+          const prizeDict = {};
+          const chiTiet = get(thiDuaVungChiTiet) || [];
+          
+          chiTiet.forEach(item => {
+              if (item.tongThuong > 0) {
+                  const key = `${item.kenh}_${item.nganhHang}`;
+                  if (!prizeDict[key] || item.tongThuong < prizeDict[key]) {
+                      prizeDict[key] = item.tongThuong;
+                  }
+              }
+          });
+
+          let tongTienTiemNang = 0;
+
           reportData = {
               sieuThi: row.sieuThi || 'Không tên',
               kenh: row.kenh || 'N/A',
@@ -93,16 +106,29 @@
               soNganhHang: row.soNganhHang || 0,
               soNganhHangDat: row.soNganhHangDat || 0,
               rankCutoff: row.rankCutoff || 0,
-              details: (Array.isArray(row.details) ? row.details : []).map(d => ({
-                  ...d,
-                  nganhHang: d.nganhHang || 'N/A',
-                  duKienHoanThanh: d.duKienHoanThanh || 0,
-                  duKienVuot: d.duKienVuot || 0,
-                  bestRank: d.bestRank || 9999,
-                  tongThuong: d.tongThuong || 0,
-                  potentialPrize: d.potentialPrize || 0
-              }))
+              details: (Array.isArray(row.details) ? row.details : []).map(d => {
+                  let potentialPrize = d.potentialPrize || 0;
+                  
+                  const gap = (d.bestRank || 9999) - (row.rankCutoff || 0);
+                  if ((d.tongThuong || 0) === 0 && gap > 0 && gap < 10) {
+                      const key = `${row.kenh}_${d.nganhHang}`;
+                      potentialPrize = prizeDict[key] || 0;
+                      tongTienTiemNang += potentialPrize; 
+                  }
+
+                  return {
+                      ...d,
+                      nganhHang: d.nganhHang || 'N/A',
+                      duKienHoanThanh: d.duKienHoanThanh || 0,
+                      duKienVuot: d.duKienVuot || 0,
+                      bestRank: d.bestRank || 9999,
+                      tongThuong: d.tongThuong || 0,
+                      potentialPrize: potentialPrize 
+                  };
+              })
           };
+          
+          reportData.tongThuongTiemNang = tongTienTiemNang;
       } else {
           reportData = null;
       }
@@ -116,6 +142,23 @@
 
   onMount(() => {
     if (typeof feather !== 'undefined') feather.replace();
+
+    const savedTong = get(thiDuaVungTong);
+    if (savedTong && savedTong.length > 0) {
+        localTongData = savedTong;
+        allSupermarketNames = savedTong
+            .map(row => row.sieuThi)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+        fileStatus = `✅ Đã tải ${allSupermarketNames.length} siêu thị từ bộ nhớ.`;
+
+        // [FIX 4] Tự động đọc ST cũ và render lại bảng nếu có
+        const savedST = localStorage.getItem('tdv_selected_st');
+        if (savedST && allSupermarketNames.includes(savedST)) {
+            selectedSupermarket = savedST;
+            handleSelectChange(); // Kích hoạt vẽ bảng
+        }
+    }
   });
 </script>
 
@@ -196,13 +239,13 @@
 </div>
 
 <style>
-    /* XỬ LÝ CHẾ ĐỘ CHỤP ẢNH (CAPTURE MODE) */
     :global(.capture-container) .content-card {
         display: none !important;
     }
 
+    /* FIX 1: Ép chuẩn 1100px giống file LuykeThiDua */
     :global(.capture-container) #thidua-vung-infographic-container {
-        width: 960px !important;
+        width: 1100px !important;
         margin: 0 !important;
         padding: 0 !important;
         background: transparent !important;

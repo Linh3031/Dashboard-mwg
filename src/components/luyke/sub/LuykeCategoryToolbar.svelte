@@ -6,7 +6,7 @@
     export let iconClass = '';
     
     // Binding props
-    export let viewMode = 'grid';
+    export let viewMode = 'grid'; // grid | chart | list
     export let showUnexported = false;
     export let sortMode = 'revenue_desc';
     export let searchText = '';
@@ -14,7 +14,7 @@
     // Filter props
     export let isSettingsOpen = false;
     export let filterSearch = '';
-    export let filterList = []; // Array of { key, label, type } [FIX]
+    export let filterList = []; 
     export let hiddenCategories = new Set();
     export let isLoadingConfig = false;
 
@@ -41,10 +41,11 @@
         
         <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
             <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ"><i data-feather="grid" class="w-4 h-4"></i></button>
+            <button class="view-mode-btn {viewMode === 'list' ? 'active' : ''}" on:click={() => viewMode = 'list'} title="Danh sách"><i data-feather="list" class="w-4 h-4"></i></button>
             <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ"><i data-feather="pie-chart" class="w-4 h-4"></i></button>
         </div>
 
-        {#if viewMode === 'grid'}
+        {#if viewMode !== 'chart'}
             <div class="toggle-wrapper {showUnexported ? 'active' : ''}" on:click={() => showUnexported = !showUnexported} style="padding: 4px 8px;">
                 <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
                 <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
@@ -87,14 +88,17 @@
             {/if}
         </div>
 
-        {#if viewMode === 'grid'}
+        {#if viewMode !== 'chart'}
             <div class="hidden sm:block">
                 <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
             </div>
-            <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
-                <option value="revenue_desc">DT ↓</option>
-                <option value="quantity_desc">SL ↓</option>
-            </select>
+            {#if viewMode === 'grid'}
+                <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
+                    <option value="revenue_desc">DT ↓</option>
+                    <option value="quantity_desc">SL ↓</option>
+                    <option value="name_asc">Tên A-Z</option>
+                </select>
+            {/if}
         {/if}
     </div>
 </div>

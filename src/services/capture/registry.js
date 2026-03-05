@@ -1,11 +1,10 @@
 import { processDefault } from './processors/default.js';
 import { processKpiGrid } from './processors/kpi-grid.js';
 import { processCompetitionGrid } from './processors/competition-grid.js';
-// Import Processor mới
 import { processMobileView } from './processors/mobile-view.js';
 
 export const getProcessor = (groupName) => {
-    // 1. [MỚI] Nhóm Chi tiết nhân viên -> Mobile View (Grid 3 cột)
+    // 1. Nhóm Chi tiết nhân viên -> Mobile View (Grid 3 cột)
     if (groupName === 'revenue-detail-mobile') {
         return processMobileView;
     }
@@ -21,7 +20,8 @@ export const getProcessor = (groupName) => {
     }
 
     // 4. Nhóm Thi đua & Chi tiết (SKNV, Realtime) -> Grid Linh hoạt
-    if (['regional-competition', 'detail-category', 'competition-detail'].includes(groupName)) {
+    // Đã loại bỏ 'regional-competition' để trả nó về processDefault (Gộp dọc, ôm sát 1100px)
+    if (['detail-category', 'competition-detail'].includes(groupName)) {
         return processCompetitionGrid;
     }
 
