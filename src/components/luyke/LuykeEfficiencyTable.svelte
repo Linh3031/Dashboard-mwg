@@ -8,6 +8,7 @@
   export let supermarketData = {}; 
   
   const dispatch = createEventDispatcher();
+
   let isSettingsOpen = false;
   let filterSearch = '';
   let hiddenIds = new Set(); 
@@ -107,7 +108,7 @@
       <div class="p-1.5 bg-blue-100 rounded text-blue-600 mr-2">
           <i data-feather="bar-chart-2" class="w-4 h-4"></i>
       </div>
-      <span>Hiệu Quả Khai Thác</span>
+      <h3 class="text-base font-bold m-0 p-0 text-gray-800 uppercase tracking-wide">Hiệu Quả Khai Thác</h3>
     </div>
     <div class="flex items-center gap-2">
         <button class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200" on:click={() => dispatch('add')} title="Thêm chỉ số mới">
@@ -129,7 +130,7 @@
                         {/each}
                     </div>
                     <div class="filter-actions">
-                        <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                         <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                         <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
                     </div>
                 </div>
@@ -162,7 +163,7 @@
                 <div class="eff-row-bottom">
                     <div class="eff-bar-container">
                         <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
-                    </div>
+                     </div>
                 </div>
             </div>
             {#if item.isDynamic}

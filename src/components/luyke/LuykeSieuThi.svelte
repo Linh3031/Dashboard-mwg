@@ -85,9 +85,8 @@
       return isNaN(val) ? 0 : val;
   };
 
-  // Khai báo biến global cho component dùng
-  let finalDtThuc = 0; 
-  let finalDtQd = 0; // [Quan trọng] Biến dùng cho giả lập
+  let finalDtThuc = 0;
+  let finalDtQd = 0; 
   let finalDtGop, finalTyLeGop, finalTyLeQd;
 
   $: {
@@ -103,8 +102,8 @@
     const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
     const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
     const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
-    const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
 
+    const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
     comparisonData = pastedData.comparisonData || { value: 0, percentage: 'N/A' };
     luotKhachData = pastedData.luotKhachData || { value: 0, percentage: 'N/A' };
 
@@ -146,6 +145,7 @@
     const compData = $competitionData || [];
     competitionSummary.total = compData.length;
     competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanh).replace('%','')) || 0) >= 100).length;
+
     const tyLeThiDuaDat = competitionSummary.total > 0 ? competitionSummary.dat / competitionSummary.total : 0;
 
     luykeCardData = {
@@ -168,12 +168,10 @@
             const normName = g.name.trim().toLowerCase().normalize("NFC");
             return keywords.some(k => normName.includes(k));
         });
-
         if (!groupConfig || !groupConfig.items) return 0;
 
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
-
         groupConfig.items.forEach(itemId => {
             if (details[itemId]) {
                 totalVal += (details[itemId].revenueQuyDoi || 0);
@@ -190,6 +188,7 @@
         dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
         tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
     };
+
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
@@ -201,6 +200,7 @@
           dt: values.revenue, 
           ...values 
       }));
+
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
       .map(([id, values]) => ({ 
           id: id,
@@ -346,7 +346,7 @@
     warehouseId={$selectedWarehouse}
   />
 
-  <div class="luyke-tier-1-grid" data-capture-group="tier1">
+  <div class="luyke-tier-1-grid" data-capture-group="tier1" data-capture-filename="HIỆU QUẢ KHAI THÁC">
       <LuykeEfficiencyTable 
           items={[]} 
           dynamicItems={combinedEfficiencyItems} 
@@ -362,7 +362,7 @@
       />
   </div>
 
-  <div data-capture-group="tier2">
+  <div data-capture-group="tier2" data-capture-filename="CHI TIẾT NGÀNH HÀNG">
       <LuykeCategoryTable 
           items={categoryItems} 
           unexportedItems={chuaXuatReport}
@@ -372,3 +372,35 @@
   </div>
 
 </div>
+
+<style>
+    /* 1. Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc */
+    :global(.capture-container .luyke-tier-1-grid) {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 16px !important;
+        width: 450px !important; 
+        min-width: 450px !important;
+        max-width: 450px !important;
+        margin: 0 auto !important; 
+    }
+
+    /* 2. Trị bệnh "CẮT CỤT DÒNG": Phá vỡ class h-full và cơ chế flex bóp chiều cao */
+    :global(.capture-container .luyke-tier-1-grid .luyke-widget) {
+        height: auto !important;
+        min-height: max-content !important;
+        display: block !important; 
+    }
+    
+    :global(.capture-container .luyke-tier-1-grid .h-full) {
+        height: auto !important;
+    }
+
+    /* 3. Phá vỡ giới hạn thanh cuộn để hiển thị full danh sách Top Nhóm Hàng */
+    :global(.capture-container .luyke-tier-1-grid .custom-scrollbar),
+    :global(.capture-container .luyke-tier-1-grid .luyke-widget-body) {
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+</style>

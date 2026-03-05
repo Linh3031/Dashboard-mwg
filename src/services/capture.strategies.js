@@ -27,7 +27,6 @@ export const injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
 
-    // CSS này áp dụng chung cho toàn bộ quá trình chụp
     const styles = `
         /* Container gốc */
         .capture-container { 
@@ -62,10 +61,22 @@ export const injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
+        /* --- [FIX 1]: CHỐNG CẮT NỘI DUNG ---
+           Mở khóa chiều cao (height) và tắt thanh cuộn (overflow) cho TẤT CẢ các thẻ bao che */
+        .capture-container .luyke-tier-1-grid,
+        .capture-container .luyke-widget,
+        .capture-container .luyke-widget-body,
+        .capture-container .capture-layout-container {
+            display: flex !important;
+            flex-direction: column !important;
+            height: max-content !important; /* Buộc nó phải giãn theo nội dung bên trong */
+            min-height: max-content !important;
+            max-height: none !important; /* Xóa mọi giới hạn cuộn */
+            overflow: visible !important;
+        }
+
         /* Layout Grid */
         .capture-layout-container { 
-            display: flex; 
-            flex-direction: column; 
             gap: 24px; 
         }
         
@@ -87,7 +98,7 @@ export const injectCaptureStyles = () => {
         }
 
         .capture-title { 
-            font-size: 28px; 
+            font-size: 20px; 
             font-weight: bold; 
             color: #1e3a8a; 
             margin-bottom: 20px; 
@@ -98,17 +109,14 @@ export const injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
+        /* --- [FIX 2]: CHỐNG PHÌNH TO ---
+           Đã xóa 'transform: scale(5)' gây lỗi, ép cứng chiều rộng 480px chuẩn Mobile */
         .preset-mobile-portrait {
-            width: 450px !important;
-            min-width: 450px !important;
-            max-width: 450px !important;
-            padding: 10px !important;
+            width: 480px !important;
+            min-width: 480px !important;
+            max-width: 480px !important;
+            padding: 16px !important;
             margin: 0 auto;
-            transform: scale(5) !important;
-            transform-origin: top center !important; 
-        }
-        .preset-mobile-portrait .capture-title {
-            font-size: 18px !important;
         }
     `;
 
@@ -148,7 +156,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     
-    // [LOGIC TITLE]: Tiêu đề hiển thị TRONG ẢNH (vẫn giữ nguyên logic cũ: Title + Time)
     const displayTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
@@ -175,7 +182,8 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
 
     try {
         const canvas = await window.html2canvas(captureWrapper, {
-            scale: isPreview ? 1 : scale,
+            // --- [FIX 3]: Bù đắp độ nét bằng html2canvas thay vì dội CSS ---
+            scale: isPreview ? 1 : (scale === 2 ? 4 : scale), 
             useCORS: true,
             backgroundColor: '#f3f4f6',
             logging: false,
@@ -188,7 +196,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
         if (isPreview) {
             return { title: displayTitle, url: imageDataUrl };
         } else {
-            // [LOGIC FILENAME]: Xử lý tên file tải về
             const noToneTitle = removeVietnameseTones(title);
             const safeFileName = noToneTitle
                                     .replace(/[^a-zA-Z0-9]/g, '_')
@@ -212,7 +219,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
 };
 
 export const strategySingle = async (element, baseTitle, options) => {
-    // [FIX GENESIS]: Ưu tiên tên file từ attribute
     const manualFileName = element.dataset.captureFilename;
     const captureTitle = manualFileName || baseTitle;
 
@@ -224,13 +230,11 @@ export const strategySingle = async (element, baseTitle, options) => {
 export const strategySplit = async (elements, baseTitle, options) => {
     const results = [];
     for (const targetElement of elements) {
-        // [FIX GENESIS]: Ưu tiên tên file từ attribute
         const manualFileName = targetElement.dataset.captureFilename;
 
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
         foundTitle = removeVietnameseTones(foundTitle); 
         
-        // Logic mới: Manual Name > Found Tag > Base Title
         const captureTitle = manualFileName || (foundTitle || baseTitle);
         
         const preset = targetElement.dataset.capturePreset;
@@ -257,7 +261,6 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
         elementToCapture = elements[0];
     }
 
-    // [FIX GENESIS]: Ưu tiên lấy tên từ phần tử đầu tiên nếu có attribute
     const manualFileName = elements[0]?.dataset?.captureFilename;
 
     let foundTitle = '';
@@ -266,8 +269,6 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
     }
     foundTitle = removeVietnameseTones(foundTitle);
     
-    // Logic mới: Manual Name > Found Tag > Base Title
-    // [QUAN TRỌNG]: Đây là dòng sửa lỗi tên file bị default
     const captureTitle = manualFileName || (foundTitle || baseTitle);
 
     const preset = elements[0]?.dataset.capturePreset;
@@ -280,6 +281,10 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
         presetClass = 'prepare-for-kpi-capture';
     } else if (preset) {
         presetClass = `preset-${preset}`;
+    } else {
+        // --- [FIX 4]: ÉP KHUNG MOBILE CHO KHỐI GỘP DỌC ---
+        // Giúp bảng "Hiệu quả" và "Top Nhóm Hàng" tự động co về 480px, không bị tràn
+        presetClass = 'preset-mobile-portrait';
     }
 
     const res = await _coreCapture(elementToCapture, captureTitle, presetClass, options);

@@ -12,30 +12,32 @@ export const processKpiGrid = async (elements, baseTitle, options = {}) => {
         if (!options.isPreview) options.scale = 4;
     }
 
-    // --- SỬA LỖI LOGIC TẠI ĐÂY ---
+    // --- [FIX] Sửa lỗi Tên File: Ưu tiên lấy tên từ attribute hoặc thẻ H3/H4 ---
+    let captureTitle = baseTitle;
+    if (elements && elements.length > 0) {
+        const firstEl = elements[0];
+        const manualName = firstEl.dataset?.captureFilename;
+        const foundTitle = firstEl.querySelector('h3, h4')?.textContent?.trim();
+        captureTitle = manualName || foundTitle || baseTitle;
+    }
+
     let elementToCapture;
     let finalPresetClass = presetClass;
 
     if (elements.length === 1) {
         // TRƯỜNG HỢP 1: Người dùng gom nhóm cả bảng (Container)
-        // -> Clone trực tiếp, áp dụng class ép Grid thẳng vào nó.
         elementToCapture = elements[0].cloneNode(true);
-        
-        // Lưu ý: Nếu phần tử gốc đã có class, ta phải merge thêm class preset vào
         elementToCapture.classList.add(...presetClass.split(' '));
-        finalPresetClass = ''; // Đã add trực tiếp rồi nên không cần pass vào coreCapture nữa
+        finalPresetClass = ''; 
     } else {
         // TRƯỜNG HỢP 2: Người dùng chọn từng thẻ rời rạc
-        // -> Tạo container bao ngoài, ép container thành Grid.
         const container = document.createElement('div');
-        // Class 'capture-layout-container' cũ dùng flex-col, ta không dùng ở đây để tránh conflict với Grid
         container.className = presetClass; 
-        
         elements.forEach(el => container.appendChild(el.cloneNode(true)));
         elementToCapture = container;
-        finalPresetClass = ''; // Class đã nằm ở container
+        finalPresetClass = ''; 
     }
 
-    // Gọi Core Engine
-    return await coreCapture(elementToCapture, baseTitle, finalPresetClass, options);
+    // Gọi Core Engine với tên file đã được bóc tách
+    return await coreCapture(elementToCapture, captureTitle, finalPresetClass, options);
 };

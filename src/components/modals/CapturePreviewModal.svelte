@@ -20,6 +20,18 @@
         try {
             // Lấy trực tiếp Element siêu tốc
             previewItems = captureService.getPreviewElements(payload.container, payload.baseTitle);
+           
+            // [TÍNH NĂNG MỚI]: Nếu chỉ có 1 bảng, tự động chụp luôn và không hiển thị Modal
+            if (previewItems.length === 1) {
+                // Gọi tiến trình chụp chạy ngầm
+                captureService.captureSelectedItems(payload.container, payload.baseTitle, [0]).catch(error => {
+                    console.error("Lỗi khi chụp ảnh nét cao:", error);
+                    notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Lỗi khi tải ảnh chất lượng cao.' }));
+                });
+                closeModal();
+                return;
+            }
+
             previewItems.forEach((_, index) => selectedIndices.add(index));
             selectedIndices = selectedIndices; 
             isLoading = false;
@@ -46,12 +58,10 @@
                                 clonedCanvases[i].parentNode.replaceChild(img, clonedCanvases[i]);
                             } catch(e){}
                         });
-
                         wrapper.appendChild(clone);
                     });
                 }
             });
-
         } catch (error) {
             console.error("Lỗi khi tạo ảnh xem trước:", error);
             notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Không thể tạo bản xem trước.' }));
@@ -60,7 +70,7 @@
     });
 
     function closeModal() {
-        if (isDownloading) return; 
+        if (isDownloading) return;
         modalState.update(s => ({ ...s, activeModal: null, payload: null }));
     }
 
@@ -71,7 +81,7 @@
         } else {
             selectedIndices.add(index);
         }
-        selectedIndices = selectedIndices; 
+        selectedIndices = selectedIndices;
     }
 
     function toggleAll() {
@@ -84,22 +94,33 @@
         selectedIndices = selectedIndices;
     }
 
-    async function downloadSelected() {
-        if (selectedIndices.size === 0 || isDownloading) return;
-
-        isDownloading = true;
-        try {
-            const selectedArray = Array.from(selectedIndices);
-            await captureService.captureSelectedItems(payload.container, payload.baseTitle, selectedArray);
-            closeModal();
-        } catch (error) {
-            console.error("Lỗi khi chụp ảnh nét cao:", error);
-            notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Lỗi khi tải ảnh chất lượng cao.' }));
-        } finally {
-            isDownloading = false;
+    // [TÍNH NĂNG MỚI]: Lắng nghe sự kiện Enter
+    function handleKeydown(event) {
+        if (event.key === 'Enter' && !isLoading && !isDownloading && selectedIndices.size > 0) {
+            event.preventDefault();
+            downloadSelected();
         }
     }
+
+    function downloadSelected() {
+        if (selectedIndices.size === 0 || isDownloading) return;
+        
+        // [TÍNH NĂNG MỚI]: Tắt Modal ngay lập tức khi bấm tải xuống
+        const selectedArray = Array.from(selectedIndices);
+        const container = payload.container;
+        const baseTitle = payload.baseTitle;
+        
+        closeModal(); // Đóng modal luôn để user làm việc khác
+
+        // Chạy tiến trình chụp ảnh ngầm
+        captureService.captureSelectedItems(container, baseTitle, selectedArray).catch(error => {
+            console.error("Lỗi khi chụp ảnh nét cao:", error);
+            notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Lỗi khi tải ảnh chất lượng cao.' }));
+        });
+    }
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm" transition:fade={{ duration: 200 }}>
     <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-5xl max-h-[90vh] flex flex-col overflow-hidden" transition:scale={{ start: 0.95, duration: 200 }}>
@@ -107,7 +128,7 @@
         <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
             <div>
                 <h3 class="text-xl font-bold text-gray-800">Chọn bảng để tải xuống</h3>
-                <p class="text-sm text-gray-500 mt-1">Hệ thống sẽ tái tạo lại ảnh Nét Cao cho các mục được chọn.</p>
+                <p class="text-sm text-gray-500 mt-1">Hệ thống sẽ tái tạo lại ảnh Nét Cao cho các mục được chọn. (Bấm Enter để tải nhanh)</p>
             </div>
             <button class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors" on:click={closeModal} disabled={isDownloading}>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -134,7 +155,7 @@
                                checked={selectedIndices.size === previewItems.length} 
                                on:change={toggleAll} disabled={isDownloading}>
                         Chọn tất cả ({previewItems.length} mục)
-                    </label>
+                     </label>
                     <span class="text-sm text-gray-500">Đã chọn: <strong class="text-blue-600">{selectedIndices.size}</strong></span>
                 </div>
 
@@ -146,7 +167,7 @@
                             <div class="h-40 bg-gray-100 flex items-start justify-center relative overflow-hidden">
                                 <div class="w-full h-full relative overflow-hidden flex justify-center p-2">
                                      <div id="preview-clone-{index}" class="absolute top-2 origin-top pointer-events-none" style="transform: scale(0.35); width: 280%;">
-                                         </div>
+                                     </div>
                                 </div>
                                 
                                 <div class="absolute top-2 left-2 bg-white rounded-full p-0.5 shadow z-10">
