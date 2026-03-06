@@ -1,6 +1,6 @@
 <script>
   /* global XLSX, feather */
-  import { onMount } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
   import { 
     thiDuaVungChiTiet, 
@@ -11,7 +11,6 @@
 
   let fileStatus = "";
   let isLoading = false;
-  
   let allSupermarketNames = []; 
   let selectedSupermarket = ""; 
   let reportData = null;
@@ -48,7 +47,7 @@
     fileStatus = "Đang xử lý...";
     reportData = null;
     selectedSupermarket = "";
-    localStorage.removeItem('tdv_selected_st'); // Clear filter cũ khi up file mới
+    localStorage.removeItem('tdv_selected_st');
 
     try {
       const workbook = await _handleFileRead(file);
@@ -64,7 +63,7 @@
           .map(row => row.sieuThi)
           .filter(Boolean)
           .sort((a, b) => a.localeCompare(b));
-      
+
       fileStatus = `✅ Đã xử lý ${allSupermarketNames.length} siêu thị.`;
 
     } catch (error) {
@@ -78,12 +77,12 @@
   }
 
   function handleSelectChange() {
-      // [FIX 4] Lưu trạng thái siêu thị đang chọn vào LocalStorage
       if (selectedSupermarket) {
           localStorage.setItem('tdv_selected_st', selectedSupermarket);
       }
 
       const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
+
       if (row) {
           const prizeDict = {};
           const chiTiet = get(thiDuaVungChiTiet) || [];
@@ -110,6 +109,7 @@
                   let potentialPrize = d.potentialPrize || 0;
                   
                   const gap = (d.bestRank || 9999) - (row.rankCutoff || 0);
+           
                   if ((d.tongThuong || 0) === 0 && gap > 0 && gap < 10) {
                       const key = `${row.kenh}_${d.nganhHang}`;
                       potentialPrize = prizeDict[key] || 0;
@@ -127,7 +127,6 @@
                   };
               })
           };
-          
           reportData.tongThuongTiemNang = tongTienTiemNang;
       } else {
           reportData = null;
@@ -150,15 +149,20 @@
             .map(row => row.sieuThi)
             .filter(Boolean)
             .sort((a, b) => a.localeCompare(b));
+       
         fileStatus = `✅ Đã tải ${allSupermarketNames.length} siêu thị từ bộ nhớ.`;
 
-        // [FIX 4] Tự động đọc ST cũ và render lại bảng nếu có
         const savedST = localStorage.getItem('tdv_selected_st');
         if (savedST && allSupermarketNames.includes(savedST)) {
             selectedSupermarket = savedST;
-            handleSelectChange(); // Kích hoạt vẽ bảng
+            handleSelectChange(); 
         }
     }
+  });
+
+  // [FIX 1]: Đảm bảo Feather Icon luôn được render lại sau khi đổi Siêu thị (Svelte đổi DOM)
+  afterUpdate(() => {
+    if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
 
@@ -220,7 +224,7 @@
     </div>
 </div> 
 
-<div id="thidua-vung-infographic-container" class="mt-6"> 
+<div id="thidua-vung-infographic-container" class="mt-6" data-capture-filename="THI_DUA_VUNG"> 
     {#if reportData}
         {#key reportData.sieuThi}
             <TdvInfographic {reportData} />
@@ -243,7 +247,7 @@
         display: none !important;
     }
 
-    /* FIX 1: Ép chuẩn 1100px giống file LuykeThiDua */
+    /* Ép chuẩn 1100px giống file LuykeThiDua */
     :global(.capture-container) #thidua-vung-infographic-container {
         width: 1100px !important;
         margin: 0 !important;
