@@ -13,18 +13,14 @@
   
   import QdcTable from './QdcTable.svelte';
   import CategoryTable from './CategoryTable.svelte';
-  
-  // [FIX CRITICAL] Đổi đường dẫn import về './EfficiencyTable.svelte' (file cùng thư mục đã được fix lỗi Key)
-  // Trước đó: import EfficiencyTable from '../efficiency/EfficiencyTable.svelte'; (SAI - Load file cũ bị lỗi)
- import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
+  import EfficiencyTable from '../efficiency/EfficiencyTable.svelte';
 
   import { onMount } from 'svelte';
-
   let supermarketReport = {};
   let goals = {};
   let qdcItems = [];
   let categoryItems = [];
-  let unexportedItems = []; 
+  let unexportedItems = [];
   let rawSourceData = [];
 
   let combinedEfficiencyItems = [];
@@ -33,7 +29,6 @@
       const globalConfig = await adminService.loadEfficiencyConfig();
       efficiencyConfig.set(globalConfig);
   });
-
   $: if ($selectedWarehouse) {
       loadLocalMetrics($selectedWarehouse);
   }
@@ -47,7 +42,6 @@
       ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
       ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
   ];
-
   async function handleDeleteMetric(event) {
       const id = event.detail;
       const item = combinedEfficiencyItems.find(i => i.id === id);
@@ -88,7 +82,6 @@
     rawSourceData = filteredRawData;
 
     supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
-
     qdcItems = supermarketReport.nhomHangChiTiet 
         ? Object.entries(supermarketReport.nhomHangChiTiet)
             .map(([name, values]) => ({
@@ -101,11 +94,9 @@
             }))
             .filter(i => i.sl > 0 || i.dt > 0) 
         : [];
-
     categoryItems = supermarketReport.nganhHangChiTiet 
         ? Object.values(supermarketReport.nganhHangChiTiet).filter(i => i.revenue > 0 || i.quantity > 0)
         : [];
-
     unexportedItems = reportService.generateRealtimeChuaXuatReport(filteredRawData);
   }
 
@@ -163,7 +154,7 @@
       </div>
   </div>
 
-  <div class="luyke-tier-1-grid">
+  <div class="luyke-tier-1-grid realtime-override">
       <EfficiencyTable 
           supermarketData={supermarketReport} 
           dynamicItems={combinedEfficiencyItems} 
@@ -183,3 +174,17 @@
   </div>
 
 </div>
+
+<style>
+    /* [FIX GENESIS] Phẫu thuật Layout: Chống rò rỉ CSS từ tab Lũy kế, bảo vệ form 2 cột ngang của Realtime khi chụp */
+    :global(.capture-container .luyke-tier-1-grid.realtime-override) {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        width: 1000px !important;
+        min-width: 1000px !important;
+        max-width: 1000px !important;
+        margin: 0 auto !important;
+        gap: 16px !important;
+        flex-direction: row !important;
+    }
+</style>
