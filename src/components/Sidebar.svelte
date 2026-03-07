@@ -1,22 +1,25 @@
 <script>
   /* global feather */
   import { onMount } from 'svelte';
-  // [FIX] Import store isAdmin và modalState để kiểm tra quyền
   import { activeTab, drawerState, isAdmin, modalState } from '../stores.js';
 
   // Hàm chuyển tab (Cập nhật store global)
   function navigateTo(targetId) {
-    // [LOGIC MỚI] Tự động thoát quyền Admin khi rời khỏi tab Khai báo
-    if ($activeTab === 'declaration-section' && targetId !== 'declaration-section') {
+    // [PHẪU THUẬT LOGIC] Thiết lập "Vùng an toàn" cho Admin
+    const adminSafeZones = ['declaration-section', 'tools-section'];
+
+    // Nếu đang có quyền Admin mà click vào tab KHÔNG thuộc vùng an toàn -> Tước quyền
+    if ($isAdmin && !adminSafeZones.includes(targetId)) {
         isAdmin.set(false);
-        console.log("[Security] Đã tự động đăng xuất quyền Admin khi rời trang Khai báo.");
+        console.log("[Security] Đã tự động đăng xuất quyền Admin do rời khỏi vùng an toàn.");
     }
 
-    // Nếu vào Khai báo mà chưa phải Admin -> Bật modal đăng nhập
+    // Nếu vào Khai báo mà chưa phải Admin -> Bật modal đăng nhập (Giữ nguyên logic gốc)
     if (targetId === 'declaration-section' && !$isAdmin) {
         modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
         return;
     }
+    
     activeTab.set(targetId);
   }
 
@@ -50,7 +53,7 @@
             <li>
                 <button 
                   class="nav-link flex items-center p-3 rounded-lg font-semibold w-full transition-colors
-                         {currentTab === 'data-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
+                  {currentTab === 'data-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
                   on:click={() => navigateTo('data-section')}
                 >
                     <i data-feather="file-text"></i>
@@ -61,7 +64,7 @@
             <li>
                 <button 
                   class="nav-link flex items-center p-3 rounded-lg font-semibold w-full transition-colors
-                         {currentTab === 'health-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
+                  {currentTab === 'health-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
                   on:click={() => navigateTo('health-section')}
                 >
                     <i data-feather="activity"></i>
@@ -88,6 +91,17 @@
                 >
                     <i data-feather="trending-up"></i>
                     <span class="menu-text">Doanh thu realtime</span>
+                </button>
+            </li>
+
+            <li>
+                <button 
+                  class="nav-link flex items-center p-3 rounded-lg font-semibold w-full transition-colors
+                         {currentTab === 'tools-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
+                  on:click={() => navigateTo('tools-section')}
+                >
+                    <i data-feather="layers"></i>
+                    <span class="menu-text">Công cụ khác</span>
                 </button>
             </li>
         </ul>

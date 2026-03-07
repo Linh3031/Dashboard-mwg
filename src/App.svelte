@@ -28,6 +28,9 @@
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
+  
+  // [GENESIS SURGERY] Nhúng Component ToolsSection
+  import ToolsSection from './components/ToolsSection.svelte';
 
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
@@ -49,6 +52,7 @@
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
   import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
+
   // [GENESIS IMPORT] Import cửa sổ Xem trước Ảnh
   import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
   
@@ -56,7 +60,6 @@
   // <-- [TẮT DEMO] Comment import
 
   // Kiểm tra localStorage ngay khi khởi tạo
-  // let isBootingDemo = typeof localStorage !== 'undefined' && localStorage.getItem('isDemoMode') === 'true';
   let isBootingDemo = false; // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
   
   // Nếu đang boot demo thì chưa sẵn sàng (false)
@@ -71,6 +74,7 @@
         // --- LUỒNG 2: CHẾ ĐỘ THỰC (ONLINE) ---
         // Đảm bảo xóa cờ demo nếu lỡ còn lưu
         if (typeof localStorage !== 'undefined') localStorage.removeItem('isDemoMode');
+      
         await initRealMode();
     }
   });
@@ -83,11 +87,13 @@
       try {
           // 1. Nạp Snapshot
           await demoService.loadSnapshot(DEMO_SNAPSHOT);
+
           // 2. Chờ Store cập nhật
           await tick();
 
           // 3. Chọn kho mặc định từ dữ liệu vừa nạp
           const currentList = get(danhSachNhanVien);
+
           if (currentList && currentList.length > 0) {
               const firstWarehouse = currentList[0].maKho || "908";
               selectedWarehouse.set(firstWarehouse);
@@ -99,15 +105,18 @@
           
           // 4. Mở khóa giao diện
           isAppReady = true;
+
           console.log("✅ [Bootloader] Demo Ready -> Unlocking UI");
 
           // 5. Chuyển Tab (Delay nhẹ để UI render xong)
           setTimeout(() => {
               activeTab.set('realtime-section');
           }, 200);
+
       } catch (e) {
           console.error("❌ Lỗi nạp Demo:", e);
           alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
+
           // Fallback về chế độ thật nếu lỗi
           localStorage.removeItem('isDemoMode');
           window.location.reload();
@@ -158,6 +167,7 @@
 
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
+
       if ($activeTab === 'declaration-section') {
           newItem.isSystem = true;
           efficiencyConfig.update(items => {
@@ -171,6 +181,7 @@
           newItem.isSystem = false;
           let currentLocal = get(warehouseCustomMetrics) || [];
           const idx = currentLocal.findIndex(i => i.id === newItem.id);
+
           if (idx >= 0) {
               currentLocal[idx] = newItem;
           } else {
@@ -178,6 +189,7 @@
           }
           warehouseCustomMetrics.set(currentLocal);
           const wh = get(selectedWarehouse);
+
           if(wh) {
                datasyncService.saveCustomMetrics(wh, currentLocal);
           } else {
@@ -188,6 +200,7 @@
 
   async function handleSaveCustomTable(event) {
       const newItem = event.detail;
+
       customRevenueTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
           if (idx >= 0) { 
@@ -247,6 +260,7 @@
               .map(nv => nv.maKho)
               .filter(k => k && String(k).trim() !== '')
           )].sort();
+
           warehouseList.set(uniqueWarehouses);
       }
   }
@@ -346,13 +360,16 @@
             <HealthEmployeeSection activeTab={$activeTab} />
             <RealtimeSection activeTab={$activeTab} />
             <DeclarationSection activeTab={$activeTab} />
+            
+            <ToolsSection activeTab={$activeTab} />
+            
         {:else}
             <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
                 <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <p class="font-medium">Đang thiết lập môi trường Demo...</p>
+                <p class="font-medium">Đang thiết lập môi trường...</p>
             </div>
         {/if}
       </div>

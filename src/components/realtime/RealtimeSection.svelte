@@ -85,7 +85,7 @@
                     </a>
                     <label for="realtime-file-input" class="cursor-pointer bg-white text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition text-sm font-bold flex items-center gap-2 shadow-sm border border-blue-200">
                          <i data-feather="upload" class="w-4 h-4"></i>
-                         <span>Tải file</span>
+                         <span>Thêm file để xem</span>
                     </label>
                     <input 
                         type="file" 
