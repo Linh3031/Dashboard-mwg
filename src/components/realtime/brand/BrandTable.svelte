@@ -9,12 +9,10 @@
   export let filterOptions = {}; 
   export let currentFilters = {};
   export let sortConfig = { key: 'revenue', direction: 'desc' };
-  
   // Nhận state expandedRows từ cha
   export let expandedRows = new Set(); 
 
   const dispatch = createEventDispatcher();
-  
   let openFilterId = null;
   let filterSearchQuery = '';
 
@@ -27,7 +25,6 @@
       }).format(val);
   };
   const fmtPct = (n) => (n || 0).toFixed(1) + '%';
-
   const LEVEL_COLORS = [
       'text-red-700 font-bold',     
       'text-blue-700 font-semibold',
@@ -39,7 +36,7 @@
   function toggleRow(id) {
       if (expandedRows.has(id)) expandedRows.delete(id);
       else expandedRows.add(id);
-      expandedRows = expandedRows; 
+      expandedRows = expandedRows;
   }
 
   function expandAll(nodes) {
@@ -109,6 +106,7 @@
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
             {@const hasFilter = (currentFilters[dim.id] || []).length > 0}
+      
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
                     <button 
@@ -124,6 +122,7 @@
                         {/if}
                         {dim.label}
                     </button>
+          
                     <button 
                         class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
                         on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
@@ -139,6 +138,7 @@
                         {/if}
                     </button>
                 </div>
+             
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
                         <div class="flex justify-between items-center mb-2">
@@ -196,7 +196,7 @@
                             Số lượng {@html SortIcon({ active: sortConfig.key === 'quantity', direction: sortConfig.direction })}
                         </div>
                     </th>
-                    
+                
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('revenue')}>
                          <div class="flex items-center justify-end">
                             Doanh thu {@html SortIcon({ active: sortConfig.key === 'revenue', direction: sortConfig.direction })}
@@ -204,7 +204,7 @@
                     </th>
                     
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('revenueQD')}>
-                         <div class="flex items-center justify-end">
+                        <div class="flex items-center justify-end">
                             DTQĐ {@html SortIcon({ active: sortConfig.key === 'revenueQD', direction: sortConfig.direction })}
                         </div>
                     </th>
@@ -216,7 +216,7 @@
                     </th>
 
                     <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham')}>
-                         <div class="flex items-center justify-end">
+                        <div class="flex items-center justify-end">
                             DT Trả chậm {@html SortIcon({ active: sortConfig.key === 'revenueTraCham', direction: sortConfig.direction })}
                         </div>
                     </th>
@@ -235,7 +235,7 @@
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
                     
                     <td class="py-3 px-4 text-center">
-                        {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueQD / totalMetrics.revenue) * 100) : '0%'}
+                        {totalMetrics.revenue > 0 ? fmtPct(((totalMetrics.revenueQD / totalMetrics.revenue) * 100) - 100) : '0%'}
                     </td>
                     
                     <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>

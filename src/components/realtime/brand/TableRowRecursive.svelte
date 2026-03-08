@@ -9,16 +9,14 @@
 
     export let isVelocityMode = false;
     export let hasInventoryData = false;
-    
     // [GENESIS ADD]: Nhận trạng thái So sánh từ bảng cha
     export let isCompareMode = false;
-    
+
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
     $: paddingLeft = `${group.level * 24 + 16}px`;
-    
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
-    $: qdPercent = group.revenue > 0 ? (group.revenueQD / group.revenue) * 100 : 0;
+    $: qdPercent = group.revenue > 0 ? ((group.revenueQD / group.revenue) * 100) - 100 : 0;
 
     // [GENESIS SURGICAL] Sửa hàm nhận diện Class theo đúng định dạng trả về của InventoryLogic
     const getAlertClass = (status) => {
@@ -135,7 +133,7 @@
     </td>
 
     {#if !isVelocityMode}
-        <td class="py-2 px-4 text-center font-bold text-xs {qdPercent >= 100 ? 'text-green-700' : 'text-orange-600'}">
+        <td class="py-2 px-4 text-center font-bold {qdPercent >= 0 ? 'text-green-700' : 'text-orange-600'}">
             {fmtPct(qdPercent)}
         </td>
     {/if}
@@ -180,7 +178,7 @@
                 </div>
             {/if}
         </td>
-        <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold text-xs">
+        <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold">
             {fmtPct(traChamPercent)}
         </td>
     {/if}
