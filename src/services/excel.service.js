@@ -1,5 +1,5 @@
 /* global XLSX */
-import { notificationStore } from '../stores.js'; // [FIX] Dùng Store thay vì file lẻ
+import { notificationStore } from '../stores.js'; 
 
 export const excelService = {
     /**
@@ -9,7 +9,7 @@ export const excelService = {
      */
     exportTableToExcel(tableElement, fileName) {
         if (!tableElement) {
-            notificationStore.show('Không tìm thấy nội dung để xuất.', 'error'); // [FIX]
+            notificationStore.set({ message: 'Không tìm thấy nội dung để xuất.', type: 'error', visible: true }); 
             return;
         }
 
@@ -23,17 +23,17 @@ export const excelService = {
         }
 
         if (!table) {
-            notificationStore.show('Không tìm thấy bảng dữ liệu trong khu vực này để xuất.', 'error'); // [FIX]
+            notificationStore.set({ message: 'Không tìm thấy bảng dữ liệu trong khu vực này để xuất.', type: 'error', visible: true }); 
             return;
         }
 
         try {
             const wb = XLSX.utils.table_to_book(table, { sheet: "Sheet1" });
             XLSX.writeFile(wb, `${fileName}.xlsx`);
-            notificationStore.show(`Đã xuất file ${fileName}.xlsx thành công!`, 'success'); // [FIX]
+            notificationStore.set({ message: `Đã xuất file ${fileName}.xlsx thành công!`, type: 'success', visible: true }); 
         } catch (e) {
             console.error('[ExcelService] Lỗi xuất Excel:', e);
-            notificationStore.show('Có lỗi xảy ra khi xuất file Excel.', 'error'); // [FIX]
+            notificationStore.set({ message: 'Có lỗi xảy ra khi xuất file Excel.', type: 'error', visible: true }); 
         }
     }
 };

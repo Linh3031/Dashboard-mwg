@@ -5,6 +5,9 @@ import { writable } from 'svelte/store';
 export const isDemoMode = writable(false); 
 // -------------------------
 
+// --- [NEW] TRẠM TRUNG CHUYỂN VERSION ---
+export const latestSystemVersion = writable(null);
+
 // QUAN TRỌNG: Phải có chữ 'export' ở đầu dòng này
 export const currentCluster = writable(null);
 export const activeTab = writable('data-section');

@@ -6,60 +6,56 @@
 
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { homeConfig } from '../../stores.js';
+    import { homeConfig, latestSystemVersion } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
 
-    // Biến trạng thái
     let showForceUpdateModal = false;
     let latestVersionData = null;
     let clientVersion = '';
 
-    // Lấy trạng thái hiển thị popup chi tiết từ store
     let showDetails = false;
     showVersionDetails.subscribe(val => showDetails = val);
 
-    // [GENESIS FIX 1] Biến lưu trữ đồng hồ ngầm
-    let pollingInterval; 
-
     onMount(async () => {
-        // 1. Lấy version hiện tại của máy khách (trong LocalStorage)
         clientVersion = localStorage.getItem('app_client_version') || '0.0';
-
-        // 2. Đảm bảo load config mới nhất từ Cloud (Lần chạy đầu tiên)
         await adminService.loadHomeConfig();
 
-        // [GENESIS FIX 2] Thiết lập đồng hồ ngầm (Polling) mỗi 15 phút (900,000 ms)
-        pollingInterval = setInterval(async () => {
-            console.log("[VersionManager] ⏳ Đang kiểm tra phiên bản mới ngầm...");
-            await adminService.loadHomeConfig(); // Kích hoạt thay đổi $homeConfig
-        }, 900000); 
+        // [TẤN CÔNG CHỦ ĐỘNG] Dùng Visibility API (Cảm biến Thức dậy)
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleVisibilityChange);
     });
 
-    // [GENESIS FIX 3] Dọn dẹp đồng hồ ngầm khi Component bị hủy để tránh rò rỉ RAM
     onDestroy(() => {
-        if (pollingInterval) clearInterval(pollingInterval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('focus', handleVisibilityChange);
     });
 
-    // 3. Theo dõi sự thay đổi của Config từ Server (Tự động kích hoạt mỗi 15p nhờ đồng hồ ngầm)
+    async function handleVisibilityChange() {
+        // Chỉ gọi server khi user thực sự quay lại Tab
+        if (document.visibilityState === 'visible' || document.hasFocus()) {
+            console.log("[VersionManager] 👤 User hoạt động lại. Cảm biến đang quét version...");
+            await adminService.loadHomeConfig(); 
+        }
+    }
+
     $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
-        // Lấy bản ghi mới nhất (phần tử đầu tiên)
         latestVersionData = $homeConfig.changelogs[0];
         
-        // Kiểm tra version
+        // [CẤP ĐẠN CHO LƯỚI ĐÁNH CHẶN] Bơm version mới nhất vào Store
+        latestSystemVersion.set(latestVersionData.version);
+
         checkVersion(latestVersionData.version);
     }
 
     function checkVersion(serverVersion) {
         if (!serverVersion) return;
-        
-        // Nếu version local bằng 0.0 (lần đầu vào web), lưu luôn không hỏi
+
         if (clientVersion === '0.0') {
             localStorage.setItem('app_client_version', serverVersion);
             clientVersion = serverVersion;
             return;
         }
 
-        // Nếu version server khác version client -> BẮT BUỘC CẬP NHẬT
         if (serverVersion !== clientVersion) {
             showForceUpdateModal = true;
         }
