@@ -40,10 +40,8 @@
 
     $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
         latestVersionData = $homeConfig.changelogs[0];
-        
         // [CẤP ĐẠN CHO LƯỚI ĐÁNH CHẶN] Bơm version mới nhất vào Store
         latestSystemVersion.set(latestVersionData.version);
-
         checkVersion(latestVersionData.version);
     }
 
@@ -75,16 +73,26 @@
 
 {#if showForceUpdateModal && latestVersionData}
     <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/80 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md p-6 flex flex-col items-center text-center animate-bounce-in">
-            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md max-h-[90vh] p-6 flex flex-col items-center text-center animate-bounce-in">
+            <div class="w-16 h-16 shrink-0 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
             </div>
-            <h3 class="text-xl font-bold text-gray-800 mb-2">Đã có phiên bản mới!</h3>
-            <p class="text-gray-600 mb-2">Hệ thống vừa được nâng cấp lên phiên bản <strong class="text-blue-600">{latestVersionData.version}</strong>.</p>
-            <p class="text-sm text-gray-500 mb-6">Để đảm bảo tính năng hoạt động ổn định và không bị lỗi, vui lòng tải lại trang.</p>
-            <button class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2" on:click={forceUpdate}>
+            <h3 class="text-xl shrink-0 font-bold text-gray-800 mb-2">Đã có phiên bản mới!</h3>
+            <p class="text-gray-600 shrink-0 mb-4">Hệ thống vừa được nâng cấp lên phiên bản <strong class="text-blue-600">{latestVersionData.version}</strong>.</p>
+          
+            {#if latestVersionData.content}
+                <div class="w-full text-left bg-slate-50 border border-slate-100 rounded-xl p-4 mb-4 overflow-y-auto max-h-52 custom-scrollbar">
+                    <h4 class="text-xs font-bold text-slate-500 uppercase mb-2">Chi tiết thay đổi:</h4>
+                    <div class="text-sm text-slate-700 leading-relaxed custom-content pl-2">
+                        {@html latestVersionData.content}
+                    </div>
+                </div>
+            {/if}
+
+            <p class="text-sm shrink-0 text-gray-500 mb-6">Để đảm bảo tính năng hoạt động ổn định và không bị lỗi, vui lòng tải lại trang.</p>
+            <button class="w-full shrink-0 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2" on:click={forceUpdate}>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                 Cập nhật hệ thống ngay
             </button>
