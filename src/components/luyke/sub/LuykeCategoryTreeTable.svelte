@@ -29,6 +29,7 @@
     };
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
     const LEVEL_COLORS = ['text-red-700 font-bold', 'text-blue-700 font-semibold', 'text-purple-700 font-medium', 'text-emerald-700', 'text-orange-700'];
+
     function handleSort(key) {
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
         else { sortKey = key; sortDirection = 'desc'; }
@@ -42,7 +43,7 @@
                 valA = a.revenue ? (a.revenueQD / a.revenue) : 0;
                 valB = b.revenue ? (b.revenueQD / b.revenue) : 0;
             } else {
-              if (isCompareMode && !isVelocityMode) {
+                if (isCompareMode && !isVelocityMode) {
                     const currA = a[key] || 0; const prevA = a[`${key}CK`] || 0;
                     const currB = b[key] || 0; const prevB = b[`${key}CK`] || 0;
                     
@@ -60,6 +61,7 @@
     }
 
     $: sortedData = sortTree(data, sortKey, sortDirection, compareSortType);
+
     function toggleRow(id) {
         if (expandedRows.has(id)) expandedRows.delete(id); else expandedRows.add(id);
         expandedRows = expandedRows;
@@ -72,7 +74,6 @@
     function collapseAll() { expandedRows = new Set(); }
     function toggleFilterDropdown(dimId) { if (openFilterId === dimId) openFilterId = null; else { openFilterId = dimId; filterSearchQuery = ''; } }
     
-    // [GENESIS FIX]: Xử lý Checkbox nghiêm ngặt với giá trị undefined
     function toggleFilterItem(dimId, value) {
         const allOptions = filterOptions[dimId] || [];
         let current = currentFilters[dimId];
@@ -91,7 +92,9 @@
         }
     }
     
-    function clearFilter(dimId) { dispatch('filterChange', { key: dimId, selected: undefined }); }
+    function clearFilter(dimId) { 
+        dispatch('filterChange', { key: dimId, selected: undefined });
+    }
     
     $: getDisplayOptions = (dimId) => {
         const options = filterOptions[dimId] || [];
@@ -100,9 +103,12 @@
         return options.filter(opt => opt.toLowerCase().includes(query)).sort((a, b) => {
             const aSel = current === undefined || current.includes(a); 
             const bSel = current === undefined || current.includes(b);
-            if (aSel && !bSel) return -1; if (!aSel && bSel) return 1; return a.localeCompare(b);
+            if (aSel && !bSel) return -1; 
+            if (!aSel && bSel) return 1; 
+            return a.localeCompare(b);
         });
     };
+
     function handleDimensionToggle(dimId) {
         let newIds = [...activeIds];
         if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId); else newIds.push(dimId);
@@ -142,29 +148,33 @@
                     </button>
                 </div>
                 {#if openFilterId === dim.id}
-                    <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
-                         <div class="flex justify-between items-center mb-2"><span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>{#if hasFilter}<button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>{/if}</div>
+                    <div class="absolute top-full left-0 mt-2 w-[280px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
+                         <div class="flex justify-between items-center mb-3">
+                             <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
+                             <div class="flex items-center gap-3">
+                                 <button on:click={() => dispatch('filterChange', { key: dim.id, selected: [] })} class="text-[11px] font-bold text-orange-600 hover:text-orange-800 transition-colors">Bỏ chọn hết</button>
+                                 {#if hasFilter}
+                                     <button on:click={() => clearFilter(dim.id)} class="text-[11px] font-bold text-red-500 hover:text-red-700 transition-colors">Xóa lọc</button>
+                                 {/if}
+                             </div>
+                         </div>
   
-                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
-                         <div class="max-h-48 overflow-y-auto space-y-1">
+                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors"/>
+                         <div class="max-h-56 overflow-y-auto space-y-1 custom-scrollbar">
                             {#each getDisplayOptions(dim.id) as option (option)}
                                 {@const isSelected = currentFilters[dim.id] === undefined || currentFilters[dim.id].includes(option)}
-                                <label 
-                                    class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer" 
-                                    on:click|preventDefault={() => toggleFilterItem(dim.id, option)}
-                                >
-                                    <input 
-                                        type="checkbox" 
-                                        checked={isSelected} 
-                                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none" 
-                                        tabindex="-1"
-                                    />
-                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span>
+                                <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded cursor-pointer transition-colors" on:click|preventDefault={() => toggleFilterItem(dim.id, option)}>
+                                    <input type="checkbox" checked={isSelected} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none" tabindex="-1"/>
+                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-bold text-blue-800' : ''}">{option}</span>
                                 </label>
                             {/each}
-                            {#if getDisplayOptions(dim.id).length === 0}<div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>{/if}
+                            {#if getDisplayOptions(dim.id).length === 0}
+                                <div class="text-xs text-gray-400 text-center py-4 font-medium">Không tìm thấy dữ liệu</div>
+                            {/if}
                          </div>
-                         <div class="mt-2 pt-2 border-t text-right"><button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button></div>
+                         <div class="mt-2 pt-2 border-t border-slate-100 text-right">
+                             <button on:click={() => openFilterId = null} class="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-4 py-1.5 rounded-md transition-colors">Đóng</button>
+                         </div>
                     </div>
                     <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
@@ -182,7 +192,7 @@
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
                              <div class="flex gap-1 ml-auto">
-                               <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
@@ -217,7 +227,7 @@
                             <div class="flex items-center justify-center gap-1">
                                 % QĐ
                                 <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">▲▼</div>
-                             </div>
+                            </div>
                         </th>
                     {/if}
                     
@@ -225,7 +235,7 @@
                         <th class="py-3 px-4 text-right border-b w-32 bg-emerald-50 text-emerald-800">SL Tồn kho</th>
                         <th class="py-3 px-4 text-center border-b w-32 bg-red-50 text-red-800">Cảnh báo</th>
                     {/if}
-                 
+                
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group relative" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
@@ -253,7 +263,7 @@
                             {@const diff = getDiff(totalMetrics.quantity, totalMetrics.quantityCK)}
                             <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.quantity, totalMetrics.quantityCK)}</div>
                             <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                 Tổng Cùng kỳ: <b>{fmtQty(totalMetrics.quantityCK)}</b> <br/>
+                                Tổng Cùng kỳ: <b>{fmtQty(totalMetrics.quantityCK)}</b> <br/>
                                 Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtQty(diff)} ({getPct(totalMetrics.quantity, totalMetrics.quantityCK)})</b>
                             </div>
                         {/if}
@@ -272,7 +282,7 @@
                             {@const diff = getDiff(totalMetrics.revenue, totalMetrics.revenueCK)}
                             <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenue, totalMetrics.revenueCK)}</div>
                             <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                 Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueCK)}</b> <br/>
+                                Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueCK)}</b> <br/>
                                 Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenue, totalMetrics.revenueCK)})</b>
                             </div>
                         {/if}
@@ -291,7 +301,7 @@
                             {@const diff = getDiff(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}
                             <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}</div>
                             <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                 Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueQDCK)}</b> <br/>
+                                Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueQDCK)}</b> <br/>
                                 Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)})</b>
                             </div>
                         {/if}

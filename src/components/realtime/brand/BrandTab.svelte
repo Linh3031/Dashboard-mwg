@@ -31,7 +31,7 @@
     // [FIX STATE] Cờ hiệu để chặn việc lưu đè config khi chưa load xong
     let isConfigLoaded = false; 
 
-    const STORAGE_KEY = 'BRAND_TAB_CONFIG_V1';
+    const STORAGE_KEY = 'BRAND_TAB_CONFIG_V2'; // Đổi key để clear cache cũ
 
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
@@ -118,7 +118,7 @@
         totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
         
         if (!sourceData || sourceData.length === 0) return;
-
+        
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
 
@@ -130,11 +130,11 @@
             if (!hinhThucXuatTinhDoanhThu.has(htx)) return;
             if (!isValidRow(row)) return;
 
-            // Filter
+            // Filter (Đã đồng bộ logic: undefined là Chọn tất cả, [] là Bỏ chọn tất cả)
             if (Object.keys(currentFilters).length > 0) {
                 let skip = false;
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
-                    if (selectedValues && selectedValues.length > 0) {
+                    if (selectedValues !== undefined) {
                         const cellVal = getDimensionValue(row, key);
                         if (!selectedValues.includes(cellVal)) { 
                             skip = true; 
@@ -161,7 +161,6 @@
             if (isTraGop) totalMetrics.revenueTraCham += revenue;
 
             let currentLevel = rootMap;
-
             activeDimensionIds.forEach((dimId, index) => {
                 const key = getDimensionValue(row, dimId);
                 
@@ -252,7 +251,7 @@
                 let isValid = true;
                 if (Object.keys(otherFilters).length > 0) {
                     for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
-                        if (filterValues && filterValues.length > 0) {
+                        if (filterValues !== undefined) {
                             const valToCheck = getDimensionValue(row, filterKey);
                             if (!filterValues.includes(valToCheck)) {
                                 isValid = false;
@@ -283,9 +282,16 @@
     }
 
     function handleConfigChange(event) { activeDimensionIds = event.detail; }
+
     function handleFilterChange(event) {
         const { key, selected } = event.detail;
-        currentFilters = { ...currentFilters, [key]: selected };
+        if (selected === undefined) {
+            const newFilters = { ...currentFilters };
+            delete newFilters[key]; // Xóa hẳn key để reset về trạng thái Tất cả
+            currentFilters = newFilters;
+        } else {
+            currentFilters = { ...currentFilters, [key]: selected };
+        }
     }
     
     // Handle Sort Event
