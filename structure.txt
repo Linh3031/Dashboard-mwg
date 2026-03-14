@@ -21,6 +21,7 @@ src/styles/tables.css
 src/styles/specific-sknv.css
 src/styles/specific-realtime.css
 src/components
+src/components/ToolsSection.svelte
 src/components/CapturePreviewDebug.svelte
 src/components/DeclarationSection.svelte
 src/components/HealthSection.svelte
@@ -48,7 +49,9 @@ src/components/admin/AdminHomeConfig.svelte
 src/components/modals
 src/components/modals/AddMetricModal.svelte
 src/components/modals/CustomerDetailModal.svelte
+src/components/modals/StEmpCompetitionModal.svelte
 src/components/modals/AddPerformanceTableModal.svelte
+src/components/modals/CapturePreviewModal.svelte
 src/components/modals/AddEfficiencyColumnModal.svelte
 src/components/modals/composer
 src/components/modals/composer/tabs
@@ -200,6 +203,7 @@ src/services/processing/processors.js
 src/services/processing/helpers.js
 src/services/dataService.js
 src/services/analytics.service.js
+src/services/tools.service.js
 src/services/storage.service.js
 src/services/declarations
 src/services/declarations/config.service.js

@@ -1,69 +1,106 @@
 <script context="module">
-    // Store đơn giản để các component khác có thể gọi popup chi tiết
     import { writable } from 'svelte/store';
     export const showVersionDetails = writable(false);
 </script>
 
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { homeConfig, latestSystemVersion } from '../../stores.js';
+    import { homeConfig } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
 
     let showForceUpdateModal = false;
     let latestVersionData = null;
-    let clientVersion = '';
-
     let showDetails = false;
+    
+    // Lưu phiên bản hiện tại của máy khách
+    let clientVersion = ''; 
+    let serverVersionString = '';
+    let pollingInterval;
+
     showVersionDetails.subscribe(val => showDetails = val);
 
     onMount(async () => {
+        // Lấy version đang lưu trong máy người dùng
         clientVersion = localStorage.getItem('app_client_version') || '0.0';
-        await adminService.loadHomeConfig();
+        
+        await fetchLatestConfig();
 
-        // [TẤN CÔNG CHỦ ĐỘNG] Dùng Visibility API (Cảm biến Thức dậy)
+        // [POLLING KILLER] Trinh sát chạy ngầm mỗi 15 giây
+        pollingInterval = setInterval(() => {
+            fetchLatestConfig();
+        }, 15000); 
+
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('focus', handleVisibilityChange);
     });
 
     onDestroy(() => {
+        if (pollingInterval) clearInterval(pollingInterval);
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('focus', handleVisibilityChange);
     });
 
     async function handleVisibilityChange() {
-        // Chỉ gọi server khi user thực sự quay lại Tab
         if (document.visibilityState === 'visible' || document.hasFocus()) {
-            console.log("[VersionManager] 👤 User hoạt động lại. Cảm biến đang quét version...");
-            await adminService.loadHomeConfig(); 
+            await fetchLatestConfig();
         }
     }
 
-    $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
-        latestVersionData = $homeConfig.changelogs[0];
-        // [CẤP ĐẠN CHO LƯỚI ĐÁNH CHẶN] Bơm version mới nhất vào Store
-        latestSystemVersion.set(latestVersionData.version);
-        checkVersion(latestVersionData.version);
+    async function fetchLatestConfig() {
+        try {
+            await adminService.loadHomeConfig();
+        } catch (e) {
+            console.error("Lỗi kiểm tra phiên bản:", e);
+        }
     }
 
-    function checkVersion(serverVersion) {
-        if (!serverVersion) return;
+    // Theo dõi phiên bản từ Server
+    $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
+        latestVersionData = $homeConfig.changelogs[0];
+        serverVersionString = latestVersionData.version;
 
+        checkVersionMismatch(serverVersionString);
+    }
+
+    function checkVersionMismatch(serverVer) {
+        if (!serverVer) return;
+
+        // Nếu là lần đầu tiên vào app, lưu luôn version server và không làm phiền
         if (clientVersion === '0.0') {
-            localStorage.setItem('app_client_version', serverVersion);
-            clientVersion = serverVersion;
+            localStorage.setItem('app_client_version', serverVer);
+            clientVersion = serverVer;
             return;
         }
 
-        if (serverVersion !== clientVersion) {
+        // Nếu Version Server KHÁC Version Máy Khách -> BÁO ĐỘNG ĐỎ
+        if (serverVer !== clientVersion) {
             showForceUpdateModal = true;
         }
     }
 
-    function forceUpdate() {
-        if (latestVersionData && latestVersionData.version) {
-            localStorage.setItem('app_client_version', latestVersionData.version);
+    // [PWA NUKE] Hàm diệt Cache, lưu Version mới và ép tải lại
+    async function forceUpdateApp() {
+        // 1. Lưu version mới vào máy (Để triệt tiêu vòng lặp vô tận)
+        if (serverVersionString) {
+            localStorage.setItem('app_client_version', serverVersionString);
         }
-        window.location.reload(true);
+
+        // 2. Diệt PWA và Cache
+        if ('caches' in window) {
+            try {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+            } catch (err) {}
+        }
+        if ('serviceWorker' in navigator) {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) await reg.unregister();
+            } catch (err) {}
+        }
+        
+        // 3. Tải lại trang với timestamp để phá cache trình duyệt
+        window.location.href = window.location.pathname + "?v=" + new Date().getTime();
     }
 
     function closeDetails() {
@@ -71,7 +108,7 @@
     }
 </script>
 
-{#if showForceUpdateModal && latestVersionData}
+{#if showForceUpdateModal}
     <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/80 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md max-h-[90vh] p-6 flex flex-col items-center text-center animate-bounce-in">
             <div class="w-16 h-16 shrink-0 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
@@ -79,10 +116,11 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
             </div>
-            <h3 class="text-xl shrink-0 font-bold text-gray-800 mb-2">Đã có phiên bản mới!</h3>
-            <p class="text-gray-600 shrink-0 mb-4">Hệ thống vừa được nâng cấp lên phiên bản <strong class="text-blue-600">{latestVersionData.version}</strong>.</p>
-          
-            {#if latestVersionData.content}
+            
+            <h3 class="text-xl shrink-0 font-bold text-gray-800 mb-2">Đã có bản cập nhật mới!</h3>
+            <p class="text-gray-600 shrink-0 mb-4">Hệ thống vừa được nâng cấp lên phiên bản <strong class="text-blue-600">{serverVersionString}</strong>.</p>
+            
+            {#if latestVersionData && latestVersionData.content}
                 <div class="w-full text-left bg-slate-50 border border-slate-100 rounded-xl p-4 mb-4 overflow-y-auto max-h-52 custom-scrollbar">
                     <h4 class="text-xs font-bold text-slate-500 uppercase mb-2">Chi tiết thay đổi:</h4>
                     <div class="text-sm text-slate-700 leading-relaxed custom-content pl-2">
@@ -91,10 +129,13 @@
                 </div>
             {/if}
 
-            <p class="text-sm shrink-0 text-gray-500 mb-6">Để đảm bảo tính năng hoạt động ổn định và không bị lỗi, vui lòng tải lại trang.</p>
-            <button class="w-full shrink-0 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2" on:click={forceUpdate}>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                Cập nhật hệ thống ngay
+            <p class="text-sm shrink-0 text-gray-500 mb-6">Để đảm bảo tính năng hoạt động ổn định và không bị lỗi, vui lòng cập nhật.</p>
+            
+            <button class="w-full shrink-0 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2" on:click={forceUpdateApp}>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Tải lại Hệ thống ngay
             </button>
         </div>
     </div>
@@ -144,10 +185,7 @@
 <style>
     .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
     @keyframes bounceIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
-    .animate-spin-slow { animation: spin 3s linear infinite; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     
-    /* Style cho nội dung HTML từ CkEditor */
     :global(.custom-content ul) { list-style-type: disc; padding-left: 1.5rem; margin-top: 0.5rem; }
     :global(.custom-content p) { margin-bottom: 0.5rem; }
     :global(.custom-content strong) { color: #1e293b; }

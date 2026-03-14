@@ -9,15 +9,15 @@
         sliderImages: [], // { url, title, fileName, fileRaw }
         changelogs: []
     };
-
-    let activeTab = 'video'; 
+    let activeTab = 'video';
     let isSaving = false;
     let isUploading = false;
-    let fileInput; 
-
+    let fileInput;
     // --- BIẾN CHO TRÌNH SOẠN THẢO MỚI ---
-    let mainTitle = ''; // Tiêu đề chính (VD: Cập nhật tháng 12)
-    let editorSections = []; // Danh sách các mục nhỏ
+    let mainTitle = '';
+    // Tiêu đề chính (VD: Cập nhật tháng 12)
+    let editorSections = [];
+    // Danh sách các mục nhỏ
 
     $: if ($homeConfig) {
         localConfig = JSON.parse(JSON.stringify($homeConfig));
@@ -53,7 +53,6 @@
         const today = new Date().toLocaleDateString('vi-VN');
         // Tạo bản ghi mới
         localConfig.changelogs = [{ version: '', date: today, content: '' }, ...localConfig.changelogs];
-        
         // Mở trình soạn thảo ngay
         mainTitle = 'Cập nhật tính năng mới';
         editorSections = [{ title: 'Thay đổi chính', content: '' }];
@@ -75,7 +74,6 @@
     // [QUAN TRỌNG] Chuyển đổi từ Form nhập liệu -> HTML để lưu
     function applyEditorContent(logIndex) {
         let html = '';
-        
         // 1. Tiêu đề chính (Màu xanh đậm, in hoa)
         if (mainTitle) {
             html += `<h3 style="color:#1d4ed8; font-size:1.1em; font-weight:800; margin-bottom:10px; text-transform:uppercase;">${mainTitle}</h3>`;
@@ -87,6 +85,7 @@
                 // Tiêu đề phụ (Màu xám đậm)
                 html += `<h4 style="color:#334155; font-weight:700; margin-top:8px; margin-bottom:4px;">${sec.title}:</h4>`;
             }
+        
             if (sec.content) {
                 html += '<ul style="margin-bottom:12px;">';
                 // Tách dòng
@@ -97,7 +96,6 @@
                 html += '</ul>';
             }
         });
-        
         localConfig.changelogs[logIndex].content = html;
         
         // Xóa editor sau khi apply (để tránh nhầm lẫn)
@@ -143,7 +141,6 @@
             // 3. Lưu Firestore
             await adminService.saveHomeConfig(localConfig);
             alert("Đã lưu thành công! Dữ liệu đã được đồng bộ.");
-            
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
@@ -269,7 +266,6 @@
                                             {#each editorSections as sec, secIdx}
                                                 <div class="bg-white p-3 rounded border border-slate-200 relative shadow-sm">
                                                     <button on:click={() => removeEditorSection(secIdx)} class="absolute -top-2 -right-2 bg-white text-red-400 hover:text-red-600 rounded-full border border-gray-200 p-1 shadow-sm"><i data-feather="x" class="w-3 h-3"></i></button>
-                                                    
                                                     <input type="text" bind:value={sec.title} class="w-full p-1.5 border-b border-gray-100 text-sm font-bold text-slate-700 outline-none placeholder-slate-400 mb-2" placeholder="Tiêu đề phụ (VD: Tính năng mới)">
                                                     <textarea bind:value={sec.content} rows="3" class="w-full p-1.5 text-sm text-slate-600 outline-none resize-none placeholder-slate-300" placeholder="- Gạch đầu dòng 1&#10;- Gạch đầu dòng 2..."></textarea>
                                                 </div>
