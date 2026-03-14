@@ -5,6 +5,9 @@
   import { datasyncService } from '../../../services/datasync.service.js';
   import { selectedWarehouse, macroCategoryConfig } from '../../../stores.js';
   import { adminService } from '../../../services/admin.service.js';
+  
+  // [GENESIS ADD] Import Component Header Sort
+  import SortableTh from '../../common/SortableTh.svelte';
 
   export let items = []; 
   export let unexportedItems = [];
@@ -12,9 +15,12 @@
 
   let showUnexported = false;
   let viewMode = 'grid'; 
-  let sortMode = 'revenue_desc';
-  let searchText = '';
   
+  // [GENESIS FIX] State quản lý Sắp xếp
+  let sortKey = 'revenue';
+  let sortDirection = 'desc';
+
+  let searchText = '';
   let isSettingsOpen = false;
   let filterSearch = '';
   let hiddenCategories = new Set();
@@ -22,6 +28,7 @@
 
   let chartInstancePie = null;
   let chartInstanceBar = null;
+
   onMount(async () => {
       if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
           try {
@@ -32,8 +39,9 @@
           } catch (e) { console.error(e); }
       }
   });
+
   // --- THEME ---
-  $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT (QĐ)" : "CHI TIẾT NGÀNH HÀNG";
+  $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT" : "CHI TIẾT NGÀNH HÀNG";
   $: titleIcon = showUnexported ? "alert-circle" : "layers";
   $: titleClass = showUnexported ? "text-red-700" : "text-blue-700";
   $: iconClass = showUnexported ? "text-red-600" : "text-blue-600";
@@ -73,6 +81,7 @@
 
   // --- LOGIC AGGREGATION TRỰC TIẾP ---
   $: sourceData = showUnexported ? unexportedItems : items;
+
   $: allGroups = (() => {
       const macroItems = ($macroCategoryConfig || []).map(m => ({
           key: m.name, 
@@ -92,9 +101,11 @@
 
       return [...macroItems, ...simpleItems];
   })();
+
   $: filterList = allGroups.filter(g => 
       g.label.toLowerCase().includes(filterSearch.toLowerCase())
   );
+
   function toggleCategoryVisibility(key) {
       if (hiddenCategories.has(key)) hiddenCategories.delete(key);
       else hiddenCategories.add(key);
@@ -134,6 +145,7 @@
               }
           }
       });
+
       // B. Simple (Luôn hiện nếu không ẩn)
       sourceData.forEach((item, index) => {
           const name = item.name || item.nganhHang || 'Chưa đặt tên';
@@ -148,6 +160,7 @@
               });
           }
       });
+
       return result;
   })();
 
@@ -155,15 +168,51 @@
       const name = item.name || '';
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
   });
+
+  // [GENESIS REFACTOR] Hàm bắt sự kiện Sort
+  function handleSort(event) {
+      const key = event.detail;
+      if (sortKey === key) {
+          sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      } else {
+          sortKey = key;
+          sortDirection = 'desc';
+      }
+  }
+
+  // [GENESIS REFACTOR] Logic Sort động cho các cột
   $: sortedItems = [...filteredItems].sort((a, b) => {
       const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
       const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
-      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
-      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
-      return 0;
+      const getPrice = (i) => {
+          const q = getQty(i);
+          return q > 0 ? getRev(i) / q : 0;
+      };
+
+      let valA, valB;
+      
+      if (sortKey === 'name') {
+          valA = a.name || '';
+          valB = b.name || '';
+          return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      } else if (sortKey === 'quantity') {
+          valA = getQty(a);
+          valB = getQty(b);
+      } else if (sortKey === 'unitPrice') {
+          valA = getPrice(a);
+          valB = getPrice(b);
+      } else {
+          // Mặc định là revenue
+          valA = getRev(a);
+          valB = getRev(b);
+      }
+      
+      return sortDirection === 'asc' ? valA - valB : valB - valA;
   });
+
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
   $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
+
   // --- CHART LOGIC ---
   $: pieData = (() => {
       const sorted = sortedItems.slice(); 
@@ -173,12 +222,13 @@
       const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
       return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
   })();
-  // [FIX CHART]
+
   $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig);
+
   function calculateBrandData(source, visibleItems, configs) {
       if (!source || source.length === 0) return [];
-      // Bung nén danh sách được phép
       const allowedNames = new Set();
+
       visibleItems.forEach(item => {
           if (item.isMacro) {
               const conf = (configs || []).find(c => c.name === item.name);
@@ -209,6 +259,7 @@
       if (ctxPie) {
           if (chartInstancePie) chartInstancePie.destroy();
           const totalPieRev = pieData.reduce((sum, d) => sum + (showUnexported ? d.doanhThuQuyDoi : d.revenue), 0);
+
           chartInstancePie = new Chart(ctxPie, {
               type: 'doughnut',
               data: {
@@ -263,6 +314,7 @@
   }
 
   $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
+
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
@@ -273,20 +325,9 @@
 </script>
 
 <style>
-    :global(.filter-dropdown) {
-        display: flex;
-        flex-direction: column;
-        max-height: 400px;
-    }
-    :global(.filter-body) {
-        flex: 1;
-        overflow-y: auto;
-        min-height: 0;
-    }
-    :global(.filter-actions) {
-        flex-shrink: 0;
-        border-top: 1px solid #eee;
-    }
+    :global(.filter-dropdown) { display: flex; flex-direction: column; max-height: 400px; }
+    :global(.filter-body) { flex: 1; overflow-y: auto; min-height: 0; }
+    :global(.filter-actions) { flex-shrink: 0; border-top: 1px solid #eee; }
 
     /* [FIX GENESIS]: Ép lưới 4 cột khi Capture */
     :global(.capture-container .luyke-cat-grid) {
@@ -302,7 +343,14 @@
         <div class="luyke-toolbar-left flex-grow min-w-0">
             <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
                 <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
-                <span class="truncate">{titleText}</span>
+                <span class="truncate flex items-center gap-2">
+                    {titleText}
+                    {#if showUnexported && totalRevenue > 0}
+                        <span class="px-2.5 py-0.5 bg-red-100 text-red-800 text-sm font-black rounded border border-red-200 shadow-sm whitespace-nowrap">
+                            {formatters.formatRevenue(totalRevenue, 0)}
+                        </span>
+                    {/if}
+                </span>
             </h3>
         </div>
 
@@ -335,7 +383,7 @@
                             {:else}
                                 {#each filterList as group (group.key)}
                                     <div class="filter-item" on:click={() => toggleCategoryVisibility(group.key)}>
-                                         <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
+                                        <input type="checkbox" checked={!hiddenCategories.has(group.key)} />
                                         {#if group.type === 'macro'}
                                             <label class="text-teal-700 font-bold text-xs flex items-center gap-1 flex-1">
                                                 <i data-feather="layers" class="w-3 h-3"></i> {group.label}
@@ -347,6 +395,7 @@
                                 {/each}
                             {/if}
                         </div>
+                  
                         <div class="filter-actions">
                             <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                             <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
@@ -387,10 +436,10 @@
                         </div>
                         
                         <h4 class="cat-name-text {textColor}" title={name}>
-                             {name} 
+                            {name} 
                             {#if item.isMacro}<span class="text-[10px] bg-white border px-1 rounded text-gray-500 ml-1 font-normal">GỘP</span>{/if}
                         </h4>
-                        
+                   
                         <div class="cat-value-text {textColor}">{formatters.formatRevenue(revenue, 0)}</div>
                         
                         <div class="cat-footer-row">
@@ -406,21 +455,31 @@
 
         {:else if viewMode === 'table'}
             <div class="overflow-x-auto">
-                <table class="w-full text-sm table-bordered">
-                    <thead class="bg-gray-100 font-bold text-gray-700">
+                <table class="w-full text-sm table-bordered table-striped">
+                    <thead class="bg-slate-100 font-bold text-gray-700 sticky top-0 z-10">
                         <tr>
-                            <th class="px-3 py-2 text-left">Ngành hàng</th>
-                            <th class="px-3 py-2 text-right">SL</th>
-                            <th class="px-3 py-2 text-right">Doanh thu</th>
-                            {#if showUnexported}<th class="px-3 py-2 text-right">DT Thực</th>{/if}
+                            <SortableTh key="name" label="Ngành hàng" align="left" {sortKey} {sortDirection} on:sort={handleSort} />
+                            <SortableTh key="quantity" label="SL" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
+                            <SortableTh key="revenue" label="Doanh thu" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
+                            <SortableTh key="unitPrice" label="Đơn giá (Tr)" align="right" {sortKey} {sortDirection} on:sort={handleSort} />
+                            
+                            {#if showUnexported}
+                                <th class="px-3 py-2 text-right">DT Thực</th>
+                            {/if}
                         </tr>
                     </thead>
                     <tbody>
                         {#each sortedItems as item (item.id)}
+                            {@const rev = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+                            {@const qty = showUnexported ? item.soLuong : item.quantity}
+                            {@const price = qty > 0 ? rev / qty : 0}
+
                             <tr class="hover:bg-gray-50 {item.isMacro ? 'bg-indigo-50/50' : ''}">
                                 <td class="px-3 py-2 {item.isMacro ? 'font-bold text-indigo-800' : ''}">{item.name}</td>
-                                <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(showUnexported ? item.soLuong : item.quantity)}</td>
-                                <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(showUnexported ? item.doanhThuQuyDoi : item.revenue)}</td>
+                                <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(qty)}</td>
+                                <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(rev)}</td>
+                                <td class="px-3 py-2 text-right font-medium text-orange-600">{formatters.formatNumber(price / 1000000, 1)}</td>
+                                
                                 {#if showUnexported}
                                     <td class="px-3 py-2 text-right text-gray-500">{formatters.formatRevenue(item.doanhThuThuc)}</td>
                                 {/if}
