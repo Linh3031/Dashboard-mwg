@@ -51,7 +51,14 @@
 </script>
 
 <div data-capture-group="2" class="bg-white rounded-xl shadow-md p-4 sm:p-6 border border-gray-200 h-full flex flex-col">
-  <h3 class="text-xl font-bold uppercase mb-4 border-b pb-2">Doanh thu chưa xuất</h3>
+  <h3 class="text-xl font-bold uppercase mb-4 border-b pb-2 flex items-center gap-2">
+      Doanh thu chưa xuất
+      {#if totals.doanhThuQuyDoi > 0}
+          <span class="px-2.5 py-0.5 bg-red-100 text-red-800 text-sm font-black rounded border border-red-200 shadow-sm whitespace-nowrap">
+              {formatters.formatRevenue(totals.doanhThuQuyDoi, 0)}
+          </span>
+      {/if}
+  </h3>
   
   {#if sortedItems.length === 0}
      <div class="flex-grow flex items-center justify-center">
