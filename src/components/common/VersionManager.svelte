@@ -36,7 +36,8 @@
         const docRef = doc($firebaseStore.db, 'declarations', 'homeConfig'); 
         unsubRealtime = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) {
-                homeConfig.set(docSnap.data()); // Đẩy data thật vào Store -> Svelte tự kích hoạt chuỗi re-render
+                const raw = docSnap.data();
+homeConfig.set(raw.data || raw.config || raw);
             }
         });
     }
