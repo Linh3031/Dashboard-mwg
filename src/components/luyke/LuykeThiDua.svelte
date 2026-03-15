@@ -1,71 +1,55 @@
 <script>
-  import { afterUpdate } from 'svelte';
-  import { competitionData, luykeNameMappings, modalState, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
-  import { formatters } from '../../utils/formatters.js';
+    import { afterUpdate } from 'svelte';
+    import { competitionData, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
+    import { formatters } from '../../utils/formatters.js';
 
-  let viewType = 'completion'; // 'completion' | 'summary' | 'personal_target'
-  let sortedData = [];
-  let summary = {
-      total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0, overallRate: 0
-  };
+    import ThiDuaCompletionView from './sub/ThiDuaCompletionView.svelte';
+    import ThiDuaSummaryView from './sub/ThiDuaSummaryView.svelte';
+    import ThiDuaPersonalView from './sub/ThiDuaPersonalView.svelte';
 
-  // --- TÍNH TỔNG NHÂN VIÊN ---
-  let totalEmployees = 1;
+    let viewType = 'completion'; // 'completion' | 'summary' | 'personal_target'
+    let sortedData = [];
+    let summary = {
+        total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0, overallRate: 0
+    };
 
-  $: {
-      let emps = $danhSachNhanVien || [];
-      if ($selectedWarehouse) {
-          emps = emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse));
-      }
-      totalEmployees = emps.length > 0 ? emps.length : 1;
-  }
+    // --- TÍNH TỔNG NHÂN VIÊN ---
+    let totalEmployees = 1;
+    $: {
+        let emps = $danhSachNhanVien || [];
+        if ($selectedWarehouse) {
+            emps = emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse));
+        }
+        totalEmployees = emps.length > 0 ? emps.length : 1;
+    }
 
-  $: {
-    const data = ($competitionData || []).map(item => { 
-      const hoanThanhValue = (parseFloat(String(item.hoanThanh).replace('%','')) || 0); 
-      return { ...item, hoanThanhValue: hoanThanhValue }; 
-    });
+    $: {
+        const data = ($competitionData || []).map(item => { 
+            const hoanThanhValue = (parseFloat(String(item.hoanThanh).replace('%','')) || 0); 
+            return { ...item, hoanThanhValue: hoanThanhValue }; 
+        });
+        summary = data.reduce((acc, d) => {
+            acc.total++;
+            if (d.hoanThanhValue >= 100) acc.achieved++;
+            if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhValue >= 100) acc.revenueAchieved++; }
+            if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhValue >= 100) acc.quantityAchieved++; }
+            return acc;
+        }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
+        summary.overallRate = summary.total > 0 ? (summary.achieved / summary.total) * 100 : 0;
+        sortedData = data;
+    }
 
-    summary = data.reduce((acc, d) => {
-      acc.total++;
-      if (d.hoanThanhValue >= 100) acc.achieved++;
-      if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhValue >= 100) acc.revenueAchieved++; }
-      if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhValue >= 100) acc.quantityAchieved++; }
-      return acc;
-    }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
+    function setViewType(newType) { viewType = newType; }
 
-    summary.overallRate = summary.total > 0 ? (summary.achieved / summary.total) * 100 : 0;
-    sortedData = data;
-  }
+    function getRateColor(rate) {
+        if (rate >= 80) return 'text-green-600';
+        if (rate >= 50) return 'text-yellow-600';
+        return 'text-red-600';
+    }
 
-  function setViewType(newType) { viewType = newType; }
-  function sortData(items) { return [...items].sort((a, b) => b.hoanThanhValue - a.hoanThanhValue); };
-  
-  // [CODEGENESIS] PHẪU THUẬT LOGIC 1: Thêm hàm sort theo target từ cao xuống thấp
-  function sortDataByTarget(items) { 
-      return [...items].sort((a, b) => (parseFloat(b.target) || 0) - (parseFloat(a.target) || 0)); 
-  };
+    $: rateStyle = getRateColor(summary.overallRate);
 
-  function getRateColor(rate) {
-      if (rate >= 80) return 'text-green-600';
-      if (rate >= 50) return 'text-yellow-600';
-      return 'text-red-600';
-  }
-
-  function truncateTextSimple(text, maxLength = 50) {
-      if (!text || text.length <= maxLength) return text;
-      return text.substring(0, maxLength) + '...';
-  }
-
-  const COLOR_MAP = {
-    blue: { text: 'text-blue-600', bg: 'bg-blue-500', border: 'border-blue-500' },
-    yellow: { text: 'text-yellow-600', bg: 'bg-yellow-500', border: 'border-yellow-500' },
-    red: { text: 'text-red-600', bg: 'bg-red-500', border: 'border-red-500' }
-  };
-
-  $: rateStyle = getRateColor(summary.overallRate);
-
-  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 {#snippet flatKpiCard(title, value, subText, icon, colorClass, barPercent = 0)}
@@ -91,121 +75,6 @@
         </div>
     </div>
 {/snippet}
-
-{#snippet competitionCard(item)}
-    {@const isProjectedCompleted = item.hoanThanhValue >= 100}
-    {@const isActualCompleted = item.luyKe >= item.target}
-    {@const colorKey = isProjectedCompleted ? 'blue' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red')}
-    {@const colors = COLOR_MAP[colorKey]}
-    {@const targetRemaining = (item.target || 0) - (item.luyKe || 0)}
-    {@const daysLeft = Math.max(30 - (new Date().getDate()), 1)}
-    {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
-
-    {@const mappingData = $luykeNameMappings && $luykeNameMappings[item.name]}
-    {@const displayTitle = (typeof mappingData === 'object' && mappingData !== null) ? (mappingData.shortName || item.name) : (mappingData || item.name)}
-    {@const linkedProgram = (typeof mappingData === 'object' && mappingData !== null) ? mappingData.linkedEmpProgram : null}
-
-    <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm transition-all flex flex-col h-full 
-                {linkedProgram ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-400' : 'hover:shadow-sm'}"
-         on:click={() => {
-             if (linkedProgram) {
-                 modalState.update(s => ({ 
-                     ...s, 
-                     activeModal: 'st-emp-competition-modal', 
-                     payload: { 
-                         targetProgram: linkedProgram, 
-                         title: displayTitle,
-                         totalTarget: item.target || 0 
-                     } 
-                 }));
-             }
-         }}
-    >
-        <div class="flex justify-between items-start gap-3 mb-4 relative">
-            <div class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
-                title={item.name}
-                style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
-                {truncateTextSimple(displayTitle)}
-            </div>
-            
-            <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
-               {formatters.formatPercentage(item.hoanThanhValue / 100)}
-            </span>
-        </div>
-
-        <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
-             <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
-        </div>
-
-        <div class="mt-auto pt-2 border-t border-dashed border-gray-100 flex items-end justify-between gap-1 text-xs">
-            <div class="flex-shrink-0">
-                <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
-                <div class="text-gray-700 font-bold whitespace-nowrap">
-                    <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
-                    <span class="text-gray-300 font-normal mx-0.5">/</span>
-                    <span>{formatters.formatNumberOrDash(item.target)}</span>
-                </div>
-            </div>
-            
-            <div class="text-right flex-shrink-0">
-                 {#if !isActualCompleted}
-                    <div class="inline-block bg-red-50 text-red-600 px-1.5 py-1 rounded text-[10px] font-bold border border-red-200 whitespace-nowrap">
-                        Cần: {formatters.formatNumberOrDash(dailyTarget)}/ngày
-                    </div>
-                 {:else}
-                    <div class="inline-block bg-blue-50 text-blue-600 px-1.5 py-1 rounded text-[10px] font-bold border border-blue-200 flex items-center justify-end gap-1 whitespace-nowrap">
-                        <i data-feather="check-circle" class="w-3 h-3"></i> Đã đạt
-                    </div>
-                 {/if}
-            </div>
-        </div>
-    </div>
-{/snippet}
-
-{#snippet personalTargetCard(item, empCount)}
-    {@const type = item.type}
-    {@const rawTarget = parseFloat(item.target) || 0}
-    {@const pTarget = empCount > 0 ? (type === 'soLuong' ? Math.ceil(rawTarget / empCount) : Math.round(rawTarget / empCount)) : 0}
-    
-    {@const formattedTarget = new Intl.NumberFormat('vi-VN').format(pTarget) + (type === 'doanhThu' ? ' Tr' : '')}
-    {@const formattedTotal = new Intl.NumberFormat('vi-VN').format(rawTarget) + (type === 'doanhThu' ? ' Tr' : '')}
-    
-    {@const isQty = type === 'soLuong'}
-    {@const bgClass = isQty ? 'bg-orange-50' : 'bg-blue-50'}
-    {@const borderClass = isQty ? 'border-orange-200' : 'border-blue-200'}
-    {@const textClass = isQty ? 'text-orange-700' : 'text-blue-700'}
-    {@const icon = isQty ? 'box' : 'dollar-sign'}
-    
-    {@const mappingData = $luykeNameMappings && $luykeNameMappings[item.name]}
-    {@const displayTitle = (typeof mappingData === 'object' && mappingData !== null) ? (mappingData.shortName || item.name) : (mappingData || item.name)}
-
-    <div class="flex items-center justify-between p-3.5 rounded-xl border {bgClass} {borderClass} shadow-sm group">
-        <div class="flex flex-col flex-1 pr-2 min-w-0 capture-pt-target-name">
-            <div class="flex items-center gap-1.5 mb-1 {textClass}">
-                <i data-feather={icon} class="w-3.5 h-3.5"></i>
-                <span class="text-[9px] font-black uppercase tracking-wider opacity-80">
-                    {isQty ? 'Số Lượng' : 'Doanh Thu'}
-                </span>
-            </div>
-            <div class="text-[14px] font-bold text-gray-800 line-clamp-2 leading-[1.3] pb-1 capture-pt-title" title={displayTitle}>
-                {displayTitle}
-            </div>
-            <div class="mt-auto pt-1.5">
-                <span class="text-[10px] text-gray-500 font-semibold tracking-wide bg-white/60 px-2 py-0.5 rounded border border-black/5 shadow-sm inline-block">
-                    Tổng: <b class="text-gray-700">{formattedTotal}</b>
-                </span>
-            </div>
-        </div>
-        
-        <div class="flex flex-col items-end justify-center shrink-0 border-l border-black/10 pl-4 py-2 capture-pt-value-right">
-            <span class="text-[9px] font-bold text-gray-400 mb-1 uppercase tracking-widest">Target 1 NV</span>
-            <span class="text-3xl font-black {textClass} leading-[1.1] tracking-tighter drop-shadow-sm capture-pt-value pb-1">
-                {formattedTarget}
-            </span>
-        </div>
-    </div>
-{/snippet}
-
 
 <div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
@@ -251,83 +120,13 @@
                 </div>
             {:else}
                 <div class="flex flex-col gap-8">
-                    
                     {#if viewType === 'summary'}
-                        {@const dataDoanhThu = sortDataByTarget(sortedData.filter(d => d.type === 'doanhThu'))}
-                        {@const dataSoLuong = sortDataByTarget(sortedData.filter(d => d.type === 'soLuong'))}
-
-                        {#if dataDoanhThu.length > 0}
-                            <div>
-                                <div class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
-                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="dollar-sign" class="w-4 h-4"></i></span> Thi Đua Doanh Thu ({dataDoanhThu.length})
-                                </div>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each dataDoanhThu as item} {@render competitionCard(item)} {/each}
-                                </div>
-                            </div>
-                        {/if}
-                        {#if dataSoLuong.length > 0}
-                            <div>
-                                <div class="text-sm font-bold text-orange-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-orange-100">
-                                    <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span> Thi Đua Số Lượng ({dataSoLuong.length})
-                                </div>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each dataSoLuong as item} {@render competitionCard(item)} {/each}
-                                </div>
-                            </div>
-                         {/if}
-
+                        <ThiDuaSummaryView {sortedData} />
                     {:else if viewType === 'completion'}
-                        {@const completed = sortData(sortedData.filter(d => d.hoanThanhValue >= 100))}
-                        {@const pending = sortData(sortedData.filter(d => d.hoanThanhValue < 100))}
-
-                        {#if completed.length > 0}
-                            <div>
-                                <div class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
-                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="check" class="w-4 h-4"></i></span> Đã hoàn thành ({completed.length})
-                                </div>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each completed as item} {@render competitionCard(item)} {/each}
-                                </div>
-                             </div>
-                        {/if}
-                        {#if pending.length > 0}
-                            <div>
-                                 <div class="text-sm font-bold text-red-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-red-100">
-                                      <span class="bg-red-100 p-1 rounded"><i data-feather="clock" class="w-4 h-4"></i></span> Cần nỗ lực thêm ({pending.length})
-                                 </div>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                     {#each pending as item} {@render competitionCard(item)} {/each}
-                                </div>
-                            </div>
-                        {/if}
-
+                        <ThiDuaCompletionView {sortedData} />
                     {:else if viewType === 'personal_target'}
-                        <div class="mb-5 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-xl p-4 flex flex-nowrap justify-between items-center shadow-sm gap-4">
-                            <div class="flex items-center gap-3 min-w-0 capture-target-header-left">
-                                <div class="bg-indigo-600 w-8 h-8 rounded-lg text-white shadow-md flex items-center justify-center shrink-0 capture-target-icon-box">
-                                    <i data-feather="target" class="w-4 h-4"></i>
-                                </div>
-                                <div class="capture-target-text-group">
-                                    <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title">
-                                        Target cá nhân
-                                    </div>
-                                    <p class="text-[11px] sm:text-xs text-indigo-600/80 mt-0.5 font-medium truncate capture-target-sub">Chia đều cho tổng nhân sự.</p>
-                                </div>
-                            </div>
-                            
-                            <div class="text-center bg-white px-4 py-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center shrink-0 min-w-[100px]">
-                                <span class="text-[9px] uppercase font-bold text-gray-400">Tổng nhân sự</span>
-                                <span class="text-2xl font-black text-indigo-700 leading-none">{totalEmployees} <span class="text-xs font-bold text-gray-500">NV</span></span>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 personal-target-grid">
-                            {#each sortedData as item}
-                                {@render personalTargetCard(item, totalEmployees)}
-                            {/each}
-                        </div>
-                     {/if}
+                        <ThiDuaPersonalView {sortedData} {totalEmployees} />
+                    {/if}
                 </div>
             {/if}
         </div>
@@ -353,14 +152,14 @@
     /* Xử lý font chống rớt chữ khi chụp ảnh chung */
     /* [CODEGENESIS] PHẪU THUẬT LOGIC 3A: Tăng line-height và padding-bottom cho tên ngành hàng để không mất chân */
     :global(.capture-container .capture-pt-title) { 
-        font-size: 17px !important; 
+        font-size: 17px !important;
         line-height: 1.4 !important; /* Tăng từ 1.35 lên 1.4 */
         padding-bottom: 4px !important; /* Tăng từ 3px lên 4px */
     }
     
     /* [CODEGENESIS] PHẪU THUẬT LOGIC 3B: Tăng line-height và padding-bottom cho giá trị target để không mất chân */
     :global(.capture-container .capture-pt-value) { 
-        font-size: 34px !important; 
+        font-size: 34px !important;
         line-height: 1.2 !important; /* Tăng từ 1.1 lên 1.2 */
         padding-bottom: 6px !important; /* Tăng từ 4px lên 6px */
     }
@@ -370,24 +169,24 @@
 
     /* --- FIX LỖI RỚT ICON VÀ TEXT TRONG HEADER CỦA CHẾ ĐỘ GIAO TARGET --- */
     :global(.capture-container .capture-target-header-left) { 
-        align-items: flex-start !important; 
+        align-items: flex-start !important;
         padding-top: 4px !important; 
     }
     :global(.capture-container .capture-target-icon-box) { 
-        display: flex !important; 
+        display: flex !important;
         align-items: flex-start !important; 
         padding-top: 8px !important; /* Đẩy tay icon xuống giữa thay vì dùng align center bị lỗi html2canvas */
         justify-content: center !important;
     }
     :global(.capture-container .capture-target-text-group) { 
-        display: block !important; 
+        display: block !important;
     }
     :global(.capture-container .capture-target-title) { 
-        line-height: 1.2 !important; 
+        line-height: 1.2 !important;
         margin-bottom: 2px !important; 
     }
     :global(.capture-container .capture-target-sub) { 
-        line-height: 1.2 !important; 
+        line-height: 1.2 !important;
         display: block !important; 
         height: auto !important; 
         overflow: visible !important; 
@@ -396,13 +195,13 @@
     /* --- [CODEGENESIS] FIX LỖI MẤT CHÂN CHỮ TÊN NGÀNH HÀNG & GIÁ TRỊ TRONG Ô DỮ LIỆU --- */
     /* Áp dụng flex-start cho flex bên trái (chứa tên ngành hàng) để không bị clipping ở giữa */
     :global(.capture-container .capture-pt-target-name) { 
-        align-items: flex-start !important; 
+        align-items: flex-start !important;
         justify-content: flex-start !important;
     }
 
     /* Áp dụng flex-start và padding-top cho flex bên phải (chứa giá trị target) */
     :global(.capture-container .capture-pt-value-right) { 
-        align-items: flex-start !important; 
+        align-items: flex-start !important;
         justify-content: flex-start !important;
         padding-top: 10px !important; /* Đẩy tay nội dung xuống để căn giữa thay vì dùng items-center */
     }
