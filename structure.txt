@@ -157,6 +157,8 @@ src/components/luyke/sub
 src/components/luyke/sub/DailyTargetSimulator.svelte
 src/components/luyke/sub/LuykeCategoryToolbar.svelte
 src/components/luyke/sub/LuykeCategoryCharts.svelte
+src/components/luyke/sub/LuykeCategoryGrid.svelte
+src/components/luyke/sub/LuykeCategoryList.svelte
 src/components/luyke/sub/LuykeCategoryTreeTable.svelte
 src/components/luyke/sub/LuykeCategoryView.svelte
 src/components/luyke/inventory

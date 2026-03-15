@@ -1,20 +1,23 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 2/22/2026, 4:12:10 PM
+GENERATED AT: 3/15/2026, 11:50:54 AM
 
 
 >>> FILE_START: src/components/luyke/LuykeCategoryTable.svelte
 <script>
-  import { onMount, afterUpdate } from 'svelte';
+  import { onMount } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
   import { cleanCategoryName } from '../../utils.js';
   import { macroCategoryConfig } from '../../stores.js'; 
   import { adminService } from '../../services/admin.service.js';
   
-  import LuykeCategoryCharts from './sub/LuykeCategoryCharts.svelte';
+  // Import Sub-Components đã được module hóa
   import LuykeCategoryToolbar from './sub/LuykeCategoryToolbar.svelte';
+  import LuykeCategoryGrid from './sub/LuykeCategoryGrid.svelte';
+  import LuykeCategoryList from './sub/LuykeCategoryList.svelte';
+  import LuykeCategoryCharts from './sub/LuykeCategoryCharts.svelte';
 
   export let items = []; 
-  export let unexportedItems = []; 
+  export let unexportedItems = [];
   export let rawSource = []; 
   export let numDays = 1;
 
@@ -31,21 +34,18 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   const STORAGE_KEY = 'luyke_category_direct_v1';
 
   onMount(async () => {
-      // 1. Load Filter State
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
           try { hiddenCategories = new Set(JSON.parse(saved)); } 
-          catch (e) { console.error(e); }
+          catch (e) {}
       }
-
-      // 2. Load Config
       if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
           try {
               if (typeof adminService.loadMacroCategoryConfig === 'function') {
                   const configs = await adminService.loadMacroCategoryConfig();
                   macroCategoryConfig.set(configs);
               }
-          } catch (e) { console.error("Lỗi load config:", e); }
+          } catch (e) {}
       }
   });
 
@@ -53,56 +53,35 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenCategories]));
   }
 
-  // --- THEME ---
-  $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT (QĐ)" : (viewMode === 'grid' ? "CHI TIẾT NGÀNH HÀNG" : "TỶ TRỌNG NGÀNH HÀNG");
-  $: titleIcon = showUnexported ? "alert-circle" : (viewMode === 'grid' ? "grid" : "pie-chart");
-  $: titleClass = showUnexported ? "text-orange-700" : "text-gray-700";
+  // --- DATA AGGREGATION ---
+  $: sourceData = showUnexported ? unexportedItems : items;
+  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || item.revenueQuyDoi || 0) : (item.revenue || 0)), 0);
+
+  $: titleText = showUnexported 
+      ? `CHI TIẾT CHƯA XUẤT - TỔNG DTQĐ: ${formatters.formatRevenue(totalRevenue, 0)}` 
+      : (viewMode === 'grid' ? "CHI TIẾT NGÀNH HÀNG" : (viewMode === 'list' ? "BẢNG DỮ LIỆU" : "TỶ TRỌNG NGÀNH HÀNG"));
+  
+  $: titleIcon = showUnexported ? "alert-circle" : (viewMode === 'grid' ? "grid" : (viewMode === 'list' ? "list" : "pie-chart"));
+  $: titleClass = showUnexported ? "text-orange-700 font-bold" : "text-gray-700";
   $: iconClass = showUnexported ? "text-orange-600" : "text-blue-600";
 
-  function getCategoryTheme(name) {
-      const n = name ? name.toLowerCase() : '';
-      if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', theme: 'theme-teal' };
-      if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', theme: 'theme-blue' };
-      if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', theme: 'theme-blue' };
-      if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', theme: 'theme-blue' };
-      if (n.includes('lọc nước')) return { icon: 'droplet', theme: 'theme-blue' };
-      if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', theme: 'theme-teal' };
-      if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', theme: 'theme-blue' };
-      if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', theme: 'theme-orange' };
-      if (n.includes('phụ kiện')) return { icon: 'headphones', theme: 'theme-purple' };
-      if (n.includes('đồng hồ')) return { icon: 'watch', theme: 'theme-gray' };
-      return { icon: 'tag', theme: 'theme-gray' };
-  }
-
-  // --- LOGIC MỚI: TRỰC TIẾP & SONG SONG ---
-  $: sourceData = showUnexported ? unexportedItems : items;
-
-  // 1. Tạo danh sách Filter (Gộp cả Macro và Simple)
   $: allGroups = (() => {
-      // Macro Items
       const macroItems = ($macroCategoryConfig || []).map(m => ({
-          key: m.name, // Key là tên nhóm lớn
-          label: m.name,
-          type: 'macro'
+          key: m.name, label: m.name, type: 'macro'
       })).sort((a, b) => a.label.localeCompare(b.label));
 
-      // Simple Items
       const simpleItemsMap = new Map();
       sourceData.forEach((i, index) => {
           const name = i.name || i.nganhHang;
           const safeKey = i.id || name || `unknown_${index}`;
-          if (name) {
-              simpleItemsMap.set(safeKey, { key: safeKey, label: name, type: 'simple' });
-          }
+          if (name) simpleItemsMap.set(safeKey, { key: safeKey, label: name, type: 'simple' });
       });
+  
       const simpleItems = Array.from(simpleItemsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-
       return [...macroItems, ...simpleItems];
   })();
 
-  $: filterList = allGroups.filter(g => 
-      g.label.toLowerCase().includes(filterSearch.toLowerCase())
-  );
+  $: filterList = allGroups.filter(g => g.label.toLowerCase().includes(filterSearch.toLowerCase()));
 
   function toggleCategoryVisibility(event) {
       const key = event.detail;
@@ -118,15 +97,12 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       saveHiddenState();
   }
 
-  // 2. Logic Aggregation: KHÔNG BÙ TRỪ. Có gì hiện nấy.
   $: aggregatedItems = (() => {
       const result = [];
       const macroConfigs = $macroCategoryConfig || [];
 
-      // A. Tính toán Nhóm Lớn (Macro) - Luôn tính toán và thêm vào nếu không bị ẩn
       macroConfigs.forEach(macro => {
           if (!hiddenCategories.has(macro.name)) {
-              // Tìm con khớp
               const keywords = (macro.items || []).map(k => k.toLowerCase());
               const childItems = sourceData.filter(item => {
                   const iName = (item.name || item.nganhHang || '').toLowerCase();
@@ -136,11 +112,9 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
               if (childItems.length > 0) {
                   result.push({
-                      id: `MACRO_${macro.name}`, // ID riêng
-                      name: macro.name,
-                      isMacro: true,
+                      id: `MACRO_${macro.name}`, name: macro.name, isMacro: true,
                       revenue: childItems.reduce((sum, i) => sum + (i.revenue || 0), 0),
-                      doanhThuQuyDoi: childItems.reduce((sum, i) => sum + (i.doanhThuQuyDoi || 0), 0),
+                      doanhThuQuyDoi: childItems.reduce((sum, i) => sum + (i.doanhThuQuyDoi || i.revenueQuyDoi || 0), 0),
                       quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.soLuong || 0), 0),
                       soLuong: childItems.reduce((sum, i) => sum + (i.soLuong || 0), 0)
                   });
@@ -148,21 +122,14 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
           }
       });
 
-      // B. Thêm Ngành Hàng Lẻ (Simple) - Luôn thêm vào nếu không bị ẩn
       sourceData.forEach((item, index) => {
           const name = item.name || item.nganhHang || 'Chưa đặt tên';
           const safeId = item.id || name || `ITEM_${index}`;
-          
           if (!hiddenCategories.has(safeId) && !hiddenCategories.has(name)) {
-              result.push({
-                  ...item,
-                  id: safeId,
-                  name: name,
-                  isMacro: false
-              });
+              const dtqd = item.doanhThuQuyDoi || item.revenueQuyDoi || 0;
+              result.push({ ...item, id: safeId, name: name, isMacro: false, doanhThuQuyDoi: dtqd });
           }
       });
-
       return result;
   })();
 
@@ -171,58 +138,68 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
   });
 
+  // --- SORTING ---
   $: sortedItems = [...gridDisplayItems].sort((a, b) => {
       const getRev = (i) => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0);
       const getQty = (i) => showUnexported ? (i.soLuong || 0) : (i.quantity || 0);
       
-      if (sortMode === 'revenue_desc') return getRev(b) - getRev(a);
-      if (sortMode === 'quantity_desc') return getQty(b) - getQty(a);
+      const revA = getRev(a); const revB = getRev(b);
+      const qtyA = getQty(a); const qtyB = getQty(b);
+      const dtqdA = a.doanhThuQuyDoi || 0; const dtqdB = b.doanhThuQuyDoi || 0;
+      const priceA = qtyA > 0 ? revA / qtyA : 0;
+      const priceB = qtyB > 0 ? revB / qtyB : 0;
+      const days = numDays || 1;
+
+      if (sortMode === 'revenue_desc') return revB - revA;
+      if (sortMode === 'revenue_asc') return revA - revB;
+      if (sortMode === 'quantity_desc') return qtyB - qtyA;
+      if (sortMode === 'quantity_asc') return qtyA - qtyB;
+      if (sortMode === 'dtqd_desc') return dtqdB - dtqdA;
+      if (sortMode === 'dtqd_asc') return dtqdA - dtqdB;
+      if (sortMode === 'price_desc') return priceB - priceA;
+      if (sortMode === 'price_asc') return priceA - priceB;
+      if (sortMode === 'avg_qty_desc') return (qtyB/days) - (qtyA/days);
+      if (sortMode === 'avg_qty_asc') return (qtyA/days) - (qtyB/days);
+      if (sortMode === 'avg_rev_desc') return (revB/days) - (revA/days);
+      if (sortMode === 'avg_rev_asc') return (revA/days) - (revB/days);
       if (sortMode === 'name_asc') return (a.name || '').localeCompare(b.name || '');
+      if (sortMode === 'name_desc') return (b.name || '').localeCompare(a.name || '');
       return 0;
   });
 
-  $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
+  function handleListSort(event) {
+      const mode = event.detail;
+      if (sortMode === mode) {
+          sortMode = mode.endsWith('_desc') ? mode.replace('_desc', '_asc') : mode.replace('_asc', '_desc');
+      } else sortMode = mode;
+  }
+
   $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
-  // --- CHART DATA (Sửa lại logic Top Hãng theo Filter) ---
+  // --- CHART DATA ---
   $: pieData = (() => {
-      const sorted = aggregatedItems
-          .filter(i => (showUnexported ? i.doanhThuQuyDoi : i.revenue) > 0)
+      const sorted = aggregatedItems.filter(i => (showUnexported ? i.doanhThuQuyDoi : i.revenue) > 0)
           .sort((a, b) => (showUnexported ? b.doanhThuQuyDoi - a.doanhThuQuyDoi : b.revenue - a.revenue));
       if (sorted.length <= 14) return sorted;
       const top13 = sorted.slice(0, 13);
-      const others = sorted.slice(13);
-      const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
+      const otherRevenue = sorted.slice(13).reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
       return [...top13, { name: 'Khác', revenue: otherRevenue }];
   })();
 
-  // [FIX CHART] Truyền config vào để bung nhóm lớn ra khi lọc
-  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig); 
+  $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig);
 
   function calculateBrandData(source, visibleItems, configs) {
       if (!source || source.length === 0) return [];
-      
-      // 1. Xây dựng tập hợp các tên ngành hàng con "được phép hiện"
       const allowedNames = new Set();
-      
       visibleItems.forEach(item => {
           if (item.isMacro) {
-              // Nếu là nhóm lớn, tìm config và thêm tất cả các con của nó vào list cho phép
               const conf = (configs || []).find(c => c.name === item.name);
-              if (conf && conf.items) {
-                  conf.items.forEach(k => allowedNames.add(cleanCategoryName(k)));
-              }
-          } else {
-              // Nếu là ngành lẻ, thêm chính nó
-              allowedNames.add(cleanCategoryName(item.name || item.nganhHang));
-          }
+              if (conf && conf.items) conf.items.forEach(k => allowedNames.add(cleanCategoryName(k)));
+          } else allowedNames.add(cleanCategoryName(item.name || item.nganhHang));
       });
-
-      // 2. Lọc Source và tính Brand
       const brands = {};
       source.forEach(row => {
           const rowCatName = cleanCategoryName(row.nganhHang || '');
-          // Chỉ lấy nếu ngành hàng của row này nằm trong danh sách cho phép
           if (allowedNames.has(rowCatName)) {
               const brandName = row.nhaSanXuat || 'Khác';
               const revenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
@@ -230,22 +207,19 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
               brands[brandName].revenue += revenue;
           }
       });
-      
       return Object.values(brands).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
   }
 
   function handleWindowClick(e) {
-      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
-          isSettingsOpen = false;
-      }
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) isSettingsOpen = false;
   }
-  
-  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <svelte:window on:click={handleWindowClick} />
 
-<div class="luyke-tier-2-container">
+<div class="luyke-tier-2-container relative">
+    <h3 style="display: none;">{titleText}</h3>
+
     <LuykeCategoryToolbar
         {titleText} {titleIcon} {titleClass} {iconClass}
         bind:viewMode
@@ -260,84 +234,30 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         on:toggleAll={toggleAllVisibility}
     />
 
-    <style>
-        /* Tăng max-height và thêm scroll cho body của dropdown */
-        :global(.filter-dropdown) {
-            display: flex;
-            flex-direction: column;
-            max-height: 400px; /* Giới hạn chiều cao tổng */
-        }
-        :global(.filter-body) {
-            flex: 1;
-            overflow-y: auto; /* Cho phép cuộn nội dung */
-            min-height: 0;
-        }
-        :global(.filter-actions) {
-            flex-shrink: 0; /* Nút bottom không bị co lại */
-            border-top: 1px solid #eee;
-        }
-    </style>
-
     {#if viewMode === 'grid'}
-        {#if sortedItems.length === 0}
-            <div class="p-12 text-center bg-white border border-gray-200 border-t-0 rounded-b-xl">
-                <p class="text-gray-500">{showUnexported ? 'Không có đơn hàng chưa xuất.' : 'Không có dữ liệu hiển thị.'}</p>
-            </div>
-        {:else}
-            <div class="luyke-cat-grid p-4 bg-white border border-gray-200 border-t-0 rounded-b-xl">
-                {#each sortedItems as item (item.id)}
-                    {@const name = item.name}
-                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
-                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
-                    {@const style = getCategoryTheme(name)}
-                    {@const marketSharePercent = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0}
-                    {@const barPercent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
-                    
-                    {@const finalTheme = showUnexported ? 'theme-warning' : (item.isMacro ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-100' : style.theme)}
-                    {@const iconName = item.isMacro ? 'layers' : style.icon}
-                    {@const textColor = item.isMacro ? 'text-indigo-800' : ''}
-
-                    <div class="cat-card-colorful {finalTheme}">
-                        <div class="cat-top-row">
-                            <div class="cat-icon-box {item.isMacro ? 'bg-indigo-100 text-indigo-600' : ''}">
-                                <i data-feather={iconName} class="w-5 h-5"></i>
-                            </div>
-                            {#if !showUnexported}
-                                <span class="cat-percent-text text-xs {item.isMacro ? 'text-indigo-600' : ''}">
-                                    {formatters.formatPercentage(marketSharePercent/100)}
-                                </span>
-                            {/if}
-                        </div>
-                        
-                        <h4 class="cat-name-text {textColor}" title={name}>
-                            {name} 
-                            {#if item.isMacro}<span class="text-[10px] bg-white border px-1 rounded text-gray-500 ml-1 font-normal">GỘP</span>{/if}
-                        </h4>
-                        
-                        <div class="cat-value-text {textColor}">{formatters.formatRevenue(revenue,0)}</div>
-                        
-                        <div class="cat-footer-row">
-                            <span>SL: <strong>{formatters.formatNumber(quantity)}</strong></span>
-                            {#if !showUnexported}
-                                <span>TB: <strong>{formatters.formatNumber(quantity/numDays, 0)}</strong>/ngày</span>
-                            {/if}
-                        </div>
-                        
-                        <div class="cat-bar-bg">
-                            <div class="cat-bar-fill {item.isMacro ? 'bg-indigo-500' : ''}" style="width: {barPercent}%"></div>
-                        </div>
-                    </div>
-                {/each}
-            </div>
-        {/if}
-    {:else}
-        <LuykeCategoryCharts 
-            {pieData} 
-            {barData} 
+        <LuykeCategoryGrid 
+            {sortedItems} 
             {showUnexported} 
+            {totalRevenue} 
+            {maxVal} 
+            {numDays} 
         />
+    {:else if viewMode === 'list'}
+        <LuykeCategoryList 
+            {sortedItems} 
+            {showUnexported} 
+            {numDays} 
+            {sortMode} 
+            on:sort={handleListSort}
+        />
+    {:else}
+        <LuykeCategoryCharts {pieData} {barData} {showUnexported} />
     {/if}
 </div>
+
+<style>
+    :global(.capture-container .luyke-toolbar) { display: none !important; }
+</style>
 <<< FILE_END: src/components/luyke/LuykeCategoryTable.svelte
 
 >>> FILE_START: src/components/luyke/LuykeEfficiencyTable.svelte
@@ -351,6 +271,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   export let supermarketData = {}; 
   
   const dispatch = createEventDispatcher();
+
   let isSettingsOpen = false;
   let filterSearch = '';
   let hiddenIds = new Set(); 
@@ -450,7 +371,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       <div class="p-1.5 bg-blue-100 rounded text-blue-600 mr-2">
           <i data-feather="bar-chart-2" class="w-4 h-4"></i>
       </div>
-      <span>Hiệu Quả Khai Thác</span>
+      <h3 class="text-base font-bold m-0 p-0 text-gray-800 uppercase tracking-wide">Hiệu Quả Khai Thác</h3>
     </div>
     <div class="flex items-center gap-2">
         <button class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200" on:click={() => dispatch('add')} title="Thêm chỉ số mới">
@@ -472,7 +393,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                         {/each}
                     </div>
                     <div class="filter-actions">
-                        <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
+                         <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                         <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
                     </div>
                 </div>
@@ -505,7 +426,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                 <div class="eff-row-bottom">
                     <div class="eff-bar-container">
                         <div class="eff-bar-fill" style="width: {percent}%; background-color: {color};"></div>
-                    </div>
+                     </div>
                 </div>
             </div>
             {#if item.isDynamic}
@@ -542,11 +463,13 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   let filterSearch = '';
   let saveTimer;
   let localConfig = [];
+
+  // [CHỐT HẠ MÀU SẮC]: Thay Tailwind bằng mã màu HEX để HTML2Canvas nhận diện 100%
   const BAR_COLORS = [
-      'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-400',
-      'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500',
-      'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
-      'bg-violet-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
+      '#ef4444', '#f97316', '#f59e0b', '#facc15',
+      '#84cc16', '#22c55e', '#10b981', '#14b8a6',
+      '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1',
+      '#8b5cf6', '#d946ef', '#ec4899', '#f43f5e'
   ];
 
   onMount(async () => {
@@ -568,19 +491,23 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
   $: filterList = allGroups.filter(g => g.name.toLowerCase().includes(filterSearch.toLowerCase()));
 
-  $: if ($selectedWarehouse) { loadConfigForWarehouse($selectedWarehouse); } 
-  else { localConfig = allGroups.map(g => g.name); }
+  $: if ($selectedWarehouse) { loadConfigForWarehouse($selectedWarehouse);
+  } else { localConfig = allGroups.map(g => g.name);
+  }
 
   async function loadConfigForWarehouse(kho) {
       try {
           const savedConfig = await datasyncService.loadQdcConfig(kho);
           if (savedConfig && Array.isArray(savedConfig)) { localConfig = savedConfig; } 
-          else { localConfig = allGroups.map(g => g.name); }
-      } catch (e) { localConfig = allGroups.map(g => g.name); }
+          else { localConfig = allGroups.map(g => g.name);
+          }
+      } catch (e) { localConfig = allGroups.map(g => g.name);
+      }
   }
 
   function toggleQdcSelection(name) {
-      if (localConfig.includes(name)) { localConfig = localConfig.filter(n => n !== name); } 
+      if (localConfig.includes(name)) { localConfig = localConfig.filter(n => n !== name);
+      } 
       else { localConfig = [...localConfig, name]; }
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
@@ -589,9 +516,12 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   }
 
   function toggleAllVisibility(show) {
-      if (show) { localConfig = allGroups.map(g => g.name); } 
-      else { localConfig = []; }
-      if ($selectedWarehouse) { datasyncService.saveQdcConfig($selectedWarehouse, localConfig); }
+      if (show) { localConfig = allGroups.map(g => g.name);
+      } 
+      else { localConfig = [];
+      }
+      if ($selectedWarehouse) { datasyncService.saveQdcConfig($selectedWarehouse, localConfig);
+      }
   }
 
   $: sortedItems = (() => {
@@ -603,15 +533,18 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
       selectedMacros.forEach(macroName => {
           const config = macroConfigs.find(m => m.name === macroName);
+     
           if (!config) return;
           const childIds = new Set(config.items || []);
           const childItems = items.filter(i => childIds.has(i.id));
           if (childItems.length > 0) {
               finalResults.push({
                   id: config.id, name: config.name, isMacro: true, 
+          
                   dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || 0), 0),
                   dt: childItems.reduce((sum, i) => sum + (i.dt || 0), 0),
-                  quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.sl || 0), 0),
+                  quantity: childItems.reduce((sum, i) => sum + (i.quantity ||
+i.sl || 0), 0),
                   _children: childItems 
               });
           } 
@@ -624,10 +557,12 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
-  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
+  $: maxVal = sortedItems.length > 0 ?
+(sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
-      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) { isSettingsOpen = false; }
+      if (isSettingsOpen && !e.target.closest('.filter-wrapper')) { isSettingsOpen = false;
+      }
   }
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
@@ -653,28 +588,36 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                 <div class="filter-header">
                     <input type="text" class="filter-search" placeholder="Tìm nhóm hàng..." bind:value={filterSearch} />
                 </div>
-                <div class="filter-body custom-scrollbar" style="max-height: 250px;">
+          
+               <div class="filter-body custom-scrollbar" style="max-height: 250px;">
                     {#if filterList.length === 0}
                          <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
+                
                         {#each filterList as group}
                             {@const isChecked = localConfig.includes(group.name)}
                             <div class="filter-item" on:click={() => toggleQdcSelection(group.name)}>
-                                 <input type="checkbox" checked={isChecked} />
+                          
+                                <input type="checkbox" checked={isChecked} />
                                  {#if group.type === 'macro'}
-                                  <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
+                                  <label class="{isChecked ?
+'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
                                         <i data-feather="layers" class="w-3 h-3"></i> {group.name}
                                     </label>
+             
                                  {:else}
-                                     <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{group.name}</label>
+                                     <label class="{isChecked ?
+'font-bold text-blue-700' : ''}">{group.name}</label>
                                  {/if}
                             </div>
                         {/each}
+            
                     {/if}
                  </div>
                 <div class="filter-actions">
                     <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                     <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
+     
                 </div>
             </div>
         {/if}
@@ -690,43 +633,52 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     {:else}
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
-          {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
+          {@const percent = maxVal > 0 ?
+(item.dtqd / maxVal) * 100 : 0}
           {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
           
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1 
                       {item.isMacro ? 'bg-teal-50/30 hover:bg-teal-50/50' : 'hover:bg-gray-50'}">
            <div class="flex items-center gap-3">
+          
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                
                <div class="flex-grow min-w-0 relative qdc-content-wrapper">
                    
                    <div class="flex justify-between items-center mb-1 relative z-10 qdc-info-row">
+         
                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1 {item.isMacro ? 'text-teal-800' : 'text-gray-700'}" title={item.name}>
                            {#if item.isMacro} <i data-feather="layers" class="w-3 h-3 text-teal-600"></i> {/if}
                            {item.name}
+            
                        </span>
                        <span class="text-sm font-bold whitespace-nowrap text-gray-800">
                         {formatters.formatRevenue(item.dtqd)}
                        </span>
+               
                    </div>
                    
                    <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner relative z-0 qdc-bar-row">
-                       <div class="h-full rounded-full {barColor} shadow-sm transition-all duration-500 ease-out" style="width: {percent}%"></div>
+                       <div class="h-full rounded-full shadow-sm transition-all duration-500 ease-out" style="width: {percent}%; background-color: {barColor};"></div>
                    </div>
                    
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
                       <div class="flex gap-2">
+            
                            <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
-                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                           <span class="{item.isMacro ?
+'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
                        </div>
                        <div class="flex gap-2">
                            <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
+                   
                            <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
                        </div>
                     </div>
                </div>
            </div>
           </div>
+       
         {/each}
       </div>
     {/if}
@@ -735,14 +687,12 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
 <style>
     /* [FIX GENESIS] - Giải pháp Layout bảo vệ hiển thị khi Capture */
-    
     :global(.capture-container .qdc-content-wrapper) {
         display: flex !important;
         flex-direction: column !important;
         justify-content: flex-start !important;
         gap: 6px !important; 
     }
-
     :global(.capture-container .qdc-info-row) {
         margin-bottom: 0 !important;
         flex: 0 0 auto !important;
@@ -750,24 +700,52 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         z-index: 50 !important; 
         width: 100% !important;
     }
-
     :global(.capture-container .qdc-info-row span:first-child) {
         overflow: visible !important;
         white-space: normal !important; 
         flex: 1 !important;
     }
-
+    
+    /* --- PHẪU THUẬT LOGIC CHIỀU CAO BAR --- */
     :global(.capture-container .qdc-bar-row) {
         margin-top: 0 !important;
         position: relative !important;
         z-index: 1 !important;
         width: 100% !important;
+        /* THAY min-height BẰNG height ĐỂ BẢO ĐẢM TRÁNH SẬP 0PX */
+        height: 8px !important; 
         min-height: 8px !important;
     }
-
     :global(.capture-container .qdc-info-row span:last-child) {
         flex-shrink: 0 !important;
         margin-left: 8px !important;
+    }
+
+    /* Đóng băng hiệu ứng animation khi chụp để màu không bị delay */
+    :global(.capture-container *) {
+        transition: none !important;
+        animation: none !important;
+    }
+    
+    /* --- XÓA SHADOW GÂY NHIỄU VÀ BƠM CHIỀU CAO CHO DIV CON --- */
+    :global(.capture-container .qdc-bar-row > div) {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        height: 100% !important; 
+        min-height: 8px !important;
+        box-shadow: none !important; /* Lấy đi bóng đổ trong lúc chụp */
+    }
+
+    /* Trị bệnh cắt cụt dòng do html2canvas gặp flexbox */
+    :global(.capture-container .luyke-widget) {
+        display: block !important;
+        height: auto !important;
+    }
+    :global(.capture-container .luyke-widget-body) {
+        display: block !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
     }
 </style>
 <<< FILE_END: src/components/luyke/LuykeQdcTable.svelte
@@ -860,9 +838,8 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       return isNaN(val) ? 0 : val;
   };
 
-  // Khai báo biến global cho component dùng
-  let finalDtThuc = 0; 
-  let finalDtQd = 0; // [Quan trọng] Biến dùng cho giả lập
+  let finalDtThuc = 0;
+  let finalDtQd = 0; 
   let finalDtGop, finalTyLeGop, finalTyLeQd;
 
   $: {
@@ -878,8 +855,8 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
     const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
     const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
-    const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
 
+    const hasPasteData = mainKpis && mainKpis['Thực hiện DT thực'];
     comparisonData = pastedData.comparisonData || { value: 0, percentage: 'N/A' };
     luotKhachData = pastedData.luotKhachData || { value: 0, percentage: 'N/A' };
 
@@ -921,6 +898,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     const compData = $competitionData || [];
     competitionSummary.total = compData.length;
     competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanh).replace('%','')) || 0) >= 100).length;
+
     const tyLeThiDuaDat = competitionSummary.total > 0 ? competitionSummary.dat / competitionSummary.total : 0;
 
     luykeCardData = {
@@ -943,12 +921,10 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
             const normName = g.name.trim().toLowerCase().normalize("NFC");
             return keywords.some(k => normName.includes(k));
         });
-
         if (!groupConfig || !groupConfig.items) return 0;
 
         const details = localSupermarketReport.nganhHangChiTiet || {};
         let totalVal = 0;
-
         groupConfig.items.forEach(itemId => {
             if (details[itemId]) {
                 totalVal += (details[itemId].revenueQuyDoi || 0);
@@ -965,6 +941,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         dxm: { val: valDXM, pct: valDXM / totalChannelRevenue },
         tgdd: { val: valTGDD, pct: valTGDD / totalChannelRevenue }
     };
+
     chuaXuatReport = reportService.generateLuyKeChuaXuatReport(filteredYCXData);
     
     qdcItems = Object.entries(localSupermarketReport.nhomHangChiTiet || {})
@@ -976,6 +953,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
           dt: values.revenue, 
           ...values 
       }));
+
     categoryItems = Object.entries(localSupermarketReport.nganhHangChiTiet || {})
       .map(([id, values]) => ({ 
           id: id,
@@ -1121,7 +1099,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     warehouseId={$selectedWarehouse}
   />
 
-  <div class="luyke-tier-1-grid" data-capture-group="tier1">
+  <div class="luyke-tier-1-grid" data-capture-group="tier1" data-capture-filename="HIỆU QUẢ KHAI THÁC">
       <LuykeEfficiencyTable 
           items={[]} 
           dynamicItems={combinedEfficiencyItems} 
@@ -1137,7 +1115,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       />
   </div>
 
-  <div data-capture-group="tier2">
+  <div data-capture-group="tier2" data-capture-filename="CHI TIẾT NGÀNH HÀNG">
       <LuykeCategoryTable 
           items={categoryItems} 
           unexportedItems={chuaXuatReport}
@@ -1147,25 +1125,62 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   </div>
 
 </div>
+
+<style>
+    /* 1. Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc */
+    :global(.capture-container .luyke-tier-1-grid) {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 16px !important;
+        width: 450px !important; 
+        min-width: 450px !important;
+        max-width: 450px !important;
+        margin: 0 auto !important; 
+    }
+
+    /* 2. Trị bệnh "CẮT CỤT DÒNG": Phá vỡ class h-full và cơ chế flex bóp chiều cao */
+    :global(.capture-container .luyke-tier-1-grid .luyke-widget) {
+        height: auto !important;
+        min-height: max-content !important;
+        display: block !important; 
+    }
+    
+    :global(.capture-container .luyke-tier-1-grid .h-full) {
+        height: auto !important;
+    }
+
+    /* 3. Phá vỡ giới hạn thanh cuộn để hiển thị full danh sách Top Nhóm Hàng */
+    :global(.capture-container .luyke-tier-1-grid .custom-scrollbar),
+    :global(.capture-container .luyke-tier-1-grid .luyke-widget-body) {
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+</style>
 <<< FILE_END: src/components/luyke/LuykeSieuThi.svelte
 
 >>> FILE_START: src/components/luyke/LuykeThiDua.svelte
 <script>
   import { afterUpdate } from 'svelte';
-  import { competitionData } from '../../stores.js';
+  import { competitionData, luykeNameMappings, modalState, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
 
-  let viewType = 'completion'; 
+  let viewType = 'completion'; // 'completion' | 'summary' | 'personal_target'
   let sortedData = [];
   let summary = {
-      total: 0,
-      achieved: 0,
-      revenueTotal: 0,
-      revenueAchieved: 0,
-      quantityTotal: 0,
-      quantityAchieved: 0,
-      overallRate: 0
+      total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0, overallRate: 0
   };
+
+  // --- TÍNH TỔNG NHÂN VIÊN ---
+  let totalEmployees = 1;
+
+  $: {
+      let emps = $danhSachNhanVien || [];
+      if ($selectedWarehouse) {
+          emps = emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse));
+      }
+      totalEmployees = emps.length > 0 ? emps.length : 1;
+  }
 
   $: {
     const data = ($competitionData || []).map(item => { 
@@ -1176,15 +1191,8 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     summary = data.reduce((acc, d) => {
       acc.total++;
       if (d.hoanThanhValue >= 100) acc.achieved++;
-      
-      if (d.type === 'doanhThu') {
-          acc.revenueTotal++;
-          if (d.hoanThanhValue >= 100) acc.revenueAchieved++;
-      }
-      if (d.type === 'soLuong') {
-          acc.quantityTotal++;
-          if (d.hoanThanhValue >= 100) acc.quantityAchieved++;
-      }
+      if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhValue >= 100) acc.revenueAchieved++; }
+      if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhValue >= 100) acc.quantityAchieved++; }
       return acc;
     }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
 
@@ -1192,52 +1200,34 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     sortedData = data;
   }
 
-  function setViewType(newType) {
-    viewType = newType;
-  }
+  function setViewType(newType) { viewType = newType; }
+  function sortData(items) { return [...items].sort((a, b) => b.hoanThanhValue - a.hoanThanhValue); };
   
-  function sortData(items) {
-    return [...items].sort((a, b) => b.hoanThanhValue - a.hoanThanhValue); 
+  // [CODEGENESIS] PHẪU THUẬT LOGIC 1: Thêm hàm sort theo target từ cao xuống thấp
+  function sortDataByTarget(items) { 
+      return [...items].sort((a, b) => (parseFloat(b.target) || 0) - (parseFloat(a.target) || 0)); 
   };
 
   function getRateColor(rate) {
-      if (rate >= 80) return 'text-green-600'; 
+      if (rate >= 80) return 'text-green-600';
       if (rate >= 50) return 'text-yellow-600';
       return 'text-red-600';
   }
 
-  // [MỚI] Hàm cắt chuỗi cứng bằng JS để đảm bảo hiện dấu "..." khi chụp ảnh
   function truncateTextSimple(text, maxLength = 50) {
       if (!text || text.length <= maxLength) return text;
-      // Cắt ở ký tự thứ 50 và thêm dấu ...
       return text.substring(0, maxLength) + '...';
   }
 
   const COLOR_MAP = {
-    blue: {
-        text: 'text-blue-600',
-        bg: 'bg-blue-500',
-        border: 'border-blue-500'
-    },
-    yellow: {
-        text: 'text-yellow-600',
-        bg: 'bg-yellow-500',
-        border: 'border-yellow-500'
-    },
-    red: {
-        text: 'text-red-600',
-        bg: 'bg-red-500',
-        border: 'border-red-500'
-    }
+    blue: { text: 'text-blue-600', bg: 'bg-blue-500', border: 'border-blue-500' },
+    yellow: { text: 'text-yellow-600', bg: 'bg-yellow-500', border: 'border-yellow-500' },
+    red: { text: 'text-red-600', bg: 'bg-red-500', border: 'border-red-500' }
   };
 
   $: rateStyle = getRateColor(summary.overallRate);
 
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') {
-      feather.replace();
-    }
-  });
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 {#snippet flatKpiCard(title, value, subText, icon, colorClass, barPercent = 0)}
@@ -1249,16 +1239,13 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                 </div>
                 <span class="text-xs font-extrabold uppercase text-gray-600 tracking-wider leading-tight">{title}</span>
             </div>
-
             <div class="w-full mt-auto pt-3">
                 {#if barPercent > 0}
                     <div class="w-full bg-gray-100 rounded-full h-1.5 mb-2 max-w-[100px]">
                         <div class="h-1.5 rounded-full {colorClass.replace('text-', 'bg-')}" style="width: {Math.min(barPercent, 100)}%"></div>
                     </div>
                 {/if}
-                <div class="text-[11px] font-semibold text-gray-400 leading-snug">
-                    {@html subText}
-                </div>
+                <div class="text-[11px] font-semibold text-gray-400 leading-snug">{@html subText}</div>
             </div>
         </div>
         <div class="flex items-center justify-end z-10 flex-shrink-0">
@@ -1270,33 +1257,50 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 {#snippet competitionCard(item)}
     {@const isProjectedCompleted = item.hoanThanhValue >= 100}
     {@const isActualCompleted = item.luyKe >= item.target}
-    
     {@const colorKey = isProjectedCompleted ? 'blue' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red')}
-    
     {@const colors = COLOR_MAP[colorKey]}
-    
     {@const targetRemaining = (item.target || 0) - (item.luyKe || 0)}
     {@const daysLeft = Math.max(30 - (new Date().getDate()), 1)}
     {@const dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0}
 
-    <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex flex-col h-full">
-        <div class="flex justify-between items-start gap-3 mb-4">
-            <h4 class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
+    {@const mappingData = $luykeNameMappings && $luykeNameMappings[item.name]}
+    {@const displayTitle = (typeof mappingData === 'object' && mappingData !== null) ? (mappingData.shortName || item.name) : (mappingData || item.name)}
+    {@const linkedProgram = (typeof mappingData === 'object' && mappingData !== null) ? mappingData.linkedEmpProgram : null}
+
+    <div class="bg-white border border-t-4 {colors.border} rounded-lg p-3 shadow-sm transition-all flex flex-col h-full 
+                {linkedProgram ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 hover:ring-2 hover:ring-blue-400' : 'hover:shadow-sm'}"
+         on:click={() => {
+             if (linkedProgram) {
+                 modalState.update(s => ({ 
+                     ...s, 
+                     activeModal: 'st-emp-competition-modal', 
+                     payload: { 
+                         targetProgram: linkedProgram, 
+                         title: displayTitle,
+                         totalTarget: item.target || 0 
+                     } 
+                 }));
+             }
+         }}
+    >
+        <div class="flex justify-between items-start gap-3 mb-4 relative">
+            <div class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden" 
                 title={item.name}
                 style="height: 40px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
-                {truncateTextSimple(item.name)}
-            </h4>
+                {truncateTextSimple(displayTitle)}
+            </div>
+            
             <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0">
                {formatters.formatPercentage(item.hoanThanhValue / 100)}
             </span>
         </div>
 
         <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3 overflow-hidden">
-            <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
+             <div class="h-1.5 rounded-full {colors.bg} transition-all duration-500" style="width: {Math.min(item.hoanThanhValue, 100)}%"></div>
         </div>
 
-        <div class="mt-auto pt-2 border-t border-dashed border-gray-100 grid grid-cols-2 gap-2 text-xs items-end">
-            <div>
+        <div class="mt-auto pt-2 border-t border-dashed border-gray-100 flex items-end justify-between gap-1 text-xs">
+            <div class="flex-shrink-0">
                 <span class="block text-[10px] text-gray-400 uppercase font-semibold">TH / MT</span>
                 <div class="text-gray-700 font-bold whitespace-nowrap">
                     <span>{formatters.formatNumberOrDash(item.luyKe)}</span>
@@ -1304,85 +1308,98 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                     <span>{formatters.formatNumberOrDash(item.target)}</span>
                 </div>
             </div>
-            <div class="text-right">
-                {#if !isActualCompleted}
-                    <div class="inline-block bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold border border-red-200">
+            
+            <div class="text-right flex-shrink-0">
+                 {#if !isActualCompleted}
+                    <div class="inline-block bg-red-50 text-red-600 px-1.5 py-1 rounded text-[10px] font-bold border border-red-200 whitespace-nowrap">
                         Cần: {formatters.formatNumberOrDash(dailyTarget)}/ngày
                     </div>
-                {:else}
-                    <div class="inline-block bg-blue-50 text-blue-600 px-2 py-1 rounded text-[10px] font-bold border border-blue-200 flex items-center justify-end gap-1">
+                 {:else}
+                    <div class="inline-block bg-blue-50 text-blue-600 px-1.5 py-1 rounded text-[10px] font-bold border border-blue-200 flex items-center justify-end gap-1 whitespace-nowrap">
                         <i data-feather="check-circle" class="w-3 h-3"></i> Đã đạt
                     </div>
-                {/if}
+                 {/if}
             </div>
         </div>
     </div>
 {/snippet}
 
-<div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
+{#snippet personalTargetCard(item, empCount)}
+    {@const type = item.type}
+    {@const rawTarget = parseFloat(item.target) || 0}
+    {@const pTarget = empCount > 0 ? (type === 'soLuong' ? Math.ceil(rawTarget / empCount) : Math.round(rawTarget / empCount)) : 0}
     
+    {@const formattedTarget = new Intl.NumberFormat('vi-VN').format(pTarget) + (type === 'doanhThu' ? ' Tr' : '')}
+    {@const formattedTotal = new Intl.NumberFormat('vi-VN').format(rawTarget) + (type === 'doanhThu' ? ' Tr' : '')}
+    
+    {@const isQty = type === 'soLuong'}
+    {@const bgClass = isQty ? 'bg-orange-50' : 'bg-blue-50'}
+    {@const borderClass = isQty ? 'border-orange-200' : 'border-blue-200'}
+    {@const textClass = isQty ? 'text-orange-700' : 'text-blue-700'}
+    {@const icon = isQty ? 'box' : 'dollar-sign'}
+    
+    {@const mappingData = $luykeNameMappings && $luykeNameMappings[item.name]}
+    {@const displayTitle = (typeof mappingData === 'object' && mappingData !== null) ? (mappingData.shortName || item.name) : (mappingData || item.name)}
+
+    <div class="flex items-center justify-between p-3.5 rounded-xl border {bgClass} {borderClass} shadow-sm group">
+        <div class="flex flex-col flex-1 pr-2 min-w-0 capture-pt-target-name">
+            <div class="flex items-center gap-1.5 mb-1 {textClass}">
+                <i data-feather={icon} class="w-3.5 h-3.5"></i>
+                <span class="text-[9px] font-black uppercase tracking-wider opacity-80">
+                    {isQty ? 'Số Lượng' : 'Doanh Thu'}
+                </span>
+            </div>
+            <div class="text-[14px] font-bold text-gray-800 line-clamp-2 leading-[1.3] pb-1 capture-pt-title" title={displayTitle}>
+                {displayTitle}
+            </div>
+            <div class="mt-auto pt-1.5">
+                <span class="text-[10px] text-gray-500 font-semibold tracking-wide bg-white/60 px-2 py-0.5 rounded border border-black/5 shadow-sm inline-block">
+                    Tổng: <b class="text-gray-700">{formattedTotal}</b>
+                </span>
+            </div>
+        </div>
+        
+        <div class="flex flex-col items-end justify-center shrink-0 border-l border-black/10 pl-4 py-2 capture-pt-value-right">
+            <span class="text-[9px] font-bold text-gray-400 mb-1 uppercase tracking-widest">Target 1 NV</span>
+            <span class="text-3xl font-black {textClass} leading-[1.1] tracking-tighter drop-shadow-sm capture-pt-value pb-1">
+                {formattedTarget}
+            </span>
+        </div>
+    </div>
+{/snippet}
+
+
+<div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
-        {@render flatKpiCard(
-            'Tổng Chương trình', 
-            summary.total, 
-            `DT: <strong class="text-blue-600">${summary.revenueTotal}</strong> • SL: <strong class="text-orange-600">${summary.quantityTotal}</strong>`,
-            'layers',
-            'text-gray-700'
-        )}
-
-        {@render flatKpiCard(
-            'Tỷ lệ Đạt', 
-            formatters.formatPercentage(summary.overallRate / 100), 
-            `Đã đạt: <strong class="${getRateColor(summary.overallRate)}">${summary.achieved}</strong> / ${summary.total}`,
-            'target',
-            getRateColor(summary.overallRate),
-            summary.overallRate
-        )}
-
-        {@render flatKpiCard(
-            'Thi đua Doanh thu', 
-            `${summary.revenueAchieved}/${summary.revenueTotal}`, 
-            `Tỷ lệ đạt: <strong>${summary.revenueTotal > 0 ? formatters.formatPercentage(summary.revenueAchieved / summary.revenueTotal) : '0%'}</strong>`,
-            'dollar-sign',
-            'text-blue-600',
-            summary.revenueTotal > 0 ? (summary.revenueAchieved / summary.revenueTotal) * 100 : 0
-        )}
-
-        {@render flatKpiCard(
-            'Thi đua Số lượng', 
-            `${summary.quantityAchieved}/${summary.quantityTotal}`, 
-            `Tỷ lệ đạt: <strong>${summary.quantityTotal > 0 ? formatters.formatPercentage(summary.quantityAchieved / summary.quantityTotal) : '0%'}</strong>`,
-            'box',
-            'text-orange-600',
-            summary.quantityTotal > 0 ? (summary.quantityAchieved / summary.quantityTotal) * 100 : 0
-        )}
+        {@render flatKpiCard('Tổng Chương trình', summary.total, `DT: <strong class="text-blue-600">${summary.revenueTotal}</strong> • SL: <strong class="text-orange-600">${summary.quantityTotal}</strong>`, 'layers', 'text-gray-700')}
+        {@render flatKpiCard('Tỷ lệ Đạt', formatters.formatPercentage(summary.overallRate / 100), `Đã đạt: <strong class="${getRateColor(summary.overallRate)}">${summary.achieved}</strong> / ${summary.total}`, 'target', getRateColor(summary.overallRate), summary.overallRate)}
+        {@render flatKpiCard('Thi đua Doanh thu', `${summary.revenueAchieved}/${summary.revenueTotal}`, `Tỷ lệ đạt: <strong>${summary.revenueTotal > 0 ? formatters.formatPercentage(summary.revenueAchieved / summary.revenueTotal) : '0%'}</strong>`, 'dollar-sign', 'text-blue-600', summary.revenueTotal > 0 ? (summary.revenueAchieved / summary.revenueTotal) * 100 : 0)}
+        {@render flatKpiCard('Thi đua Số lượng', `${summary.quantityAchieved}/${summary.quantityTotal}`, `Tỷ lệ đạt: <strong>${summary.quantityTotal > 0 ? formatters.formatPercentage(summary.quantityAchieved / summary.quantityTotal) : '0%'}</strong>`, 'box', 'text-orange-600', summary.quantityTotal > 0 ? (summary.quantityAchieved / summary.quantityTotal) * 100 : 0)}
     </div>
 
     <div class="luyke-tier-2-container">
         <div class="luyke-toolbar">
             <div class="luyke-toolbar-left">
-                <h3 class="text-lg font-bold uppercase flex items-center gap-2 text-gray-700">
-                    <i data-feather="list" class="text-blue-600"></i>
-                    Chi tiết ({summary.total})
-                </h3>
+                <div class="text-lg font-bold uppercase flex items-center gap-2 text-gray-700">
+                    {#if viewType === 'personal_target'}
+                        <span class="flex items-center"><i data-feather="target" class="text-indigo-600"></i></span> Target Cá Nhân ({summary.total})
+                    {:else}
+                        <span class="flex items-center"><i data-feather="list" class="text-blue-600"></i></span> Chi tiết ({summary.total})
+                        <span class="text-[11px] text-red-500 font-normal normal-case italic ml-2 mt-1">* bấm vào ngành hàng để xem theo nhân viên</span>
+                    {/if}
+                </div>
             </div>
-
+            
             <div class="luyke-toolbar-right flex items-center gap-2">
-                <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-                    <button 
-                        class="view-mode-btn {viewType === 'completion' ? 'active' : ''}" 
-                        on:click={() => setViewType('completion')}
-                    >
-                        <i data-feather="check-circle" class="w-4 h-4"></i>
-                        <span class="hidden sm:inline text-xs ml-1">Tiến độ</span>
+                <div class="inline-flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200">
+                    <button class="h-8 px-3 rounded-md text-xs font-semibold flex items-center justify-center whitespace-nowrap transition-colors {viewType === 'completion' ? 'bg-white text-blue-600 shadow-sm pointer-events-none' : 'text-gray-500 hover:text-gray-900'}" on:click={() => setViewType('completion')}>
+                        <i data-feather="check-circle" class="w-4 h-4 mr-1.5"></i><span class="hidden sm:inline">Tiến độ</span>
                     </button>
-
-                    <button 
-                        class="view-mode-btn {viewType === 'summary' ? 'active' : ''}" 
-                        on:click={() => setViewType('summary')}
-                    >
-                        <i data-feather="grid" class="w-4 h-4"></i>
-                        <span class="hidden sm:inline text-xs ml-1">Theo Loại</span>
+                    <button class="h-8 px-3 rounded-md text-xs font-semibold flex items-center justify-center whitespace-nowrap transition-colors {viewType === 'summary' ? 'bg-white text-blue-600 shadow-sm pointer-events-none' : 'text-gray-500 hover:text-gray-900'}" on:click={() => setViewType('summary')}>
+                        <i data-feather="grid" class="w-4 h-4 mr-1.5"></i><span class="hidden sm:inline">Theo Loại</span>
+                    </button>
+                    <button class="h-8 px-3 rounded-md text-xs font-semibold flex items-center justify-center whitespace-nowrap transition-colors {viewType === 'personal_target' ? 'bg-indigo-600 text-white shadow-sm pointer-events-none' : 'text-gray-500 hover:text-gray-900'}" on:click={() => setViewType('personal_target')}>
+                        <i data-feather="target" class="w-4 h-4 mr-1.5"></i><span class="hidden sm:inline">Target NV</span>
                     </button>
                 </div>
             </div>
@@ -1396,37 +1413,31 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                 </div>
             {:else}
                 <div class="flex flex-col gap-8">
+                    
                     {#if viewType === 'summary'}
-                        {@const dataDoanhThu = sortData(sortedData.filter(d => d.type === 'doanhThu'))}
-                        {@const dataSoLuong = sortData(sortedData.filter(d => d.type === 'soLuong'))}
+                        {@const dataDoanhThu = sortDataByTarget(sortedData.filter(d => d.type === 'doanhThu'))}
+                        {@const dataSoLuong = sortDataByTarget(sortedData.filter(d => d.type === 'soLuong'))}
 
                         {#if dataDoanhThu.length > 0}
                             <div>
-                                <h4 class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
-                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="dollar-sign" class="w-4 h-4"></i></span>
-                                    Thi Đua Doanh Thu ({dataDoanhThu.length})
-                                </h4>
+                                <div class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
+                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="dollar-sign" class="w-4 h-4"></i></span> Thi Đua Doanh Thu ({dataDoanhThu.length})
+                                </div>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each dataDoanhThu as item}
-                                        {@render competitionCard(item)}
-                                    {/each}
+                                    {#each dataDoanhThu as item} {@render competitionCard(item)} {/each}
                                 </div>
                             </div>
                         {/if}
-
                         {#if dataSoLuong.length > 0}
                             <div>
-                                <h4 class="text-sm font-bold text-orange-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-orange-100">
-                                    <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span>
-                                    Thi Đua Số Lượng ({dataSoLuong.length})
-                                </h4>
+                                <div class="text-sm font-bold text-orange-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-orange-100">
+                                    <span class="bg-orange-100 p-1 rounded"><i data-feather="box" class="w-4 h-4"></i></span> Thi Đua Số Lượng ({dataSoLuong.length})
+                                </div>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each dataSoLuong as item}
-                                        {@render competitionCard(item)}
-                                    {/each}
+                                    {#each dataSoLuong as item} {@render competitionCard(item)} {/each}
                                 </div>
                             </div>
-                        {/if}
+                         {/if}
 
                     {:else if viewType === 'completion'}
                         {@const completed = sortData(sortedData.filter(d => d.hoanThanhValue >= 100))}
@@ -1434,32 +1445,51 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
                         {#if completed.length > 0}
                             <div>
-                                <h4 class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
-                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="check" class="w-4 h-4"></i></span>
-                                    Đã hoàn thành ({completed.length})
-                                </h4>
+                                <div class="text-sm font-bold text-blue-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-blue-100">
+                                    <span class="bg-blue-100 p-1 rounded"><i data-feather="check" class="w-4 h-4"></i></span> Đã hoàn thành ({completed.length})
+                                </div>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each completed as item}
-                                        {@render competitionCard(item)}
-                                    {/each}
+                                    {#each completed as item} {@render competitionCard(item)} {/each}
+                                </div>
+                             </div>
+                        {/if}
+                        {#if pending.length > 0}
+                            <div>
+                                 <div class="text-sm font-bold text-red-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-red-100">
+                                      <span class="bg-red-100 p-1 rounded"><i data-feather="clock" class="w-4 h-4"></i></span> Cần nỗ lực thêm ({pending.length})
+                                 </div>
+                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                     {#each pending as item} {@render competitionCard(item)} {/each}
                                 </div>
                             </div>
                         {/if}
 
-                        {#if pending.length > 0}
-                            <div>
-                                <h4 class="text-sm font-bold text-red-800 uppercase flex items-center gap-2 mb-4 pb-2 border-b border-red-100">
-                                    <span class="bg-red-100 p-1 rounded"><i data-feather="clock" class="w-4 h-4"></i></span>
-                                    Cần nỗ lực thêm ({pending.length})
-                                </h4>
-                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                    {#each pending as item}
-                                        {@render competitionCard(item)}
-                                    {/each}
+                    {:else if viewType === 'personal_target'}
+                        <div class="mb-5 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-xl p-4 flex flex-nowrap justify-between items-center shadow-sm gap-4">
+                            <div class="flex items-center gap-3 min-w-0 capture-target-header-left">
+                                <div class="bg-indigo-600 w-8 h-8 rounded-lg text-white shadow-md flex items-center justify-center shrink-0 capture-target-icon-box">
+                                    <i data-feather="target" class="w-4 h-4"></i>
+                                </div>
+                                <div class="capture-target-text-group">
+                                    <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title">
+                                        Target cá nhân
+                                    </div>
+                                    <p class="text-[11px] sm:text-xs text-indigo-600/80 mt-0.5 font-medium truncate capture-target-sub">Chia đều cho tổng nhân sự.</p>
                                 </div>
                             </div>
-                        {/if}
-                    {/if}
+                            
+                            <div class="text-center bg-white px-4 py-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center shrink-0 min-w-[100px]">
+                                <span class="text-[9px] uppercase font-bold text-gray-400">Tổng nhân sự</span>
+                                <span class="text-2xl font-black text-indigo-700 leading-none">{totalEmployees} <span class="text-xs font-bold text-gray-500">NV</span></span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 personal-target-grid">
+                            {#each sortedData as item}
+                                {@render personalTargetCard(item, totalEmployees)}
+                            {/each}
+                        </div>
+                     {/if}
                 </div>
             {/if}
         </div>
@@ -1467,26 +1497,82 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 </div>
 
 <style>
-    /* CSS dành riêng cho chế độ chụp ảnh */
-    :global(.capture-container .luyke-dashboard-container) {
-        width: 1100px !important;    
-        min-width: 1100px !important;
-        background-color: white;
-        padding: 20px !important;
-    }
-
-    :global(.capture-container .grid) {
+    /* Tổng quan container khi capture */
+    :global(.capture-container .luyke-dashboard-container) { width: 1100px !important; min-width: 1100px !important; background-color: white; padding: 20px !important; }
+    
+    /* Lưới của 2 mode cũ */
+    :global(.capture-container .grid:not(.personal-target-grid)) { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 16px !important; }
+    
+    /* ÉP LƯỚI CHO MODE GIAO VIỆC (3 CỘT HOÀN HẢO ĐỂ XEM MOBILE MÀ KHÔNG TRỐNG LỀ PHẢI) */
+    :global(.capture-container .personal-target-grid) {
         display: grid !important;
-        grid-template-columns: repeat(4, 1fr) !important; 
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        width: 100% !important;
         gap: 16px !important;
     }
+    :global(.capture-container .personal-target-grid > div) { page-break-inside: avoid; }
+    
+    /* Xử lý font chống rớt chữ khi chụp ảnh chung */
+    /* [CODEGENESIS] PHẪU THUẬT LOGIC 3A: Tăng line-height và padding-bottom cho tên ngành hàng để không mất chân */
+    :global(.capture-container .capture-pt-title) { 
+        font-size: 17px !important; 
+        line-height: 1.4 !important; /* Tăng từ 1.35 lên 1.4 */
+        padding-bottom: 4px !important; /* Tăng từ 3px lên 4px */
+    }
+    
+    /* [CODEGENESIS] PHẪU THUẬT LOGIC 3B: Tăng line-height và padding-bottom cho giá trị target để không mất chân */
+    :global(.capture-container .capture-pt-value) { 
+        font-size: 34px !important; 
+        line-height: 1.2 !important; /* Tăng từ 1.1 lên 1.2 */
+        padding-bottom: 6px !important; /* Tăng từ 4px lên 6px */
+    }
+    
+    :global(.capture-container h4) { font-size: 16px !important; }
+    :global(.capture-container .luyke-toolbar-right) { display: none !important; }
 
-    :global(.capture-container h4) {
-        font-size: 16px !important;
+    /* --- FIX LỖI RỚT ICON VÀ TEXT TRONG HEADER CỦA CHẾ ĐỘ GIAO TARGET --- */
+    :global(.capture-container .capture-target-header-left) { 
+        align-items: flex-start !important; 
+        padding-top: 4px !important; 
+    }
+    :global(.capture-container .capture-target-icon-box) { 
+        display: flex !important; 
+        align-items: flex-start !important; 
+        padding-top: 8px !important; /* Đẩy tay icon xuống giữa thay vì dùng align center bị lỗi html2canvas */
+        justify-content: center !important;
+    }
+    :global(.capture-container .capture-target-text-group) { 
+        display: block !important; 
+    }
+    :global(.capture-container .capture-target-title) { 
+        line-height: 1.2 !important; 
+        margin-bottom: 2px !important; 
+    }
+    :global(.capture-container .capture-target-sub) { 
+        line-height: 1.2 !important; 
+        display: block !important; 
+        height: auto !important; 
+        overflow: visible !important; 
     }
 
-    :global(.capture-container .luyke-toolbar-right) {
-        display: none !important;
+    /* --- [CODEGENESIS] FIX LỖI MẤT CHÂN CHỮ TÊN NGÀNH HÀNG & GIÁ TRỊ TRONG Ô DỮ LIỆU --- */
+    /* Áp dụng flex-start cho flex bên trái (chứa tên ngành hàng) để không bị clipping ở giữa */
+    :global(.capture-container .capture-pt-target-name) { 
+        align-items: flex-start !important; 
+        justify-content: flex-start !important;
+    }
+
+    /* Áp dụng flex-start và padding-top cho flex bên phải (chứa giá trị target) */
+    :global(.capture-container .capture-pt-value-right) { 
+        align-items: flex-start !important; 
+        justify-content: flex-start !important;
+        padding-top: 10px !important; /* Đẩy tay nội dung xuống để căn giữa thay vì dùng items-center */
+    }
+
+    /* Ép text-align right cho giá trị target để giữ nguyên layout khi chụp ảnh */
+    :global(.capture-container .capture-pt-value-right .capture-pt-value) {
+        text-align: right !important;
+        width: 100% !important;
     }
 </style>
 <<< FILE_END: src/components/luyke/LuykeThiDua.svelte
@@ -1494,7 +1580,8 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 >>> FILE_START: src/components/luyke/LuykeThiDuaVung.svelte
 <script>
   /* global XLSX, feather */
-  import { onMount } from 'svelte';
+  import { onMount, afterUpdate } from 'svelte';
+  import { get } from 'svelte/store';
   import { 
     thiDuaVungChiTiet, 
     thiDuaVungTong 
@@ -1504,23 +1591,17 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
   let fileStatus = "";
   let isLoading = false;
-  
-  // Đổi tên biến để quản lý rõ ràng: Danh sách gốc vs Danh sách đã lọc
   let allSupermarketNames = []; 
-  
   let selectedSupermarket = ""; 
   let reportData = null;
   let localTongData = [];
 
-  // --- LOGIC LỌC NGHIÊM NGẶT (STRICT FILTER) ---
-  // Chỉ hiển thị những siêu thị có tên CHỨA ĐÚNG cụm từ khóa (theo thứ tự)
   $: filteredSupermarketNames = selectedSupermarket
       ? allSupermarketNames.filter(name => 
           name.toLowerCase().includes(selectedSupermarket.trim().toLowerCase())
         )
       : allSupermarketNames;
 
-  // --- HÀM XỬ LÝ FILE ---
   async function _handleFileRead(file) {
       return new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -1546,6 +1627,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     fileStatus = "Đang xử lý...";
     reportData = null;
     selectedSupermarket = "";
+    localStorage.removeItem('tdv_selected_st');
 
     try {
       const workbook = await _handleFileRead(file);
@@ -1557,12 +1639,11 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       thiDuaVungTong.set(tongData);
       localTongData = tongData;
 
-      // Lưu vào danh sách gốc
       allSupermarketNames = tongData
           .map(row => row.sieuThi)
           .filter(Boolean)
           .sort((a, b) => a.localeCompare(b));
-      
+
       fileStatus = `✅ Đã xử lý ${allSupermarketNames.length} siêu thị.`;
 
     } catch (error) {
@@ -1575,11 +1656,28 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     }
   }
 
-  // --- HÀM XỬ LÝ CHỌN VỚI AN TOÀN DỮ LIỆU ---
   function handleSelectChange() {
-      // Tìm chính xác trong data gốc
+      if (selectedSupermarket) {
+          localStorage.setItem('tdv_selected_st', selectedSupermarket);
+      }
+
       const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
+
       if (row) {
+          const prizeDict = {};
+          const chiTiet = get(thiDuaVungChiTiet) || [];
+          
+          chiTiet.forEach(item => {
+              if (item.tongThuong > 0) {
+                  const key = `${item.kenh}_${item.nganhHang}`;
+                  if (!prizeDict[key] || item.tongThuong < prizeDict[key]) {
+                      prizeDict[key] = item.tongThuong;
+                  }
+              }
+          });
+
+          let tongTienTiemNang = 0;
+
           reportData = {
               sieuThi: row.sieuThi || 'Không tên',
               kenh: row.kenh || 'N/A',
@@ -1587,16 +1685,29 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
               soNganhHang: row.soNganhHang || 0,
               soNganhHangDat: row.soNganhHangDat || 0,
               rankCutoff: row.rankCutoff || 0,
-              details: (Array.isArray(row.details) ? row.details : []).map(d => ({
-                  ...d,
-                  nganhHang: d.nganhHang || 'N/A',
-                  duKienHoanThanh: d.duKienHoanThanh || 0,
-                  duKienVuot: d.duKienVuot || 0,
-                  bestRank: d.bestRank || 9999,
-                  tongThuong: d.tongThuong || 0,
-                  potentialPrize: d.potentialPrize || 0
-              }))
+              details: (Array.isArray(row.details) ? row.details : []).map(d => {
+                  let potentialPrize = d.potentialPrize || 0;
+                  
+                  const gap = (d.bestRank || 9999) - (row.rankCutoff || 0);
+           
+                  if ((d.tongThuong || 0) === 0 && gap > 0 && gap < 10) {
+                      const key = `${row.kenh}_${d.nganhHang}`;
+                      potentialPrize = prizeDict[key] || 0;
+                      tongTienTiemNang += potentialPrize; 
+                  }
+
+                  return {
+                      ...d,
+                      nganhHang: d.nganhHang || 'N/A',
+                      duKienHoanThanh: d.duKienHoanThanh || 0,
+                      duKienVuot: d.duKienVuot || 0,
+                      bestRank: d.bestRank || 9999,
+                      tongThuong: d.tongThuong || 0,
+                      potentialPrize: potentialPrize 
+                  };
+              })
           };
+          reportData.tongThuongTiemNang = tongTienTiemNang;
       } else {
           reportData = null;
       }
@@ -1609,6 +1720,28 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   }
 
   onMount(() => {
+    if (typeof feather !== 'undefined') feather.replace();
+
+    const savedTong = get(thiDuaVungTong);
+    if (savedTong && savedTong.length > 0) {
+        localTongData = savedTong;
+        allSupermarketNames = savedTong
+            .map(row => row.sieuThi)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+       
+        fileStatus = `✅ Đã tải ${allSupermarketNames.length} siêu thị từ bộ nhớ.`;
+
+        const savedST = localStorage.getItem('tdv_selected_st');
+        if (savedST && allSupermarketNames.includes(savedST)) {
+            selectedSupermarket = savedST;
+            handleSelectChange(); 
+        }
+    }
+  });
+
+  // [FIX 1]: Đảm bảo Feather Icon luôn được render lại sau khi đổi Siêu thị (Svelte đổi DOM)
+  afterUpdate(() => {
     if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
@@ -1671,7 +1804,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     </div>
 </div> 
 
-<div id="thidua-vung-infographic-container" class="mt-6"> 
+<div id="thidua-vung-infographic-container" class="mt-6" data-capture-filename="THI_DUA_VUNG"> 
     {#if reportData}
         {#key reportData.sieuThi}
             <TdvInfographic {reportData} />
@@ -1690,13 +1823,13 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 </div>
 
 <style>
-    /* XỬ LÝ CHẾ ĐỘ CHỤP ẢNH (CAPTURE MODE) */
     :global(.capture-container) .content-card {
         display: none !important;
     }
 
+    /* Ép chuẩn 1100px giống file LuykeThiDua */
     :global(.capture-container) #thidua-vung-infographic-container {
-        width: 960px !important;
+        width: 1100px !important;
         margin: 0 !important;
         padding: 0 !important;
         background: transparent !important;
@@ -1758,7 +1891,14 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 </script>
 
 <div data-capture-group="2" class="bg-white rounded-xl shadow-md p-4 sm:p-6 border border-gray-200 h-full flex flex-col">
-  <h3 class="text-xl font-bold uppercase mb-4 border-b pb-2">Doanh thu chưa xuất</h3>
+  <h3 class="text-xl font-bold uppercase mb-4 border-b pb-2 flex items-center gap-2">
+      Doanh thu chưa xuất
+      {#if totals.doanhThuQuyDoi > 0}
+          <span class="px-2.5 py-0.5 bg-red-100 text-red-800 text-sm font-black rounded border border-red-200 shadow-sm whitespace-nowrap">
+              {formatters.formatRevenue(totals.doanhThuQuyDoi, 0)}
+          </span>
+      {/if}
+  </h3>
   
   {#if sortedItems.length === 0}
      <div class="flex-grow flex items-center justify-center">
@@ -1811,7 +1951,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     });
     
     const numberFormatter = new Intl.NumberFormat('vi-VN', {
-        maximumFractionDigits: 0 // 0 nghĩa là làm tròn, không lấy số thập phân
+        maximumFractionDigits: 0 
     });
 
     function formatMoney(amount) {
@@ -1823,7 +1963,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     $: rankCutoff = safeData.rankCutoff || 0;
     $: rawDetails = Array.isArray(safeData.details) ? safeData.details : [];
 
-    // 1. NHÓM CÓ GIẢI (Xanh)
+    // 1. NHÓM CÓ GIẢI (Xanh dương sáng)
     $: listCoGiai = rawDetails.filter(d => d.tongThuong > 0);
 
     // 2. NHÓM TIỀM NĂNG (Vàng)
@@ -1837,73 +1977,78 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     $: listCanCoGang = rawDetails.filter(d => {
         if (d.tongThuong > 0) return false;
         const gap = (d.bestRank - rankCutoff);
-        return gap >= 10 || d.bestRank === 9999;
+        return gap >= 10;
     });
 
 </script>
 
-<div class="tdv-root bg-white w-full shadow-sm border border-gray-200 overflow-hidden font-sans rounded-xl mb-6">
+<div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition">
     
-    <div class="bg-gray-50 p-6 border-b border-gray-100">
-        <div class="text-center mb-6">
-             <h2 class="text-3xl font-bold text-gray-800 flex flex-col items-center justify-center gap-2">
-                <span class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded uppercase tracking-wider">
-                    {safeData.kenh}
-                </span>
-                <span>{safeData.sieuThi}</span>
-            </h2>
+    <div class="bg-blue-900 text-white p-6 relative overflow-hidden">
+        <div class="absolute inset-0 opacity-10">
+            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" stroke-width="1"/></pattern></defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+            </svg>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            
-            <div class="bg-white rounded-lg p-3 border border-green-200 shadow-sm text-center flex flex-col justify-center">
-                <p class="text-xs text-green-700 uppercase font-semibold tracking-wide mb-1">Tổng Thưởng</p>
-                <p class="money-large text-2xl font-black text-green-600 leading-none">{formatMoney(safeData.tongThuong)}</p>
+        <div class="relative z-10 flex flex-col md:flex-row justify-between md:items-end gap-6">
+            <div>
+                <span class="px-3 py-1 rounded-full bg-blue-800/80 border border-blue-700 text-blue-200 text-xs font-bold uppercase tracking-wider mb-3 inline-block">
+                    {safeData.kenh || 'KÊNH'} - Mốc Đạt: Top {rankCutoff}
+                </span>
+                <h2 class="text-3xl font-black text-white mb-1 tracking-tight leading-tight">{safeData.sieuThi}</h2>
+                <div class="flex items-center flex-wrap gap-4 text-blue-100 mt-2 text-sm font-medium">
+                    <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="box" class="w-4 h-4"></i> Thi đua: {safeData.soNganhHang} NH</span>
+                    <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="check-circle" class="w-4 h-4 text-green-400"></i> Đang đạt: {safeData.soNganhHangDat} NH</span>
+                    
+                    {#if listCoGiai.length > 0}
+                        <span class="flex items-center gap-1.5 text-yellow-300 font-bold label-with-icon"><i data-feather="award" class="w-4 h-4"></i> Đã có giải: {listCoGiai.length} NH</span>
+                    {/if}
+                </div>
             </div>
 
-            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
-                <p class="text-xs text-gray-500 uppercase font-bold">Hạng có giải theo kênh</p>
-                <p class="text-2xl font-bold text-gray-800 mt-1">Top {rankCutoff}</p>
-            </div>
-
-            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
-                <p class="text-xs text-gray-500 uppercase font-bold mb-1">Đang có giải</p>
-                <p class="text-2xl font-bold text-blue-600 leading-none">{listCoGiai.length}</p>
-                <p class="text-[10px] text-gray-400 mt-1">ngành hàng</p>
-            </div>
-
-            <div class="bg-white rounded-lg p-3 border border-gray-200 text-center flex flex-col justify-center">
-                <p class="text-xs text-gray-500 uppercase font-bold mb-1">Sắp có giải</p>
-                <p class="text-2xl font-bold text-yellow-600 leading-none">{listTiemNang.length}</p>
-                <p class="text-[10px] text-gray-400 mt-1">tiềm năng</p>
+            <div class="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 text-center min-w-[200px]">
+                <p class="text-blue-200 text-xs font-bold uppercase mb-1">Tổng Thưởng Hiện Tại</p>
+                <p class="text-4xl font-black text-yellow-400 drop-shadow-md">
+                    {formatMoney(safeData.tongThuong)}
+                </p>
             </div>
         </div>
     </div>
 
-    <div class="p-6 bg-white">
-        
-        {#if listCoGiai.length > 0}
-            <div class="mb-8">
-                <h3 class="text-lg font-bold text-blue-700 uppercase mb-4 flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full bg-blue-600"></span>
-                    Đang có giải ({listCoGiai.length})
-                </h3>
-                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {#each listCoGiai as item}
-                        <div class="bg-blue-50/50 border-2 border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden">
-                            <div class="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
-                                Hạng {item.bestRank}
-                            </div>
-                            <h4 class="card-title font-bold text-gray-800 text-sm mb-3 pr-16 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
-                            
-                            <div class="text-center my-3">
-                                <span class="card-money block text-2xl font-black text-blue-600 leading-none">{formatMoney(item.tongThuong)}</span>
-                                <span class="text-xs text-blue-500 font-medium mt-1 block">Thưởng dự kiến</span>
-                            </div>
+    <div class="p-6 space-y-8">
 
-                            <div class="bg-white rounded p-2 flex justify-between items-center text-xs border border-blue-100">
-                                 <span class="text-gray-600">Vượt: <b class="text-blue-700">+{numberFormatter.format(item.duKienVuot)}</b></span>
-                                 <span class="text-gray-600">Đạt: <b class="text-blue-700">{(item.duKienHoanThanh * 100).toFixed(0)}%</b></span>
+        {#if listCoGiai.length > 0}
+            <div class="bg-sky-50/50 rounded-xl border border-sky-100 overflow-hidden">
+                <div class="px-5 py-3 bg-sky-100/50 border-b border-sky-200 flex items-center gap-2">
+                    <i data-feather="check-circle" class="w-5 h-5 text-sky-600"></i>
+                    <h3 class="font-bold text-sky-800 uppercase text-lg">Đang Nằm Trong Top Có Giải ({listCoGiai.length})</h3>
+                </div>
+                <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+                    {#each listCoGiai as item}
+                        <div class="bg-white p-4 rounded-lg border border-sky-200 shadow-sm relative overflow-hidden group flex flex-col h-full">
+                            <div class="absolute top-0 right-0 w-16 h-16 bg-sky-100 rounded-bl-full -z-0 opacity-50 group-hover:scale-110 transition-transform"></div>
+                            
+                            <h4 class="font-bold text-gray-800 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
+                            
+                            <div class="text-2xl font-black text-sky-600 money-large mb-3">
+                                +{formatMoney(item.tongThuong)}
+                            </div>
+                            
+                            <div class="space-y-1 mb-3 mt-auto relative z-10">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-500">DK Hoàn thành:</span>
+                                    <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienHoanThanh * 100)}%</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-500">Vượt mục tiêu:</span>
+                                    <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienVuot)}</span>
+                                </div>
+                            </div>
+                            <div class="text-xs text-sky-700 bg-sky-50 flex justify-between px-2 py-1 rounded font-medium border border-sky-100">
+                                <span>Hạng: <b>{item.bestRank}</b></span>
+                                <span>An toàn: <b>{rankCutoff - item.bestRank} bậc</b></span>
                             </div>
                         </div>
                     {/each}
@@ -1912,35 +2057,42 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         {/if}
 
         {#if listTiemNang.length > 0}
-            <div class="mb-8">
-                <h3 class="text-lg font-bold text-yellow-700 uppercase mb-4 flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
-                    Tiềm năng - Sắp có giải ({listTiemNang.length})
-                </h3>
-                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-yellow-50/50 rounded-xl border border-yellow-100 overflow-hidden">
+                <div class="px-5 py-3 bg-yellow-100/50 border-b border-yellow-200 flex items-center gap-3 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <i data-feather="trending-up" class="w-5 h-5 text-yellow-600"></i>
+                        <h3 class="font-bold text-yellow-800 uppercase text-lg">Tiềm Năng Sắp Có Giải ({listTiemNang.length})</h3>
+                    </div>
+                    {#if safeData.tongThuongTiemNang > 0}
+                        <span class="text-green-600 font-bold text-base bg-white px-3 py-0.5 rounded-full border border-green-200 shadow-sm whitespace-nowrap">
+                            + {formatMoney(safeData.tongThuongTiemNang)}
+                        </span>
+                    {/if}
+                </div>
+                <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                     {#each listTiemNang as item}
-                        <div class="bg-yellow-50/50 border-2 border-yellow-300 rounded-lg p-4 hover:shadow-md transition-shadow relative overflow-hidden">
-                             <div class="absolute top-0 right-0 bg-yellow-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">
-                                Hạng {item.bestRank}
+                        <div class="bg-white p-4 rounded-lg border border-yellow-200 shadow-sm relative overflow-hidden flex flex-col h-full">
+                            <div class="absolute top-0 right-0 w-16 h-16 bg-yellow-100 rounded-bl-full -z-0 opacity-50"></div>
+                            
+                            <h4 class="font-bold text-gray-800 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
+                            
+                            <div class="text-2xl font-black text-yellow-600 money-large mb-3 relative z-10">
+                                {item.potentialPrize > 0 ? formatMoney(item.potentialPrize) : '0 đ'}
                             </div>
-                            <h4 class="card-title font-bold text-gray-800 text-sm mb-3 pr-16 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
-
-                            <div class="text-center my-3">
-                                <span class="card-money block text-2xl font-black text-yellow-600 leading-none opacity-50">
-                                    {formatMoney(item.potentialPrize)}
-                                </span>
-                                <span class="text-[10px] text-yellow-600 font-bold uppercase mt-1 block">Thưởng nếu đạt giải</span>
+                            
+                            <div class="space-y-1 mb-3 mt-auto relative z-10">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-500">DK Hoàn thành:</span>
+                                    <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienHoanThanh * 100)}%</span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-500">Vượt mục tiêu:</span>
+                                    <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienVuot)}</span>
+                                </div>
                             </div>
-
-                            <div class="bg-white rounded-lg p-2 my-2 border border-yellow-200 text-center">
-                                <div class="flex justify-between items-center text-xs mb-1">
-                                    <span class="text-gray-500">Cần chạy thêm:</span>
-                                    <b class="text-red-600 text-sm">{numberFormatter.format(Math.abs(item.duKienVuot))}</b>
-                                </div>
-                                <div class="flex justify-between items-center text-xs">
-                                     <span class="text-gray-500">Khoảng cách:</span>
-                                     <span class="font-bold text-red-500">{item.bestRank - rankCutoff} hạng</span>
-                                </div>
+                            <div class="text-xs text-yellow-700 bg-yellow-50 flex justify-between px-2 py-1 rounded font-medium border border-yellow-100">
+                                <span>Hạng: <b>{item.bestRank}</b></span>
+                                <span>Cách giải: <b>{item.bestRank - rankCutoff} hạng</b></span>
                             </div>
                         </div>
                     {/each}
@@ -1949,17 +2101,25 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         {/if}
 
         {#if listCanCoGang.length > 0}
-            <div>
-                <h3 class="text-lg font-bold text-red-700 uppercase mb-4 flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full bg-red-500"></span>
-                    Cần cố gắng ({listCanCoGang.length})
-                </h3>
-                <div class="tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="bg-red-50/30 rounded-xl border border-red-100 overflow-hidden">
+                <div class="px-5 py-3 bg-red-100/30 border-b border-red-100 flex items-center gap-2">
+                    <i data-feather="alert-circle" class="w-5 h-5 text-red-500"></i>
+                    <h3 class="font-bold text-red-800 uppercase text-lg">Cần Nỗ Lực Thêm ({listCanCoGang.length})</h3>
+                </div>
+                <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                     {#each listCanCoGang as item}
-                        <div class="bg-red-50 border border-red-200 rounded-lg p-3 shadow-sm hover:border-red-300 transition-colors">
-                            <div class="flex justify-between items-start mb-2">
-                                <h4 class="card-title font-bold text-gray-700 text-sm w-2/3 truncate" title={item.nganhHang}>{item.nganhHang}</h4>
-                                <span class="text-xs font-bold text-red-400">{(item.duKienHoanThanh * 100).toFixed(0)}%</span>
+                        <div class="bg-white p-3 rounded-lg border border-gray-200 opacity-80 hover:opacity-100 transition-opacity flex flex-col h-full">
+                            <h4 class="font-semibold text-gray-700 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
+                            
+                            <div class="space-y-1 mb-2 mt-auto">
+                                <div class="flex justify-between text-xs">
+                                    <span class="text-gray-500">DK Hoàn thành:</span>
+                                    <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienHoanThanh * 100)}%</span>
+                                </div>
+                                <div class="flex justify-between text-xs">
+                                    <span class="text-gray-500">Vượt mục tiêu:</span>
+                                    <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienVuot)}</span>
+                                </div>
                             </div>
                             <div class="text-xs text-gray-500 flex justify-between items-center bg-white p-2 rounded border border-red-100">
                                 <span>Hạng: <b>{item.bestRank}</b></span>
@@ -1975,27 +2135,52 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 </div>
 
 <style>
-    /* Khi nằm trong container chụp ảnh (.capture-container) */
-    :global(.capture-container) .tdv-root {
-        width: 960px !important; /* Giảm từ 1100 xuống 960 cho gọn */
-        max-width: 960px !important;
-        margin: 0 !important; /* Xóa margin auto */
-        background-color: white;
-        border: none !important;
-        padding: 0 !important; /* Xóa padding thừa */
+    .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 
-    /* Cưỡng ép lưới thẻ con thành 4 CỘT trên 1 dòng */
+    /* BẢO VỆ CHUẨN MỰC CHỤP ẢNH HTML2CANVAS */
+    /* [FIX 1] Ép chuẩn 1100px giống file LuykeThiDua */
+    :global(.capture-container) .tdv-root {
+        width: 1100px !important; 
+        max-width: 1100px !important;
+        margin: 0 auto !important; 
+        background-color: white;
+        border: none !important;
+        padding: 0 !important; 
+    }
+
     :global(.capture-container) .tdv-grid {
         display: grid !important;
         grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-        gap: 12px !important;
+        gap: 16px !important;
+    }
+
+    :global(.capture-container) .line-clamp-2 {
+        display: -webkit-box !important;
+        -webkit-line-clamp: 2 !important;
+        -webkit-box-orient: vertical !important;
+        white-space: normal !important;
+        height: 44px !important; 
     }
     
     :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
     :global(.capture-container) .tdv-root .money-large { font-size: 36px !important; }
-    :global(.capture-container) .tdv-root .card-title { font-size: 15px !important; }
-    :global(.capture-container) .tdv-root .card-money { font-size: 24px !important; }
+
+    /* [FIX 2] Xử lý SVG Icon lơ lửng khi chụp ảnh */
+    :global(.capture-container svg) {
+        display: inline-block !important;
+        transform: translateY(3px) !important; /* Đẩy vật lý icon xuống 3px để thẳng hàng với chữ */
+        margin-right: 4px !important;
+    }
+
+    :global(.capture-container .label-with-icon) {
+        display: inline-flex !important;
+        align-items: center !important;
+    }
 </style>
 <<< FILE_END: src/components/luyke/TdvInfographic.svelte
 
@@ -2518,6 +2703,255 @@ export const inventoryHelper = {
 </div>
 <<< FILE_END: src/components/luyke/sub/LuykeCategoryCharts.svelte
 
+>>> FILE_START: src/components/luyke/sub/LuykeCategoryGrid.svelte
+<script>
+    import { formatters } from '../../../utils/formatters.js';
+    import { afterUpdate } from 'svelte';
+
+    export let sortedItems = [];
+    export let showUnexported = false;
+    export let totalRevenue = 0;
+    export let maxVal = 1;
+    export let numDays = 1;
+
+    function getCategoryTheme(name) {
+        const n = name ? name.toLowerCase() : '';
+        if (n.includes('điện tử') || n.includes('tivi')) return { icon: 'tv', color: 'text-indigo-600', bg: 'bg-indigo-50', bar: 'bg-indigo-500' };
+        if (n.includes('máy giặt') || n.includes('sấy')) return { icon: 'disc', color: 'text-blue-600', bg: 'bg-blue-50', bar: 'bg-blue-500' };
+        if (n.includes('máy lạnh') || n.includes('điều hòa')) return { icon: 'wind', color: 'text-cyan-600', bg: 'bg-cyan-50', bar: 'bg-cyan-500' };
+        if (n.includes('tủ lạnh') || n.includes('tủ đông')) return { icon: 'server', color: 'text-sky-600', bg: 'bg-sky-50', bar: 'bg-sky-500' };
+        if (n.includes('lọc nước')) return { icon: 'droplet', color: 'text-teal-600', bg: 'bg-teal-50', bar: 'bg-teal-500' };
+        if (n.includes('laptop') || n.includes('pc')) return { icon: 'monitor', color: 'text-purple-600', bg: 'bg-purple-50', bar: 'bg-purple-500' };
+        if (n.includes('điện thoại') || n.includes('smartphone')) return { icon: 'smartphone', color: 'text-pink-600', bg: 'bg-pink-50', bar: 'bg-pink-500' };
+        if (n.includes('gia dụng') || n.includes('bếp')) return { icon: 'home', color: 'text-orange-600', bg: 'bg-orange-50', bar: 'bg-orange-500' };
+        if (n.includes('phụ kiện')) return { icon: 'headphones', color: 'text-yellow-600', bg: 'bg-yellow-50', bar: 'bg-yellow-500' };
+        if (n.includes('đồng hồ')) return { icon: 'watch', color: 'text-rose-600', bg: 'bg-rose-50', bar: 'bg-rose-500' };
+        return { icon: 'tag', color: 'text-slate-600', bg: 'bg-slate-100', bar: 'bg-slate-500' };
+    }
+
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+{#if sortedItems.length === 0}
+    <div class="p-12 text-center bg-white border border-slate-200 border-t-0 rounded-b-xl">
+        <p class="text-slate-500">{showUnexported ? 'Không có đơn hàng chưa xuất.' : 'Không có dữ liệu hiển thị.'}</p>
+    </div>
+{:else}
+    <div class="luyke-cat-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 p-4 bg-white border border-slate-200 border-t-0 rounded-b-xl">
+        {#each sortedItems as item (item.id)}
+            {@const name = item.name}
+            {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+            {@const quantity = showUnexported ? item.soLuong : item.quantity}
+            {@const theme = getCategoryTheme(name)}
+            
+            {@const marketSharePercent = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0}
+            {@const barPercent = maxVal > 0 ? (revenue / maxVal) * 100 : 0}
+            
+            {@const isMacro = item.isMacro}
+            {@const cardBg = showUnexported ? 'bg-orange-50/80' : (isMacro ? 'bg-indigo-50/80' : theme.bg)}
+            {@const cardBorder = showUnexported ? 'border-orange-200' : (isMacro ? 'border-indigo-200' : 'border-black/5')}
+            {@const theIcon = isMacro ? 'layers' : theme.icon}
+            {@const accentColor = showUnexported ? 'text-orange-600' : (isMacro ? 'text-indigo-600' : theme.color)}
+            {@const barColor = showUnexported ? 'bg-orange-500' : (isMacro ? 'bg-indigo-500' : theme.bar)}
+
+            <div class="relative {cardBg} border {cardBorder} rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col h-full group capture-card-inner">
+                
+                <div class="absolute -right-3 -bottom-3 opacity-[0.06] transition-transform duration-500 group-hover:scale-110 z-0 {accentColor}">
+                    <i data-feather={theIcon} style="width: 100px; height: 100px; stroke-width: 1.5px;"></i>
+                </div>
+
+                <div class="flex justify-between items-stretch gap-2 mb-2.5 relative z-10 flex-1">
+                    
+                    <div class="flex flex-col flex-1 min-w-0 justify-between pr-1">
+                        <div>
+                            <div class="flex items-center {accentColor} mb-1">
+                                <i data-feather={theIcon} class="w-4 h-4"></i>
+                            </div>
+                            <h4 class="text-[13px] sm:text-[14px] font-bold text-slate-800 line-clamp-2 leading-[1.3] pb-1 capture-text-title" title={name}>
+                                {name}
+                                {#if isMacro}<span class="ml-1 text-[9px] font-bold text-indigo-500 bg-white/70 px-1 py-0.5 rounded shadow-sm border border-indigo-100 translate-y-[-1px] inline-block">GỘP</span>{/if}
+                            </h4>
+                        </div>
+                        
+                        <div class="w-full h-1.5 bg-black/10 rounded-full overflow-hidden shadow-inner mt-1">
+                            <div class="h-full {barColor} rounded-full transition-all duration-700 ease-out" style="width: {barPercent}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-end justify-center flex-shrink-0 pl-1">
+                        <span class="text-[1.35rem] xl:text-[1.5rem] font-black text-slate-800 tracking-tighter leading-none drop-shadow-sm capture-text-revenue">
+                            {formatters.formatRevenue(revenue, 0)}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="mt-auto flex justify-between items-center pt-2 border-t border-black/5 relative z-10">
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight capture-text-label">SL:</span>
+                        <span class="text-[12px] font-bold text-slate-800 capture-text-value">{formatters.formatNumber(quantity)}</span>
+                    </div>
+                    
+                    {#if !showUnexported}
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight capture-text-label">TB:</span>
+                        <span class="text-[12px] font-bold text-slate-800 capture-text-value">{formatters.formatNumber(quantity/numDays, 0)}</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-[13px] font-black {accentColor} bg-white/70 px-1.5 py-0.5 rounded shadow-sm border border-white/50 inline-block drop-shadow-sm capture-text-percent">
+                            {formatters.formatPercentage(marketSharePercent/100)}
+                        </span>
+                    </div>
+                    {:else}
+                    <div class="flex items-baseline gap-1 text-right">
+                        <span class="text-[9px] text-slate-500 uppercase font-bold tracking-tight capture-text-label">THỰC:</span>
+                        <span class="text-[12px] font-bold text-slate-800 capture-text-value">{formatters.formatRevenue(item.doanhThuThuc, 0)}</span>
+                    </div>
+                    {/if}
+                </div>
+            </div>
+        {/each}
+    </div>
+{/if}
+
+<style>
+    /* =========================================
+       CHỈ ÁP DỤNG KHI BẤM NÚT CHỤP ẢNH (CAPTURE)
+       ========================================= */
+    :global(.capture-container .luyke-cat-grid) {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important; /* ÉP 3 CỘT */
+        width: 800px !important; /* ÉP CHIỀU NGANG VỪA MÀN ĐIỆN THOẠI */
+        max-width: 800px !important;
+        margin: 0 auto !important;
+        gap: 17px !important;
+        padding: 17px !important;
+        background: white !important;
+    }
+    
+    :global(.capture-container .luyke-cat-grid > div) {
+        page-break-inside: avoid;
+    }
+    
+:global(.capture-container .line-clamp-2) {
+        display: block !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: normal !important;
+        max-height: 3.2em !important; /* SỬA Ở ĐÂY: Nới trần nhà từ 2.8em lên 3.2em để nhường chỗ cho chân chữ */
+    }
+
+    /* Ép Font siêu to chỉ dành cho xuất ảnh */
+    :global(.capture-container .capture-text-title) { 
+        font-size: 16px !important; 
+        line-height: 1.4 !important; /* SỬA Ở ĐÂY: Tăng khoảng cách dòng lên 1.4 */
+        padding-bottom: 4px !important; /* SỬA Ở ĐÂY: Lót thêm 4px đệm dưới đít chữ */
+    }
+    :global(.capture-container .capture-text-revenue) { 
+        font-size: 32px !important; 
+        line-height: 1.1 !important; /* SỬA Ở ĐÂY: Nhích từ 1 lên 1.1 để số không bị xén đáy */
+        padding-bottom: 4px !important; /* Lót đệm cho số */
+    }
+    :global(.capture-container .capture-text-label) { font-size: 10px !important; }
+    :global(.capture-container .capture-text-value) { font-size: 15px !important; }
+    :global(.capture-container .capture-text-percent) { font-size: 17px !important; padding: 4px 8px !important; }</style>
+<<< FILE_END: src/components/luyke/sub/LuykeCategoryGrid.svelte
+
+>>> FILE_START: src/components/luyke/sub/LuykeCategoryList.svelte
+<script>
+    import { createEventDispatcher, afterUpdate } from 'svelte';
+    import { formatters } from '../../../utils/formatters.js';
+
+    export let sortedItems = [];
+    export let showUnexported = false;
+    export let numDays = 1;
+    export let sortMode = 'revenue_desc';
+
+    const dispatch = createEventDispatcher();
+
+    function handleSort(mode) {
+        dispatch('sort', mode);
+    }
+    
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+</script>
+
+<div class="bg-white border border-gray-200 border-t-0 rounded-b-xl luyke-list-capture-wrapper">
+    <div class="overflow-x-auto max-h-[600px] custom-scrollbar luyke-list-scroll-area sknv-pasted-competition-scroller">
+        <table class="w-full text-xs text-left border-collapse luyke-table-modern">
+            <thead class="bg-gray-50 text-gray-600 uppercase font-bold border-b">
+                <tr>
+                    <th class="p-3 cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('name_asc')}>
+                        Ngành hàng {#if sortMode.includes('name')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                    </th>
+                    <th class="p-3 text-right cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('quantity_desc')}>
+                        SL {#if sortMode.includes('quantity')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                    </th>
+                    <th class="p-3 text-right cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('revenue_desc')}>
+                        Doanh thu {#if sortMode.includes('revenue')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                    </th>
+                    <th class="p-3 text-right cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('dtqd_desc')}>
+                        DTQĐ {#if sortMode.includes('dtqd')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                    </th>
+                    {#if !showUnexported}
+                        <th class="p-3 text-right cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('avg_qty_desc')}>
+                            TB SL {#if sortMode.includes('avg_qty')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                        </th>
+                        <th class="p-3 text-right cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('avg_rev_desc')}>
+                            TB DT {#if sortMode.includes('avg_rev')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                        </th>
+                    {/if}
+                    <th class="p-3 text-right cursor-pointer hover:bg-gray-100 sticky top-0 bg-gray-50 z-10" on:click={() => handleSort('price_desc')}>
+                        Đơn giá (Tr) {#if sortMode.includes('price')}<span class="ml-1 text-blue-600">{sortMode.includes('desc') ? '↓' : '↑'}</span>{/if}
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                {#each sortedItems as item (item.id)}
+                    {@const revenue = showUnexported ? item.doanhThuQuyDoi : item.revenue}
+                    {@const quantity = showUnexported ? item.soLuong : item.quantity}
+                    {@const unitPrice = quantity > 0 ? revenue / quantity : 0}
+                    {@const dtqd = item.doanhThuQuyDoi || 0}
+                    
+                    <tr class="border-b hover:bg-blue-50 transition-colors {item.isMacro ? 'bg-indigo-50/50' : ''}">
+                        <td class="p-3 font-medium flex items-center gap-2">
+                            {#if item.isMacro}
+                                <i data-feather="layers" class="w-3 h-3 text-indigo-600"></i>
+                                <span class="text-indigo-700 font-bold">{item.name}</span>
+                            {:else}
+                                <span class="pl-5 text-gray-600">{item.name}</span>
+                            {/if}
+                        </td>
+                        <td class="p-3 text-right font-bold text-gray-700">{formatters.formatNumber(quantity)}</td>
+                        <td class="p-3 text-right font-bold text-blue-700">{formatters.formatRevenue(revenue, 0)}</td>
+                        <td class="p-3 text-right text-orange-600 font-medium">
+                            {dtqd > 0 ? formatters.formatRevenue(dtqd, 0) : '-'}
+                        </td>
+                        {#if !showUnexported}
+                            <td class="p-3 text-right text-gray-500">{formatters.formatNumber(quantity/numDays, 1)}</td>
+                            <td class="p-3 text-right text-gray-500">{formatters.formatRevenue(revenue/numDays, 0)}</td>
+                        {/if}
+                        <td class="p-3 text-right font-bold text-emerald-700 bg-emerald-50/30">
+                            {formatters.formatNumber(unitPrice / 1000000, 1)}
+                        </td>
+                    </tr>
+                {/each}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    /* [BẢO TOÀN CAPTURE]: Thả lỏng chiều cao bảng khi chụp ảnh để lấy full dòng */
+    :global(.capture-container .luyke-list-capture-wrapper) { border: none !important; border-radius: 0 !important; }
+    :global(.capture-container .luyke-list-scroll-area) {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    :global(.capture-container .luyke-table-modern th) { position: static !important; }
+</style>
+<<< FILE_END: src/components/luyke/sub/LuykeCategoryList.svelte
+
 >>> FILE_START: src/components/luyke/sub/LuykeCategoryToolbar.svelte
 <script>
     import { createEventDispatcher } from 'svelte';
@@ -2527,7 +2961,7 @@ export const inventoryHelper = {
     export let iconClass = '';
     
     // Binding props
-    export let viewMode = 'grid';
+    export let viewMode = 'grid'; // grid | chart | list
     export let showUnexported = false;
     export let sortMode = 'revenue_desc';
     export let searchText = '';
@@ -2535,7 +2969,7 @@ export const inventoryHelper = {
     // Filter props
     export let isSettingsOpen = false;
     export let filterSearch = '';
-    export let filterList = []; // Array of { key, label, type } [FIX]
+    export let filterList = []; 
     export let hiddenCategories = new Set();
     export let isLoadingConfig = false;
 
@@ -2562,10 +2996,11 @@ export const inventoryHelper = {
         
         <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
             <button class="view-mode-btn {viewMode === 'grid' ? 'active' : ''}" on:click={() => viewMode = 'grid'} title="Thẻ"><i data-feather="grid" class="w-4 h-4"></i></button>
+            <button class="view-mode-btn {viewMode === 'list' ? 'active' : ''}" on:click={() => viewMode = 'list'} title="Danh sách"><i data-feather="list" class="w-4 h-4"></i></button>
             <button class="view-mode-btn {viewMode === 'chart' ? 'active' : ''}" on:click={() => viewMode = 'chart'} title="Biểu đồ"><i data-feather="pie-chart" class="w-4 h-4"></i></button>
         </div>
 
-        {#if viewMode === 'grid'}
+        {#if viewMode !== 'chart'}
             <div class="toggle-wrapper {showUnexported ? 'active' : ''}" on:click={() => showUnexported = !showUnexported} style="padding: 4px 8px;">
                 <div class="toggle-switch" style="width: 28px; height: 16px;"></div>
                 <span class="toggle-label text-xs whitespace-nowrap">Chưa xuất</span>
@@ -2608,14 +3043,17 @@ export const inventoryHelper = {
             {/if}
         </div>
 
-        {#if viewMode === 'grid'}
+        {#if viewMode !== 'chart'}
             <div class="hidden sm:block">
                 <input type="text" placeholder="Tìm nhanh..." class="luyke-search-input" style="width: 120px;" bind:value={searchText} />
             </div>
-            <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
-                <option value="revenue_desc">DT ↓</option>
-                <option value="quantity_desc">SL ↓</option>
-            </select>
+            {#if viewMode === 'grid'}
+                <select class="p-1.5 border rounded text-xs bg-white outline-none cursor-pointer max-w-[100px]" bind:value={sortMode}>
+                    <option value="revenue_desc">DT ↓</option>
+                    <option value="quantity_desc">SL ↓</option>
+                    <option value="name_asc">Tên A-Z</option>
+                </select>
+            {/if}
         {/if}
     </div>
 </div>
@@ -2636,126 +3074,119 @@ export const inventoryHelper = {
     export let expandedRows = new Set();
     export let hasInventoryData = false;
 
+    export let isCompareMode = false;
+    export let compareSortType = 'diff';
+
+    export let sortKey = 'revenue'; 
+    export let sortDirection = 'desc';
+
     const dispatch = createEventDispatcher();
     let openFilterId = null;
     let filterSearchQuery = '';
 
-    // FORMATTERS
-    $: fmtQty = (n) => new Intl.NumberFormat('vi-VN', { 
-        maximumFractionDigits: isVelocityMode ? 1 : 0,
-        minimumFractionDigits: isVelocityMode ? 1 : 0 
-    }).format(n || 0);
-
+    $: fmtQty = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: isVelocityMode ? 1 : 0, minimumFractionDigits: isVelocityMode ? 1 : 0 }).format(n || 0);
     $: fmtRev = (n) => {
         if (!n) return '0';
-        const val = n / 1000000;
-        return new Intl.NumberFormat('vi-VN', {
-             maximumFractionDigits: isVelocityMode ? 1 : 0,
-             minimumFractionDigits: isVelocityMode ? 1 : 0
-        }).format(val);
+        return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: isVelocityMode ? 1 : 0, minimumFractionDigits: isVelocityMode ? 1 : 0 }).format(n / 1000000);
     };
-
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
-    const LEVEL_COLORS = [
-        'text-red-700 font-bold',     
-        'text-blue-700 font-semibold',
-        'text-purple-700 font-medium',
-        'text-emerald-700',           
-        'text-orange-700'             
-    ];
-
-    // --- SORT LOGIC (Đã nâng cấp) ---
-    let sortKey = 'revenue'; 
-    let sortDirection = 'desc';
+    const LEVEL_COLORS = ['text-red-700 font-bold', 'text-blue-700 font-semibold', 'text-purple-700 font-medium', 'text-emerald-700', 'text-orange-700'];
 
     function handleSort(key) {
-        if (sortKey === key) {
-            sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-        } else {
-            sortKey = key;
-            sortDirection = 'desc'; 
-        }
+        if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+        else { sortKey = key; sortDirection = 'desc'; }
     }
 
-    function sortTree(nodes, key, dir) {
+    function sortTree(nodes, key, dir, sortType) {
         if (!nodes || nodes.length === 0) return [];
         const sorted = [...nodes].sort((a, b) => {
             let valA, valB;
-
-            // [FIX] Logic sort đặc biệt cho cột %QĐ (Tính toán động)
             if (key === 'percentQD') {
                 valA = a.revenue ? (a.revenueQD / a.revenue) : 0;
                 valB = b.revenue ? (b.revenueQD / b.revenue) : 0;
             } else {
-                valA = a[key] || 0;
-                valB = b[key] || 0;
+                if (isCompareMode && !isVelocityMode) {
+                    const currA = a[key] || 0; const prevA = a[`${key}CK`] || 0;
+                    const currB = b[key] || 0; const prevB = b[`${key}CK`] || 0;
+                    
+                    if (sortType === 'current') { valA = currA; valB = currB; } 
+                    else if (sortType === 'diff') { valA = currA - prevA; valB = currB - prevB; } 
+                    else if (sortType === 'percent') { valA = prevA ? (currA - prevA) / prevA : (currA > 0 ? 999999 : 0); valB = prevB ? (currB - prevB) / prevB : (currB > 0 ? 999999 : 0); }
+                } else { valA = a[key] || 0; valB = b[key] || 0; }
             }
-
             return dir === 'asc' ? valA - valB : valB - valA;
         });
-
         return sorted.map(node => {
-            if (node.children && node.children.length > 0) {
-                return { ...node, children: sortTree(node.children, key, dir) };
-            }
+            if (node.children && node.children.length > 0) return { ...node, children: sortTree(node.children, key, dir, sortType) };
             return node;
         });
     }
 
-    $: sortedData = sortTree(data, sortKey, sortDirection);
+    $: sortedData = sortTree(data, sortKey, sortDirection, compareSortType);
 
-    // --- ACTIONS ---
     function toggleRow(id) {
-        if (expandedRows.has(id)) expandedRows.delete(id);
-        else expandedRows.add(id);
-        expandedRows = expandedRows; 
+        if (expandedRows.has(id)) expandedRows.delete(id); else expandedRows.add(id);
+        expandedRows = expandedRows;
     }
     function expandAll(nodes) {
         if (!nodes) return;
-        nodes.forEach(node => {
-            expandedRows.add(node.id);
-            if (node.children) expandAll(node.children);
-        });
+        nodes.forEach(node => { expandedRows.add(node.id); if (node.children) expandAll(node.children); });
         expandedRows = expandedRows;
     }
     function collapseAll() { expandedRows = new Set(); }
+    function toggleFilterDropdown(dimId) { if (openFilterId === dimId) openFilterId = null; else { openFilterId = dimId; filterSearchQuery = ''; } }
     
-    function toggleFilterDropdown(dimId) {
-        if (openFilterId === dimId) openFilterId = null;
-        else { openFilterId = dimId; filterSearchQuery = ''; }
-    }
     function toggleFilterItem(dimId, value) {
-        const current = currentFilters[dimId] || [];
-        let newSelected = current.includes(value) ? current.filter(x => x !== value) : [...current, value];
-        dispatch('filterChange', { key: dimId, selected: newSelected });
+        const allOptions = filterOptions[dimId] || [];
+        let current = currentFilters[dimId];
+        
+        if (current === undefined) {
+            current = allOptions.filter(x => x !== value);
+        } else {
+            if (current.includes(value)) current = current.filter(x => x !== value);
+            else current = [...current, value];
+        }
+
+        if (current.length === allOptions.length) {
+            dispatch('filterChange', { key: dimId, selected: undefined });
+        } else {
+            dispatch('filterChange', { key: dimId, selected: current });
+        }
     }
-    function clearFilter(dimId) { dispatch('filterChange', { key: dimId, selected: [] }); }
+    
+    function clearFilter(dimId) { 
+        dispatch('filterChange', { key: dimId, selected: undefined });
+    }
     
     $: getDisplayOptions = (dimId) => {
         const options = filterOptions[dimId] || [];
-        const selected = currentFilters[dimId] || [];
+        const current = currentFilters[dimId];
         const query = filterSearchQuery.toLowerCase();
         return options.filter(opt => opt.toLowerCase().includes(query)).sort((a, b) => {
-            const aSel = selected.includes(a);
-            const bSel = selected.includes(b);
-            if (aSel && !bSel) return -1;
-            if (!aSel && bSel) return 1;
+            const aSel = current === undefined || current.includes(a); 
+            const bSel = current === undefined || current.includes(b);
+            if (aSel && !bSel) return -1; 
+            if (!aSel && bSel) return 1; 
             return a.localeCompare(b);
         });
     };
+
     function handleDimensionToggle(dimId) {
         let newIds = [...activeIds];
-        if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId);
-        else newIds.push(dimId);
+        if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId); else newIds.push(dimId);
         dispatch('configChange', newIds);
     }
 
-    function SortIcon(currentKey) {
-        if (sortKey !== currentKey) return '';
-        return sortDirection === 'asc' ? '▲' : '▼';
-    }
-    
     $: iconClass = (key) => sortKey === key ? 'text-blue-600' : 'text-gray-300 group-hover:text-gray-500';
+    const getDiff = (current, prev) => (current || 0) - (prev || 0);
+    const getPct = (current, prev) => {
+        if (!prev) return current > 0 ? '+100%' : '0%';
+        const diff = current - prev; const pct = (diff / prev) * 100;
+        return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+    };
+    const getDiffColor = (diff) => diff >= 0 ? 'text-blue-600' : 'text-red-500';
+    const getDiffIcon = (diff) => diff >= 0 ? '▲' : '▼';
+    $: sortLabel = compareSortType === 'current' ? 'Số hiện tại' : (compareSortType === 'diff' ? 'Chênh lệch' : 'Tỷ lệ %');
 </script>
 
 <div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 luyke-filter-section">
@@ -2764,8 +3195,8 @@ export const inventoryHelper = {
         {#each allDimensions as dim (dim.id)}
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
-            {@const hasFilter = (currentFilters[dim.id] || []).length > 0}
-            
+            {@const hasFilter = currentFilters[dim.id] !== undefined}
+        
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
                     <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
@@ -2773,22 +3204,39 @@ export const inventoryHelper = {
                         {:else}<span class="w-4 h-4 rounded border border-gray-400"></span>{/if}
                         {dim.label}
                     </button>
+       
                     <button class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}" on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}>
                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                     </button>
                 </div>
                 {#if openFilterId === dim.id}
-                    <div class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
-                         <div class="flex justify-between items-center mb-2"><span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>{#if hasFilter}<button on:click={() => clearFilter(dim.id)} class="text-xs text-red-500 hover:underline">Xóa lọc</button>{/if}</div>
-                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1 mb-2 focus:outline-none focus:border-blue-500"/>
-                         <div class="max-h-48 overflow-y-auto space-y-1">
-                            {#each getDisplayOptions(dim.id) as option}
-                                {@const isSelected = (currentFilters[dim.id] || []).includes(option)}
-                                <label class="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" checked={isSelected} on:change={() => toggleFilterItem(dim.id, option)} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"/><span class="text-sm text-gray-700 truncate {isSelected ? 'font-semibold' : ''}">{option}</span></label>
-                            {/each}
-                            {#if getDisplayOptions(dim.id).length === 0}<div class="text-xs text-gray-400 text-center py-2">Không tìm thấy dữ liệu</div>{/if}
+                    <div class="absolute top-full left-0 mt-2 w-[280px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
+                         <div class="flex justify-between items-center mb-3">
+                             <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
+                             <div class="flex items-center gap-3">
+                                 <button on:click={() => dispatch('filterChange', { key: dim.id, selected: [] })} class="text-[11px] font-bold text-orange-600 hover:text-orange-800 transition-colors">Bỏ chọn hết</button>
+                                 {#if hasFilter}
+                                     <button on:click={() => clearFilter(dim.id)} class="text-[11px] font-bold text-red-500 hover:text-red-700 transition-colors">Xóa lọc</button>
+                                 {/if}
+                             </div>
                          </div>
-                         <div class="mt-2 pt-2 border-t text-right"><button on:click={() => openFilterId = null} class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded">Đóng</button></div>
+  
+                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors"/>
+                         <div class="max-h-56 overflow-y-auto space-y-1 custom-scrollbar">
+                            {#each getDisplayOptions(dim.id) as option (option)}
+                                {@const isSelected = currentFilters[dim.id] === undefined || currentFilters[dim.id].includes(option)}
+                                <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded cursor-pointer transition-colors" on:click|preventDefault={() => toggleFilterItem(dim.id, option)}>
+                                    <input type="checkbox" checked={isSelected} class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none" tabindex="-1"/>
+                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-bold text-blue-800' : ''}">{option}</span>
+                                </label>
+                            {/each}
+                            {#if getDisplayOptions(dim.id).length === 0}
+                                <div class="text-xs text-gray-400 text-center py-4 font-medium">Không tìm thấy dữ liệu</div>
+                            {/if}
+                         </div>
+                         <div class="mt-2 pt-2 border-t border-slate-100 text-right">
+                             <button on:click={() => openFilterId = null} class="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-4 py-1.5 rounded-md transition-colors">Đóng</button>
+                         </div>
                     </div>
                     <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
@@ -2811,41 +3259,36 @@ export const inventoryHelper = {
                             </div>
                         </div>
                     </th>
-                    
-                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
+                 
+                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'SL TB/Ngày' : 'Số lượng'}
-                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('quantity')}">
-                                ▲▼
-                            </div>
+                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('quantity')}">▲▼</div>
                         </div>
+                        {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
                     </th>
                     
-                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
                         <div class="flex items-center justify-end gap-1">
                             {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
-                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenue')}">
-                                ▲▼
-                            </div>
+                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenue')}">▲▼</div>
                         </div>
+                        {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
                     </th>
 
-                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
-                        <div class="flex items-center justify-end gap-1">
-                            {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
-                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueQD')}">
-                                ▲▼
-                            </div>
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
+                         <div class="flex items-center justify-end gap-1">
+                             {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
+                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueQD')}">▲▼</div>
                         </div>
+                        {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
                     </th>
 
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-center border-b w-24 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('percentQD')} title="Sắp xếp theo % Quy đổi">
                             <div class="flex items-center justify-center gap-1">
                                 % QĐ
-                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">
-                                    ▲▼
-                                </div>
+                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">▲▼</div>
                             </div>
                         </th>
                     {/if}
@@ -2854,15 +3297,14 @@ export const inventoryHelper = {
                         <th class="py-3 px-4 text-right border-b w-32 bg-emerald-50 text-emerald-800">SL Tồn kho</th>
                         <th class="py-3 px-4 text-center border-b w-32 bg-red-50 text-red-800">Cảnh báo</th>
                     {/if}
-      
+                
                     {#if !isVelocityMode}
-                        <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
+                        <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group relative" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
                                 DT Trả chậm 
-                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueTraCham')}">
-                                    ▲▼
-                                </div>
+                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueTraCham')}">▲▼</div>
                             </div>
+                            {#if isCompareMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
                         </th>
                         <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
                     {/if}
@@ -2870,14 +3312,65 @@ export const inventoryHelper = {
                 
                 <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
-                    <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
-                    <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
-                    <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
+                    <td class="py-3 px-4 text-right group relative">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <span>{fmtQty(totalMetrics.quantity)}</span>
+                            {#if isCompareMode && !isVelocityMode}
+                                {@const diff = getDiff(totalMetrics.quantity, totalMetrics.quantityCK)}
+                                <span class="text-blue-300 font-light">|</span>
+                                <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtQty(diff)}</span>
+                            {/if}
+                        </div>
+                        {#if isCompareMode && !isVelocityMode}
+                            {@const diff = getDiff(totalMetrics.quantity, totalMetrics.quantityCK)}
+                            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.quantity, totalMetrics.quantityCK)}</div>
+                            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
+                                Tổng Cùng kỳ: <b>{fmtQty(totalMetrics.quantityCK)}</b> <br/>
+                                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtQty(diff)} ({getPct(totalMetrics.quantity, totalMetrics.quantityCK)})</b>
+                            </div>
+                        {/if}
+                    </td>
+                    
+                    <td class="py-3 px-4 text-right group relative">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <span>{fmtRev(totalMetrics.revenue)}</span>
+                            {#if isCompareMode && !isVelocityMode}
+                                {@const diff = getDiff(totalMetrics.revenue, totalMetrics.revenueCK)}
+                                <span class="text-blue-300 font-light">|</span>
+                                <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtRev(diff)}</span>
+                            {/if}
+                        </div>
+                        {#if isCompareMode && !isVelocityMode}
+                            {@const diff = getDiff(totalMetrics.revenue, totalMetrics.revenueCK)}
+                            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenue, totalMetrics.revenueCK)}</div>
+                            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
+                                Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueCK)}</b> <br/>
+                                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenue, totalMetrics.revenueCK)})</b>
+                            </div>
+                        {/if}
+                    </td>
+
+                    <td class="py-3 px-4 text-right group relative">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <span>{fmtRev(totalMetrics.revenueQD)}</span>
+                            {#if isCompareMode && !isVelocityMode}
+                                {@const diff = getDiff(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}
+                                <span class="text-blue-300 font-light">|</span>
+                                <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtRev(diff)}</span>
+                            {/if}
+                        </div>
+                        {#if isCompareMode && !isVelocityMode}
+                            {@const diff = getDiff(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}
+                            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}</div>
+                            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
+                                Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueQDCK)}</b> <br/>
+                                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)})</b>
+                            </div>
+                        {/if}
+                    </td>
                     
                     {#if !isVelocityMode}
-                        <td class="py-3 px-4 text-center">
-                            {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueQD / totalMetrics.revenue) * 100) : '0%'}
-                        </td>
+                        <td class="py-3 px-4 text-center">{totalMetrics.revenue > 0 ? fmtPct(((totalMetrics.revenueQD / totalMetrics.revenue) * 100) - 100) : '0%'}</td>
                     {/if}
 
                     {#if hasInventoryData}
@@ -2886,27 +3379,34 @@ export const inventoryHelper = {
                     {/if}
 
                     {#if !isVelocityMode}
-                        <td class="py-3 px-4 text-right bg-yellow-100">{fmtRev(totalMetrics.revenueTraCham)}</td>
-                        <td class="py-3 px-4 text-center bg-yellow-100">
-                            {totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}
+                        <td class="py-3 px-4 text-right bg-yellow-100 group relative">
+                            <div class="flex items-center justify-end gap-1.5">
+                                <span>{fmtRev(totalMetrics.revenueTraCham)}</span>
+                                {#if isCompareMode}
+                                    {@const diff = getDiff(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)}
+                                    <span class="text-yellow-400 font-light">|</span>
+                                    <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtRev(diff)}</span>
+                                {/if}
+                            </div>
+                            {#if isCompareMode}
+                                {@const diff = getDiff(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)}
+                                <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)}</div>
+                                <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
+                                    Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueTraChamCK)}</b> <br/>
+                                    Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)})</b>
+                                </div>
+                            {/if}
                         </td>
+                        <td class="py-3 px-4 text-center bg-yellow-100">{totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}</td>
                     {/if}
                 </tr>
             </thead>
             <tbody>
                 {#if sortedData.length === 0}
-                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 6 : 4) : 7}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 6 : 4) : (hasInventoryData ? 9 : 7)}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
                     {#each sortedData as group (group.id)}
-                        <TableRowRecursive 
-                            {group} 
-                            {expandedRows} 
-                            {toggleRow} 
-                            {LEVEL_COLORS}
-                            {fmtQty} {fmtRev} {fmtPct}
-                            {isVelocityMode} 
-                            {hasInventoryData}
-                        />
+                        <TableRowRecursive {group} {expandedRows} {toggleRow} {LEVEL_COLORS} {fmtQty} {fmtRev} {fmtPct} {isVelocityMode} {hasInventoryData} {isCompareMode} />
                     {/each}
                 {/if}
             </tbody>
@@ -2915,27 +3415,21 @@ export const inventoryHelper = {
 </div>
 
 <style>
-    /* [QUAN TRỌNG] ĐÃ XÓA CSS ẨN CỘT THỨ 5 GÂY LỖI */
-    
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    :global(.cell-alert) { color: #c02424; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px; }
+    :global(.cell-ok) { color: #059669; font-weight: bold; text-align: center; }
 
-    /* [INVENTORY] CSS cho cột cảnh báo */
-    :global(.cell-alert) {
-        color: #c02424; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;
-    }
-    :global(.cell-ok) {
-        color: #059669; font-weight: bold; text-align: center;
-    }
-
-    /* [CAPTURE STYLE UPDATES] */
+    /* [CAPTURE STYLE FIX] - Tăng kích thước bao ngoài để chứa đủ cột dữ liệu và xóa tràn overflow */
     :global(.capture-container .luyke-filter-section) { display: none !important; }
     :global(.capture-container .velocity-toolbar) { display: none !important; }
-
     :global(.capture-container .luyke-table-wrapper) {
-        width: 750px !important; min-width: 750px !important; max-width: 750px !important;
+        width: 1050px !important; min-width: 1050px !important; max-width: 1050px !important;
         margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
     }
+    :global(.capture-container .overflow-x-auto) { overflow: visible !important; }
+    :global(.capture-container .overflow-y-auto) { overflow: visible !important; }
+
     :global(.capture-container .luyke-table-wrapper table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
     :global(.capture-container .luyke-table-wrapper th),
     :global(.capture-container .luyke-table-wrapper td) {
@@ -2953,9 +3447,10 @@ export const inventoryHelper = {
     import { dataProcessing } from '../../../services/dataProcessing.js';
     import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
     import { formatters } from '../../../utils/formatters.js';
+    import { ycxDataThangTruoc } from '../../../stores.js';
+    
     // Components
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
-    // [INVENTORY] Import Module Logic & Toolbar
     import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
     import { inventoryHelper } from '../inventory/InventoryLogic.js';
 
@@ -2968,22 +3463,30 @@ export const inventoryHelper = {
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
+    
     // --- STATE ---
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
-    let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
-    // Filters
+    let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
+    
     let currentFilters = {};
     let filterOptions = {};
     let warnings = [];
-    // UI State
     let expandedRows = new Set();
     let isConfigLoaded = false;
-    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V1';
-    // --- VELOCITY & DATE STATE ---
+    
+    // [GENESIS FIX]: Đổi Key để vô hiệu hóa cache bộ lọc cũ gây lỗi trắng trang
+    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V2'; 
+    
+    // --- VELOCITY, DATE & COMPARE STATE ---
     let isVelocityMode = false;
     let velocityDays = 1;
     let dateFilter = { from: '', to: '' }; 
+    let isCompareMode = false;
+    let compareSortType = 'diff'; 
+
+    let sortKey = 'revenue';
+    let sortDirection = 'desc';
 
     // --- INVENTORY STATE ---
     let inventoryIndex = null;
@@ -2992,48 +3495,40 @@ export const inventoryHelper = {
 
     const PRESET_DAYS = [3, 5, 7, 10];
     
-    // Khóa cột Nhà sản xuất & Người tạo nếu đang có Dữ liệu Tồn Kho
     $: displayedDimensions = AVAILABLE_DIMENSIONS.filter(d => {
         if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
         return true;
     });
 
-    // 1. Restore config from session storage
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) {
             try {
                 const config = JSON.parse(saved);
                 if (config.activeDimensionIds) activeDimensionIds = config.activeDimensionIds;
-               
                 if (config.currentFilters) currentFilters = config.currentFilters;
                 if (config.isVelocityMode !== undefined) isVelocityMode = config.isVelocityMode;
+                if (config.isCompareMode !== undefined) isCompareMode = config.isCompareMode; 
+                if (config.compareSortType !== undefined) compareSortType = config.compareSortType; 
                 if (config.velocityDays) velocityDays = config.velocityDays;
                 if (config.dateFilter) dateFilter = config.dateFilter;
                 if (config.expandedRows) expandedRows = new Set(config.expandedRows);
-            
             } 
             catch (e) { console.error('Error loading config', e); }
         }
         isConfigLoaded = true;
     });
-    // 2. Auto save config
+
     $: {
         if (isConfigLoaded && typeof sessionStorage !== 'undefined') {
             const configToSave = {
-                activeDimensionIds,
-                currentFilters,
-                isVelocityMode,
-             
-                velocityDays,
-                dateFilter,
+                activeDimensionIds, currentFilters, isVelocityMode, isCompareMode, compareSortType, velocityDays, dateFilter,
                 expandedRows: Array.from(expandedRows)
             };
             sessionStorage.setItem(STORAGE_KEY, JSON.stringify(configToSave));
         }
     }
 
-    // Helpers
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
@@ -3057,24 +3552,19 @@ export const inventoryHelper = {
         if (!val) return '(Trống)';
         if (dimId === 'nhanVienTao') {
              const maNVMatch = val.match(/(\d+)/);
-             const maNV = maNVMatch ? maNVMatch[1] : '';
-             return formatters.getShortEmployeeName(val, maNV);
+             return formatters.getShortEmployeeName(val, maNVMatch ? maNVMatch[1] : '');
         }
 
-        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') {
-            return val.toString().trim();
-        }
-        
+        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') return val.toString().trim();
         return cleanCategoryName(val);
     };
-    // --- CORE CALCULATION ---
+
     function calculateData() {
         treeData = [];
-        totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+        totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
         warnings = [];
         if (!data || data.length === 0) return;
 
-        // A. Lọc theo Ngày
         let processedData = data;
         if (dateFilter.from || dateFilter.to) {
             processedData = filterDataByDate(data, dateFilter.from, dateFilter.to);
@@ -3084,19 +3574,16 @@ export const inventoryHelper = {
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
         let rootMap = new Map();
 
-        // B. Gom nhóm & Tính toán
-        processedData.forEach(row => {
+        const processRowIntoTree = (row, isCK = false) => {
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return;
             if (!isValidRow(row)) return;
             
-            // Logic lọc dữ liệu dựa trên Current Filters
+            // [GENESIS FIX]: Ép kiểu undefined rõ ràng
             if (Object.keys(currentFilters).length > 0) {
-   
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
-                    if (selectedValues && selectedValues.length > 0) {
+                    if (selectedValues !== undefined) {
                         const cellVal = getDimensionValue(row, key);
-                        if (!selectedValues.includes(cellVal)) 
-                            return; 
+                        if (!selectedValues.includes(cellVal)) return; 
                     }
                 }
             }
@@ -3104,8 +3591,6 @@ export const inventoryHelper = {
             const quantity = parseInt(row.soLuong || 0);
             const revenue = parseMoney(row.thanhTien);
             
-       
-            // [CƠ CHẾ TÌM KIẾM DỰ PHÒNG BẰNG MÃ SỐ]
             let heSo = heSoQuyDoiMap[row.nhomHang];
             if (heSo === undefined && row.nhomHang) {
                 const matchId = String(row.nhomHang).match(/^(\d+)/);
@@ -3120,16 +3605,21 @@ export const inventoryHelper = {
             const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
             if (isTraGop) heSo += 0.3;
             
-            // Ép tính toán lại trực tiếp bằng hệ số mới nhất (Bỏ qua dữ liệu lỗi từ Parser)
             const revenueQD = revenue * heSo;
 
-            totalMetrics.quantity += quantity;
-            totalMetrics.revenue += revenue;
-            totalMetrics.revenueQD += revenueQD;
-            if (isTraGop) totalMetrics.revenueTraCham += revenue;
+            if (!isCK) {
+                totalMetrics.quantity += quantity;
+                totalMetrics.revenue += revenue;
+                totalMetrics.revenueQD += revenueQD;
+                if (isTraGop) totalMetrics.revenueTraCham += revenue;
+            } else {
+                totalMetrics.quantityCK += quantity;
+                totalMetrics.revenueCK += revenue;
+                totalMetrics.revenueQDCK += revenueQD;
+                if (isTraGop) totalMetrics.revenueTraChamCK += revenue;
+            }
 
             let currentLevel = rootMap;
-            // Tạo Tree Nodes
             activeDimensionIds.forEach((dimId, index) => {
                 const rawValue = row[dimId] || ''; 
                 const key = getDimensionValue(row, dimId);
@@ -3137,53 +3627,60 @@ export const inventoryHelper = {
 
                 if (!currentLevel.has(key)) {
                     let nodeData = {
-  
-                        id: stableId,
-                        name: key,
+                        id: stableId, name: key,
                         quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
-                     
+                        quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0, 
                         children: new Map(), level: index
                     };
 
-                    if (dimId === 'tenSanPham') {
-                        nodeData.productCode = row.maSanPham || ''; 
-                    } else if (dimId === 'nhomHang') {
+                    if (dimId === 'tenSanPham') nodeData.productCode = row.maSanPham || ''; 
+                    else if (dimId === 'nhomHang') {
                         const m = rawValue.toString().match(/^(\d+)/);
                         if (m) nodeData.groupId = m[1];
                     } else if (dimId === 'nganhHang') {
                         const m = rawValue.toString().match(/^(\d+)/);
                         if (m) nodeData.categoryId = m[1];
                     }
-
                     currentLevel.set(key, nodeData);
                 }
+                
                 const groupObj = currentLevel.get(key);
-          
-                groupObj.quantity += quantity;
-                groupObj.revenue += revenue;
-                groupObj.revenueQD += revenueQD;
-                if (isTraGop) groupObj.revenueTraCham += revenue;
+                if (!isCK) {
+                    groupObj.quantity += quantity;
+                    groupObj.revenue += revenue;
+                    groupObj.revenueQD += revenueQD;
+                    if (isTraGop) groupObj.revenueTraCham += revenue;
+                } else {
+                    groupObj.quantityCK += quantity;
+                    groupObj.revenueCK += revenue;
+                    groupObj.revenueQDCK += revenueQD;
+                    if (isTraGop) groupObj.revenueTraChamCK += revenue;
+                }
                 currentLevel = groupObj.children;
             });
-        });
-        // Convert Map -> Array
+        };
+
+        processedData.forEach(row => processRowIntoTree(row, false));
+
+        if (isCompareMode && $ycxDataThangTruoc && $ycxDataThangTruoc.length > 0) {
+            $ycxDataThangTruoc.forEach(row => processRowIntoTree(row, true));
+        }
+
         const convertMapToArray = (map) => {
             return Array.from(map.values()).map(item => {
                 const newItem = { ...item };
                 if (newItem.children && newItem.children.size > 0) {
                     newItem.children = convertMapToArray(newItem.children);
-   
                     newItem.children.sort((a, b) => b.revenue - a.revenue);
                 } else {
                     delete newItem.children;
                 }
                 return newItem;
-      
             }).sort((a, b) => b.revenue - a.revenue);
         };
         
         let finalTree = convertMapToArray(rootMap);
-        // C. Xử lý Sức bán (Velocity Mode)
+        
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
             const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
@@ -3193,11 +3690,10 @@ export const inventoryHelper = {
             totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
         }
 
-        // D. Trộn dữ liệu Tồn kho & Cảnh báo
         if (isVelocityMode && inventoryIndex) {
             inventoryHelper.enrichTreeWithInventory(finalTree, inventoryIndex, velocityDays, alertDays);
             hasInventoryData = true;
-            finalTree = [...finalTree]; // Trigger Reactivity
+            finalTree = [...finalTree]; 
         } else {
             hasInventoryData = false;
         }
@@ -3208,7 +3704,6 @@ export const inventoryHelper = {
         updateFilterOptions(processedData);
     }
 
-    // Bộ lọc phụ thuộc (Cascading)
     function updateFilterOptions(sourceData) {
         const options = {};
         AVAILABLE_DIMENSIONS.forEach(targetDim => {
@@ -3224,16 +3719,14 @@ export const inventoryHelper = {
 
                 if (Object.keys(otherFilters).length > 0) {
                     for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
-                
-                        if (filterValues && filterValues.length > 0) {
+                        // [GENESIS FIX]: Ép kiểu undefined
+                        if (filterValues !== undefined) {
                             const valToCheck = getDimensionValue(row, filterKey);
                             if (!filterValues.includes(valToCheck)) {
-                        
                                 isValid = false;
                                 break;
                             }
                         }
-      
                     }
                 }
 
@@ -3249,25 +3742,17 @@ export const inventoryHelper = {
         filterOptions = options;
     }
 
-    // [INVENTORY] Xử lý Upload file Excel
     async function handleInventoryUpload(event) {
         const file = event.detail;
         try {
             const index = await inventoryHelper.processFile(file);
             if (index) {
                 inventoryIndex = index;
-                
-                // Gỡ bỏ nhaSanXuat và nhanVienTao khỏi các tab đang xem ngay lập tức
                 activeDimensionIds = activeDimensionIds.filter(id => id !== 'nhaSanXuat' && id !== 'nhanVienTao');
-                
-                calculateData(); // Tính toán lại để hiển thị
-                
+                calculateData(); 
                 alert(`Cập nhật tồn kho thành công!`);
             }
-        } catch (e) {
-            console.error(e);
-            alert("Lỗi đọc file tồn kho: " + e.message);
-        }
+        } catch (e) { console.error(e); alert("Lỗi đọc file tồn kho: " + e.message); }
     }
 
     function handleInventorySettings(event) {
@@ -3276,15 +3761,22 @@ export const inventoryHelper = {
     }
 
     $: {
-        if (data || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || velocityDays || dateFilter) {
+        if (data || $ycxDataThangTruoc || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || isCompareMode || velocityDays || dateFilter) {
             calculateData();
         }
     }
 
     function handleConfigChange(event) { activeDimensionIds = event.detail; }
+
     function handleFilterChange(event) {
         const { key, selected } = event.detail;
-        currentFilters = { ...currentFilters, [key]: selected };
+        if (selected === undefined) {
+            const newFilters = { ...currentFilters };
+            delete newFilters[key]; // Xóa hẳn key để reset
+            currentFilters = newFilters;
+        } else {
+            currentFilters = { ...currentFilters, [key]: selected };
+        }
     }
     
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
@@ -3292,13 +3784,30 @@ export const inventoryHelper = {
         isVelocityMode = !isVelocityMode;
         if (isVelocityMode) {
             velocityDays = getCurrentMinusOne();
+            isCompareMode = false;
         } else {
             velocityDays = 1;
             hasInventoryData = false;
         }
     }
 
+    function toggleCompareMode() {
+        isCompareMode = !isCompareMode;
+        if (isCompareMode) {
+            isVelocityMode = false;
+            if (!$ycxDataThangTruoc || $ycxDataThangTruoc.length === 0) {
+                alert("Bạn chưa Upload dữ liệu Yêu cầu xuất tháng trước. Vui lòng sang tab Cập Nhật Dữ Liệu để tải file lên.");
+                isCompareMode = false;
+            }
+        }
+    }
+
     function setToCurrentDays() { velocityDays = getCurrentMinusOne(); }
+
+    function handleSortPriorityChange(type) {
+        compareSortType = type;
+        sortDirection = 'desc'; 
+    }
 </script>
 
 <div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
@@ -3315,17 +3824,9 @@ export const inventoryHelper = {
         <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
             <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
-                <input 
-                    type="date" 
-                    bind:value={dateFilter.from}
-                    class="bg-transparent text-sm text-gray-700 outline-none w-32"
-                />
+                <input type="date" bind:value={dateFilter.from} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
                 <span class="mx-2 text-gray-400">➝</span>
-                <input 
-                    type="date" 
-                    bind:value={dateFilter.to}
-                    class="bg-transparent text-sm text-gray-700 outline-none w-32"
-                />
+                <input type="date" bind:value={dateFilter.to} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
             </div>
         </div>
 
@@ -3333,55 +3834,50 @@ export const inventoryHelper = {
 
         <div class="flex items-center gap-3 h-full pb-1">
             <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
-            <button 
-                class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                on:click={toggleVelocityMode}
-            >
+            <button class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={toggleVelocityMode}>
                 <span class="{isVelocityMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
             </button>
         </div>
 
+        <div class="w-px h-10 bg-gray-200 mx-2"></div>
+        <div class="flex items-center gap-3 h-full pb-1">
+            <span class="text-sm font-semibold text-gray-700">So sánh Cùng kỳ:</span>
+            <button class="{isCompareMode ? 'bg-blue-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={toggleCompareMode}>
+                <span class="{isCompareMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+            </button>
+        </div>
+
+        {#if isCompareMode}
+            <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-1">
+                <span class="text-xs font-bold text-blue-800 uppercase mr-1">Ưu tiên Sort:</span>
+                <div class="flex bg-gray-100 rounded-md p-1 border border-gray-200">
+                    <button class="{compareSortType === 'current' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700'} px-2 py-1 text-[11px] rounded transition-all" on:click={() => handleSortPriorityChange('current')}>
+                        Số hiện tại
+                    </button>
+                    <button class="{compareSortType === 'diff' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700'} px-2 py-1 text-[11px] rounded transition-all" on:click={() => handleSortPriorityChange('diff')}>
+                        +/- Chênh lệch
+                    </button>
+                    <button class="{compareSortType === 'percent' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700'} px-2 py-1 text-[11px] rounded transition-all" on:click={() => handleSortPriorityChange('percent')}>
+                        % Tỷ lệ
+                    </button>
+                </div>
+            </div>
+        {/if}
+
         {#if isVelocityMode}
             <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
                 <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
-             
-                <button 
-                    on:click={setToCurrentDays}
-                    class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
-                    title="Tính theo ngày hiện tại - 1"
-                >
-                    Hiện tại ({getCurrentMinusOne()})
-                </button>
-
+                <button on:click={setToCurrentDays} class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100">Hiện tại ({getCurrentMinusOne()})</button>
                 {#each PRESET_DAYS as d}
-                    <button 
-                        on:click={() => velocityDays = d}
-                        class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}"
-                    >
-                        {d} ngày
-                    </button>
+                    <button on:click={() => velocityDays = d} class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}">{d} ngày</button>
                 {/each}
-          
                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
-                    <input 
-                        type="number" 
-                        min="1" 
-                        class="w-10 text-sm font-bold text-center outline-none text-orange-700"
-                        bind:value={velocityDays}
-                    />
+                    <input type="number" min="1" class="w-10 text-sm font-bold text-center outline-none text-orange-700" bind:value={velocityDays} />
                 </div>
             </div>
-
-            <InventoryToolbar 
-                {isVelocityMode} 
-                on:upload={handleInventoryUpload}
-                on:settingsChange={handleInventorySettings}
-            />
-
-            {#if !hasInventoryData}
-                <span class="text-xs italic text-red-500 ml-2 animate-fade-in">* Thêm file tồn kho để xem cảnh báo tồn kho</span>
-            {/if}
+            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={handleInventorySettings} />
+            {#if !hasInventoryData}<span class="text-xs italic text-red-500 ml-2 animate-fade-in">* Thêm file tồn kho để xem cảnh báo tồn kho</span>{/if}
         {/if}
     </div>
 
@@ -3393,6 +3889,10 @@ export const inventoryHelper = {
         {filterOptions}
         {currentFilters}
         {isVelocityMode} 
+        {isCompareMode} 
+        {compareSortType}
+        bind:sortKey
+        bind:sortDirection
         bind:expandedRows={expandedRows}
         on:configChange={handleConfigChange}
         on:filterChange={handleFilterChange}

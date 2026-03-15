@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_01_SKNV.txt
-GENERATED AT: 2/22/2026, 4:12:10 PM
+GENERATED AT: 3/15/2026, 11:50:54 AM
 
 
 >>> FILE_START: src/components/health-staff/CategoryRevenueView.svelte
@@ -983,8 +983,10 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
   let sortKey = 'tongThuNhap';
   let sortDirection = 'desc';
-  // Cấu hình cột
+  
+  // [MODIFIED] Thêm cột Hạng vào đầu
   const columns = [
+      { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'w-14' },
       { key: 'hoTen', label: 'Nhân viên', align: 'left' },
       { key: 'gioCong', label: 'Giờ công', align: 'right' },
       { key: 'tongThuNhap', label: 'Tổng Thu Nhập', align: 'right' },
@@ -992,13 +994,14 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       { key: 'thuNhapThangTruoc', label: 'Tháng trước', align: 'right' },
       { key: 'chenhLechThuNhap', label: '+/- Tháng trước', align: 'right' }
   ];
+
   function handleSort(key) {
+      if (key === 'rank') return; // Không cho sort cột rank
       if (sortKey === key) {
-          sortDirection = sortDirection === 'desc' ?
-'asc' : 'desc';
+          sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
       } else {
           sortKey = key;
-sortDirection = 'desc';
+          sortDirection = 'desc';
       }
   }
 
@@ -1013,6 +1016,27 @@ sortDirection = 'desc';
       // Xử lý số
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
+
+  // [NEW] Logic Gamification: Đánh số thứ tự & làm nổi bật Top
+  $: topCount = sortedData.length <= 15 ? 3 : 5;
+
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      // Giữ tông cam chủ đạo của Tab Thu Nhập khi hover dòng thường
+      return index % 2 === 0 ? 'bg-white hover:bg-orange-50' : 'bg-slate-50/50 hover:bg-orange-50';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
   // Tính tổng
   $: totals = reportData.reduce((acc, item) => {
       acc.gioCong += item.gioCong || 0;
@@ -1022,25 +1046,24 @@ sortDirection = 'desc';
       acc.chenhLechThuNhap += item.chenhLechThuNhap || 0;
       return acc;
   }, { gioCong: 0, tongThuNhap: 0, thuNhapDuKien: 0, thuNhapThangTruoc: 0, chenhLechThuNhap: 0 });
+
   // Tính trung bình Thu nhập dự kiến để so sánh
-  $: avgIncome = reportData.length > 0 ?
-totals.thuNhapDuKien / reportData.length : 0;
+  $: avgIncome = reportData.length > 0 ? totals.thuNhapDuKien / reportData.length : 0;
 
   // Hàm style cho ô dữ liệu
   function getCellClass(item, colKey) {
       if (colKey === 'tongThuNhap') return 'font-bold text-blue-700';
+
       if (colKey === 'thuNhapDuKien') {
           // Dưới trung bình thì màu đỏ, trên thì xanh
           return item.thuNhapDuKien < avgIncome 
-              ?
-'font-bold text-red-600 bg-red-50' 
+              ? 'font-bold text-red-600 bg-red-50' 
               : 'font-bold text-green-700 bg-green-50';
       }
 
       if (colKey === 'chenhLechThuNhap') {
           return item.chenhLechThuNhap >= 0 
-              ?
-'font-bold text-green-600' 
+              ? 'font-bold text-green-600' 
               : 'font-bold text-red-600';
       }
 
@@ -1055,14 +1078,12 @@ totals.thuNhapDuKien / reportData.length : 0;
                 <i data-feather="briefcase" class="w-5 h-5"></i>
             </div>
             <div>
-  
               <h3 class="font-bold text-gray-800 text-lg uppercase">Bảng Lương & Thu Nhập</h3>
                 <p class="text-xs text-gray-500">
                     Thu nhập DK TB: <span class="font-bold text-orange-600">{formatters.formatRevenue(avgIncome)}</span>
                 </p>
             </div>
-      
-  </div>
+        </div>
         <span class="text-xs font-bold bg-orange-100 text-orange-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: VNĐ</span>
     </div>
 
@@ -1070,72 +1091,63 @@ totals.thuNhapDuKien / reportData.length : 0;
         <table class="min-w-full text-sm text-left border-collapse">
             <thead class="bg-gray-100 text-xs uppercase text-gray-500 font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
-                    {#each columns 
-as col}
+                    {#each columns as col}
                         <th 
-                            class="px-4 py-3 cursor-pointer hover:bg-gray-200 transition select-none whitespace-nowrap {col.align === 'right' ?
-'text-right' : 'text-left'}"
+                            class="px-4 py-3 transition select-none whitespace-nowrap {col.headerClass || ''} {col.align === 'right' ? 'text-right' : (col.align === 'center' ? 'text-center' : 'text-left')} {col.key !== 'rank' ? 'cursor-pointer hover:bg-gray-200' : ''}"
                             on:click={() => handleSort(col.key)}
                         >
-                            <div class="flex items-center gap-1 {col.align === 'right' ?
-'justify-end' : ''}">
+                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : (col.align === 'center' ? 'justify-center' : '')}">
                                 {col.label}
                                 {#if sortKey === col.key}
-                               
-     <span class="ml-1 text-orange-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                                    <span class="ml-1 text-orange-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
                                 {/if}
                             </div>
                         </th>
-   
-                 {/each}
+                    {/each}
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
                 {#if sortedData.length === 0}
-                    <tr><td colspan={columns.length} 
-class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. Vui lòng tải file Thưởng/Giờ công.</td></tr>
+                    <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. Vui lòng tải file Thưởng/Giờ công.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr class="hover:bg-orange-50 transition-colors duration-150 group {index % 2 === 0 ?
-'bg-white' : 'bg-slate-50/50'}">
+                        <tr class="transition-colors duration-150 group {getRowStyle(index)}">
+                            
+                            <td class="px-2 py-3 text-center border-r border-gray-100 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
+                                {getRankIcon(index)}
+                            </td>
+
                             <td class="px-4 py-3 font-semibold text-gray-700 whitespace-nowrap border-r border-gray-100 group-hover:text-orange-800">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
- 
-                           <td class="px-4 py-3 text-right border-r border-gray-100 font-medium">
+                            <td class="px-4 py-3 text-right border-r border-gray-100 font-medium">
                                 {formatters.formatNumberOrDash(item.gioCong)}
                             </td>
-       
-                     <td class="px-4 py-3 text-right {getCellClass(item, 'tongThuNhap')}">
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'tongThuNhap')}">
                                 {formatters.formatRevenue(item.tongThuNhap)}
                             </td>
-              
-              <td class="px-4 py-3 text-right {getCellClass(item, 'thuNhapDuKien')}">
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'thuNhapDuKien')}">
                                 {formatters.formatRevenue(item.thuNhapDuKien)}
                             </td>
-                     
-       <td class="px-4 py-3 text-right text-gray-600 font-medium">
+                            <td class="px-4 py-3 text-right text-gray-600 font-medium">
                                 {formatters.formatRevenue(item.thuNhapThangTruoc)}
                             </td>
-                            
-<td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'chenhLechThuNhap')}">
+                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'chenhLechThuNhap')}">
                                 {formatters.formatRevenue(item.chenhLechThuNhap)}
                             </td>
                         </tr>
-         
-           {/each}
+                    {/each}
                 {/if}
             </tbody>
             <tfoot class="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300 text-xs uppercase">
                 <tr>
-                    <td class="px-4 py-3">TỔNG CỘNG</td>
-   
-                 <td class="px-4 py-3 text-right">{formatters.formatNumberOrDash(totals.gioCong)}</td>
+                    <td class="px-4 py-3 text-center tracking-wider" colspan="2">TỔNG CỘNG</td>
+                    
+                    <td class="px-4 py-3 text-right">{formatters.formatNumberOrDash(totals.gioCong)}</td>
                     <td class="px-4 py-3 text-right text-blue-700">{formatters.formatRevenue(totals.tongThuNhap)}</td>
                     <td class="px-4 py-3 text-right text-green-700">{formatters.formatRevenue(totals.thuNhapDuKien)}</td>
                     <td class="px-4 py-3 text-right">{formatters.formatRevenue(totals.thuNhapThangTruoc)}</td>
-         
-           <td class="px-4 py-3 text-right">{formatters.formatRevenue(totals.chenhLechThuNhap)}</td>
+                    <td class="px-4 py-3 text-right">{formatters.formatRevenue(totals.chenhLechThuNhap)}</td>
                 </tr>
             </tfoot>
         </table>
@@ -1143,10 +1155,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 </div>
 
 <style>
-    .animate-fade-in { animation: fadeIn 0.4s ease-out;
-}
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0);
-} }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 <<< FILE_END: src/components/health-staff/IncomeTable.svelte
 
@@ -1261,21 +1271,20 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // [CẤU HÌNH] Cập nhật cột cuối cùng thành DTQĐ Chưa Xuất
+  // [MODIFIED] Thêm cột Hạng vào đầu
   const columns = [
+      { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'bg-gray-100 text-gray-700 w-14' },
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
-      // [STYLE FIX] Đổi border-blue-200 để khớp tông màu header xanh
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
       { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
       { key: 'hieuQuaQuyDoi', label: '% QĐ', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
-      // [STYLE FIX] Đổi border-green-200
       { key: 'doanhThuTraGop', label: 'DT Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800 border-l border-green-200' },
       { key: 'tyLeTraCham', label: '% Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800' },
-      // [FIX] Hiển thị DTQĐ Chưa Xuất thay vì DT Thực
       { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', align: 'right', headerClass: 'bg-yellow-50 text-yellow-800 border-l border-yellow-200' }
   ];
 
   function handleSort(key) {
+      if (key === 'rank') return; // Không cho sort cột rank
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
       else { sortKey = key; sortDirection = 'desc'; }
   }
@@ -1287,7 +1296,25 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
 
-  // [FIX] Cập nhật logic tính tổng cho cột mới
+  // [NEW] Logic Gamification: Đánh số thứ tự & làm nổi bật Top
+  $: topCount = sortedData.length <= 15 ? 3 : 5;
+
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
   $: totals = reportData.reduce((acc, item) => {
       acc.doanhThu += item.doanhThu || 0;
       acc.doanhThuQuyDoi += item.doanhThuQuyDoi || 0;
@@ -1300,7 +1327,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
   function getCellClass(item, colKey) {
-      // [FIX] Thêm key mới vào danh sách in đậm
       const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuQuyDoiChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
       let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
 
@@ -1350,8 +1376,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             <thead class="uppercase text-xs font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
                     {#each columns as col}
-                        <th class="px-4 py-3 cursor-pointer transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : 'text-left'}" on:click={() => handleSort(col.key)}>
-                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : ''}">
+                        <th class="px-4 py-3 transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : (col.align === 'center' ? 'text-center' : 'text-left')} {col.key !== 'rank' ? 'cursor-pointer hover:bg-gray-200' : ''}" on:click={() => handleSort(col.key)}>
+                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : (col.align === 'center' ? 'justify-center' : '')}">
                                 {col.label}
                                 {#if sortKey === col.key}<span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                             </div>
@@ -1364,7 +1390,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}" on:click={() => handleRowClick(item.maNV)}>
+                        <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
+                            
+                            <td class="px-2 py-3 text-center border-r border-gray-200 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
+                                {getRankIcon(index)}
+                            </td>
+
                             <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
@@ -1381,7 +1412,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             </tbody>
             <tfoot class="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300 text-xs uppercase">
                 <tr>
-                    <td class="px-4 py-3">TỔNG CỘNG</td>
+                    <td class="px-4 py-3 text-center tracking-wider" colspan="2">TỔNG CỘNG</td>
+                    
                     <td class="px-4 py-3 text-right text-base">{formatters.formatRevenue(totals.doanhThu)}</td>
                     <td class="px-4 py-3 text-right text-base text-blue-700">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</td>
                     <td class="px-4 py-3 text-right text-base text-blue-700">{formatters.formatPercentage(totalPctQD)}</td>
@@ -1834,13 +1866,14 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
   // --- STATE ---
   let columnSettings = [];
-  // [GENESIS FIX 2] Thay đổi sort mặc định: Theo điểm Đạt (totalScore) từ cao xuống thấp
+  // Thay đổi sort mặc định: Theo điểm Đạt (totalScore) từ cao xuống thấp
   let sortKey = 'totalScore';
   let sortDirection = 'desc';
 
   // Dữ liệu phẳng
   let allEmployees = [];
   let deptAverages = {};
+  
   // Palette màu cho header
   const headerColors = [
       'bg-red-100 text-red-900 border-red-200',
@@ -1854,6 +1887,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200',
       'bg-rose-100 text-rose-900 border-rose-200'
   ];
+  
   function getHeaderColor(index) {
       return headerColors[index % headerColors.length];
   }
@@ -1862,12 +1896,10 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   $: {
       if (reportData && reportData.length > 0) {
           
-          // --- [LOGIC 1] MAP TÊN NHÂN VIÊN TỪ DANH SÁCH GỐC (FIX GENESIS) --- 
-          // Tạo map chứa cả Tên và Bộ phận (Kho)
+          // --- MAP TÊN NHÂN VIÊN TỪ DANH SÁCH GỐC --- 
           const infoMap = {};
           if ($ycxData && $ycxData.length) {
               $ycxData.forEach(nv => {
-                  // Xử lý linh hoạt các trường dữ liệu (ma_nv/maNV, ten_nv/hoTen, ma_kho/boPhan)
                   const code = String(nv.ma_nv || nv.maNV || '').trim();
                   const name = nv.ten_nv || nv.hoTen || '';
                   const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
@@ -1876,16 +1908,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                       infoMap[code] = { name, dept };
                   }
                   
-                  // Fallback: map theo tên người tạo nếu có dạng "Tên - Mã"
                   if (nv.nguoiTao) {
                       const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
                       if (msnvMatch) {
                           const extractedCode = msnvMatch[1].trim();
                           if (!infoMap[extractedCode]) {
-                               infoMap[extractedCode] = { 
-                                   name: nv.hoTen || nv.nguoiTao, 
-                                   dept: dept 
-                               };
+                               infoMap[extractedCode] = { name: nv.hoTen || nv.nguoiTao, dept: dept };
                           }
                       }
                   }
@@ -1893,32 +1921,26 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
           }
 
           const mappedReportData = reportData.map(item => {
-             // Ưu tiên lấy maNV nếu có, hoặc lấy từ name nếu name là số
              let rawCode = item.maNV;
              if (!rawCode && item.name && /^\d+$/.test(item.name)) {
                  rawCode = item.name;
              }
              
-             // Chuẩn hóa mã nhân viên để tra cứu
              const lookupCode = String(rawCode || '').trim();
              const info = infoMap[lookupCode];
-
-             // Tra cứu tên thật và bộ phận
+   
              let realName = item.hoTen || item.name;
-             let realDept = item.boPhan; // Giữ bộ phận gốc nếu có
+             let realDept = item.boPhan;
 
              if (info) {
                  if (info.name) realName = info.name;
-                 // Nếu dữ liệu gốc chưa có bộ phận hoặc bộ phận bị rỗng, lấy từ danh sách nhân viên (ma_kho)
                  if (!realDept || realDept === 'Chưa phân loại' || realDept === lookupCode) {
                      realDept = info.dept;
                  }
              }
              
-             // Làm sạch tên: Nếu tên là dạng "Tên - Mã", cắt bỏ phần mã
              if (realName && realName.includes('-')) {
                   const parts = realName.split('-');
-                  // Nếu phần sau là số (MSNV), lấy phần đầu
                   if (parts.length > 1 && /\d/.test(parts[parts.length-1])) {
                        realName = parts[0].trim();
                   }
@@ -1931,23 +1953,26 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                  boPhan: realDept || 'Chưa phân loại'
              };
           });
-          // --- [LOGIC 2] CẤU HÌNH CỘT & MAPPING TÊN CỘT ---
+
+          // --- CẤU HÌNH CỘT & MAPPING ---
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
           if (!savedSettings || savedSettings.length === 0) {
               savedSettings = settingsService.loadPastedCompetitionViewSettings();
           }
           columnSettings = savedSettings;
-          // Áp dụng hàm mapping thông minh tại đây
+          
           columnSettings = columnSettings.map(col => ({
               ...col,
               label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
+
           const groups = {};
           mappedReportData.forEach(item => {
               const dept = item.boPhan || 'Chưa phân loại';
               if (!groups[dept]) groups[dept] = [];
               groups[dept].push(item);
           });
+
           const avgs = {};
           Object.keys(groups).forEach(deptName => {
               const deptData = groups[deptName];
@@ -1967,8 +1992,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
               });
               avgs[deptName] = deptAvg;
           });
-          deptAverages = avgs;
           
+          deptAverages = avgs;
           allEmployees = [...mappedReportData];
       } else {
           allEmployees = [];
@@ -1976,6 +2001,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   }
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
+
   // --- SORT LOGIC ---
   function handleSort(key) {
       if (sortKey === key) {
@@ -2005,6 +2031,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                 });
                 return score;
             };
+           
             valA = getScore(a);
             valB = getScore(b);
             return sortDirection === 'asc' ? valA - valB : valB - valA;
@@ -2014,6 +2041,35 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
   });
+
+  // --- [NEW] LOGIC GAMIFICATION (HẠNG, MÀU NỀN) ---
+  $: topCount = sortedEmployees.length <= 15 ? 3 : 5;
+
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-slate-50/50 hover:bg-gray-100';
+  }
+
+  // Hàm style nền chuyên biệt dành cho các cột bị ghim (Sticky)
+  function getStickyClass(index) {
+      if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50 group-hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white group-hover:bg-gray-50' : 'bg-slate-50 group-hover:bg-gray-100';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
   // --- TOGGLE LOGIC ---
   function toggleColumn(col) {
       const newSettings = columnSettings.map(c => 
@@ -2039,7 +2095,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       }, 0);
   }
 
-  // --- VIEW SWITCHING ---
   function switchToProgram() {
       dispatch('viewChange', 'program');
   }
@@ -2078,22 +2133,26 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
                 <div>
                     <h3 class="text-lg font-bold text-purple-800 uppercase flex items-center gap-2">
-                        <i data-feather="award" class="w-5 h-5"></i>
+                         <i data-feather="award" class="w-5 h-5"></i>
                         Thi Đua Lũy Kế
                     </h3>
                     <p class="text-xs text-gray-500 mt-0.5 ml-7">Theo dõi tiến độ các chương trình thi đua</p>
                 </div>
-                </div>
+            </div>
             
             <div class="overflow-x-auto sknv-pasted-competition-scroller relative" style="max-height: 700px;">
                 <table class="w-full text-sm text-left border-separate border-spacing-0">
                     <thead class="text-xs uppercase font-bold text-gray-700 sticky top-0 z-20 shadow-sm">
                         <tr>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky left-0 z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" on:click={() => handleSort('hoTen')}>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[50px] min-w-[50px] sticky left-0 z-30 px-1 py-2 text-center align-middle text-sm">
+                                Hạng
+                            </th>
+                            
+                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky left-[50px] z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" on:click={() => handleSort('hoTen')}>
                                 Nhân viên
                             </th>
                             
-                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky left-[150px] z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" on:click={() => handleSort('totalScore')}>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky left-[200px] z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" on:click={() => handleSort('totalScore')}>
                                 Đạt
                             </th>
 
@@ -2112,19 +2171,23 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     </thead>
                     
                     <tbody class="divide-y divide-gray-100">
-                        {#each sortedEmployees as item (item.maNV)}
+                        {#each sortedEmployees as item, index (item.maNV)}
                             {@const avgScores = deptAverages[item.boPhan] || {}}
                             {@const score = item.competitions.reduce((acc, c) => (avgScores[c.tenGoc] > 0 && c.giaTri >= avgScores[c.tenGoc]) ? acc + 1 : acc, 0)}
                             
                             <tr 
-                                class="hover:bg-blue-50 transition-colors group cursor-pointer"
+                                class="transition-colors group cursor-pointer {getRowStyle(index)}"
                                 on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
                             >
-                                <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
+                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky left-0 transition-colors {getStickyClass(index)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}">
+                                    {getRankIcon(index)}
+                                </td>
+
+                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky left-[50px] z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(index)}" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
                                 
-                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 bg-white group-hover:bg-blue-50 border-r border-gray-200 text-[14px] sticky left-[150px] z-10">
+                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky left-[200px] z-10 transition-colors {getStickyClass(index)}">
                                     {score}
                                 </td>
 
@@ -2136,12 +2199,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                                     {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
                                     {@const textColorClass = isRevenue ? 'text-blue-700' : 'text-gray-900'}
                                     
-                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-50' : ''} {textColorClass} whitespace-nowrap overflow-hidden">
-                                         {#if val === 0}
+                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-50/50' : ''} {textColorClass} whitespace-nowrap overflow-hidden">
+                                        {#if val === 0}
                                             <span class="text-gray-300 font-normal">-</span>
-                                         {:else}
+                                        {:else}
                                             {formatters.formatNumber(val)}
-                                         {/if}
+                                        {/if}
                                     </td>
                                 {/each}
                             </tr>
@@ -2150,28 +2213,28 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     
                     <tfoot class="text-xs uppercase sticky bottom-0 z-20 shadow-[0_-1px_2px_rgba(0,0,0,0.1)]">
                         <tr class="bg-yellow-50 text-yellow-800 font-semibold border-t-2 border-gray-300">
-                            <td class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
                                 TRUNG BÌNH
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[150px] z-30 text-center text-[13px] font-bold text-green-700">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-green-700">
                                 {allEmployees.length > 0 ? formatters.formatNumber(calculateTotalScore() / allEmployees.length, 1) : 0}
                             </td>
                             {#each visibleColumns as col}
-                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px]">
+                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px] bg-yellow-50">
                                     {allEmployees.length > 0 ? formatters.formatNumber(calculateTotal(col) / allEmployees.length, 0) : 0}
                                 </td>
                             {/each}
                         </tr>
 
                         <tr class="bg-gray-200 text-gray-900 font-bold border-t border-gray-300">
-                            <td class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
                                 TỔNG
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[150px] z-30 text-center text-[13px]">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[200px] z-30 text-center text-[13px]">
                                 {calculateTotalScore()}
                             </td>
                             {#each visibleColumns as col}
-                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px]">
+                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px] bg-gray-200">
                                     {formatters.formatNumber(calculateTotal(col))}
                                 </td>
                             {/each}
@@ -3737,20 +3800,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     import { formatters } from '../../../utils/formatters.js';
     import { dynamicTableProcessor } from '../../../services/processing/logic/dynamicTable.processor.js';
     import { isAdmin } from '../../../stores.js';
-    
     // Components
     import SortableTh from '../../common/SortableTh.svelte';
 
-    export let config = {};      // Cấu hình bảng (từ Admin/User)
-    export let reportData = [];  // Dữ liệu nhân viên (Master Data)
+    export let config = {};
+    // Cấu hình bảng (từ Admin/User)
+    export let reportData = [];
+    // Dữ liệu nhân viên (Master Data)
     export let colorTheme = 'blue';
 
     const dispatch = createEventDispatcher();
-
     // --- STATE ---
     let sortKey = 'hoTen';
     let sortDirection = 'asc';
-
     // --- PROCESSING ---
     // 1. Biến đổi dữ liệu thô -> Dữ liệu hiển thị (kèm logic tính %)
     $: processedResult = dynamicTableProcessor.processTableData(reportData, config);
@@ -3759,12 +3821,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
     // 2. Sắp xếp
     $: sortedData = dynamicTableProcessor.sortTableData(tableData, sortKey, sortDirection);
-
     // --- HANDLERS ---
     function handleSort(event) {
         const key = event.detail;
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-        else { sortKey = key; sortDirection = 'desc'; }
+        else { sortKey = key;
+        sortDirection = 'desc'; }
     }
 
     // --- STYLING HELPERS ---
@@ -3774,6 +3836,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         orange: { header: 'bg-orange-50 border-orange-200', title: 'text-orange-800' },
         purple: { header: 'bg-purple-50 border-purple-200', title: 'text-purple-800' },
         teal: { header: 'bg-teal-50 border-teal-200', title: 'text-teal-800' },
+   
     };
     $: theme = themeMap[colorTheme] || themeMap.blue;
 
@@ -3782,17 +3845,20 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         if (cell.config.type === 'PERCENT') {
             // Lấy target từ config bảng hoặc goal settings (nếu có logic override)
             // Ở đây ta dùng targetId để map vào object mucTieu của nhân viên
+          
             const targetId = cell.config.targetId;
             const targetVal = targetId && targetObj && targetObj[targetId] 
-                ? parseFloat(targetObj[targetId]) 
+                ?
+                parseFloat(targetObj[targetId]) 
                 : 0;
-
             const currentVal = cell.value * 100; // Đưa về thang 100
             
             if (targetVal > 0) {
-                return currentVal >= targetVal ? 'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
+                return currentVal >= targetVal ?
+                'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
             }
-            return 'text-red-600'; // Mặc định % là màu đỏ (hoặc cam)
+            return 'text-red-600';
+            // Mặc định % là màu đỏ (hoặc cam)
         }
         if (cell.config.type === 'SL') return 'text-gray-800';
         return 'text-blue-700 font-semibold'; // DT, DTQD
@@ -3802,18 +3868,21 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col transition-all hover:shadow-md relative group/card">
     
     <div class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity flex gap-1 z-20 bg-white/90 backdrop-blur rounded-lg p-1 shadow-sm border border-gray-100">
-        {#if !config.isSystem || $isAdmin}
+        {#if !config.isSystem ||
+            $isAdmin}
             <button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Sửa" on:click|stopPropagation={() => dispatch('edit', config)}>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
             </button>
             <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title="Xóa" on:click|stopPropagation={() => dispatch('delete', config.id)}>
+      
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
         {/if}
     </div>
 
     <div class="px-5 py-3 border-b {theme.header} flex justify-between items-center">
-        <h4 class="text-base font-bold uppercase {theme.title} truncate flex items-center gap-2" title={config.title}>
+        <h4 class="text-base font-bold uppercase {theme.title} flex items-center gap-2" title={config.title}>
+     
             <i data-feather="bar-chart-2" class="w-4 h-4"></i> {config.title}
         </h4>
     </div>
@@ -3824,70 +3893,90 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         </div>
     {:else}
         <div class="overflow-x-auto flex-grow custom-scrollbar relative">
+           
             <table class="min-w-full text-sm border-collapse border-0">
                 <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
                     <tr>
                         <SortableTh 
+                         
                             key="hoTen" 
                             label="Nhân viên" 
                             className="sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 min-w-[150px]" 
                             {sortKey} {sortDirection} 
+
                             on:sort={handleSort} 
                         />
                         
+                       
                         {#each config.columns as col (col.id)}
-                            {@const bgClass = col.color ? `bg-${col.color}-50` : 'bg-gray-50'}
-                            {@const textClass = col.color ? `text-${col.color}-800` : 'text-gray-700'}
+                            {@const bgClass = col.color ?
+                            `bg-${col.color}-50` : 'bg-gray-50'}
+                            {@const textClass = col.color ?
+                            `text-${col.color}-800` : 'text-gray-700'}
                             <SortableTh 
                                 key={col.id} 
                                 label={col.header} 
+   
                                 align="right" 
                                 className="{bgClass} {textClass} border-r border-b border-gray-200 min-w-[100px]" 
+                                
                                 {sortKey} {sortDirection} 
                                 on:sort={handleSort} 
                             />
                         {/each}
+             
                     </tr>
                 </thead>
 
                 <tbody class="divide-y divide-gray-100">
                     {#each sortedData as row (row.maNV)}
                         <tr class="hover:bg-blue-50/50 transition-colors group">
+        
                             <td class="px-3 py-2 font-semibold text-gray-700 border-r border-b border-gray-300 bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                <span class="text-blue-700 text-sm block truncate" title="{row.hoTen} - {row.maNV}">
+                                <span class="text-blue-700 text-sm leading-relaxed" title="{row.hoTen} - {row.maNV}">
+                           
                                     {formatters.getShortEmployeeName(row.hoTen, row.maNV)}
                                 </span>
                             </td>
 
-                            {#each config.columns as col (col.id)}
+                            {#each config.columns 
+                                as col (col.id)}
                                 {@const cell = row.cells[col.id]}
                                 <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell, row.mucTieu)}">
-                                    {cell ? cell.display : '-'}
+                       
+                                    {cell ?
+                                    cell.display : '-'}
                                 </td>
                             {/each}
                         </tr>
+              
                     {/each}
                 </tbody>
 
                 <tfoot class="bg-gray-100 font-bold text-gray-800 border-t-2 border-gray-300 sticky bottom-0 z-20">
                     <tr>
                         <td class="px-3 py-2 sticky left-0 bg-gray-200 z-30 border-r border-gray-300">TỔNG</td>
+  
                         {#each config.columns as col (col.id)}
                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100">
-                                {totals.cells[col.id]?.display || '-'}
+                                {totals.cells[col.id]?.display ||
+                                '-'}
                             </td>
                         {/each}
                     </tr>
                 </tfoot>
+            
             </table>
         </div>
     {/if}
 </div>
 
 <style>
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px;
+        height: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px;
+    }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 </style>
 <<< FILE_END: src/components/health-staff/performance/DynamicPerformanceTable.svelte
@@ -3900,7 +3989,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     import { datasyncService } from '../../../services/datasync.service.js';
     
     import DynamicPerformanceTable from './DynamicPerformanceTable.svelte';
-
     export let reportData = [];
 
     // [FIX 1] Mặc định là đang tải để tránh hiện thông báo lỗi ngay khi mở
@@ -3924,7 +4012,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     }
 
     async function loadData(kho) {
-        isLoading = true; // [FIX] Luôn bật loading khi bắt đầu tải
+        isLoading = true;
+        // [FIX] Luôn bật loading khi bắt đầu tải
         try {
             // 1. Load System Tables (Admin)
             const sysTables = await adminService.loadSystemPerformanceTables();
@@ -3943,7 +4032,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         } catch (e) {
             console.error("[PerformanceView] Lỗi tải dữ liệu:", e);
         } finally {
-            isLoading = false; // [FIX] Đảm bảo luôn tắt loading khi xong
+            isLoading = false;
+            // [FIX] Đảm bảo luôn tắt loading khi xong
         }
     }
 
@@ -4020,10 +4110,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             {#each $customPerformanceTables as table}
                 <button 
                     class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                    {table.isVisible ?
-                        'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
-                    {table.isSystem ?
-                        'border-dashed' : ''}"
+                    {table.isVisible ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
+                    {table.isSystem ? 'border-dashed' : ''}"
                     on:click={() => toggleTableVisibility(table.id)}
                     title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
                 >
@@ -4061,7 +4149,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     {:else}
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
             {#each visibleTables as table, index (table.id)}
-                <div data-capture-group="performance-table">
+                <div data-capture-group="performance-table" data-capture-filename={table.title}>
                     <DynamicPerformanceTable 
                         config={table} 
                         {reportData} 
@@ -4825,16 +4913,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   export let totalCount = 0;
 
   $: percentage = totalCount > 0 ? aboveCount / totalCount : 0;
-  $: colorClass = percentage >= 0.7 ? 'text-green-600' : percentage >= 0.4 ? 'text-yellow-500' : 'text-red-500';
-  $: borderColorClass = percentage >= 0.7 ? 'border-t-green-500' : percentage >= 0.4 ? 'border-t-yellow-500' : 'border-t-red-500';
+  
+  // Đồng bộ màu chữ và màu viền theo màu nền của EmployeeCard
+  $: colorClass = percentage >= 0.7 ? 'text-emerald-700' : percentage >= 0.4 ? 'text-blue-700' : percentage >= 0.2 ? 'text-yellow-700' : 'text-red-700';
+  $: borderColorClass = percentage >= 0.7 ? 'border-emerald-200' : percentage >= 0.4 ? 'border-blue-200' : percentage >= 0.2 ? 'border-yellow-200' : 'border-red-200';
 </script>
 
-<div class="text-center py-2 border-t-4 {borderColorClass} bg-slate-50/50 mt-2">
-  <div class="flex items-baseline justify-center gap-1">
-    <span class="text-3xl font-extrabold {colorClass} leading-none">{aboveCount}</span>
-    <span class="text-sm font-bold text-gray-400">/ {totalCount}</span>
+<div class="flex items-center justify-between px-3 py-2 border-t border-dashed {borderColorClass} bg-white/40 backdrop-blur-sm">
+  <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Chỉ số đạt</span>
+  
+  <div class="flex items-baseline gap-1">
+    <span class="text-2xl font-extrabold {colorClass} leading-none">{aboveCount}</span>
+    <span class="text-sm font-bold text-slate-400">/ {totalCount}</span>
   </div>
-  <span class="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Chỉ số đạt</span>
 </div>
 <<< FILE_END: src/components/health-staff/summary/card/CardMainKpi.svelte
 
@@ -4875,7 +4966,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
 >>> FILE_START: src/components/health-staff/summary/card/EmployeeCard.svelte
 <script>
-  import MedalIcon from '../../shared/MedalIcon.svelte';
   import CardHeader from './CardHeader.svelte';
   import CardMainKpi from './CardMainKpi.svelte';
   import CardSubKpiGrid from './CardSubKpiGrid.svelte';
@@ -4888,45 +4978,44 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   $: summary = employee.summary;
   $: totalAbove = employee.totalAbove;
   $: totalCriteria = employee.totalCriteria;
+  
+  // Tính % để tô màu cho các thẻ hạng 4 trở lên
+  $: percentage = totalCriteria > 0 ? totalAbove / totalCriteria : 0;
 
   function handleClick() {
     dispatch('click', { employeeId: employee.maNV });
   }
+
+  // [MODIFIED] Áp dụng màu sắc phân loại hiệu suất cho các thẻ hạng 4+
+  function getRankStyle(r, pct) {
+      // Top 3 vẫn giữ huy chương lộng lẫy
+      if (r === 1) return { bg: 'bg-gradient-to-br from-yellow-100 to-yellow-50 border-yellow-300', icon: '🏆', rankText: 'text-yellow-600' };
+      if (r === 2) return { bg: 'bg-gradient-to-br from-slate-200 to-slate-100 border-slate-300', icon: '🥈', rankText: 'text-slate-500' };
+      if (r === 3) return { bg: 'bg-gradient-to-br from-orange-100 to-orange-50 border-orange-300', icon: '🥉', rankText: 'text-orange-600' };
+      
+      // Hạng 4 trở đi: Tô màu nền theo hiệu suất giống bảng Thi Đua
+      if (pct >= 0.7) return { bg: 'bg-emerald-50 border-emerald-200', icon: `#${r}`, rankText: 'text-emerald-600' };
+      if (pct >= 0.4) return { bg: 'bg-blue-50 border-blue-200', icon: `#${r}`, rankText: 'text-blue-600' };
+      if (pct >= 0.2) return { bg: 'bg-yellow-50 border-yellow-200', icon: `#${r}`, rankText: 'text-yellow-600' };
+      return { bg: 'bg-red-50 border-red-200', icon: `#${r}`, rankText: 'text-red-600' };
+  }
+
+  $: rankConfig = getRankStyle(rank, percentage);
 </script>
 
-<style>
-    /* 1. Ép wrapper thành Flexbox để căn giữa theo trục dọc/ngang */
-    :global(.capture-container) .rank-wrapper {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        height: 100% !important; /* Chiếm hết chiều cao cha để căn giữa */
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-
-    /* 2. Xuyên thủng vào mọi thứ bên trong MedalIcon (kể cả thẻ span/div/svg) */
-    :global(.capture-container) .rank-wrapper :global(*) {
-        line-height: 1 !important;   /* Reset chiều cao dòng */
-        padding-top: 0 !important;   /* Xóa padding rác */
-        padding-bottom: 0 !important;
-        margin: 0 !important;
-        
-        /* [QUAN TRỌNG]: Kỹ thuật "Nâng visual". 
-           Kéo ngược nội dung lên 2px để bù lại độ lệch do font hệ thống */
-        transform: translateY(-2px) !important; 
-    }
-</style>
-
 <div 
-  class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer overflow-hidden relative group h-full flex flex-col"
+  class="rounded-xl border shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer overflow-hidden relative group h-full flex flex-col {rankConfig.bg}"
   on:click={handleClick}
   role="button"
   tabindex="0"
 >
+  <div class="absolute -right-2 -bottom-4 text-7xl font-black opacity-[0.08] {rankConfig.rankText} select-none pointer-events-none z-0 transition-transform group-hover:scale-110">
+    #{rank}
+  </div>
+
   <div class="p-3 flex items-start relative z-10">
-    <div class="flex-shrink-0 rank-wrapper">
-        <MedalIcon {rank} />
+    <div class="flex-shrink-0 flex items-center justify-center w-8 h-8 font-black {rank <= 3 ? 'text-2xl -mt-1' : 'text-sm text-slate-500 bg-white/60 rounded-lg shadow-sm'}">
+        {rankConfig.icon}
     </div>
 
     <CardHeader 
@@ -4936,14 +5025,16 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     />
   </div>
 
-  <div class="flex-grow flex flex-col justify-end">
+  <div class="relative z-10">
     <CardMainKpi 
         aboveCount={totalAbove} 
         totalCount={totalCriteria} 
     />
   </div>
   
-  <CardSubKpiGrid summary={summary} />
+  <div class="relative z-10 mt-auto">
+    <CardSubKpiGrid summary={summary} />
+  </div>
 </div>
 <<< FILE_END: src/components/health-staff/summary/card/EmployeeCard.svelte
 

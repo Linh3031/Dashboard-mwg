@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_00_CORE.txt
-GENERATED AT: 2/22/2026, 4:12:10 PM
+GENERATED AT: 3/15/2026, 11:50:54 AM
 
 
 >>> FILE_START: src/stores.js
@@ -9,6 +9,9 @@ import { writable } from 'svelte/store';
 // --- [NEW] CHẾ ĐỘ DEMO ---
 export const isDemoMode = writable(false); 
 // -------------------------
+
+// --- [NEW] TRẠM TRUNG CHUYỂN VERSION ---
+export const latestSystemVersion = writable(null);
 
 // QUAN TRỌNG: Phải có chữ 'export' ở đầu dòng này
 export const currentCluster = writable(null);
@@ -34,6 +37,7 @@ export const composerTemplates = writable(savedTemplates);
 // -------------------------------------------------------------
 
 export const competitionNameMappings = writable({}); 
+export const luykeNameMappings = writable({}); // [NEW] Dành riêng cho Thi đua Siêu thị
 export const homeConfig = writable({ videoUrl: '', timeline: [], sliderImages: [], changelogs: [] });
 export const danhSachNhanVien = writable([]);
 export const ycxData = writable([]);
@@ -81,7 +85,6 @@ export const kpiStore = writable(savedKpi || {
 });
 
 kpiStore.subscribe(value => {
-    // console.log('[STORE] KPI Update:', value); // Uncomment nếu muốn log chi tiết thay đổi
     if (typeof localStorage !== 'undefined') {
         localStorage.setItem('kpiStore_cache', JSON.stringify(value));
     }
@@ -127,7 +130,7 @@ export const fileSyncState = writable({});
 
 >>> FILE_START: src/main.js
 // src/main.js
-// Version 5.2 - Fix Demo Mode Conflict & Crash Guard
+// Version 5.3 - Phẫu Thuật Logic: Lưới Phòng Thủ Phiên Bản
 import './app.css'
 import App from './App.svelte'
 import { mount } from 'svelte'
@@ -138,30 +141,59 @@ import { authService as auth } from './services/auth.service.js';
 import { dataService } from './services/dataService.js'; 
 import { analyticsService } from './services/analytics.service.js';
 
+// [GENESIS FIX] Import Store để lấy dữ liệu trạm phát sóng
+import { get } from 'svelte/store';
+import { latestSystemVersion } from './stores.js';
+
+// === [PHÒNG THỦ 1] BẮT LỖI CHUNK DO CACHE ===
+window.addEventListener('error', (e) => {
+    if (e.message && (e.message.includes('Failed to fetch dynamically imported module') || e.message.includes('Importing a module script failed'))) {
+        console.warn('[System] Phát hiện phiên bản mới do lỗi nạp module. Đang ép F5...');
+        window.location.reload(true);
+    }
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+    if (e.reason && e.reason.message && (e.reason.message.includes('Failed to fetch dynamically imported module') || e.reason.message.includes('Importing a module script failed'))) {
+        console.warn('[System] Phát hiện phiên bản mới do lỗi nạp module. Đang ép F5...');
+        window.location.reload(true);
+    }
+});
+
+// === [PHÒNG THỦ 2] ĐÁNH CHẶN HÀNH ĐỘNG (INTERCEPTOR) ===
+// Bạn gọi hàm này ở đầu các sự kiện click up file / submit form
+window.verifyVersionBeforeAction = function() {
+    const clientVer = localStorage.getItem('app_client_version');
+    const systemVer = get(latestSystemVersion);
+    
+    if (systemVer && clientVer && systemVer !== clientVer) {
+        console.warn(`[System] Đã chặn hành động: App đang dùng bản (${clientVer}), Server yêu cầu bản (${systemVer}).`);
+        // Ép F5 văng ra bản mới nhất ngay lập tức
+        window.location.reload(true);
+        return false; 
+    }
+    return true; 
+};
+
+// ===============================================
+
 async function initializeApp() {
   try {
-    // 1. Khởi tạo Firebase
     firebaseService.initCore();
-    
-    // 2. Setup Feather Icons (Global)
     window.feather = feather;
 
-    // 3. Mount App
     mount(App, {
         target: document.getElementById('app'),
     });
 
-    // [FIX] Gọi replace ngay sau khi mount để đảm bảo icon lần đầu
     setTimeout(() => {
         if (window.feather) window.feather.replace();
     }, 100);
 
-    // 4. Bắt đầu luồng dữ liệu
     startDataFlow();
 
   } catch (e) {
     console.error("Lỗi khởi tạo:", e);
-    // [FIX] Fallback nếu crash: Hiển thị thông báo lỗi thân thiện
     const appEl = document.getElementById('app');
     if (appEl) {
         appEl.innerHTML = `<div style="padding: 20px; color: #dc2626; font-family: sans-serif;">
@@ -177,14 +209,11 @@ async function initializeApp() {
 
 async function startDataFlow() {
     try {
-        // [CRITICAL FIX] CHỐT CHẶN CHẾ ĐỘ DEMO
-        // Nếu đang chạy Demo, TUYỆT ĐỐI KHÔNG kết nối Auth hay tải dữ liệu thật
         if (localStorage.getItem('isDemoMode') === 'true') {
-            console.log("🛑 [Main] Phát hiện chế độ Demo. Đã chặn luồng dữ liệu thực (Real Data Flow).");
+            console.log("🛑 [Main] Phát hiện chế độ Demo. Đã chặn luồng dữ liệu thực.");
             return; 
         }
 
-        // --- LUỒNG CHÍNH THỨC (CHỈ CHẠY KHI KHÔNG PHẢI DEMO) ---
         await auth.ensureAnonymousAuth();
         const isLoggedIn = auth.initAuth();
         
@@ -237,12 +266,18 @@ initializeApp();
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
+  
+  // [GENESIS SURGERY] Nhúng Component ToolsSection
+  import ToolsSection from './components/ToolsSection.svelte';
+
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
   import VersionManager from './components/common/VersionManager.svelte';
+
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
+
   // --- MODALS ---
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
@@ -254,10 +289,15 @@ initializeApp();
   import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
-  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte'; // <-- [TẮT DEMO] Comment import
+  import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
+
+  // [GENESIS IMPORT] Import cửa sổ Xem trước Ảnh
+  import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
+  
+  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte';
+  // <-- [TẮT DEMO] Comment import
 
   // Kiểm tra localStorage ngay khi khởi tạo
-  // let isBootingDemo = typeof localStorage !== 'undefined' && localStorage.getItem('isDemoMode') === 'true';
   let isBootingDemo = false; // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
   
   // Nếu đang boot demo thì chưa sẵn sàng (false)
@@ -272,6 +312,7 @@ initializeApp();
         // --- LUỒNG 2: CHẾ ĐỘ THỰC (ONLINE) ---
         // Đảm bảo xóa cờ demo nếu lỡ còn lưu
         if (typeof localStorage !== 'undefined') localStorage.removeItem('isDemoMode');
+      
         await initRealMode();
     }
   });
@@ -284,23 +325,25 @@ initializeApp();
       try {
           // 1. Nạp Snapshot
           await demoService.loadSnapshot(DEMO_SNAPSHOT);
-          
+
           // 2. Chờ Store cập nhật
           await tick();
 
           // 3. Chọn kho mặc định từ dữ liệu vừa nạp
           const currentList = get(danhSachNhanVien);
+
           if (currentList && currentList.length > 0) {
               const firstWarehouse = currentList[0].maKho || "908";
               selectedWarehouse.set(firstWarehouse);
               // Cập nhật danh sách kho cho Select Box
-              warehouseList.set([firstWarehouse]); 
+              warehouseList.set([firstWarehouse]);
           } else {
               selectedWarehouse.set("908");
           }
           
           // 4. Mở khóa giao diện
           isAppReady = true;
+
           console.log("✅ [Bootloader] Demo Ready -> Unlocking UI");
 
           // 5. Chuyển Tab (Delay nhẹ để UI render xong)
@@ -311,6 +354,7 @@ initializeApp();
       } catch (e) {
           console.error("❌ Lỗi nạp Demo:", e);
           alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
+
           // Fallback về chế độ thật nếu lỗi
           localStorage.removeItem('isDemoMode');
           window.location.reload();
@@ -320,9 +364,9 @@ initializeApp();
   // [FIX] Hàm khởi tạo cho App thật
   async function initRealMode() {
       try { 
-          await authService.ensureAnonymousAuth(); 
+          await authService.ensureAnonymousAuth();
       } catch (e) { 
-          console.error("Firebase Auth Error:", e); 
+          console.error("Firebase Auth Error:", e);
       }
       
       const isLoggedIn = authService.initAuth();
@@ -361,6 +405,7 @@ initializeApp();
 
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
+
       if ($activeTab === 'declaration-section') {
           newItem.isSystem = true;
           efficiencyConfig.update(items => {
@@ -374,6 +419,7 @@ initializeApp();
           newItem.isSystem = false;
           let currentLocal = get(warehouseCustomMetrics) || [];
           const idx = currentLocal.findIndex(i => i.id === newItem.id);
+
           if (idx >= 0) {
               currentLocal[idx] = newItem;
           } else {
@@ -381,6 +427,7 @@ initializeApp();
           }
           warehouseCustomMetrics.set(currentLocal);
           const wh = get(selectedWarehouse);
+
           if(wh) {
                datasyncService.saveCustomMetrics(wh, currentLocal);
           } else {
@@ -391,6 +438,7 @@ initializeApp();
 
   async function handleSaveCustomTable(event) {
       const newItem = event.detail;
+
       customRevenueTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
           if (idx >= 0) { 
@@ -400,6 +448,7 @@ initializeApp();
               return [...items, newItem]; 
           }
       });
+
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
@@ -426,6 +475,7 @@ initializeApp();
              return [...items, newItem];
           }
       });
+
       if (newItem.isSystem) {
           const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
           await adminService.saveSystemPerformanceTables(systemTables);
@@ -448,6 +498,7 @@ initializeApp();
               .map(nv => nv.maKho)
               .filter(k => k && String(k).trim() !== '')
           )].sort();
+
           warehouseList.set(uniqueWarehouses);
       }
   }
@@ -472,6 +523,11 @@ initializeApp();
 <UserCompetitionModal />
 <UserSpecialProgramModal />
 <ComposerModal /> 
+<StEmpCompetitionModal />
+
+{#if $modalState.activeModal === 'capture-preview'}
+    <CapturePreviewModal payload={$modalState.payload} />
+{/if}
 
 {#if $modalState.activeModal === 'unexported-detail-modal'}
     <UnexportedDetailModal 
@@ -542,13 +598,16 @@ initializeApp();
             <HealthEmployeeSection activeTab={$activeTab} />
             <RealtimeSection activeTab={$activeTab} />
             <DeclarationSection activeTab={$activeTab} />
+            
+            <ToolsSection activeTab={$activeTab} />
+            
         {:else}
             <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
                 <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <p class="font-medium">Đang thiết lập môi trường Demo...</p>
+                <p class="font-medium">Đang thiết lập môi trường...</p>
             </div>
         {/if}
       </div>
@@ -719,7 +778,8 @@ export const config = {
 
 >>> FILE_START: src/services/action.service.js
 import { get } from 'svelte/store';
-import { viewingDetailFor } from '../stores.js';
+// [GENESIS FIX 1] Import thêm modalState để điều khiển bật tắt UI
+import { viewingDetailFor, modalState } from '../stores.js';
 import { captureService } from './capture.service.js';
 import { excelService } from './excel.service.js';
 
@@ -762,7 +822,7 @@ export const actionService = {
         };
     },
 
-    // [FIX CRITICAL] Hàm Capture được viết lại để chống treo và xử lý logic view phức tạp
+    // [FIX CRITICAL] Hàm Capture được viết lại để mở Modal Preview thay vì tải trực tiếp
     async handleCapture(sectionId) {
         console.log(`[ActionService] ➤ Bắt đầu chụp ảnh section: ${sectionId}`);
         
@@ -816,21 +876,14 @@ export const actionService = {
             // 3. Thực thi chụp (Safe Call)
             console.log(`[ActionService] Gọi service chụp cho element:`, elementToCapture);
             
-            // [DEBUG & FIX] Kiểm tra method nào khả dụng trong captureService
-            if (typeof captureService.captureDashboardInParts === 'function') {
-                await captureService.captureDashboardInParts(elementToCapture, title);
-            } 
-            else if (typeof captureService.capture === 'function') {
-                // Fallback nếu code cũ dùng .capture
-                console.warn('[ActionService] captureDashboardInParts không tồn tại, dùng fallback .capture()');
-                await captureService.capture(elementToCapture, title);
-            }
-            else {
-                console.error('[ActionService] Available methods:', Object.keys(captureService));
-                throw new Error('Service chụp ảnh lỗi: Không tìm thấy hàm captureDashboardInParts hoặc capture.');
-            }
+            // [GENESIS FIX 2] Kích hoạt Modal Capture Preview thay vì gọi hàm download
+            modalState.update(s => ({ 
+                ...s, 
+                activeModal: 'capture-preview', 
+                payload: { container: elementToCapture, baseTitle: title } 
+            }));
             
-            console.log('[ActionService] ➤ Chụp ảnh hoàn tất.');
+            console.log('[ActionService] ➤ Mở Modal Xem trước hoàn tất.');
 
         } catch (error) {
             console.error('[ActionService] Lỗi chụp ảnh:', error);
@@ -920,6 +973,10 @@ export const adminService = {
 
     saveNameMapping: categoryService.saveNameMapping,
     saveCompetitionNameMappings: categoryService.saveCompetitionNameMappings,
+    
+    // [NEW] Lưu và tải mapping riêng biệt cho Thi đua Siêu thị
+    saveLuykeNameMappings: categoryService.saveLuykeNameMappings,
+    loadLuykeNameMappings: categoryService.loadLuykeNameMappings,
 
     // --- 6. LOGIC & CALCULATION ---
     loadDeclarationsFromFirestore: performanceService.loadDeclarationsFromFirestore,
@@ -1418,15 +1475,28 @@ export const processCompetitionGrid = async (elements, baseTitle, options = {}) 
 import { coreCapture } from '../engine.js';
 
 export const processDefault = async (elements, baseTitle, options = {}) => {
-    // Logic gộp dọc đơn giản
     const container = document.createElement('div');
     container.className = 'capture-layout-container';
+    
+    // [FIX GENESIS] Phẫu thuật Logic: Chỉ lấy tên h3/h4 nếu là mảnh nhỏ (có data-capture-group)
+    let captureTitle = baseTitle;
+    if (elements && elements.length > 0) {
+        const firstEl = elements[0];
+        const manualName = firstEl.dataset?.captureFilename;
+        
+        let foundTitle = '';
+        if (firstEl.hasAttribute('data-capture-group')) {
+            foundTitle = firstEl.querySelector('h3, h4')?.textContent?.trim() || '';
+        }
+        
+        captureTitle = manualName || foundTitle || baseTitle;
+    }
     
     elements.forEach(el => {
         container.appendChild(el.cloneNode(true));
     });
 
-    return await coreCapture(container, baseTitle, '', options);
+    return await coreCapture(container, captureTitle, '', options);
 };
 <<< FILE_END: src/services/capture/processors/default.js
 
@@ -1445,32 +1515,34 @@ export const processKpiGrid = async (elements, baseTitle, options = {}) => {
         if (!options.isPreview) options.scale = 4;
     }
 
-    // --- SỬA LỖI LOGIC TẠI ĐÂY ---
+    // --- [FIX] Sửa lỗi Tên File: Ưu tiên lấy tên từ attribute hoặc thẻ H3/H4 ---
+    let captureTitle = baseTitle;
+    if (elements && elements.length > 0) {
+        const firstEl = elements[0];
+        const manualName = firstEl.dataset?.captureFilename;
+        const foundTitle = firstEl.querySelector('h3, h4')?.textContent?.trim();
+        captureTitle = manualName || foundTitle || baseTitle;
+    }
+
     let elementToCapture;
     let finalPresetClass = presetClass;
 
     if (elements.length === 1) {
         // TRƯỜNG HỢP 1: Người dùng gom nhóm cả bảng (Container)
-        // -> Clone trực tiếp, áp dụng class ép Grid thẳng vào nó.
         elementToCapture = elements[0].cloneNode(true);
-        
-        // Lưu ý: Nếu phần tử gốc đã có class, ta phải merge thêm class preset vào
         elementToCapture.classList.add(...presetClass.split(' '));
-        finalPresetClass = ''; // Đã add trực tiếp rồi nên không cần pass vào coreCapture nữa
+        finalPresetClass = ''; 
     } else {
         // TRƯỜNG HỢP 2: Người dùng chọn từng thẻ rời rạc
-        // -> Tạo container bao ngoài, ép container thành Grid.
         const container = document.createElement('div');
-        // Class 'capture-layout-container' cũ dùng flex-col, ta không dùng ở đây để tránh conflict với Grid
         container.className = presetClass; 
-        
         elements.forEach(el => container.appendChild(el.cloneNode(true)));
         elementToCapture = container;
-        finalPresetClass = ''; // Class đã nằm ở container
+        finalPresetClass = ''; 
     }
 
-    // Gọi Core Engine
-    return await coreCapture(elementToCapture, baseTitle, finalPresetClass, options);
+    // Gọi Core Engine với tên file đã được bóc tách
+    return await coreCapture(elementToCapture, captureTitle, finalPresetClass, options);
 };
 <<< FILE_END: src/services/capture/processors/kpi-grid.js
 
@@ -1515,11 +1587,10 @@ export const processMobileView = async (elements, baseTitle, options = {}) => {
 import { processDefault } from './processors/default.js';
 import { processKpiGrid } from './processors/kpi-grid.js';
 import { processCompetitionGrid } from './processors/competition-grid.js';
-// Import Processor mới
 import { processMobileView } from './processors/mobile-view.js';
 
 export const getProcessor = (groupName) => {
-    // 1. [MỚI] Nhóm Chi tiết nhân viên -> Mobile View (Grid 3 cột)
+    // 1. Nhóm Chi tiết nhân viên -> Mobile View (Grid 3 cột)
     if (groupName === 'revenue-detail-mobile') {
         return processMobileView;
     }
@@ -1535,7 +1606,8 @@ export const getProcessor = (groupName) => {
     }
 
     // 4. Nhóm Thi đua & Chi tiết (SKNV, Realtime) -> Grid Linh hoạt
-    if (['regional-competition', 'detail-category', 'competition-detail'].includes(groupName)) {
+    // Đã loại bỏ 'regional-competition' để trả nó về processDefault (Gộp dọc, ôm sát 1100px)
+    if (['detail-category', 'competition-detail'].includes(groupName)) {
         return processCompetitionGrid;
     }
 
@@ -1544,7 +1616,7 @@ export const getProcessor = (groupName) => {
 };
 
 export const SPLIT_GROUPS = [
-    'category-revenue', 'competition-program', 'efficiency-program'
+    'category-revenue', 'competition-program', 'efficiency-program', 'performance-table'
 ];
 <<< FILE_END: src/services/capture/registry.js
 
@@ -1579,130 +1651,87 @@ export const GRID_4_GROUPS = [
 <<< FILE_END: src/services/capture.config.js
 
 >>> FILE_START: src/services/capture.service.js
+// File: src/services/capture.service.js
 /* global Chart */
 import { notificationStore, currentUser } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { get } from 'svelte/store';
 
-// Import từ hệ thống Capture mới
+// Lấy logic chụp ảnh từ cấu trúc hệ thống mới của bạn
 import { injectCaptureStyles } from './capture/engine.js';
 import { getProcessor, SPLIT_GROUPS } from './capture/registry.js';
 import { processDefault } from './capture/processors/default.js';
 
+// --- [FIX GENESIS]: GHI ĐÈ CSS LỖI TỪ ENGINE ---
+// Hàm này có nhiệm vụ "Chữa cháy", ghi đè lên các style lỗi từ file engine.js
+const _injectCaptureFixes = () => {
+    const styleId = 'genesis-capture-fixes';
+    document.getElementById(styleId)?.remove();
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = `
+        /* 1. Trị bệnh cắt nội dung (Mất 80% phần dưới) */
+        /* Ép các widget phải hiển thị đầy đủ chiều cao, tắt thanh cuộn */
+        body .capture-container .luyke-tier-1-grid,
+        body .capture-container .luyke-widget,
+        body .capture-container .luyke-widget-body,
+        body .capture-container .capture-layout-container {
+            display: block !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        /* 2. Trị bệnh phình to (Vô hiệu hóa transform scale(5) cũ) */
+        body .capture-container .preset-mobile-portrait,
+        body .capture-container.preset-mobile-portrait {
+            transform: none !important; 
+            width: 480px !important;
+            min-width: 480px !important;
+            max-width: 480px !important;
+        }
+
+        /* 3. Ép cứng nhóm Hiệu quả & Top Nhóm hàng (tier1) thành giao diện Mobile dọc */
+        body .capture-container .luyke-tier-1-grid {
+            width: 480px !important;
+            min-width: 480px !important;
+            max-width: 480px !important;
+            margin: 0 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 16px !important;
+        }
+    `;
+    document.head.appendChild(style);
+    return style;
+};
+
 export const captureService = {
-    // 1. Chụp một phần tử đơn lẻ (Dùng cho nút chụp lẻ)
+    // 1. Chụp lẻ
     async captureAndDownload(elementToCapture, title, presetClass = '') {
         const user = get(currentUser);
         analyticsService.incrementCounter('actionsTaken', user?.email);
         
         const styleElement = injectCaptureStyles();
+        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
         
         try {
-            // Dùng processor mặc định cho chụp lẻ
-            await processDefault([elementToCapture], title, { 
-                presetClass: presetClass 
-            });
+            await processDefault([elementToCapture], title, { presetClass: presetClass });
         } catch (error) {
             console.error('Capture Single Error:', error);
             alert('Lỗi khi chụp ảnh: ' + error.message);
         } finally {
             styleElement.remove();
+            fixElement.remove(); // Dọn dẹp Fix
         }
     },
     
-    // 2. Chụp toàn bộ Dashboard (Nút chụp tổng)
+    // 2. Chụp tổng cũ
     async captureDashboardInParts(contentContainer, baseTitle) {
-       if (!contentContainer) {
-            alert('Lỗi: Không tìm thấy nội dung để chụp.');
-            return;
-        }
-
+       if (!contentContainer) return alert('Lỗi: Không tìm thấy nội dung để chụp.');
         const user = get(currentUser);
         analyticsService.incrementCounter('actionsTaken', user?.email);
         notificationStore.update(s => ({ ...s, visible: true, type: 'info', message: `Đang xử lý ảnh: ${baseTitle}...` }));
-
-        // Phân loại các nhóm (Grouping)
-        const captureGroups = new Map();
-        contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
-            if (el.offsetParent !== null) { // Chỉ lấy element đang hiển thị
-                const group = el.dataset.captureGroup;
-                if (!captureGroups.has(group)) {
-                     captureGroups.set(group, []);
-                }
-                captureGroups.get(group).push(el);
-            }
-        });
-
-        const styleElement = injectCaptureStyles();
-        if (typeof Chart !== 'undefined') {
-            Chart.defaults.animation = false;
-        }
-        
-        // Đợi một chút để style ăn vào DOM
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        try {
-            if (captureGroups.size === 0) {
-                if (contentContainer.offsetParent !== null) {
-                    // Nếu không có nhóm nào, chụp toàn bộ container bằng processor mặc định
-                    await processDefault([contentContainer], baseTitle);
-                } else {
-                     alert('Không có nội dung hiển thị để chụp.');
-                }
-                return;
-            }
-
-            // Duyệt qua từng nhóm để xử lý
-            for (const [group, elements] of captureGroups.entries()) {
-                // TRƯỜNG HỢP 1: Nhóm cần tách lẻ (Split)
-                if (SPLIT_GROUPS.includes(group)) {
-                    for (const el of elements) {
-                        // [GENESIS FIX]: Ưu tiên lấy tên file từ attribute data-capture-filename
-                        let customName = el.dataset.captureFilename;
-
-                        // Lấy tiêu đề con từ thẻ h3/h4 nếu có
-                        let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
-                        
-                        // Gọi processor mặc định cho từng phần tử
-                        await processDefault([el], subTitle);
-                        // Delay nhẹ để trình duyệt không bị đơ
-                        await new Promise(r => setTimeout(r, 300));
-                    }
-                    continue; 
-                }
-
-                // TRƯỜNG HỢP 2: Nhóm gộp (Merge)
-                const processor = getProcessor(group);
-                if (processor) {
-                    await processor(elements, baseTitle);
-                } else {
-                    // [GENESIS FIX FALLBACK]: Nếu không có processor (như group 'sknv-detail-view'), 
-                    // dùng processDefault để chụp thay vì bỏ qua.
-                    for (const el of elements) {
-                         let customName = el.dataset.captureFilename;
-                         let subTitle = customName || baseTitle;
-                         await processDefault([el], subTitle);
-                         await new Promise(r => setTimeout(r, 300));
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Capture Dashboard Error:', error);
-            alert('Có lỗi xảy ra: ' + error.message);
-        } finally {
-            styleElement.remove();
-            if (typeof Chart !== 'undefined') {
-                Chart.defaults.animation = {};
-            }
-        }
-
-        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất quá trình chụp!' }));
-        setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
-    },
-
-    // 3. Lấy ảnh xem trước (Preview)
-    async getPreviewImages(contentContainer, baseTitle) {
-        if (!contentContainer) return [];
 
         const captureGroups = new Map();
         contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
@@ -1714,58 +1743,164 @@ export const captureService = {
         });
 
         const styleElement = injectCaptureStyles();
-        if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
+        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
         
-        let previewImages = [];
-        const options = { isPreview: true, scale: 1 }; 
+        if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
             if (captureGroups.size === 0) {
-                 const res = await processDefault([contentContainer], baseTitle, options);
-                 if (res) previewImages.push(res);
+                if (contentContainer.offsetParent !== null) await processDefault([contentContainer], baseTitle);
+                return;
+            }
+            for (const [group, elements] of captureGroups.entries()) {
+                if (SPLIT_GROUPS.includes(group)) {
+                    for (const el of elements) {
+                        let customName = el.dataset.captureFilename;
+                        let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                        await processDefault([el], subTitle);
+                        await new Promise(r => setTimeout(r, 300));
+                    }
+                    continue; 
+                }
+                const processor = getProcessor(group);
+                if (processor) {
+                    await processor(elements, baseTitle);
+                } else {
+                    for (const el of elements) {
+                         let customName = el.dataset.captureFilename;
+                         let subTitle = customName || baseTitle;
+                         await processDefault([el], subTitle);
+                         await new Promise(r => setTimeout(r, 300));
+                    }
+                }
+            }
+        } finally {
+            styleElement.remove();
+            fixElement.remove(); // Dọn dẹp Fix
+            if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
+        }
+        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất quá trình chụp!' }));
+        setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+    },
+
+    // 3. Tách Elements cực nhanh cho việc Clone DOM
+    getPreviewElements(contentContainer, baseTitle) {
+        if (!contentContainer) return [];
+
+        const captureGroups = new Map();
+        contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
+            if (el.offsetParent !== null) {
+                const group = el.dataset.captureGroup;
+                if (!captureGroups.has(group)) captureGroups.set(group, []);
+                captureGroups.get(group).push(el);
+            }
+        });
+
+        let previewItems = [];
+        if (captureGroups.size === 0) {
+            previewItems.push({ title: baseTitle, elements: [contentContainer] });
+        }
+
+        for (const [group, elements] of captureGroups.entries()) {
+            if (SPLIT_GROUPS.includes(group)) {
+                 for (const el of elements) {
+                    let customName = el.dataset.captureFilename;
+                    let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                    previewItems.push({ title: subTitle, elements: [el] });
+                 }
+                 continue;
+            }
+            
+            const processor = getProcessor(group);
+            if (processor) {
+                previewItems.push({ title: baseTitle, elements: elements });
+            } else {
+                 for (const el of elements) {
+                    let customName = el.dataset.captureFilename;
+                    let subTitle = customName || baseTitle;
+                    previewItems.push({ title: subTitle, elements: [el] });
+                 }
+            }
+        }
+        return previewItems;
+    },
+
+    // 4. [HÀM ĐÍCH] Chụp nét cao khi người dùng bấm Tải xuống
+    async captureSelectedItems(contentContainer, baseTitle, selectedIndices) {
+        if (!contentContainer || !selectedIndices || selectedIndices.length === 0) return;
+
+        const user = get(currentUser);
+        analyticsService.incrementCounter('actionsTaken', user?.email);
+
+        const captureGroups = new Map();
+        contentContainer.querySelectorAll('[data-capture-group]').forEach(el => {
+            if (el.offsetParent !== null) {
+                const group = el.dataset.captureGroup;
+                if (!captureGroups.has(group)) captureGroups.set(group, []);
+                captureGroups.get(group).push(el);
+            }
+        });
+
+        const styleElement = injectCaptureStyles();
+        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        
+        if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        let currentIndex = 0;
+
+        try {
+            if (captureGroups.size === 0) {
+                 if (selectedIndices.includes(currentIndex)) {
+                     await processDefault([contentContainer], baseTitle);
+                 }
+                 currentIndex++;
             }
 
             for (const [group, elements] of captureGroups.entries()) {
-                // Xử lý SPLIT cho Preview
                 if (SPLIT_GROUPS.includes(group)) {
                      for (const el of elements) {
-                        let customName = el.dataset.captureFilename;
-                        let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
-                        const res = await processDefault([el], subTitle, options);
-                        if (res) previewImages.push(res);
+                        if (selectedIndices.includes(currentIndex)) {
+                            let customName = el.dataset.captureFilename;
+                            let subTitle = customName || el.querySelector('h3, h4')?.textContent?.trim() || baseTitle;
+                            await processDefault([el], subTitle);
+                            await new Promise(r => setTimeout(r, 400));
+                        }
+                        currentIndex++;
                      }
                      continue;
                 }
                 
-                // Xử lý MERGE cho Preview
                 const processor = getProcessor(group);
                 if (processor) {
-                    const result = await processor(elements, baseTitle, options);
-                    if (result) {
-                        if (Array.isArray(result)) {
-                            previewImages = [...previewImages, ...result];
-                        } else {
-                            previewImages.push(result);
-                        }
+                    if (selectedIndices.includes(currentIndex)) {
+                        await processor(elements, baseTitle);
+                        await new Promise(r => setTimeout(r, 400));
                     }
+                    currentIndex++;
                 } else {
-                     // [GENESIS FIX FALLBACK PREVIEW]
                      for (const el of elements) {
-                        let customName = el.dataset.captureFilename;
-                        let subTitle = customName || baseTitle;
-                        const res = await processDefault([el], subTitle, options);
-                        if (res) previewImages.push(res);
+                        if (selectedIndices.includes(currentIndex)) {
+                            let customName = el.dataset.captureFilename;
+                            let subTitle = customName || baseTitle;
+                            await processDefault([el], subTitle);
+                            await new Promise(r => setTimeout(r, 400));
+                        }
+                        currentIndex++;
                      }
                 }
             }
         } catch (e) {
-            console.error('Preview Error:', e);
+            console.error('Capture Selected Error:', e);
+            throw e; 
         } finally {
             styleElement.remove();
+            fixElement.remove(); // Dọn dẹp Fix
             if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
         }
 
-        return previewImages;
+        notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: `Đã lưu thành công ${selectedIndices.length} ảnh!` }));
     }
 };
 <<< FILE_END: src/services/capture.service.js
@@ -1800,7 +1935,6 @@ export const injectCaptureStyles = () => {
     const styleId = 'dynamic-capture-styles';
     document.getElementById(styleId)?.remove();
 
-    // CSS này áp dụng chung cho toàn bộ quá trình chụp
     const styles = `
         /* Container gốc */
         .capture-container { 
@@ -1835,10 +1969,22 @@ export const injectCaptureStyles = () => {
             overflow: visible !important;
         }
 
+        /* --- [FIX 1]: CHỐNG CẮT NỘI DUNG ---
+           Mở khóa chiều cao (height) và tắt thanh cuộn (overflow) cho TẤT CẢ các thẻ bao che */
+        .capture-container .luyke-tier-1-grid,
+        .capture-container .luyke-widget,
+        .capture-container .luyke-widget-body,
+        .capture-container .capture-layout-container {
+            display: flex !important;
+            flex-direction: column !important;
+            height: max-content !important; /* Buộc nó phải giãn theo nội dung bên trong */
+            min-height: max-content !important;
+            max-height: none !important; /* Xóa mọi giới hạn cuộn */
+            overflow: visible !important;
+        }
+
         /* Layout Grid */
         .capture-layout-container { 
-            display: flex; 
-            flex-direction: column; 
             gap: 24px; 
         }
         
@@ -1860,7 +2006,7 @@ export const injectCaptureStyles = () => {
         }
 
         .capture-title { 
-            font-size: 28px; 
+            font-size: 20px; 
             font-weight: bold; 
             color: #1e3a8a; 
             margin-bottom: 20px; 
@@ -1871,17 +2017,14 @@ export const injectCaptureStyles = () => {
             padding-bottom: 10px !important;
         }
 
+        /* --- [FIX 2]: CHỐNG PHÌNH TO ---
+           Đã xóa 'transform: scale(5)' gây lỗi, ép cứng chiều rộng 480px chuẩn Mobile */
         .preset-mobile-portrait {
-            width: 450px !important;
-            min-width: 450px !important;
-            max-width: 450px !important;
-            padding: 10px !important;
+            width: 480px !important;
+            min-width: 480px !important;
+            max-width: 480px !important;
+            padding: 16px !important;
             margin: 0 auto;
-            transform: scale(5) !important;
-            transform-origin: top center !important; 
-        }
-        .preset-mobile-portrait .capture-title {
-            font-size: 18px !important;
         }
     `;
 
@@ -1921,7 +2064,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     
-    // [LOGIC TITLE]: Tiêu đề hiển thị TRONG ẢNH (vẫn giữ nguyên logic cũ: Title + Time)
     const displayTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
@@ -1948,7 +2090,8 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
 
     try {
         const canvas = await window.html2canvas(captureWrapper, {
-            scale: isPreview ? 1 : scale,
+            // --- [FIX 3]: Bù đắp độ nét bằng html2canvas thay vì dội CSS ---
+            scale: isPreview ? 1 : (scale === 2 ? 4 : scale), 
             useCORS: true,
             backgroundColor: '#f3f4f6',
             logging: false,
@@ -1961,7 +2104,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
         if (isPreview) {
             return { title: displayTitle, url: imageDataUrl };
         } else {
-            // [LOGIC FILENAME]: Xử lý tên file tải về
             const noToneTitle = removeVietnameseTones(title);
             const safeFileName = noToneTitle
                                     .replace(/[^a-zA-Z0-9]/g, '_')
@@ -1985,7 +2127,6 @@ const _coreCapture = async (elementToCapture, title, presetClass = '', options =
 };
 
 export const strategySingle = async (element, baseTitle, options) => {
-    // [FIX GENESIS]: Ưu tiên tên file từ attribute
     const manualFileName = element.dataset.captureFilename;
     const captureTitle = manualFileName || baseTitle;
 
@@ -1997,13 +2138,11 @@ export const strategySingle = async (element, baseTitle, options) => {
 export const strategySplit = async (elements, baseTitle, options) => {
     const results = [];
     for (const targetElement of elements) {
-        // [FIX GENESIS]: Ưu tiên tên file từ attribute
         const manualFileName = targetElement.dataset.captureFilename;
 
         let foundTitle = targetElement.querySelector('h3, h4')?.textContent?.trim() || '';
         foundTitle = removeVietnameseTones(foundTitle); 
         
-        // Logic mới: Manual Name > Found Tag > Base Title
         const captureTitle = manualFileName || (foundTitle || baseTitle);
         
         const preset = targetElement.dataset.capturePreset;
@@ -2030,7 +2169,6 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
         elementToCapture = elements[0];
     }
 
-    // [FIX GENESIS]: Ưu tiên lấy tên từ phần tử đầu tiên nếu có attribute
     const manualFileName = elements[0]?.dataset?.captureFilename;
 
     let foundTitle = '';
@@ -2039,8 +2177,6 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
     }
     foundTitle = removeVietnameseTones(foundTitle);
     
-    // Logic mới: Manual Name > Found Tag > Base Title
-    // [QUAN TRỌNG]: Đây là dòng sửa lỗi tên file bị default
     const captureTitle = manualFileName || (foundTitle || baseTitle);
 
     const preset = elements[0]?.dataset.capturePreset;
@@ -2053,6 +2189,10 @@ export const strategyMerge = async (elements, baseTitle, isKpiMode = false, opti
         presetClass = 'prepare-for-kpi-capture';
     } else if (preset) {
         presetClass = `preset-${preset}`;
+    } else {
+        // --- [FIX 4]: ÉP KHUNG MOBILE CHO KHỐI GỘP DỌC ---
+        // Giúp bảng "Hiệu quả" và "Top Nhóm Hàng" tự động co về 480px, không bị tràn
+        presetClass = 'preset-mobile-portrait';
     }
 
     const res = await _coreCapture(elementToCapture, captureTitle, presetClass, options);
@@ -3423,7 +3563,8 @@ import {
     brandList,
     efficiencyConfig,
     qdcConfigStore,
-    competitionNameMappings
+    competitionNameMappings,
+    luykeNameMappings // [NEW] Import store mới
 } from '../../stores.js';
 import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
 
@@ -3484,7 +3625,8 @@ export const categoryService = {
             const docsToLoad = [
                 "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping", 
                 "groupNameMapping", "brandNameMapping", "efficiencyConfig", 
-                "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList"
+                "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList",
+                "luykeNameMappings" // [NEW] Thêm file cấu hình thi đua siêu thị vào tiến trình tải lúc khởi động
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
@@ -3499,6 +3641,7 @@ export const categoryService = {
             competitionNameMappings.set(safeGet(results[7], {}));
             categoryStructure.set(safeGet(results[8]));
             brandList.set(safeGet(results[9]));
+            luykeNameMappings.set(safeGet(results[10], {})); // [NEW] Nạp dữ liệu vào store
 
             console.log("[declarations.category] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -3593,6 +3736,38 @@ export const categoryService = {
         } catch (error) {
             console.error("Lỗi khi lưu Bảng Ánh Xạ Tên Thi Đua:", error);
             notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
+        }
+    },
+
+    // [NEW] Lưu và tải mapping riêng biệt cho Thi đua Siêu thị
+    async saveLuykeNameMappings(mappings) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "luykeNameMappings");
+            await setDoc(docRef, { mappings: sanitizeForFirestore(mappings) });
+            notify('Đã lưu Tên rút gọn Thi đua Siêu thị thành công!', 'success');
+        } catch (error) {
+            console.error("Lỗi khi lưu Tên rút gọn Thi đua Siêu thị:", error);
+            notify('Lỗi khi lưu tên rút gọn lên cloud.', 'error');
+        }
+    },
+
+    async loadLuykeNameMappings() {
+        const db = getDB();
+        if (!db) return {};
+        try {
+            const docRef = doc(db, "declarations", "luykeNameMappings");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.mappings || {};
+            }
+            return {};
+        } catch (error) {
+            console.error("Lỗi khi tải Tên rút gọn Thi đua Siêu thị:", error);
+            return {};
         }
     },
 
@@ -4178,7 +4353,18 @@ export const deleteEmployee = async (id) => {
 
 >>> FILE_START: src/services/excel.service.js
 /* global XLSX */
-import { notificationStore } from '../stores.js'; // [FIX] Dùng Store thay vì file lẻ
+import { notificationStore } from '../stores.js';
+
+// --- HÀM TRỢ LÝ TỰ ĐỘNG TẮT THÔNG BÁO ---
+function notifyAndAutoHide(message, type = 'info') {
+    // Bật thông báo
+    notificationStore.set({ message, type, visible: true });
+    
+    // Hẹn giờ 3 giây (3000ms) sau tự động tắt
+    setTimeout(() => {
+        notificationStore.update(state => ({ ...state, visible: false }));
+    }, 3000);
+}
 
 export const excelService = {
     /**
@@ -4188,7 +4374,7 @@ export const excelService = {
      */
     exportTableToExcel(tableElement, fileName) {
         if (!tableElement) {
-            notificationStore.show('Không tìm thấy nội dung để xuất.', 'error'); // [FIX]
+            notifyAndAutoHide('Không tìm thấy nội dung để xuất.', 'error'); 
             return;
         }
 
@@ -4202,17 +4388,17 @@ export const excelService = {
         }
 
         if (!table) {
-            notificationStore.show('Không tìm thấy bảng dữ liệu trong khu vực này để xuất.', 'error'); // [FIX]
+            notifyAndAutoHide('Không tìm thấy bảng dữ liệu trong khu vực này để xuất.', 'error'); 
             return;
         }
 
         try {
             const wb = XLSX.utils.table_to_book(table, { sheet: "Sheet1" });
             XLSX.writeFile(wb, `${fileName}.xlsx`);
-            notificationStore.show(`Đã xuất file ${fileName}.xlsx thành công!`, 'success'); // [FIX]
+            notifyAndAutoHide(`Đã xuất file ${fileName}.xlsx thành công!`, 'success'); 
         } catch (e) {
             console.error('[ExcelService] Lỗi xuất Excel:', e);
-            notificationStore.show('Có lỗi xảy ra khi xuất file Excel.', 'error'); // [FIX]
+            notifyAndAutoHide('Có lỗi xảy ra khi xuất file Excel.', 'error'); 
         }
     }
 };
@@ -5419,9 +5605,18 @@ export const normalizers = {
                 }
                 newRow.revenue = revenue; 
 
-                // 2. Xác định Hệ số gốc (Base Rate)
+                // 2. Xác định Hệ số gốc (Base Rate) - Trang bị cơ chế Regex tìm mã số
                 const productKey = String(newRow.nhomHang || '').trim();
-                const baseRate = heSoMap[productKey] || 1;
+                let baseRate = heSoMap[productKey];
+
+                if (baseRate === undefined && productKey) {
+                    const matchId = productKey.match(/^(\d+)/);
+                    if (matchId) {
+                        const foundKey = Object.keys(heSoMap).find(k => k.startsWith(matchId[1] + ' -'));
+                        if (foundKey) baseRate = heSoMap[foundKey];
+                    }
+                }
+                baseRate = baseRate || 1;
 
                 // 3. Xác định thưởng Trả Góp (Bonus Rate) - Dùng includes thay vì Set
                 const exportModeRaw = String(newRow.hinhThucXuat || '');
@@ -5801,7 +5996,8 @@ export const erpParser = {
 
 >>> FILE_START: src/services/processing/parsers/luyke.parser.js
 // src/services/processing/parsers/luyke.parser.js
-import { competitionData } from '../../../stores.js';
+import { competitionData, luykeNameMappings } from '../../../stores.js';
+import { get } from 'svelte/store';
 
 export const luykeParser = {
     // 1. Phân tích các chỉ số KPI chính (DT, DTQĐ, %HT)
@@ -5912,6 +6108,19 @@ export const luykeParser = {
             }
         }
         if (currentCompetition) results.push(currentCompetition);
+
+        // [NEW] Tự động nạp tên chương trình vào danh sách Rút gọn Siêu thị
+        const currentMappings = get(luykeNameMappings) || {};
+        let hasChanges = false;
+        results.forEach(item => {
+            if (!currentMappings[item.name]) {
+                currentMappings[item.name] = item.name;
+                hasChanges = true;
+            }
+        });
+        if (hasChanges) {
+            luykeNameMappings.set(currentMappings);
+        }
 
         competitionData.set(results);
         return results;
@@ -7256,6 +7465,7 @@ export const salesProcessor = {
             // Map chi tiết
             doanhThuTheoNganhHang: {}, 
             doanhThuTheoNhomHang: {}, 
+            tongSoLuong: 0, // [GENESIS FIX]: Thêm biến lưu tổng số lượng
             
             // Quy đổi chuẩn (QDC)
             qdc: {},
@@ -7340,6 +7550,7 @@ export const salesProcessor = {
 
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
+                        data.tongSoLuong += soLuong; // [GENESIS FIX]: Cộng dồn số lượng để chia đơn giá TB
 
                         if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
                             data.doanhThuTraGop += thanhTien;
@@ -7421,6 +7632,16 @@ export const salesProcessor = {
                 }
             });
         }
+
+        // [GENESIS FIX]: Bơm tính toán Đơn Giá vào đây trước khi xuất data ra ngoài
+        data.donGiaTrungBinh = data.tongSoLuong > 0 ? data.doanhThu / data.tongSoLuong : 0;
+        data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
+        data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
+        data.donGiaMayGiat = data.slMayGiat > 0 ? data.dtMayGiat / data.slMayGiat : 0;
+        data.donGiaMayLanh = data.slMayLanh > 0 ? data.dtMayLanh / data.slMayLanh : 0;
+        data.donGiaDienThoai = data.slDienThoai > 0 ? data.dtDienThoai / data.slDienThoai : 0;
+        data.donGiaLaptop = data.slLaptop > 0 ? data.dtLaptop / data.slLaptop : 0;
+
         return data;
     },
 
@@ -8078,6 +8299,52 @@ export const storage = {
     }
 };
 <<< FILE_END: src/services/storage.service.js
+
+>>> FILE_START: src/services/tools.service.js
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { get } from 'svelte/store';
+import { firebaseStore } from '../stores.js';
+
+export const toolsService = {
+    // Lấy danh sách công cụ từ Firestore
+    async getTools() {
+        try {
+            const { db } = get(firebaseStore);
+            if (!db) {
+                console.warn("[ToolsService] Database chưa sẵn sàng.");
+                return [];
+            }
+            
+            const docRef = doc(db, "system_config", "external_tools");
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                return docSnap.data().items || [];
+            }
+            return [];
+        } catch (error) {
+            console.error("[ToolsService] Lỗi khi tải danh sách công cụ:", error);
+            return [];
+        }
+    },
+
+    // Lưu danh sách công cụ lên Firestore (Dành cho Admin)
+    async saveTools(items) {
+        try {
+            const { db } = get(firebaseStore);
+            if (!db) throw new Error("Database chưa sẵn sàng.");
+            
+            const docRef = doc(db, "system_config", "external_tools");
+            await setDoc(docRef, { items });
+            console.log("[ToolsService] Đã lưu thành công!");
+            return true;
+        } catch (error) {
+            console.error("[ToolsService] Lỗi khi lưu danh sách công cụ:", error);
+            return false;
+        }
+    }
+};
+<<< FILE_END: src/services/tools.service.js
 
 >>> FILE_START: src/utils/capture.utils.js
 // Version 2.0 - Restore Logic from Legacy Project (Fix Blank Image)

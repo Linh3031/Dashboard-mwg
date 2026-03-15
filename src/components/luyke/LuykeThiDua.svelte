@@ -41,6 +41,11 @@
   function setViewType(newType) { viewType = newType; }
   function sortData(items) { return [...items].sort((a, b) => b.hoanThanhValue - a.hoanThanhValue); };
   
+  // [CODEGENESIS] PHẪU THUẬT LOGIC 1: Thêm hàm sort theo target từ cao xuống thấp
+  function sortDataByTarget(items) { 
+      return [...items].sort((a, b) => (parseFloat(b.target) || 0) - (parseFloat(a.target) || 0)); 
+  };
+
   function getRateColor(rate) {
       if (rate >= 80) return 'text-green-600';
       if (rate >= 50) return 'text-yellow-600';
@@ -175,7 +180,7 @@
     {@const displayTitle = (typeof mappingData === 'object' && mappingData !== null) ? (mappingData.shortName || item.name) : (mappingData || item.name)}
 
     <div class="flex items-center justify-between p-3.5 rounded-xl border {bgClass} {borderClass} shadow-sm group">
-        <div class="flex flex-col flex-1 pr-2 min-w-0">
+        <div class="flex flex-col flex-1 pr-2 min-w-0 capture-pt-target-name">
             <div class="flex items-center gap-1.5 mb-1 {textClass}">
                 <i data-feather={icon} class="w-3.5 h-3.5"></i>
                 <span class="text-[9px] font-black uppercase tracking-wider opacity-80">
@@ -192,7 +197,7 @@
             </div>
         </div>
         
-        <div class="flex flex-col items-end justify-center shrink-0 border-l border-black/10 pl-4 py-2">
+        <div class="flex flex-col items-end justify-center shrink-0 border-l border-black/10 pl-4 py-2 capture-pt-value-right">
             <span class="text-[9px] font-bold text-gray-400 mb-1 uppercase tracking-widest">Target 1 NV</span>
             <span class="text-3xl font-black {textClass} leading-[1.1] tracking-tighter drop-shadow-sm capture-pt-value pb-1">
                 {formattedTarget}
@@ -248,8 +253,8 @@
                 <div class="flex flex-col gap-8">
                     
                     {#if viewType === 'summary'}
-                        {@const dataDoanhThu = sortData(sortedData.filter(d => d.type === 'doanhThu'))}
-                        {@const dataSoLuong = sortData(sortedData.filter(d => d.type === 'soLuong'))}
+                        {@const dataDoanhThu = sortDataByTarget(sortedData.filter(d => d.type === 'doanhThu'))}
+                        {@const dataSoLuong = sortDataByTarget(sortedData.filter(d => d.type === 'soLuong'))}
 
                         {#if dataDoanhThu.length > 0}
                             <div>
@@ -346,8 +351,20 @@
     :global(.capture-container .personal-target-grid > div) { page-break-inside: avoid; }
     
     /* Xử lý font chống rớt chữ khi chụp ảnh chung */
-    :global(.capture-container .capture-pt-title) { font-size: 17px !important; line-height: 1.35 !important; padding-bottom: 3px !important;}
-    :global(.capture-container .capture-pt-value) { font-size: 34px !important; line-height: 1.1 !important; padding-bottom: 4px !important;}
+    /* [CODEGENESIS] PHẪU THUẬT LOGIC 3A: Tăng line-height và padding-bottom cho tên ngành hàng để không mất chân */
+    :global(.capture-container .capture-pt-title) { 
+        font-size: 17px !important; 
+        line-height: 1.4 !important; /* Tăng từ 1.35 lên 1.4 */
+        padding-bottom: 4px !important; /* Tăng từ 3px lên 4px */
+    }
+    
+    /* [CODEGENESIS] PHẪU THUẬT LOGIC 3B: Tăng line-height và padding-bottom cho giá trị target để không mất chân */
+    :global(.capture-container .capture-pt-value) { 
+        font-size: 34px !important; 
+        line-height: 1.2 !important; /* Tăng từ 1.1 lên 1.2 */
+        padding-bottom: 6px !important; /* Tăng từ 4px lên 6px */
+    }
+    
     :global(.capture-container h4) { font-size: 16px !important; }
     :global(.capture-container .luyke-toolbar-right) { display: none !important; }
 
@@ -374,5 +391,25 @@
         display: block !important; 
         height: auto !important; 
         overflow: visible !important; 
+    }
+
+    /* --- [CODEGENESIS] FIX LỖI MẤT CHÂN CHỮ TÊN NGÀNH HÀNG & GIÁ TRỊ TRONG Ô DỮ LIỆU --- */
+    /* Áp dụng flex-start cho flex bên trái (chứa tên ngành hàng) để không bị clipping ở giữa */
+    :global(.capture-container .capture-pt-target-name) { 
+        align-items: flex-start !important; 
+        justify-content: flex-start !important;
+    }
+
+    /* Áp dụng flex-start và padding-top cho flex bên phải (chứa giá trị target) */
+    :global(.capture-container .capture-pt-value-right) { 
+        align-items: flex-start !important; 
+        justify-content: flex-start !important;
+        padding-top: 10px !important; /* Đẩy tay nội dung xuống để căn giữa thay vì dùng items-center */
+    }
+
+    /* Ép text-align right cho giá trị target để giữ nguyên layout khi chụp ảnh */
+    :global(.capture-container .capture-pt-value-right .capture-pt-value) {
+        text-align: right !important;
+        width: 100% !important;
     }
 </style>
