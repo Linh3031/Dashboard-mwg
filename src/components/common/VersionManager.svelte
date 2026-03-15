@@ -5,46 +5,46 @@
 
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { homeConfig } from '../../stores.js';
+    import { homeConfig, firebaseStore } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
+    
+    // [CODEGENESIS] Nhúng Core API từ Firebase
+    import { doc, onSnapshot } from "firebase/firestore";
 
     let showForceUpdateModal = false;
     let latestVersionData = null;
     let showDetails = false;
-    
-    // Lưu phiên bản hiện tại của máy khách
     let clientVersion = ''; 
     let serverVersionString = '';
-    let pollingInterval;
+    
+    // [CODEGENESIS] Biến ngắt kết nối
+    let unsubRealtime = null;
 
     showVersionDetails.subscribe(val => showDetails = val);
 
     onMount(async () => {
-        // Lấy version đang lưu trong máy người dùng
         clientVersion = localStorage.getItem('app_client_version') || '0.0';
         
+        // Gọi load 1 lần đầu để đảm bảo các store khởi tạo mượt mà (Có thể giữ lại)
         await fetchLatestConfig();
-
-        // [POLLING KILLER] Trinh sát chạy ngầm mỗi 15 giây
-        pollingInterval = setInterval(() => {
-            fetchLatestConfig();
-        }, 15000); 
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('focus', handleVisibilityChange);
     });
+
+    // [CODEGENESIS] Phản ứng thiết lập kết nối Real-time (Zero delay)
+    $: if ($firebaseStore && $firebaseStore.db && !unsubRealtime) {
+        // Thay đường dẫn collection 'declarations' và document 'homeConfig' 
+        // sao cho đúng với vị trí Firebase hiện tại của bạn nếu adminService lưu chỗ khác.
+        const docRef = doc($firebaseStore.db, 'declarations', 'homeConfig'); 
+        unsubRealtime = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                homeConfig.set(docSnap.data()); // Đẩy data thật vào Store -> Svelte tự kích hoạt chuỗi re-render
+            }
+        });
+    }
 
     onDestroy(() => {
-        if (pollingInterval) clearInterval(pollingInterval);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        window.removeEventListener('focus', handleVisibilityChange);
+        // [CODEGENESIS] Ngắt ống nghe khi thoát component (Dọn dẹp rác tài nguyên)
+        if (unsubRealtime) unsubRealtime();
     });
-
-    async function handleVisibilityChange() {
-        if (document.visibilityState === 'visible' || document.hasFocus()) {
-            await fetchLatestConfig();
-        }
-    }
 
     async function fetchLatestConfig() {
         try {
@@ -64,7 +64,6 @@
 
     function checkVersionMismatch(serverVer) {
         if (!serverVer) return;
-
         // Nếu là lần đầu tiên vào app, lưu luôn version server và không làm phiền
         if (clientVersion === '0.0') {
             localStorage.setItem('app_client_version', serverVer);

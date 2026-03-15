@@ -14,12 +14,14 @@
     let isUploading = false;
     let fileInput;
     // --- BIẾN CHO TRÌNH SOẠN THẢO MỚI ---
-    let mainTitle = '';
-    // Tiêu đề chính (VD: Cập nhật tháng 12)
-    let editorSections = [];
-    // Danh sách các mục nhỏ
+    let mainTitle = ''; // Tiêu đề chính (VD: Cập nhật tháng 12)
+    let editorSections = []; // Danh sách các mục nhỏ
 
-    $: if ($homeConfig) {
+    // [CODEGENESIS] 1. CỜ KHÓA (DRAFT PROTECTION)
+    let isEditing = false;
+
+    // [CODEGENESIS] 2. Chỉ ghi đè localConfig khi KHÔNG ở trạng thái đang soạn thảo
+    $: if ($homeConfig && !isEditing) {
         localConfig = JSON.parse(JSON.stringify($homeConfig));
     }
 
@@ -50,6 +52,7 @@
 
     // --- LOGIC CHANGELOG (NÂNG CẤP - KHÔNG CẦN HTML) ---
     function addChangelogItem() {
+        isEditing = true; // [CODEGENESIS] Khóa đồng bộ Svelte
         const today = new Date().toLocaleDateString('vi-VN');
         // Tạo bản ghi mới
         localConfig.changelogs = [{ version: '', date: today, content: '' }, ...localConfig.changelogs];
@@ -64,6 +67,7 @@
     
     // Thêm một mục soạn thảo
     function addEditorSection() {
+        isEditing = true; // [CODEGENESIS] Khóa đồng bộ Svelte
         editorSections = [...editorSections, { title: '', content: '' }];
     }
 
@@ -71,8 +75,8 @@
         editorSections = editorSections.filter((_, i) => i !== idx);
     }
 
-    // [QUAN TRỌNG] Chuyển đổi từ Form nhập liệu -> HTML để lưu
-    function applyEditorContent(logIndex) {
+    // [QUAN TRỌNG] Chuyển đổi từ Form nhập liệu -> HTML để lưu (Thêm tham số silent)
+    function applyEditorContent(logIndex, silent = false) {
         let html = '';
         // 1. Tiêu đề chính (Màu xanh đậm, in hoa)
         if (mainTitle) {
@@ -102,11 +106,16 @@
         mainTitle = '';
         editorSections = [];
         
-        alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
+        if (!silent) alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
     }
 
     // --- HÀM LƯU CHUNG ---
     async function saveAllConfig() {
+        // [CODEGENESIS] Tự động đóng gói HTML nếu đang mở Form mà bấm Lưu
+        if (isEditing && (editorSections.length > 0 || mainTitle !== '')) {
+            applyEditorContent(0, true); // true: đóng gói im lặng không hiện alert
+        }
+
         console.log("Đang lưu...", localConfig);
         isSaving = true;
         try {
@@ -140,7 +149,12 @@
 
             // 3. Lưu Firestore
             await adminService.saveHomeConfig(localConfig);
-            alert("Đã lưu thành công! Dữ liệu đã được đồng bộ.");
+            
+            // [CODEGENESIS] 4. Mở khóa đồng bộ Svelte sau khi lưu thành công
+            isEditing = false;
+            localConfig = localConfig; // Ép Svelte nhận diện sự thay đổi mới nhất
+
+            alert("Đã lưu thành công! Dữ liệu đã được đồng bộ Realtime lập tức.");
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
@@ -163,7 +177,7 @@
                     <h3 class="font-bold text-slate-700 text-lg">Quản lý Trang chủ</h3>
                     <p class="text-xs text-slate-500">Cấu hình Video, Slide ảnh & Lịch sử cập nhật</p>
                 </div>
-            </div>
+             </div>
             <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
                 <i data-feather="chevron-down"></i>
             </span>
@@ -171,7 +185,7 @@
         
         <div class="p-6 border-t border-slate-100 bg-slate-50/50">
             
-            <div class="flex space-x-2 mb-6 border-b border-gray-200 pb-1">
+             <div class="flex space-x-2 mb-6 border-b border-gray-200 pb-1">
                 <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'video' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'video'}>Video & Timeline</button>
                 <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'slider' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'slider'}>Slide Ảnh (Cloud)</button>
                 <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'changelog' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'changelog'}>Lịch sử cập nhật</button>
@@ -192,7 +206,7 @@
                                     <input type="text" bind:value={item.label} class="flex-grow p-2 border rounded-md text-sm" placeholder="Mô tả...">
                                     <button on:click={() => removeTimelineItem(index)} class="text-red-500 hover:bg-red-50 p-2 rounded"><i data-feather="trash-2" class="w-4 h-4"></i></button>
                                 </div>
-                            {/each}
+                             {/each}
                         </div>
                         <button on:click={addTimelineItem} class="mt-2 text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-feather="plus" class="w-3 h-3"></i> Thêm mốc</button>
                     </div>
@@ -209,7 +223,7 @@
                         </button>
                     </div>
                     {#if localConfig.sliderImages.length > 0}
-                        <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
+                         <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
                             <div class="bg-slate-100 px-4 py-3 border-b flex justify-between items-center">
                                 <h4 class="font-bold text-slate-700 text-sm uppercase">Danh sách ảnh ({localConfig.sliderImages.length})</h4>
                                 <button class="text-xs text-red-500 hover:underline" on:click={() => localConfig.sliderImages = []}>Xóa tất cả</button>
@@ -257,7 +271,7 @@
                                 {#if index === 0 && editorSections.length > 0}
                                     <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-inner">
                                         <div class="mb-4">
-                                            <label class="block text-xs font-bold text-blue-800 mb-1 uppercase">Tiêu đề chính phiên bản</label>
+                                             <label class="block text-xs font-bold text-blue-800 mb-1 uppercase">Tiêu đề chính phiên bản</label>
                                             <input type="text" bind:value={mainTitle} class="w-full p-2 border border-blue-200 rounded text-sm font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-300" placeholder="VD: Cập nhật tháng 12">
                                         </div>
 
@@ -284,7 +298,7 @@
                                         <div class="flex justify-between items-end">
                                             <label class="text-xs font-bold text-gray-400 italic">Nội dung (HTML đã đóng gói)</label>
                                             {#if index === 0}
-                                                <button class="text-xs text-blue-500 hover:underline" on:click={() => { mainTitle='Sửa đổi'; editorSections=[{title:'',content:''}] }}>Sửa lại bằng bộ soạn thảo</button>
+                                                <button class="text-xs text-blue-500 hover:underline" on:click={() => { isEditing = true; mainTitle='Sửa đổi'; editorSections=[{title:'',content:''}] }}>Sửa lại bằng bộ soạn thảo</button>
                                             {/if}
                                         </div>
                                         <textarea bind:value={log.content} rows="4" class="w-full p-3 border rounded text-xs font-mono bg-slate-50 text-slate-500 leading-relaxed outline-none"></textarea>
