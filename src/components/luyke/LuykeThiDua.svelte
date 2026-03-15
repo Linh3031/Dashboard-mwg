@@ -232,7 +232,7 @@
                         <i data-feather="grid" class="w-4 h-4 mr-1.5"></i><span class="hidden sm:inline">Theo Loại</span>
                     </button>
                     <button class="h-8 px-3 rounded-md text-xs font-semibold flex items-center justify-center whitespace-nowrap transition-colors {viewType === 'personal_target' ? 'bg-indigo-600 text-white shadow-sm pointer-events-none' : 'text-gray-500 hover:text-gray-900'}" on:click={() => setViewType('personal_target')}>
-                        <i data-feather="target" class="w-4 h-4 mr-1.5"></i><span class="hidden sm:inline">Giao Việc NV</span>
+                        <i data-feather="target" class="w-4 h-4 mr-1.5"></i><span class="hidden sm:inline">Target NV</span>
                     </button>
                 </div>
             </div>
