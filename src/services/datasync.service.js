@@ -15,12 +15,10 @@ const getCurrentUserEmail = () => {
 
 export const datasyncService = {
     // --- MỤC TIÊU (GOALS) ---
-    // Lưu cấu hình mục tiêu (Lũy kế + Realtime) cho kho
     async saveGoalSettings(kho, type, settings) {
         const db = getDB();
         if (!db || !kho) return;
 
-        // type: 'luyke' hoặc 'realtime'
         const fieldName = type === 'luyke' ? 'luykeGoals' : 'realtimeGoals';
 
         const khoRef = doc(db, "warehouseData", kho);
@@ -36,7 +34,6 @@ export const datasyncService = {
         }
     },
 
-    // Tải cấu hình mục tiêu
     async loadGoalSettings(kho) {
         const db = getDB();
         if (!db || !kho) return { luyke: {}, realtime: {} };
@@ -55,6 +52,38 @@ export const datasyncService = {
         } catch (e) {
             console.error("[DataSync] Lỗi tải mục tiêu:", e);
             return { luyke: {}, realtime: {} };
+        }
+    },
+
+    // --- [NEW] LƯU TRỮ TARGET TỶ LỆ (%) CÁ NHÂN ---
+    async savePersonalTargetRatio(kho, ratio) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                personalTargetRatio: ratio,
+                personalTargetRatioUpdatedAt: serverTimestamp(),
+                personalTargetRatioUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) {
+            console.error("[DataSync] Lỗi lưu personalTargetRatio:", error);
+        }
+    },
+
+    async loadPersonalTargetRatio(kho) {
+        const db = getDB();
+        if (!db || !kho) return 100;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists() && docSnap.data().personalTargetRatio !== undefined) {
+                return docSnap.data().personalTargetRatio;
+            }
+            return 100;
+        } catch (e) {
+            console.error("[DataSync] Lỗi tải personalTargetRatio:", e);
+            return 100;
         }
     },
 
@@ -118,7 +147,6 @@ export const datasyncService = {
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : []; } catch(e) { return []; }
     },
 
-    // --- [NEW] BẢNG HIỆU QUẢ CÁ NHÂN ---
     async savePersonalPerformanceTables(kho, tables) {
         const db = getDB();
         if (!db || !kho) return;
@@ -144,7 +172,6 @@ export const datasyncService = {
             return []; 
         }
     },
-    // --- END NEW ---
 
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
