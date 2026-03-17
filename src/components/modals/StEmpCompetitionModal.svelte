@@ -2,15 +2,18 @@
     import { modalState, pastedThiDuaReportData, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
     import { formatters } from '../../utils/formatters.js';
     import { afterUpdate } from 'svelte';
+    import { captureService } from '../../services/capture.service.js';
 
     $: isOpen = $modalState.activeModal === 'st-emp-competition-modal';
     $: payload = $modalState.payload || {};
     $: targetProgram = payload.targetProgram || ''; 
     $: displayTitle = payload.title || targetProgram;
     $: totalTarget = payload.totalTarget || 0;
-
+    
     let currentEmployeeCount = 1;
     let currentPersonalTarget = 0;
+    
+    let captureNode;
 
     // 1. Logic xử lý Data (Tính Target & Lấy Lũy kế Thực tế)
     $: employeeList = (() => {
@@ -63,7 +66,6 @@
                 }
 
                 const luyKe = parseFloat(normData['thuchien'] ?? normData['luyke'] ?? normData['doanhthu'] ?? normData['soluong'] ?? normData['actual'] ?? progData[0] ?? 0);
-                
                 let tyLe = 0;
                 if (currentPersonalTarget > 0) {
                     tyLe = (luyKe / currentPersonalTarget) * 100;
@@ -75,7 +77,6 @@
                     // [FIXED] Chặt bỏ phần mã nhân viên bị dính vào đuôi tên từ file data dán
                     let rawHoTen = emp.hoTen || emp.name || emp.ten || 'Chưa cập nhật';
                     let cleanHoTen = rawHoTen.split(' - ')[0].trim();
-
                     results.push({
                         maNV: emp.maNV || emp.id || 'N/A',
                         hoTen: cleanHoTen,
@@ -86,7 +87,6 @@
                 }
             }
         });
-
         return results.sort((a, b) => b.tyLe - a.tyLe);
     })();
 
@@ -94,12 +94,22 @@
     $: topCount = employeeList.length <= 15 ? 3 : 5;
     $: topPerformers = employeeList.slice(0, topCount);
     $: restOfList = employeeList.slice(topCount);
-    
     // Tự động chia 2 hoặc 3 cột cho danh sách còn lại
     $: gridClass = employeeList.length <= 10 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
     function close() {
         modalState.update(s => ({ ...s, activeModal: null, payload: null }));
+    }
+
+    async function handleCapture() {
+        if (!captureNode) return;
+        
+        // preset-mobile-portrait ép chiều rộng 480px (giao diện điện thoại)
+        // capture-layout-container giúp tương thích với engine mở rộng chiều cao
+        const presetClasses = 'preset-mobile-portrait capture-layout-container';
+        const fileName = `ThiDua_${displayTitle}`;
+        
+        await captureService.captureAndDownload(captureNode, fileName, presetClasses);
     }
 
     // Style cho các thẻ Compact (Danh sách dưới)
@@ -123,7 +133,7 @@
 
 {#if isOpen}
     <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in" on:click={close}>
-       <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] mx-4" on:click|stopPropagation>
+       <div bind:this={captureNode} class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] mx-4 st-emp-capture-node" on:click|stopPropagation>
            
            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
                <div class="flex items-center gap-3">
@@ -139,9 +149,15 @@
                        </p>
                    </div>
                </div>
-               <button on:click={close} class="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                   <i data-feather="x" class="w-5 h-5 text-slate-500"></i>
-               </button>
+               
+               <div class="flex items-center gap-2" data-html2canvas-ignore="true">
+                   <button on:click={handleCapture} class="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-full transition-colors" title="Chụp ảnh (Mobile)">
+                       <i data-feather="camera" class="w-5 h-5"></i>
+                   </button>
+                   <button on:click={close} class="p-2 hover:bg-slate-200 rounded-full transition-colors" title="Đóng">
+                       <i data-feather="x" class="w-5 h-5 text-slate-500"></i>
+                   </button>
+               </div>
            </div>
            
            <div class="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-grow">
@@ -216,7 +232,7 @@
 
            <div class="px-6 py-3 border-t border-slate-200 bg-white flex justify-between items-center text-xs text-slate-500">
                <span>Tổng cộng: <strong>{employeeList.length}</strong> nhân sự tham gia</span>
-               <button on:click={close} class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">Đóng</button>
+               <button data-html2canvas-ignore="true" on:click={close} class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors">Đóng</button>
            </div>
        </div>
     </div>
@@ -229,4 +245,39 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* --- GHI ĐÈ CSS ĐỂ CHỤP FULL NỘI DUNG (ĐÃ THÊM MỎ NEO st-emp-capture-node ĐỂ CHỐNG LỖI CHÉO) --- */
+    :global(.capture-container .st-emp-capture-node.max-h-\[90vh\]) {
+        max-height: none !important;
+        height: auto !important;
+    }
+    :global(.capture-container .st-emp-capture-node .overflow-y-auto),
+    :global(.capture-container .st-emp-capture-node .overflow-hidden),
+    :global(.capture-container .st-emp-capture-node.overflow-hidden) {
+        overflow: visible !important; /* Mở khóa toàn bộ cuộn */
+    }
+
+    /* --- [FIX] SỬA LỖI BỊ XÉN ĐÁY CHỮ VÀ SỐ --- */
+    /* 1. Nới lỏng khoảng cách dòng đang bị ép sát (leading-none, leading-tight) */
+    :global(.capture-container .st-emp-capture-node .leading-none), 
+    :global(.capture-container .st-emp-capture-node .leading-tight) {
+        line-height: 1.3 !important; 
+        padding-bottom: 2px !important;
+    }
+    
+    /* 2. Tắt chế độ truncate (cắt chữ thêm dấu 3 chấm) làm ẩn mất đuôi chữ */
+    :global(.capture-container .st-emp-capture-node .truncate) {
+        overflow: visible !important; 
+        white-space: normal !important; 
+        word-break: break-word !important;
+    }
+    
+    /* 3. Bơm thêm một chút đệm (padding) cho phần trăm và số liệu để nét vẽ không bị chạm đáy */
+    :global(.capture-container .st-emp-capture-node .text-2xl),
+    :global(.capture-container .st-emp-capture-node .text-base),
+    :global(.capture-container .st-emp-capture-node .text-\[11px\]),
+    :global(.capture-container .st-emp-capture-node .text-\[10px\]) {
+        padding-bottom: 3px !important;
+        display: block !important;
+    }
 </style>
