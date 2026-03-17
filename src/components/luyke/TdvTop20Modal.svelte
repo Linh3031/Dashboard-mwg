@@ -202,53 +202,53 @@
 
 <style>
     /* --- GHI ĐÈ CSS ĐỂ CHỤP FULL NỘI DUNG --- */
-    :global(.capture-container .max-h-\[90vh\]) {
+    :global(.capture-container .top20-capture-node.max-h-\[90vh\]) {
         max-height: none !important;
         height: auto !important;
     }
-    :global(.capture-container .overflow-y-auto),
-    :global(.capture-container .overflow-hidden) {
+    :global(.capture-container .top20-capture-node .overflow-y-auto),
+    :global(.capture-container .top20-capture-node.overflow-hidden) {
         overflow: visible !important;
     }
     
-    :global(.capture-container .w-11\/12) {
+    :global(.capture-container .top20-capture-node.w-11\/12) {
         width: 100% !important;
         max-width: 100% !important;
         margin: 0 !important;
     }
 
     /* --- SỬA LỖI MẤT THEAD VÀ VỠ BẢNG LỆCH DÒNG --- */
-    :global(.capture-container table) {
+    :global(.capture-container .top20-capture-node table) {
         width: 100% !important;
         display: table !important;
         table-layout: auto !important;
     }
-    :global(.capture-container thead) {
+    :global(.capture-container .top20-capture-node thead) {
         display: table-header-group !important;
         position: static !important;
         transform: none !important;
     }
-    :global(.capture-container tbody) {
+    :global(.capture-container .top20-capture-node tbody) {
         display: table-row-group !important;
     }
-    :global(.capture-container tr) {
+    :global(.capture-container .top20-capture-node tr) {
         display: table-row !important;
     }
-    :global(.capture-container th),
-    :global(.capture-container td) {
+    :global(.capture-container .top20-capture-node th),
+    :global(.capture-container .top20-capture-node td) {
         display: table-cell !important;
         vertical-align: middle !important;
     }
 
     /* --- SỬA LỖI XÉN ĐÁY CHỮ --- */
-    :global(.capture-container .leading-none), 
-    :global(.capture-container .leading-tight),
-    :global(.capture-container .tracking-tight) {
-        line-height: 1.4 !important; 
+    :global(.capture-container .top20-capture-node .leading-none), 
+    :global(.capture-container .top20-capture-node .leading-tight),
+    :global(.capture-container .top20-capture-node .tracking-tight) {
+        line-height: 1.4 !important;
         padding-bottom: 2px !important;
     }
-    :global(.capture-container .truncate) {
-        overflow: visible !important; 
+    :global(.capture-container .top20-capture-node .truncate) {
+        overflow: visible !important;
         white-space: normal !important; 
         word-break: break-word !important;
     }
@@ -267,7 +267,7 @@
 
     /* Phá thuộc tính flex của thẻ div bên trong tiêu đề để ép chữ được quyền rớt dòng */
     :global(.capture-container .top20-capture-node th > div) {
-        display: block !important; 
+        display: block !important;
         white-space: normal !important;
         word-wrap: break-word !important;
         text-align: inherit !important; /* Kế thừa text-center, text-right từ th */

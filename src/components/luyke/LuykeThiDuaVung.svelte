@@ -8,6 +8,7 @@
   } from '../../stores.js';
   import { regionalProcessor } from '../../services/processing/logic/regional.processor.js';
   import TdvInfographic from './TdvInfographic.svelte';
+  import TdvTop20Modal from './TdvTop20Modal.svelte';
 
   let fileStatus = "";
   let isLoading = false;
@@ -15,6 +16,10 @@
   let selectedSupermarket = ""; 
   let reportData = null;
   let localTongData = [];
+  let showTop20Modal = false;
+  let modalCategoryTitle = "";
+  let modalTop20Data = [];
+  let modalCriteria = "";
 
   $: filteredSupermarketNames = selectedSupermarket
       ? allSupermarketNames.filter(name => 
@@ -41,29 +46,24 @@
     const file = event.target.files[0];
     const fileNameEl = document.getElementById('file-name-thidua-vung');
     if (!file) return;
-
     isLoading = true;
     if (fileNameEl) fileNameEl.textContent = file.name;
     fileStatus = "Đang xử lý...";
     reportData = null;
     selectedSupermarket = "";
     localStorage.removeItem('tdv_selected_st');
-
     try {
       const workbook = await _handleFileRead(file);
       const { chiTietData, tongData } = regionalProcessor.processThiDuaVungFile(workbook);
-      
       if (!tongData || tongData.length === 0) throw new Error('File rỗng.');
       
       thiDuaVungChiTiet.set(chiTietData);
       thiDuaVungTong.set(tongData);
       localTongData = tongData;
-
       allSupermarketNames = tongData
           .map(row => row.sieuThi)
           .filter(Boolean)
           .sort((a, b) => a.localeCompare(b));
-
       fileStatus = `✅ Đã xử lý ${allSupermarketNames.length} siêu thị.`;
 
     } catch (error) {
@@ -82,7 +82,6 @@
       }
 
       const row = localTongData.find(r => r.sieuThi === selectedSupermarket);
-
       if (row) {
           const prizeDict = {};
           const chiTiet = get(thiDuaVungChiTiet) || [];
@@ -95,7 +94,6 @@
                   }
               }
           });
-
           let tongTienTiemNang = 0;
 
           reportData = {
@@ -107,15 +105,12 @@
               rankCutoff: row.rankCutoff || 0,
               details: (Array.isArray(row.details) ? row.details : []).map(d => {
                   let potentialPrize = d.potentialPrize || 0;
-                  
                   const gap = (d.bestRank || 9999) - (row.rankCutoff || 0);
-           
                   if ((d.tongThuong || 0) === 0 && gap > 0 && gap < 10) {
                       const key = `${row.kenh}_${d.nganhHang}`;
                       potentialPrize = prizeDict[key] || 0;
                       tongTienTiemNang += potentialPrize; 
                   }
-
                   return {
                       ...d,
                       nganhHang: d.nganhHang || 'N/A',
@@ -134,9 +129,58 @@
   }
 
   function selectAllText(e) {
-      if (e && e.target) {
-          e.target.select();
+      if (e && e.target) e.target.select();
+  }
+
+  function handleOpenCategoryModal(event) {
+      const categoryName = event.detail;
+      if (!categoryName || !reportData || !reportData.kenh) return;
+
+      const currentKenh = reportData.kenh;
+      const currentST = reportData.sieuThi;
+      const allChiTiet = get(thiDuaVungChiTiet) || [];
+
+      // 1. Lọc Data đúng Kênh và Ngành hàng
+      let filteredData = allChiTiet.filter(item => {
+          return item.kenh === currentKenh && item.nganhHang === categoryName;
+      });
+
+      if (filteredData.length === 0) return;
+
+      // 2. Mapping Dữ Liệu
+      let processedList = filteredData.map(item => {
+          return {
+              sieuThi: item.sieuThi || 'N/A',
+              duKienHoanThanh: Number(item.duKienHoanThanh) || 0,
+              duKienVuot: Number(item.duKienVuot) || 0,
+              hangTarget: Number(item.rankTarget) || 9999,      
+              hangVuotTroi: Number(item.rankVuotTroi) || 9999,  
+              tongThuong: Number(item.tongThuong) || 0
+          };
+      });
+
+      // 3. Chốt Hạng Tham Chiếu
+      let criteria = 'target';
+      let targetRowOfCurrentST = processedList.find(r => r.sieuThi === currentST);
+      
+      if (targetRowOfCurrentST) {
+          if (targetRowOfCurrentST.hangVuotTroi < targetRowOfCurrentST.hangTarget) {
+              criteria = 'vuot';
+          }
       }
+
+      // 4. Gán Hạng Chính Thức & Sắp Xếp
+      processedList = processedList.map(item => {
+          item.primaryRank = criteria === 'target' ? item.hangTarget : item.hangVuotTroi;
+          return item;
+      });
+
+      processedList.sort((a, b) => a.primaryRank - b.primaryRank);
+
+      modalTop20Data = processedList.slice(0, 20);
+      modalCategoryTitle = categoryName;
+      modalCriteria = criteria === 'target' ? 'Hạng Target' : 'Hạng Vượt Trội';
+      showTop20Modal = true;
   }
 
   onMount(() => {
@@ -149,7 +193,7 @@
             .map(row => row.sieuThi)
             .filter(Boolean)
             .sort((a, b) => a.localeCompare(b));
-       
+      
         fileStatus = `✅ Đã tải ${allSupermarketNames.length} siêu thị từ bộ nhớ.`;
 
         const savedST = localStorage.getItem('tdv_selected_st');
@@ -160,13 +204,12 @@
     }
   });
 
-  // [FIX 1]: Đảm bảo Feather Icon luôn được render lại sau khi đổi Siêu thị (Svelte đổi DOM)
   afterUpdate(() => {
     if (typeof feather !== 'undefined') feather.replace();
   });
 </script>
 
-<div class="content-card"> 
+<div class="content-card tdv-controls-card"> 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-end"> 
         <div class="data-input-group input-group--blue"> 
             <div class="flex flex-col sm:flex-row sm:items-center sm:gap-4"> 
@@ -194,7 +237,7 @@
                 <span class="data-input-group__status-text font-medium" 
                       class:text-green-600={fileStatus.includes('✅')}
                       class:text-red-600={fileStatus.includes('❌')}>
-                      {fileStatus}
+                    {fileStatus}
                 </span>
             </div> 
         </div>
@@ -226,15 +269,16 @@
 
 <div id="thidua-vung-infographic-container" class="mt-6" data-capture-filename="THI_DUA_VUNG"> 
     {#if reportData}
+        <p class="text-sm text-red-500 italic mb-3 text-center font-medium">* Bấm vào ngành hàng để xem chi tiết bảng xếp hạng</p>
         {#key reportData.sieuThi}
-            <TdvInfographic {reportData} />
+            <TdvInfographic {reportData} on:openCategoryModal={handleOpenCategoryModal} />
         {/key}
     {:else}
         <div class="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 w-full">
              {#if isLoading}
                 <p class="text-gray-500">⏳ Đang xử lý dữ liệu...</p>
             {:else if allSupermarketNames.length > 0}
-                 <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
+                <p class="text-blue-600 font-medium">↑ Hãy nhập tên siêu thị vào ô tìm kiếm.</p>
             {:else}
                 <p class="text-gray-400">Vui lòng tải file Excel để xem báo cáo (File exel do admin gửi).</p>
             {/if}
@@ -242,13 +286,22 @@
     {/if}
 </div>
 
+<TdvTop20Modal 
+    show={showTop20Modal} 
+    title={modalCategoryTitle} 
+    data={modalTop20Data} 
+    {selectedSupermarket} 
+    criteriaName={modalCriteria}
+    on:close={() => showTop20Modal = false} 
+/>
+
 <style>
-    :global(.capture-container) .content-card {
+    /* [GENESIS FIX] Chỉ ẩn duy nhất khối tdv-controls-card, bảo toàn content-card ở các tab khác */
+    :global(.capture-container .tdv-controls-card) {
         display: none !important;
     }
 
-    /* Ép chuẩn 1100px giống file LuykeThiDua */
-    :global(.capture-container) #thidua-vung-infographic-container {
+    :global(.capture-container #thidua-vung-infographic-container) {
         width: 1100px !important;
         margin: 0 !important;
         padding: 0 !important;

@@ -1,4 +1,7 @@
 <script>
+    import { createEventDispatcher } from 'svelte';
+    const dispatch = createEventDispatcher();
+
     export let reportData = null;
 
     // --- HELPER ---
@@ -37,7 +40,6 @@
         const gap = (d.bestRank - rankCutoff);
         return gap >= 10;
     });
-
 </script>
 
 <div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition">
@@ -85,7 +87,7 @@
                 </div>
                 <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                     {#each listCoGiai as item}
-                        <div class="bg-white p-4 rounded-lg border border-sky-200 shadow-sm relative overflow-hidden group flex flex-col h-full">
+                        <div class="bg-white p-4 rounded-lg border border-sky-200 shadow-sm relative overflow-hidden group flex flex-col h-full cursor-pointer hover:ring-2 hover:ring-sky-400 hover:shadow-lg transition-all" on:click={() => dispatch('openCategoryModal', item.nganhHang)} tabindex="0" role="button">
                             <div class="absolute top-0 right-0 w-16 h-16 bg-sky-100 rounded-bl-full -z-0 opacity-50 group-hover:scale-110 transition-transform"></div>
                             
                             <h4 class="font-bold text-gray-800 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
@@ -129,7 +131,7 @@
                 </div>
                 <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                     {#each listTiemNang as item}
-                        <div class="bg-white p-4 rounded-lg border border-yellow-200 shadow-sm relative overflow-hidden flex flex-col h-full">
+                        <div class="bg-white p-4 rounded-lg border border-yellow-200 shadow-sm relative overflow-hidden flex flex-col h-full cursor-pointer hover:ring-2 hover:ring-yellow-400 hover:shadow-lg transition-all" on:click={() => dispatch('openCategoryModal', item.nganhHang)} tabindex="0" role="button">
                             <div class="absolute top-0 right-0 w-16 h-16 bg-yellow-100 rounded-bl-full -z-0 opacity-50"></div>
                             
                             <h4 class="font-bold text-gray-800 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
@@ -166,7 +168,7 @@
                 </div>
                 <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                     {#each listCanCoGang as item}
-                        <div class="bg-white p-3 rounded-lg border border-gray-200 opacity-80 hover:opacity-100 transition-opacity flex flex-col h-full">
+                        <div class="bg-white p-3 rounded-lg border border-gray-200 opacity-80 hover:opacity-100 flex flex-col h-full cursor-pointer hover:ring-2 hover:ring-red-400 hover:shadow-lg transition-all" on:click={() => dispatch('openCategoryModal', item.nganhHang)} tabindex="0" role="button">
                             <h4 class="font-semibold text-gray-700 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
                             
                             <div class="space-y-1 mb-2 mt-auto">
@@ -201,7 +203,6 @@
     }
 
     /* BẢO VỆ CHUẨN MỰC CHỤP ẢNH HTML2CANVAS */
-    /* [FIX 1] Ép chuẩn 1100px giống file LuykeThiDua */
     :global(.capture-container) .tdv-root {
         width: 1100px !important; 
         max-width: 1100px !important;
@@ -228,14 +229,14 @@
     :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
     :global(.capture-container) .tdv-root .money-large { font-size: 36px !important; }
 
-    /* [FIX 2] Xử lý SVG Icon lơ lửng khi chụp ảnh */
-    :global(.capture-container svg) {
+    /* [FIX 2] Xử lý SVG Icon lơ lửng khi chụp ảnh - ĐÃ KHÓA SCOPE VÀO .tdv-root */
+    :global(.capture-container .tdv-root svg) {
         display: inline-block !important;
-        transform: translateY(3px) !important; /* Đẩy vật lý icon xuống 3px để thẳng hàng với chữ */
+        transform: translateY(3px) !important;
         margin-right: 4px !important;
     }
 
-    :global(.capture-container .label-with-icon) {
+    :global(.capture-container .tdv-root .label-with-icon) {
         display: inline-flex !important;
         align-items: center !important;
     }
