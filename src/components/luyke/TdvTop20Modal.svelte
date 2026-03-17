@@ -199,7 +199,6 @@
     </div>
 </div>
 {/if}
-
 <style>
     /* --- GHI ĐÈ CSS ĐỂ CHỤP FULL NỘI DUNG --- */
     :global(.capture-container .top20-capture-node.max-h-\[90vh\]) {
@@ -211,6 +210,7 @@
         overflow: visible !important;
     }
     
+    /* Vô hiệu hóa class w-11/12 của Tailwind để ta tự do kiểm soát width */
     :global(.capture-container .top20-capture-node.w-11\/12) {
         width: 100% !important;
         max-width: 100% !important;
@@ -254,34 +254,71 @@
     }
 
     /* ========================================================= */
-    /* THỰC SỰ ÉP HẸP BẢNG 768px, RỚT DÒNG TIÊU ĐỀ CỘT NHƯ EXCEL */
+    /* CHIẾN LƯỢC ÉP HẸP BẢNG, RỚT DÒNG & TẠO LỀ (MARGIN)        */
     /* ========================================================= */
     
-    /* Ép khung ảnh bằng class top20-capture-node đã gắn ở thẻ div */
-    :global(.capture-container .top20-capture-node) {
-        width: 768px !important;
-        min-width: 768px !important;
-        max-width: 768px !important;
-        margin: 0 auto !important;
+    /* 1. Xử lý container ngoài cùng: Ẩn tiêu đề cũ và tạo lề (padding) cho ảnh */
+    :global(.capture-container:has(.top20-capture-node) .capture-title) {
+        display: none !important;
+    }
+    :global(.capture-container:has(.top20-capture-node)) {
+        width: max-content !important;
+        min-width: 0 !important;
+        padding: 24px !important; /* TẠO LỀ TRẮNG XUNG QUANH BẢNG ĐỂ KHÔNG SÁT VIỀN */
+        background-color: #f3f4f6 !important; 
     }
 
-    /* Phá thuộc tính flex của thẻ div bên trong tiêu đề để ép chữ được quyền rớt dòng */
+    /* 2. Bóp hẹp bảng xuống 600px để ép cột tên Siêu thị rớt dòng */
+    :global(.capture-container .top20-capture-node) {
+        width: 600px !important;     /* Bóp kích thước bảng lại */
+        min-width: 600px !important;
+        max-width: 600px !important;
+        margin: 0 !important;
+        border-radius: 12px !important; /* Bo góc nhẹ cho bảng nhìn mượt hơn */
+    }
+
+    /* 3. Cột Hạng (#) thu hẹp tối đa */
+    :global(.capture-container .top20-capture-node td:nth-child(1)),
+    :global(.capture-container .top20-capture-node th:nth-child(1)) {
+        width: 1% !important;
+        white-space: nowrap !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+
+    /* 4. Cột Siêu thị (Cột 2) chiếm dụng không gian còn lại và ĐƯỢC PHÉP RỚT DÒNG */
+    :global(.capture-container .top20-capture-node td:nth-child(2)),
+    :global(.capture-container .top20-capture-node th:nth-child(2)) {
+        width: auto !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+    }
+
+    /* 5. Các cột số liệu (Cột 3 đến 7) ép sát data, không rớt dòng các con số */
+    :global(.capture-container .top20-capture-node td:nth-child(n+3)) {
+        width: 1% !important;
+        white-space: nowrap !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+
+    /* 6. Phá vỡ Flexbox mặc định của tiêu đề để cho phép rớt dòng */
     :global(.capture-container .top20-capture-node th > div) {
         display: block !important;
         white-space: normal !important;
         word-wrap: break-word !important;
-        text-align: inherit !important; /* Kế thừa text-center, text-right từ th */
+        text-align: inherit !important;
         line-height: 1.3 !important;
     }
 
-    /* Giảm padding 2 bên của các ô xuống mức tối thiểu (4px) để nén các cột lại sát nhau */
-    :global(.capture-container .top20-capture-node th),
-    :global(.capture-container .top20-capture-node td) {
-        padding-left: 4px !important;
-        padding-right: 4px !important;
+    /* 7. Ép các tiêu đề (từ cột 3 trở đi) rớt thành 2 dòng bằng cách ghim max-width */
+    :global(.capture-container .top20-capture-node th:nth-child(n+3) > div) {
+        max-width: 85px !important;
+        min-width: 65px !important;
+        margin-left: auto !important;
     }
     
-    /* Canh chỉnh lại mũi tên (▲/▼) sao cho không rớt dòng bậy bạ */
+    /* 8. Canh chỉnh lại mũi tên Sort (▲/▼) sao cho không rớt dòng lung tung */
     :global(.capture-container .top20-capture-node th > div > span) {
         display: inline-block !important;
         margin-left: 2px;
