@@ -1,5 +1,5 @@
 <script>
-  // Version 3.2 - Fix Timeline Jump Loop & Maintain Layout Stability
+  // Version 3.3 - Fix Local Images Bug & Enable Direct URL Links
   import { onMount, afterUpdate, onDestroy } from 'svelte';
   import { homeConfig } from '../stores.js';
   import { adminService } from '../services/admin.service.js';
@@ -11,14 +11,16 @@
   let slideIndex = 0;
   let slideInterval;
   let showQRModal = false;
+
   // [GENESIS]: LINK TẢI BOOKMARK
   const bookmarkUrl = 'https://firebasestorage.googleapis.com/v0/b/qlst-9e6bd.firebasestorage.app/o/templates%2FShare_QLST.zip?alt=media&token=5ea0dd5b-9126-4fdc-b2a2-b01ac4de812c';
+  
   let stats = {
       totalUsers: 0,
       totalVisits: 0,
       totalActions: 0
   };
-  
+
   // Cấu hình mặc định
   let config = {
       videoUrl: 'https://www.youtube.com/embed/bmImlht_yB4',
@@ -27,19 +29,22 @@
       changelogs: []
   };
 
-  // [CODEGENESIS FIX START] --- Cấu hình ảnh Local ---
-  const localImages = [
-      { title: "Sức khỏe siêu thị", url: "/images/slides/suc-khoe-sieu-thi.png" },
-      { title: "Chi tiết ngành hàng", url: "/images/slides/Chi-tiet-nganh-hang.png" },
-      { title: "Biểu đồ tỷ trọng ngành hàng", url: "/images/slides/Bieu-do.png" },
-      { title: "Thi đua siêu thị lũy kế", url: "/images/slides/thi-dua-st.png" },
-      { title: "Tiền thưởng thi đua vùng", url: "/images/slides/thi-dua-vung.png" }
+  // [CODEGENESIS FIX START] --- Cấu hình ảnh URL trực tiếp ---
+  // Dán link ảnh online của bạn vào biến url dưới đây (giống cách ToolsSection hoạt động)
+  const urlImages = [
+      { title: "Sức khỏe siêu thị", url: "https://placehold.co/800x400/1e3a8a/white?text=Dán+link+ảnh+vào+đây" },
+      { title: "Chi tiết ngành hàng", url: "https://placehold.co/800x400/1e3a8a/white?text=Dán+link+ảnh+vào+đây" },
+      { title: "Biểu đồ tỷ trọng ngành hàng", url: "https://placehold.co/800x400/1e3a8a/white?text=Dán+link+ảnh+vào+đây" },
+      { title: "Thi đua siêu thị lũy kế", url: "https://placehold.co/800x400/1e3a8a/white?text=Dán+link+ảnh+vào+đây" },
+      { title: "Tiền thưởng thi đua vùng", url: "https://placehold.co/800x400/1e3a8a/white?text=Dán+link+ảnh+vào+đây" }
   ];
 
-  // Reactive config sync
+  // Reactive config sync: Ưu tiên lấy cấu hình từ Admin ($homeConfig). Nếu chưa có, dùng mảng urlImages ở trên.
   $: config = {
       ...($homeConfig || config),
-      sliderImages: localImages
+      sliderImages: ($homeConfig && $homeConfig.sliderImages && $homeConfig.sliderImages.length > 0) 
+          ? $homeConfig.sliderImages 
+          : urlImages
   };
 
   // --- LOGIC XỬ LÝ VIDEO & TIMELINE (FIXED) ---
@@ -79,7 +84,6 @@
   // 5. URL cuối cùng được đưa vào Iframe (Ưu tiên overrideUrl nếu có)
   $: finalVideoSrc = overrideUrl || getSafeVideoUrl(config.videoUrl);
 
-
   function jumpToTime(timeStr) {
       const parts = timeStr.split(':');
       let seconds = 0;
@@ -90,8 +94,6 @@
       }
       
       const videoId = getVideoId(config.videoUrl);
-      
-      // [FIX]: Thay vì sửa config (gây loop), ta sửa biến cục bộ overrideUrl
       if (videoId) {
           // Thêm autoplay=1 và rel=0 để trải nghiệm tốt nhất
           overrideUrl = `https://www.youtube.com/embed/${videoId}?start=${seconds}&autoplay=1&rel=0`;
@@ -199,14 +201,14 @@
                 <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2 shrink-0">
                      <i data-feather="list" class="text-blue-600"></i> Mục lục Video
                 </h3>
-                
+               
                 <div class="flex-grow overflow-y-auto pr-2 custom-scrollbar min-h-0 space-y-2">
                    {#if config.timeline && config.timeline.length > 0}
                        {#each config.timeline as item}
                            <button 
                                 class="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition flex items-start gap-3 group border border-transparent hover:border-blue-100"
                                 on:click={() => jumpToTime(item.time)}
-                          >
+                           >
                                 <span class="bg-blue-100 text-blue-700 font-mono text-xs font-bold px-2 py-1 rounded group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0">
                                      {item.time}
                                 </span>
@@ -216,7 +218,7 @@
                             </button>
                         {/each}
                     {:else}
-                       <p class="text-sm text-gray-400 italic text-center py-4">Chưa có mục lục.</p>
+                        <p class="text-sm text-gray-400 italic text-center py-4">Chưa có mục lục.</p>
                     {/if}
                 </div>
             </div>
@@ -224,12 +226,12 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="content-card flex flex-col h-[600px]">
+         <div class="content-card flex flex-col h-[600px]">
             <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2 border-b pb-2">
                 <i data-feather="image" class="text-blue-600"></i> Các chức năng dự án
              </h3>
             <div class="flex-grow relative group overflow-hidden rounded-lg bg-gray-900 flex items-center justify-center">
-                {#if config.sliderImages && config.sliderImages.length > 0}
+                 {#if config.sliderImages && config.sliderImages.length > 0}
                      {#each config.sliderImages as img, i}
                          <div 
                               class="absolute inset-0 transition-opacity duration-700 ease-in-out {i === slideIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}"
@@ -239,10 +241,10 @@
                                 alt={img.title} 
                                 class="w-full h-full object-contain"
                             >
-                               <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
+                            <div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-6 pt-12">
                                 <h3 class="text-white font-bold text-lg drop-shadow-md">{img.title}</h3>
                              </div>
-                           </div>
+                          </div>
                     {/each}
 
                     <button class="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 text-white rounded-full z-20 opacity-0 group-hover:opacity-100 transition" on:click={prevSlide}>
@@ -251,7 +253,7 @@
                      <button class="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/30 hover:bg-black/50 text-white rounded-full z-20 opacity-0 group-hover:opacity-100 transition" on:click={nextSlide}>
                         <i data-feather="chevron-right"></i>
                     </button>
-                     
+                    
                     <div class="absolute bottom-3 right-4 flex gap-2 z-20">
                         {#each config.sliderImages as _, i}
                              <div class="w-2 h-2 rounded-full transition-colors {i === slideIndex ? 'bg-white' : 'bg-white/40'}"></div>
@@ -259,7 +261,7 @@
                     </div>
                 {:else}
                     <div class="text-white/50 flex flex-col items-center">
-                         <i data-feather="image" class="w-10 h-10 mb-2"></i>
+                          <i data-feather="image" class="w-10 h-10 mb-2"></i>
                         <p>Chưa có ảnh slide.</p>
                      </div>
                 {/if}
@@ -281,7 +283,7 @@
                                  {@html log.content}
                             </div>
                         </div>
-                   {/each}
+                    {/each}
                 {:else}
                     <p class="text-gray-500 italic text-center py-10">Chưa có thông tin cập nhật.</p>
                 {/if}
@@ -299,7 +301,7 @@
     >
         <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center relative animate-fade-in" on:click|stopPropagation>
             <button class="absolute top-4 right-4 text-gray-400 hover:text-red-500" on:click={() => showQRModal = false}>
-                <i data-feather="x" class="w-6 h-6"></i>
+                 <i data-feather="x" class="w-6 h-6"></i>
             </button>
             
             <h3 class="text-xl font-bold text-green-600 mb-2">Quét mã tham gia nhóm</h3>
