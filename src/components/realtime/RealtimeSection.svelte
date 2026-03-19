@@ -236,11 +236,11 @@
 </section>
 
 <style>
-    /* [FIX GENESIS]: Định nghĩa Preset Mobile Optimized (800px) */
+    /* [FIX GENESIS]: Định nghĩa Preset Mobile Optimized (Sửa thành 900px để đồng bộ với các bảng con bên trong) */
     :global(.preset-mobile-optimized) {
-        width: 800px !important;
-        min-width: 800px !important;
-        max-width: 800px !important;
-        margin: 0 auto;
+        width: 900px !important;
+        min-width: 900px !important;
+        max-width: 900px !important;
+        margin: 0 auto !important;
     }
 </style>

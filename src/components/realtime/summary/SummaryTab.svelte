@@ -174,17 +174,60 @@
   </div>
 
 </div>
-
 <style>
-    /* [FIX GENESIS] Phẫu thuật Layout: Chống rò rỉ CSS từ tab Lũy kế, bảo vệ form 2 cột ngang của Realtime khi chụp */
+    /* --- [FIX GENESIS] XỬ LÝ DỨT ĐIỂM LỖI CẮT XÉN ẢNH VÀ ĐỒNG BỘ 900PX --- */
+    
+    /* 1. Trả lại không gian cho máy ảnh (tạo lề nhỏ 16px cho viền ảnh đẹp, không bị lẹm) */
+    :global(.capture-container:has(.realtime-override)) {
+        width: max-content !important;
+        min-width: 932px !important; /* 900px nội dung + 32px lề 2 bên */
+        padding: 16px !important; 
+        margin: 0 auto !important;
+        background-color: #f8fafc !important;
+        box-sizing: border-box !important;
+    }
+
+    /* 2. Định hình khung nội dung chính chuẩn xác 900px */
+    :global(.capture-container .preset-mobile-optimized) {
+        width: 900px !important;
+        min-width: 900px !important;
+        max-width: 900px !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    /* 3. Ép 4 thẻ KPI vừa khít 900px, không rớt dòng */
+    :global(.capture-container .kpi-grid-fixed) {
+        width: 100% !important;
+        display: flex !important;
+        gap: 16px !important;
+        margin: 0 auto 16px auto !important;
+        box-sizing: border-box !important;
+    }
+    :global(.capture-container .kpi-grid-fixed > div) {
+        flex: 1 !important;
+    }
+
+    /* 4. Ép 2 bảng giữa (Hiệu quả & Nhóm hàng) vừa khít 900px - ĐÃ MỞ KHÓA 480PX */
     :global(.capture-container .luyke-tier-1-grid.realtime-override) {
         display: grid !important;
         grid-template-columns: repeat(2, 1fr) !important;
-        width: 1000px !important;
-        min-width: 1000px !important;
-        max-width: 1000px !important;
-        margin: 0 auto !important;
+        width: 100% !important;
+        min-width: 100% !important; /* Đánh bại min-width: 480px cũ từ capture.service.js */
+        max-width: 100% !important; /* Đánh bại max-width: 480px cũ từ capture.service.js */
         gap: 16px !important;
-        flex-direction: row !important;
+        margin: 0 auto 16px auto !important;
+        box-sizing: border-box !important;
+        flex-direction: row !important; 
+    }
+
+    /* 5. Khóa chặt bảng Ngành hàng bên dưới, bắt buộc ôm sát 100% (900px), không được phình to */
+    :global(.capture-container .rt-cat-grid) {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important; 
+        margin: 0 !important;
     }
 </style>
