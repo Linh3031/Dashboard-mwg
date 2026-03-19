@@ -1,11 +1,9 @@
 <script>
   /* global feather */
   import { onMount, onDestroy } from 'svelte';
-  
   // Import các component con
   import FileInput from './common/FileInput.svelte';
   import PasteInput from './common/PasteInput.svelte';
-  
   // Import Stores
   import { 
       warehouseList,
@@ -14,12 +12,10 @@
       danhSachNhanVien,
       homeConfig
   } from '../stores.js';
-  
   // Import Services
   import { dataService } from '../services/dataService.js';
   // [CODE MỚI] Import Service xử lý cụm
-  import { clusterService } from '../services/cluster.service.js'; 
-  
+  import { clusterService } from '../services/cluster.service.js';
   // Import để mở Popup chi tiết phiên bản
   import { showVersionDetails } from './common/VersionManager.svelte';
 
@@ -44,10 +40,9 @@
       // Lưu ý: Parser cũ trả về field 'maCum' hoặc 'clusterId' tùy mapping
       // Ta check an toàn cả 2 trường hợp
       const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
-      
       // 2. Lấy danh sách kho duy nhất
       const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
-
+      
       // Điều kiện kích hoạt: Có cột Mã Cụm VÀ (Có >= 2 kho HOẶC user đang chọn xem Cụm)
       if (clusters.length > 0 && (warehouses.length > 1 || clusters.includes($selectedWarehouse))) {
           isClusterMode = true;
@@ -104,7 +99,6 @@
   // 2. Handler cho ô "Data lũy kế" (Rẽ nhánh thông minh)
   function handlePasteCumulative(event) {
       const text = event.detail;
-      
       if (isClusterMode && currentClusterCode) {
           // A. CHẾ ĐỘ CỤM: Xử lý bằng Cluster Service (Logic 16 cột tổng hợp)
           try {
@@ -189,10 +183,8 @@
   async function handleWarehouseChange(event) {
       const newWarehouse = event.target.value;
       selectedWarehouse.set(newWarehouse);
-      
       if (newWarehouse) {
           localStorage.setItem('selectedWarehouse', newWarehouse);
-          
           if (isClusterMode && newWarehouse === currentClusterCode) {
                // Nếu chọn vào Mã Cụm -> Load data cụm
                notificationStore.set({ message: `Chế độ Cụm: ${newWarehouse}`, type: 'info' });
@@ -220,7 +212,7 @@
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Cập nhật dữ liệu</h2>
                 <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
-                     <i data-feather="help-circle" class="feather"></i>
+                    <i data-feather="help-circle" class="feather"></i>
                 </button>
             </div>
             
@@ -240,10 +232,10 @@
                       on:change={handleWarehouseChange}
                     >
                         {#if $warehouseList.length === 0}
-                              <option>Vui lòng tải file DSNV...</option>
+                            <option>Vui lòng tải file DSNV...</option>
                         {:else}
                             <option value="">-- Chọn --</option>
-                             {#each $warehouseList as kho}
+                            {#each $warehouseList as kho}
                                  <option value={kho}>{kho}</option>
                             {/each}
                         {/if}
@@ -279,15 +271,15 @@
                                Đã có phiên bản <span class="bg-red-200 text-red-800 px-1.5 rounded font-bold mx-1">{latestVersion}</span> - Bấm cập nhật ngay!
                             </span>
                         {:else}
-                             <span class="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-green-200">
+                            <span class="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-green-200">
                                 <i data-feather="check-circle" class="w-3 h-3"></i> Đã cập nhật
-                             </span>
+                            </span>
                             <span class="text-indigo-900 font-bold flex items-center gap-1">
                                 Hệ thống đang chạy phiên bản 
                                 <span class="text-base font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-100 shadow-sm">
                                     {latestVersion}
                                 </span>
-                             </span>
+                            </span>
                         {/if}
                     </div>
                 </div>
@@ -295,8 +287,9 @@
         </div>
     </div>
    
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
-        <div class="content-card data-card--blue flex flex-col gap-4"> 
+    <div class="flex flex-col gap-1 mb-1"> 
+        
+        <div class="content-card data-card--blue flex flex-col gap-4 !mb-3"> 
              <h3 class="content-card__header data-header--blue flex items-center">
                 <i data-feather="zap" class="h-5 w-5 feather mr-2"></i>
                 <span>SỬ DỤNG NHANH MỖI NGÀY</span>
@@ -305,118 +298,140 @@
                 </span>
             </h3>
             
-            <FileInput 
-                label="Yêu cầu xuất lũy kế"
-                icon="file-text"
-                link="https://report.mwgroup.vn/home/dashboard/077"
-                saveKey="saved_ycx"
-            />
-            
-            <PasteInput
-                label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"}
-                icon="clipboard"
-                link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1"
-                saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"}
-                on:paste={handlePasteCumulative}
-            />
-            
-            {#if isClusterMode}
-                <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative">
-                     <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
-                     <PasteInput
-                        label="Thi đua siêu thị lũy kế"
-                        icon="layers"
-                        link="#"
-                        placeholder="Paste dữ liệu thi đua cụm..."
-                        saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`}
-                        on:paste={handlePasteCompetition}
-                    />
-                    <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1">
-                        <i data-feather="info" class="w-3 h-3"></i>
-                        Dành cho quản lý Cụm {currentClusterCode}
-                    </p>
-                </div>
-            {/if}
-            
-            <PasteInput
-                label="Thi đua nhân viên"
-                icon="clipboard"
-                link="https://bi.thegioididong.com/sieu-thi-con?id=16758&tab=bcdtnv&rt=2&dm=1"
-                saveKeyPaste="daily_paste_thiduanv"
-                saveKeyRaw="raw_paste_thiduanv"
-                saveKeyProcessed="daily_paste_thiduanv"
-            />
-        </div>
-        
-         <div class="content-card data-card--green flex flex-col gap-4"> 
-            <h3 class="content-card__header data-header--green">
-                  <i data-feather="users" class="h-5 w-5 feather"></i>CHI TIẾT NĂNG SUẤT NHÂN VIÊN
-            </h3>
-           
-            <FileInput
-                label="Giờ công"
-                icon="clock"
-                link="https://reports.thegioididong.com/#/viewreport/168754"
-                saveKey="saved_giocong"
-             />
-             
-            <FileInput
-                 label="Thưởng nóng"
-                icon="gift"
-                link="https://report.mwgroup.vn/home/dashboard/105"
-                saveKey="saved_thuongnong"
-            />
-             
-            <PasteInput
-                label="Thưởng ERP"
-                icon="clipboard"
-                link="https://bi.thegioididong.com/reward?id=-1&tab=1"
-                saveKeyPaste="daily_paste_thuongerp"
-             />
-        </div>
-    </div>
-    
-    <div class="content-card data-card--yellow"> 
-         <h3 class="content-card__header data-header--yellow">
-            <i data-feather="calendar" class="h-5 w-5 feather"></i>DỮ LIỆU CẬP NHẬT 1 THÁNG 1 LẦN
-         </h3>
-        <p class="text-sm text-yellow-800 bg-yellow-100 p-3 rounded-lg mb-4">Lưu ý: Dữ liệu trong phần này sẽ được lưu vào trình duyệt của bạn. Dữ liệu sẽ tồn tại cho đến khi bạn cập nhật lại.</p> 
-        
-        <div class="grid md:grid-cols-3 gap-4"> 
-             <div class="space-y-4"> 
-                 <FileInput
-                    label="Danh sách nhân viên"
-                    icon="users"
-                    saveKey="saved_danhsachnv"
-                />
-                <FileInput
-                    label="YCX Lũy Kế tháng trước"
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <FileInput 
+                    label="Yêu cầu xuất lũy kế"
                     icon="file-text"
                     link="https://report.mwgroup.vn/home/dashboard/077"
-                    saveKey="saved_ycx_thangtruoc"
+                    saveKey="saved_ycx"
                 />
-            </div> 
-             <div class="space-y-4"> 
-                  <FileInput
-                    label="Thưởng nóng tháng trước"
+                
+                <PasteInput
+                    label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"}
+                    icon="clipboard"
+                    link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1"
+                    saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"}
+                    on:paste={handlePasteCumulative}
+                />
+                
+                {#if isClusterMode}
+                    <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative">
+                         <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
+                         <PasteInput
+                            label="Thi đua siêu thị lũy kế"
+                            icon="layers"
+                            link="#"
+                            placeholder="Paste dữ liệu thi đua cụm..."
+                            saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`}
+                            on:paste={handlePasteCompetition}
+                         />
+                        <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1">
+                            <i data-feather="info" class="w-3 h-3"></i>
+                            Dành cho quản lý Cụm {currentClusterCode}
+                        </p>
+                    </div>
+                {/if}
+                
+                <PasteInput
+                    label="Thi đua nhân viên"
+                    icon="clipboard"
+                    link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=bcdtnv&rt=2&dm=1"
+                    saveKeyPaste="daily_paste_thiduanv"
+                    saveKeyRaw="raw_paste_thiduanv"
+                    saveKeyProcessed="daily_paste_thiduanv"
+                />
+            </div>
+        </div>
+        
+        <details class="content-card data-card--green group !mb-2 !mt-2"> 
+            <summary class="content-card__header data-header--green flex items-center justify-between cursor-pointer list-none select-none !mb-0">
+                <div class="flex items-center flex-wrap">
+                    <i data-feather="users" class="h-5 w-5 feather mr-2"></i>
+                    <span>CHI TIẾT NĂNG SUẤT NHÂN VIÊN</span>
+                    <span class="ml-2 text-sm font-normal italic pt-0 opacity-90 hidden sm:inline">(Cập nhật khi cần theo dõi lương thưởng, năng suất)</span>
+                </div>
+                <i data-feather="chevron-down" class="feather transform transition-transform duration-200 group-open:rotate-180"></i>
+            </summary>
+           
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4 border-t border-green-200/50 pt-4">
+                <FileInput
+                    label="Giờ công"
+                    icon="clock"
+                    link="https://reports.thegioididong.com/#/viewreport/168754"
+                    saveKey="saved_giocong"
+                 />
+                 
+                <FileInput
+                    label="Thưởng nóng"
                     icon="gift"
-                     link="https://report.mwgroup.vn/home/dashboard/105"
-                     saveKey="saved_thuongnong_thangtruoc"
+                    link="https://report.mwgroup.vn/home/dashboard/105"
+                    saveKey="saved_thuongnong"
                 />
-             </div> 
-             <div class="space-y-4"> 
-                 <PasteInput
-                    label="Thưởng ERP tháng trước"
+                 
+                <PasteInput
+                    label="Thưởng ERP"
                     icon="clipboard"
                     link="https://bi.thegioididong.com/reward?id=-1&tab=1"
-                     saveKeyPaste="saved_thuongerp_thangtruoc"
+                    saveKeyPaste="daily_paste_thuongerp"
                  />
-            </div> 
-        </div> 
-    </div> 
+            </div>
+        </details>
+    </div>
+    
+    <details class="content-card data-card--yellow group"> 
+         <summary class="content-card__header data-header--yellow flex items-center justify-between cursor-pointer list-none select-none !mb-0">
+             <div class="flex items-center flex-wrap">
+                 <i data-feather="calendar" class="h-5 w-5 feather mr-2"></i>
+                 <span>DỮ LIỆU CẬP NHẬT 1 THÁNG 1 LẦN</span>
+                 <span class="ml-2 text-sm font-normal italic pt-0 opacity-90 hidden sm:inline">(Cập nhật nếu cần xem so cùng kỳ)</span>
+             </div>
+             <i data-feather="chevron-down" class="feather transform transition-transform duration-200 group-open:rotate-180"></i>
+         </summary>
+         
+         <div class="mt-4 border-t border-yellow-200/50 pt-4">
+            <p class="text-sm text-yellow-800 bg-yellow-100 p-3 rounded-lg mb-4">Lưu ý: Dữ liệu trong phần này sẽ được lưu vào trình duyệt của bạn. Dữ liệu sẽ tồn tại cho đến khi bạn cập nhật lại.</p> 
+            
+            <div class="grid md:grid-cols-3 gap-4"> 
+                 <div class="space-y-4"> 
+                     <FileInput
+                        label="Danh sách nhân viên"
+                        icon="users"
+                        saveKey="saved_danhsachnv"
+                    />
+                    <FileInput
+                        label="YCX Lũy Kế tháng trước"
+                        icon="file-text"
+                        link="https://report.mwgroup.vn/home/dashboard/077"
+                        saveKey="saved_ycx_thangtruoc"
+                    />
+                </div> 
+                 <div class="space-y-4"> 
+                   <FileInput
+                        label="Thưởng nóng tháng trước"
+                        icon="gift"
+                         link="https://report.mwgroup.vn/home/dashboard/105"
+                         saveKey="saved_thuongnong_thangtruoc"
+                    />
+                 </div> 
+                 <div class="space-y-4"> 
+                     <PasteInput
+                        label="Thưởng ERP tháng trước"
+                        icon="clipboard"
+                         link="https://bi.thegioididong.com/reward?id=-1&tab=1"
+                         saveKeyPaste="saved_thuongerp_thangtruoc"
+                     />
+                </div> 
+            </div>
+        </div>
+    </details> 
 </section>
 
 <style>
+    /* Ẩn dấu mũi tên mặc định của thẻ details trên các trình duyệt Safari/Chrome cũ */
+    summary::-webkit-details-marker {
+        display: none;
+    }
+
     /* Animation cho dòng chữ chạy */
     .marquee-content {
         animation: marquee 12s linear infinite;

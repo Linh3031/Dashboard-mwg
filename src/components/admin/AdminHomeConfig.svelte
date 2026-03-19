@@ -28,9 +28,9 @@
     function addTimelineItem() { localConfig.timeline = [...localConfig.timeline, { time: '00:00', label: 'Mốc mới' }]; }
     function removeTimelineItem(index) { localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index); }
 
-    // --- LOGIC SLIDE ẢNH BẰNG URL (MỚI) ---
+    // --- LOGIC SLIDE ẢNH BẰNG URL (ĐÃ FIX: CHÈN LÊN ĐẦU) ---
     function addSlide() {
-        localConfig.sliderImages = [...localConfig.sliderImages, { url: '', title: '' }];
+        localConfig.sliderImages = [{ url: '', title: '' }, ...localConfig.sliderImages];
     }
 
     function removeSlide(index) {
@@ -109,7 +109,7 @@
             // 2. Dọn dẹp Slide ảnh (Loại bỏ các item rỗng)
             localConfig.sliderImages = localConfig.sliderImages.filter(img => img.url && img.url.trim() !== '');
 
-            // 3. Lưu Firestore (Không cần upload file nữa, tiết kiệm thời gian)
+            // 3. Lưu Firestore
             await adminService.saveHomeConfig(localConfig);
             
             // 4. Mở khóa đồng bộ Svelte sau khi lưu thành công
@@ -177,7 +177,7 @@
 
             {#if activeTab === 'slider'}
                 <div class="space-y-4 animate-fade-in">
-                    <button on:click={addSlide} class="w-full py-4 border-2 border-dashed border-blue-300 text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition flex justify-center items-center gap-2">
+                    <button on:click={addSlide} class="w-full py-4 border-2 border-dashed border-blue-300 text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition flex justify-center items-center gap-2 shadow-sm">
                         <i data-feather="plus-circle" class="w-5 h-5"></i> Thêm ảnh slide mới bằng Link (URL)
                     </button>
 
