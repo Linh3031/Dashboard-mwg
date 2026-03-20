@@ -8,7 +8,6 @@
         return new Intl.NumberFormat('vi-VN').format(value);
     }
 
-    // Đã ép mạnh Math.round() để không còn số thập phân
     function formatNumber(value) {
         if (!value || isNaN(value)) return '0';
         return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(Number(value)));
@@ -21,7 +20,6 @@
         return 'bg-red-500';
     }
 
-    // CHỈ LẤY CÁC NGÀNH HÀNG CÓ THƯỞNG HOẶC CÓ DATA (Loại bỏ thẻ rỗng)
     $: safeCategories = (data?.categories || []).filter(c => c.thuong > 0 || c.details !== null);
     
     // Nhóm 1: Có thưởng hoặc Trạng thái Đạt giải
@@ -89,7 +87,11 @@
                 </div>
                 <div class="text-right shrink-0">
                     <span class="block text-[9px] text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Tiền Thưởng</span>
-                    <span class="font-bold text-green-600 text-base leading-none">{formatCurrency(cat.thuong)} ₫</span>
+                    {#if groupType === 'tiemnang' && cat.potentialPrize > 0}
+                        <span class="font-bold text-orange-500 text-base leading-none" title="Dự kiến">{formatCurrency(cat.potentialPrize)} ₫</span>
+                    {:else}
+                        <span class="font-bold text-green-600 text-base leading-none">{formatCurrency(cat.thuong)} ₫</span>
+                    {/if}
                 </div>
             </div>
 
@@ -158,9 +160,16 @@
 
     {#if listTiemNang.length > 0}
         <div class="mb-8">
-            <h3 class="text-base font-bold text-orange-600 uppercase mb-3 flex items-center gap-2 border-l-4 border-orange-500 pl-2">
-                🔥 Nhóm Tiềm Năng Bứt Phá ({listTiemNang.length})
-            </h3>
+            <div class="flex flex-wrap items-center justify-between mb-3 border-l-4 border-orange-500 pl-2 gap-2">
+                <h3 class="text-base font-bold text-orange-600 uppercase flex items-center gap-2 m-0">
+                    🔥 Nhóm Tiềm Năng Bứt Phá ({listTiemNang.length})
+                </h3>
+                {#if data.tongThuongTiemNang > 0}
+                    <span class="text-orange-600 font-bold text-sm bg-orange-50 px-3 py-1 rounded-full border border-orange-200 shadow-sm whitespace-nowrap">
+                        Dự kiến: +{formatCurrency(data.tongThuongTiemNang)} ₫
+                    </span>
+                {/if}
+            </div>
             <div class="hcm-grid-4">
                 {#each listTiemNang as cat} {@render categoryCard(cat, 'tiemnang')} {/each}
             </div>
@@ -182,7 +191,6 @@
 {/if}
 
 <style>
-    /* NÂNG CẤP LÊN 4 CỘT THEO YÊU CẦU */
     .hcm-grid-4 {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));

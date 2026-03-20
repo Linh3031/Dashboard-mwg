@@ -1,6 +1,6 @@
 /**
  * Utility xử lý bóc tách file Excel Thi Đua Vùng HCM (Bao gồm Sheet TAM)
- * Version: 2.4 (Atomic Integrity - Surgical Fix for Rank Column Collision)
+ * Version: 2.5 (Atomic Integrity - Added Potential Prize for Tiem Nang)
  */
 export function parseHcmExcelData(workbook, XLSX) {
     const thuongSheet = workbook.Sheets['Thuong'];
@@ -66,7 +66,20 @@ export function parseHcmExcelData(workbook, XLSX) {
         nganhHangThuong.forEach((nh, index) => {
             const actualColIdx = colTongThuong + 1 + index;
             const cellValue = Number(row[actualColIdx]) || 0;
-            hcmDataDict[tenST].categories.push({ name: nh, thuong: cellValue, loaiGiai: '', details: null });
+            hcmDataDict[tenST].categories.push({ name: nh, thuong: cellValue, loaiGiai: '', details: null, potentialPrize: 0 });
+        });
+    }
+
+    // BƯỚC ĐỆM: TÌM GIÁ TRỊ GIẢI THƯỞNG NHỎ NHẤT (>0) CỦA TỪNG NGÀNH HÀNG ĐỂ LÀM TIỀN ĐỀ CHO NHÓM TIỀM NĂNG
+    const minPrizeDict = {};
+    for (const st in hcmDataDict) {
+        hcmDataDict[st].categories.forEach(cat => {
+            if (cat.thuong > 0) {
+                const normName = normalizeText(cat.name);
+                if (!minPrizeDict[normName] || cat.thuong < minPrizeDict[normName]) {
+                    minPrizeDict[normName] = cat.thuong;
+                }
+            }
         });
     }
 
@@ -137,7 +150,6 @@ export function parseHcmExcelData(workbook, XLSX) {
                     colTarget: findSubCol(['target', 'chitieu']),
                     colDKHT: findSubCol(['dkht', 'dukien']),
                     colHT: findSubCol(['ht', 'tyle']),
-                    // FIX: Ép buộc phải có chữ 'xh' hoặc 'hang' ghép cùng, để bỏ qua cột số lượng thuần túy
                     colXHDoLon: findSubCol(['xhdolon', 'hangdolon', 'xhdl', 'hangdl', 'xhdtsl', 'hangdtsl']),
                     colXHTarget: findSubCol(['xhtarget', 'hangtarget', 'xh'], ['dolon', 'dl', 'dtsl', 'giai']),
                 });
@@ -179,7 +191,7 @@ export function parseHcmExcelData(workbook, XLSX) {
 
                     let catEntry = hcmDataDict[tenST].categories.find(c => normalizeText(c.name) === normalizeText(block.name));
                     if (!catEntry) {
-                        catEntry = { name: block.name, thuong: 0, loaiGiai: '', details: null };
+                        catEntry = { name: block.name, thuong: 0, loaiGiai: '', details: null, potentialPrize: 0 };
                         hcmDataDict[tenST].categories.push(catEntry);
                     }
                     
@@ -195,10 +207,26 @@ export function parseHcmExcelData(workbook, XLSX) {
                             khoangCach, 
                             trangThai
                         };
+                        
+                        // FIX: Gán Giải thưởng Tiềm năng (Lấy giá trị min của top có giải)
+                        if (trangThai === 'Tiềm Năng') {
+                            catEntry.potentialPrize = minPrizeDict[normalizeText(block.name)] || 0;
+                        }
                     }
                 }
             });
         }
+    }
+
+    // TÍNH TỔNG THƯỞNG TIỀM NĂNG CHO TỪNG SIÊU THỊ
+    for (const st in hcmDataDict) {
+        let tongTiemNang = 0;
+        hcmDataDict[st].categories.forEach(cat => {
+            if (cat.potentialPrize > 0) {
+                tongTiemNang += cat.potentialPrize;
+            }
+        });
+        hcmDataDict[st].tongThuongTiemNang = tongTiemNang;
     }
 
     const allSupermarketNames = Object.keys(hcmDataDict).sort((a, b) => a.localeCompare(b));
