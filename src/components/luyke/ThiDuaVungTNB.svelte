@@ -179,20 +179,24 @@
             </div> 
         </div>
         
-        <div class="data-input-group input-group--yellow flex-1 !m-0 flex flex-col justify-center py-2 px-4 rounded-lg"> 
-             <label class="data-input-group__label mb-2 text-sm">Bộ lọc Siêu thị:</label> 
-             <div class="data-input-group__content text-black w-full">
-                <input list="supermarket-list-tnb" type="text"
-                    class="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-yellow-500 bg-white"
-                    placeholder={allSupermarketNames.length > 0 ? "Gõ mã hoặc tên ST..." : "Vui lòng tải file..."}
-                    bind:value={selectedSupermarket} on:input={handleSelectChange} on:change={handleSelectChange}
-                    disabled={allSupermarketNames.length === 0}
-                />
-                <datalist id="supermarket-list-tnb">
-                    {#each filteredSupermarketNames as name}<option value={name}></option>{/each}
-                </datalist>
-             </div>
-        </div> 
+       <div class="data-input-group input-group--yellow flex-1 !m-0 flex flex-col justify-center py-2 px-4 rounded-lg"> 
+     <label class="data-input-group__label mb-2 text-sm">Bộ lọc Siêu thị:</label> 
+     <div class="data-input-group__content text-black w-full">
+        <input list="supermarket-list-tnb" type="text"
+            class="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-yellow-500 bg-white"
+            placeholder={allSupermarketNames.length > 0 ? "Gõ mã hoặc tên ST..." : "Vui lòng tải file..."}
+            bind:value={selectedSupermarket} 
+            on:input={handleSelectChange} 
+            on:change={handleSelectChange}
+            on:focus={(e) => e.target.select()}
+            on:click={(e) => e.target.select()}
+            disabled={allSupermarketNames.length === 0}
+        />
+        <datalist id="supermarket-list-tnb">
+            {#each filteredSupermarketNames as name}<option value={name}></option>{/each}
+        </datalist>
+     </div>
+</div>
 
         <div class="flex items-center shrink-0">
             <div class="bg-gray-100 p-1.5 rounded-lg inline-flex border border-gray-200 shadow-inner h-full flex items-center">

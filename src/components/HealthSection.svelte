@@ -131,7 +131,7 @@
                             <i data-feather="grid"></i> <span>Chi tiết Ngành hàng</span> 
                         </button>
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thidua-vung' ? 'active' : ''}" data-target="subtab-luyke-thidua-vung" data-title="ThiDuaVung" on:click={handleSubTabClick}> 
-                            <i data-feather="map"></i> <span>Thi Đua Vùng TNB</span> 
+                            <i data-feather="map"></i> <span>Thi Đua Vùng TNB-HCM</span> 
                         </button>
                     </nav>
                 </div>
