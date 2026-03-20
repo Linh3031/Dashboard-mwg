@@ -17,7 +17,11 @@
 {:else}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
         {#each reportData as result (result.competition.id)}
-            <div class="h-full">
+            <div 
+                class="h-full" 
+                data-capture-group="competition-program"
+                data-capture-filename="ThiDua_{result.competition.name || result.competition.id}"
+            >
                 <FocusCompetitionTable competitionResult={result} />
             </div>
         {/each}
