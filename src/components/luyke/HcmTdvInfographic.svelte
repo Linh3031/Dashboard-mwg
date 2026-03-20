@@ -1,149 +1,201 @@
 <script>
-    import { slide } from 'svelte/transition';
     import { fade } from 'svelte/transition';
 
-    export let data = null; // { supermarketList: [], details: {} }
-
-    let selectedSupermarket = '';
-    let searchTerm = '';
-    let isDropdownOpen = false;
-
-    $: filteredSupermarkets = data?.supermarketList?.filter(st => 
-        st.toLowerCase().includes(searchTerm.toLowerCase())
-    ) || [];
-
-    $: currentDetail = selectedSupermarket ? data?.details[selectedSupermarket] : null;
-
-    function selectSupermarket(st) {
-        selectedSupermarket = st;
-        isDropdownOpen = false;
-        searchTerm = '';
-    }
+    export let data = null;
 
     function formatCurrency(value) {
-        if (!value || isNaN(value)) return '0 ₫';
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+        if (!value || isNaN(value)) return '0';
+        return new Intl.NumberFormat('vi-VN').format(value);
     }
+
+    // Đã ép mạnh Math.round() để không còn số thập phân
+    function formatNumber(value) {
+        if (!value || isNaN(value)) return '0';
+        return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(Number(value)));
+    }
+
+    function getProgressBarColor(percent) {
+        if (percent >= 100) return 'bg-green-500';
+        if (percent >= 80) return 'bg-blue-500';
+        if (percent >= 50) return 'bg-orange-400';
+        return 'bg-red-500';
+    }
+
+    // CHỈ LẤY CÁC NGÀNH HÀNG CÓ THƯỞNG HOẶC CÓ DATA (Loại bỏ thẻ rỗng)
+    $: safeCategories = (data?.categories || []).filter(c => c.thuong > 0 || c.details !== null);
+    
+    // Nhóm 1: Có thưởng hoặc Trạng thái Đạt giải
+    $: listCoGiai = safeCategories.filter(c => c.thuong > 0 || (c.details && c.details.trangThai === 'Đạt Giải'));
+    
+    // Nhóm 2: Không thưởng, khoảng cách từ 1 -> 10
+    $: listTiemNang = safeCategories.filter(c => c.thuong === 0 && c.details && c.details.trangThai === 'Tiềm Năng');
+    
+    // Nhóm 3: Còn lại (Cách > 10 hoặc không xác định)
+    $: listCanCoGang = safeCategories.filter(c => c.thuong === 0 && c.details && (c.details.trangThai === 'Cần Cố Gắng' || c.details.trangThai === 'N/A'));
 </script>
 
-<div class="w-full h-full flex flex-col bg-white rounded-lg shadow-sm overflow-hidden">
-    <div class="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between z-20">
-        <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <span class="text-blue-600">🏆</span> Kết Quả Thi Đua Vùng HCM
-        </h2>
-        
-        <div class="relative w-72">
-            <div 
-                class="flex items-center justify-between w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm cursor-pointer hover:border-blue-500 transition-colors"
-                on:click={() => isDropdownOpen = !isDropdownOpen}
-                on:keydown={(e) => e.key === 'Enter' && (isDropdownOpen = !isDropdownOpen)}
-                tabindex="0"
-                role="button"
-            >
-                <span class="truncate font-medium {selectedSupermarket ? 'text-gray-900' : 'text-gray-400'}">
-                    {selectedSupermarket || '-- Chọn Siêu Thị --'}
-                </span>
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-            </div>
+{#if data}
+<div class="w-full bg-transparent overflow-hidden" in:fade>
+    
+    <div class="text-center mb-6 border-b border-gray-200 pb-4">
+        <h2 class="text-3xl font-extrabold text-gray-800 uppercase tracking-wide text-blue-800">{data.sieuThi}</h2>
+        <p class="text-gray-500 mt-2 font-medium">Báo cáo Thi Đua Vùng Hồ Chí Minh</p>
+    </div>
 
-            {#if isDropdownOpen}
-                <div class="absolute top-full mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 flex flex-col z-50" transition:slide={{duration: 200}}>
-                    <div class="p-2 border-b border-gray-100">
-                        <input 
-                            type="text" 
-                            bind:value={searchTerm}
-                            placeholder="Tìm siêu thị..." 
-                            class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                        />
-                    </div>
-                    <div class="overflow-y-auto flex-1 p-1">
-                        {#each filteredSupermarkets as st}
-                            <button 
-                                class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 hover:text-blue-700 rounded transition-colors {selectedSupermarket === st ? 'bg-blue-100 text-blue-800 font-medium' : 'text-gray-700'}"
-                                on:click={() => selectSupermarket(st)}
-                            >
-                                {st}
-                            </button>
-                        {/each}
-                        {#if filteredSupermarkets.length === 0}
-                            <div class="px-3 py-4 text-sm text-center text-gray-500">Không tìm thấy siêu thị</div>
-                        {/if}
-                    </div>
-                </div>
-            {/if}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div class="bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg p-5 text-white shadow-md flex items-center justify-between">
+            <div>
+                <p class="text-green-50 text-xs font-bold uppercase tracking-wider mb-1 opacity-90">Tổng Thưởng Đạt Được</p>
+                <h3 class="text-3xl font-extrabold flex items-baseline gap-1">
+                    {formatCurrency(data.tongThuong)} <span class="text-sm font-medium opacity-80">₫</span>
+                </h3>
+            </div>
+            <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm shadow-inner">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+        </div>
+
+        <div class="bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg p-5 text-white shadow-md flex items-center justify-between">
+            <div>
+                <p class="text-blue-50 text-xs font-bold uppercase tracking-wider mb-1 opacity-90">Số Giải Đang Giữ</p>
+                <h3 class="text-3xl font-extrabold flex items-baseline gap-2">
+                    {data.soGiai} <span class="text-sm font-medium opacity-80">Giải</span>
+                </h3>
+            </div>
+            <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm shadow-inner">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+            </div>
         </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-        {#if !data || !data.supermarketList || data.supermarketList.length === 0}
-            <div class="h-full flex flex-col items-center justify-center text-gray-400" in:fade>
-                <svg class="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                <p class="text-lg">Chưa có dữ liệu, vui lòng upload file excel HCM.</p>
-            </div>
-        {:else if currentDetail}
-            <div class="max-w-5xl mx-auto space-y-6" in:fade>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl p-6 text-white shadow-md flex items-center justify-between">
-                        <div>
-                            <p class="text-green-100 text-sm font-medium uppercase tracking-wider mb-1">Tổng Thưởng</p>
-                            <h3 class="text-3xl font-bold">{formatCurrency(currentDetail.tongThuong)}</h3>
-                        </div>
-                        <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        </div>
-                    </div>
-
-                    <div class="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl p-6 text-white shadow-md flex items-center justify-between">
-                        <div>
-                            <p class="text-purple-100 text-sm font-medium uppercase tracking-wider mb-1">Số Giải Đạt Được</p>
-                            <h3 class="text-3xl font-bold">{currentDetail.soGiai} <span class="text-lg font-normal opacity-80">Giải</span></h3>
-                        </div>
-                        <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/80">
-                        <h3 class="font-bold text-gray-800">Chi Tiết Thưởng Ngành Hàng</h3>
-                    </div>
-                    
-                    <div class="p-6">
-                        {#if currentDetail.categories && currentDetail.categories.length > 0}
-                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {#each currentDetail.categories as cat}
-                                    <div class="border border-gray-100 rounded-lg p-4 hover:shadow-md transition-shadow bg-white flex flex-col justify-between group">
-                                        <div>
-                                            <div class="flex justify-between items-start mb-2">
-                                                <h4 class="font-semibold text-gray-800 line-clamp-2" title={cat.name}>{cat.name}</h4>
-                                                {#if cat.loaiGiai}
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {cat.loaiGiai.toLowerCase().includes('target') ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}">
-                                                        {cat.loaiGiai}
-                                                    </span>
-                                                {/if}
-                                            </div>
-                                        </div>
-                                        <div class="mt-3 pt-3 border-t border-gray-50 flex justify-between items-end">
-                                            <span class="text-xs text-gray-500">Mức thưởng:</span>
-                                            <span class="font-bold text-green-600">{formatCurrency(cat.thuong)}</span>
-                                        </div>
-                                    </div>
-                                {/each}
-                            </div>
-                        {:else}
-                            <p class="text-center py-8 text-gray-500">Siêu thị chưa có dữ liệu thưởng chi tiết cho ngành hàng.</p>
+    {#snippet categoryCard(cat, groupType)}
+        <div class="bg-white rounded-xl shadow-sm border p-4 flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-1 {groupType === 'cogiai' ? 'border-blue-200' : groupType === 'tiemnang' ? 'border-orange-200' : 'border-gray-200'}">
+            
+            <div class="flex justify-between items-start mb-3">
+                <div class="pr-2">
+                    <h4 class="font-bold text-gray-800 text-sm leading-tight">{cat.name}</h4>
+                    <div class="mt-1 flex flex-wrap gap-1.5 items-center">
+                        {#if cat.details && cat.details.bestRank > 0}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                                Hạng: #{cat.details.bestRank}
+                            </span>
+                        {/if}
+                        {#if cat.loaiGiai || (cat.details && cat.details.loiThe)}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100">
+                                {cat.loaiGiai || cat.details.loiThe}
+                            </span>
                         {/if}
                     </div>
                 </div>
-            </div>
-        {:else}
-            <div class="h-full flex flex-col items-center justify-center text-gray-400" in:fade>
-                <div class="w-16 h-16 mb-4 rounded-full bg-blue-50 flex items-center justify-center">
-                    <svg class="w-8 h-8 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                <div class="text-right shrink-0">
+                    <span class="block text-[9px] text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Tiền Thưởng</span>
+                    <span class="font-bold text-green-600 text-base leading-none">{formatCurrency(cat.thuong)} ₫</span>
                 </div>
-                <p class="text-lg text-gray-500">Hãy chọn một siêu thị từ menu để xem kết quả.</p>
             </div>
-        {/if}
-    </div>
+
+            {#if cat.details}
+                <div class="mb-3">
+                    <div class="flex justify-between text-[11px] font-semibold mb-1">
+                        <span class="text-gray-500">Tiến độ HT Target</span>
+                        <span class={cat.details.percentHT >= 100 ? 'text-green-600' : 'text-blue-600'}>
+                            {Math.round(cat.details.percentHT)}%
+                        </span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-1.5">
+                        <div class="h-1.5 rounded-full {getProgressBarColor(cat.details.percentHT)}" style="width: {Math.min(cat.details.percentHT, 100)}%"></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-1 p-2 bg-gray-50 rounded-lg mb-3 border border-gray-100">
+                    <div class="text-center border-r border-gray-200">
+                        <span class="block text-[9px] text-gray-500 font-medium">Lũy Kế</span>
+                        <span class="font-bold text-gray-800 text-xs">{formatNumber(cat.details.luyKe)}</span>
+                    </div>
+                    <div class="text-center border-r border-gray-200">
+                        <span class="block text-[9px] text-gray-500 font-medium">Target</span>
+                        <span class="font-bold text-gray-800 text-xs">{formatNumber(cat.details.target)}</span>
+                    </div>
+                    <div class="text-center">
+                        <span class="block text-[9px] text-gray-500 font-medium">DKHT</span>
+                        <span class="font-bold text-blue-600 text-xs">{formatNumber(cat.details.dkht)}</span>
+                    </div>
+                </div>
+
+                <div class="mt-auto pt-2 border-t border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center gap-1 text-[10px] font-medium text-gray-500">
+                        <span>Lấy Top</span>
+                        <span class="px-1 py-0.5 bg-gray-200 text-gray-700 rounded font-bold">{cat.details.cutoffRank}</span>
+                    </div>
+
+                    <div class="px-2 py-1 rounded border text-[10px] font-bold {groupType === 'cogiai' ? 'bg-green-100 text-green-800 border-green-200' : groupType === 'tiemnang' ? 'bg-orange-100 text-orange-800 border-orange-200' : 'bg-red-50 text-red-700 border-red-100'}">
+                        {#if groupType === 'cogiai'}
+                            🎉 An toàn trong Top
+                        {:else if groupType === 'tiemnang'}
+                            🔥 Cách {cat.details.khoangCach} hạng
+                        {:else}
+                            ⚠️ Cách xa {cat.details.khoangCach} hạng
+                        {/if}
+                    </div>
+                </div>
+            {:else}
+                <div class="mt-auto pt-3 border-t border-gray-100">
+                    <p class="text-center text-[11px] text-gray-400 italic">Chưa có số liệu phân tích...</p>
+                </div>
+            {/if}
+        </div>
+    {/snippet}
+
+    {#if listCoGiai.length > 0}
+        <div class="mb-8">
+            <h3 class="text-base font-bold text-blue-700 uppercase mb-3 flex items-center gap-2 border-l-4 border-blue-500 pl-2">
+                🏆 Nhóm Đang Đạt Giải ({listCoGiai.length})
+            </h3>
+            <div class="hcm-grid-4">
+                {#each listCoGiai as cat} {@render categoryCard(cat, 'cogiai')} {/each}
+            </div>
+        </div>
+    {/if}
+
+    {#if listTiemNang.length > 0}
+        <div class="mb-8">
+            <h3 class="text-base font-bold text-orange-600 uppercase mb-3 flex items-center gap-2 border-l-4 border-orange-500 pl-2">
+                🔥 Nhóm Tiềm Năng Bứt Phá ({listTiemNang.length})
+            </h3>
+            <div class="hcm-grid-4">
+                {#each listTiemNang as cat} {@render categoryCard(cat, 'tiemnang')} {/each}
+            </div>
+        </div>
+    {/if}
+
+    {#if listCanCoGang.length > 0}
+        <div class="mb-8 opacity-90">
+            <h3 class="text-base font-bold text-red-600 uppercase mb-3 flex items-center gap-2 border-l-4 border-red-500 pl-2">
+                ⚠️ Nhóm Cần Cố Gắng ({listCanCoGang.length})
+            </h3>
+            <div class="hcm-grid-4">
+                {#each listCanCoGang as cat} {@render categoryCard(cat, 'cancogang')} {/each}
+            </div>
+        </div>
+    {/if}
+
 </div>
+{/if}
+
+<style>
+    /* NÂNG CẤP LÊN 4 CỘT THEO YÊU CẦU */
+    .hcm-grid-4 {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+    }
+    
+    @media (max-width: 1280px) {
+        .hcm-grid-4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 1024px) {
+        .hcm-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+        .hcm-grid-4 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    }
+</style>
