@@ -197,15 +197,15 @@
         box-sizing: border-box !important;
     }
 
-    /* 3. Ép 4 thẻ KPI vừa khít 900px, không rớt dòng */
-    :global(.capture-container .kpi-grid-fixed) {
+   /* 3. Ép 4 thẻ KPI vừa khít 900px, không rớt dòng */
+    :global(.capture-container:has(.realtime-override) .kpi-grid-fixed) {
         width: 100% !important;
         display: flex !important;
         gap: 16px !important;
         margin: 0 auto 16px auto !important;
         box-sizing: border-box !important;
     }
-    :global(.capture-container .kpi-grid-fixed > div) {
+    :global(.capture-container:has(.realtime-override) .kpi-grid-fixed > div) {
         flex: 1 !important;
     }
 
