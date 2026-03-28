@@ -249,7 +249,7 @@
         Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
       </h2>
 
-      <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed">
+      <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed" data-capture-filename="SieuThiLuyKe {$selectedWarehouse ? '- ' + $selectedWarehouse : ''}">
       
         <div class="kpi-card-solid card-1">
             <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
@@ -346,7 +346,7 @@
     warehouseId={$selectedWarehouse}
   />
 
-  <div class="luyke-tier-1-grid" data-capture-group="tier1" data-capture-filename="HIỆU QUẢ KHAI THÁC">
+  <div class="luyke-tier-1-grid exclusive-sieuthi-capture" data-capture-group="tier1" data-capture-filename="HIỆU QUẢ KHAI THÁC">
       <LuykeEfficiencyTable 
           items={[]} 
           dynamicItems={combinedEfficiencyItems} 
@@ -374,8 +374,8 @@
 </div>
 
 <style>
-    /* 1. Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc */
-    :global(.capture-container .luyke-tier-1-grid) {
+    /* 1. Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc - CHỈ TÁC DỤNG TẠI TAB NÀY */
+    :global(.capture-container .exclusive-sieuthi-capture) {
         display: flex !important;
         flex-direction: column !important;
         gap: 16px !important;
@@ -386,19 +386,19 @@
     }
 
     /* 2. Trị bệnh "CẮT CỤT DÒNG": Phá vỡ class h-full và cơ chế flex bóp chiều cao */
-    :global(.capture-container .luyke-tier-1-grid .luyke-widget) {
+    :global(.capture-container .exclusive-sieuthi-capture .luyke-widget) {
         height: auto !important;
         min-height: max-content !important;
         display: block !important; 
     }
     
-    :global(.capture-container .luyke-tier-1-grid .h-full) {
+    :global(.capture-container .exclusive-sieuthi-capture .h-full) {
         height: auto !important;
     }
 
     /* 3. Phá vỡ giới hạn thanh cuộn để hiển thị full danh sách Top Nhóm Hàng */
-    :global(.capture-container .luyke-tier-1-grid .custom-scrollbar),
-    :global(.capture-container .luyke-tier-1-grid .luyke-widget-body) {
+    :global(.capture-container .exclusive-sieuthi-capture .custom-scrollbar),
+    :global(.capture-container .exclusive-sieuthi-capture .luyke-widget-body) {
         max-height: none !important;
         height: auto !important;
         overflow: visible !important;
