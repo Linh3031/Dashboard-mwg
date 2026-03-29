@@ -163,24 +163,14 @@ export const normalizers = {
                 }
                 newRow.revenue = revenue; 
 
-                // 2. Xác định Hệ số gốc (Base Rate) - Trang bị cơ chế Regex tìm mã số
-                const productKey = String(newRow.nhomHang || '').trim();
-                let baseRate = heSoMap[productKey];
+                // 2. Xác định Hệ số gốc (Base Rate) - [VÁ LỖI CỰC MẠNH: DÙNG GET HỆ SỐ FOR CATEGORY]
+                const productKey = String(newRow.nhomHang || '');
+                const baseRate = helpers.getHeSoForCategory(productKey, heSoMap);
 
-                if (baseRate === undefined && productKey) {
-                    const matchId = productKey.match(/^(\d+)/);
-                    if (matchId) {
-                        const foundKey = Object.keys(heSoMap).find(k => k.startsWith(matchId[1] + ' -'));
-                        if (foundKey) baseRate = heSoMap[foundKey];
-                    }
-                }
-                baseRate = baseRate || 1;
-
-                // 3. Xác định thưởng Trả Góp (Bonus Rate) - Dùng includes thay vì Set
+                // 3. Xác định thưởng Trả Góp (Bonus Rate)
                 const exportModeRaw = String(newRow.hinhThucXuat || '');
                 const exportModeLower = exportModeRaw.toLowerCase();
                 
-                // Logic: Chỉ cần chứa từ khóa "trả góp" hoặc "trả chậm" là dính
                 const isInstallment = exportModeLower.includes('trả góp') || exportModeLower.includes('trả chậm');
                 const bonusRate = isInstallment ? 0.3 : 0;
 
@@ -188,7 +178,7 @@ export const normalizers = {
                 newRow.heSoQuyDoi = baseRate + bonusRate; 
                 newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
                 
-                // [DEBUG LOG - CHỈ HIỆN 1 DÒNG ĐẦU TIÊN ĐỂ SOI]
+                // [DEBUG LOG]
                 if (index === 0) {
                     console.group(`%c🔍 DEBUG LOGIC QUY ĐỔI (Dòng 1)`, "color: white; background: red; font-weight: bold; padding: 2px 5px");
                     console.log(`- Sản phẩm: ${productKey}`);
