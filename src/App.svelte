@@ -11,7 +11,8 @@
       selectedWarehouse,
       danhSachNhanVien,
       warehouseList,
-      isDemoMode
+      isDemoMode,
+      declarations
   } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
@@ -28,7 +29,7 @@
   import HealthEmployeeSection from './components/HealthEmployeeSection.svelte';
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
-  
+
   // [GENESIS SURGERY] Nhúng Component ToolsSection
   import ToolsSection from './components/ToolsSection.svelte';
 
@@ -60,7 +61,8 @@
   // <-- [TẮT DEMO] Comment import
 
   // Kiểm tra localStorage ngay khi khởi tạo
-  let isBootingDemo = false; // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
+  let isBootingDemo = false;
+  // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
   
   // Nếu đang boot demo thì chưa sẵn sàng (false)
   let isAppReady = !isBootingDemo;
@@ -87,13 +89,10 @@
       try {
           // 1. Nạp Snapshot
           await demoService.loadSnapshot(DEMO_SNAPSHOT);
-
           // 2. Chờ Store cập nhật
           await tick();
-
           // 3. Chọn kho mặc định từ dữ liệu vừa nạp
           const currentList = get(danhSachNhanVien);
-
           if (currentList && currentList.length > 0) {
               const firstWarehouse = currentList[0].maKho || "908";
               selectedWarehouse.set(firstWarehouse);
@@ -105,18 +104,15 @@
           
           // 4. Mở khóa giao diện
           isAppReady = true;
-
           console.log("✅ [Bootloader] Demo Ready -> Unlocking UI");
 
           // 5. Chuyển Tab (Delay nhẹ để UI render xong)
           setTimeout(() => {
               activeTab.set('realtime-section');
           }, 200);
-
       } catch (e) {
           console.error("❌ Lỗi nạp Demo:", e);
           alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
-
           // Fallback về chế độ thật nếu lỗi
           localStorage.removeItem('isDemoMode');
           window.location.reload();
@@ -145,6 +141,12 @@
   // Hàm tải cấu hình hệ thống (CHỈ DÙNG CHO REAL MODE)
   async function loadGlobalSystemConfig() {
       try {
+          // [VÁ LỖI LOGIC] Tải Declarations cho user thường ở ngay đây
+          const declData = await adminService.loadDeclarationsFromFirestore();
+          if (declData) {
+              declarations.set(declData);
+          }
+
           await Promise.all([
               adminService.loadCategoryDataFromFirestore(),
               adminService.loadEfficiencyConfig(),
@@ -167,7 +169,6 @@
 
   function handleSaveEffConfig(event) {
       const newItem = { ...event.detail };
-
       if ($activeTab === 'declaration-section') {
           newItem.isSystem = true;
           efficiencyConfig.update(items => {
@@ -181,7 +182,6 @@
           newItem.isSystem = false;
           let currentLocal = get(warehouseCustomMetrics) || [];
           const idx = currentLocal.findIndex(i => i.id === newItem.id);
-
           if (idx >= 0) {
               currentLocal[idx] = newItem;
           } else {
@@ -189,7 +189,6 @@
           }
           warehouseCustomMetrics.set(currentLocal);
           const wh = get(selectedWarehouse);
-
           if(wh) {
                datasyncService.saveCustomMetrics(wh, currentLocal);
           } else {
@@ -200,7 +199,6 @@
 
   async function handleSaveCustomTable(event) {
       const newItem = event.detail;
-
       customRevenueTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
           if (idx >= 0) { 
@@ -210,7 +208,6 @@
               return [...items, newItem]; 
           }
       });
-
       if (newItem.isSystem) {
           const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
           await adminService.saveSystemRevenueTables(currentSystemTables);
@@ -237,7 +234,6 @@
              return [...items, newItem];
           }
       });
-
       if (newItem.isSystem) {
           const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
           await adminService.saveSystemPerformanceTables(systemTables);
@@ -253,14 +249,13 @@
   }
 
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
-
+  
   $: {
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
           const uniqueWarehouses = [...new Set($danhSachNhanVien
               .map(nv => nv.maKho)
               .filter(k => k && String(k).trim() !== '')
           )].sort();
-
           warehouseList.set(uniqueWarehouses);
       }
   }
@@ -362,7 +357,6 @@
             <DeclarationSection activeTab={$activeTab} />
             
             <ToolsSection activeTab={$activeTab} />
-            
         {:else}
             <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
                 <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -399,7 +393,7 @@
     display: flex; 
     flex-wrap: wrap; 
     justify-content: space-between; 
-    align-items: center; 
+    align-items: center;
     gap: 1rem; 
     margin-bottom: 1.5rem;
   }
