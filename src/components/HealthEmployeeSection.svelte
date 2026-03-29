@@ -23,17 +23,18 @@
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
   import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
-  
-  // [CODEGENESIS] Import Component Trả Góp mới
   import InstallmentView from './health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
-
   let activeSubTab = 'sknv';
   let viewingDetailId = null;
   let processedReport = [];
   
-  // [CODEGENESIS] Cập nhật danh sách Tab
+  // State Bộ lọc ngày
+  let selectedStartDate = '';
+  let selectedEndDate = '';
+  let showDateFilter = false;
+
   const tabs = [
       { id: 'sknv', label: 'SKNV', icon: 'users', title: 'SucKhoeNhanVien' },
       { id: 'doanhthu', label: 'Doanh thu LK', icon: 'dollar-sign', title: 'DoanhThuLuyKe' },
@@ -41,23 +42,140 @@
       { id: 'hieuqua', label: 'Hiệu quả NV LK', icon: 'bar-chart-2', title: 'HieuQuaKhaiThac' },
       { id: 'nganhhang', label: 'DT ngành hàng', icon: 'layers', title: 'DoanhThuNganhHang' },
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' },
-      { id: 'tragop', label: 'Trả chậm', icon: 'credit-card', title: 'ThongKeTraCham' } // Tab Mới
+      { id: 'tragop', label: 'Trả chậm', icon: 'credit-card', title: 'ThongKeTraCham' }
   ];
 
   let lastDataHash = '';
-  $: {
-      if ($danhSachNhanVien.length > 0 && $ycxData.length > 0) {
-          const currentHash = `${$danhSachNhanVien.length}-${$ycxData.length}-${$selectedWarehouse}`;
-          if (currentHash !== lastDataHash) {
-              lastDataHash = currentHash;
-              const goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
-              const newMasterReport = reportService.generateMasterReportData($ycxData, goals, false);
-              masterReportData.update(current => ({ ...current, sknv: newMasterReport }));
+
+  // [CODEGENESIS] VÁ LỖI: Thuật toán Parser đa năng (Universal Date Parser)
+  function parseUniversalDate(val) {
+      if (val === null || val === undefined || val === '') return null;
+
+      // 1. Nếu XLSX tự convert ra JS Date Object
+      if (val instanceof Date) {
+          return new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
+      }
+
+      // 2. Nếu XLSX convert ra số (Excel Serial Date, vd: 45744.54)
+      if (typeof val === 'number') {
+          // Ép Epoch từ 1/1/1900 của Excel về 1/1/1970 của JavaScript (-25569 ngày)
+          const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
+          const tempDate = new Date(jsEpoch);
+          // Bắt buộc dùng getUTC để tránh bị lùi ngày do múi giờ VN (GMT+7)
+          return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
+      }
+
+      // 3. Nếu nó thực sự là dạng Text (Chuỗi)
+      const str = String(val).trim();
+      const parts = str.split(/[\s,T]+/); 
+      const datePart = parts[0]; 
+
+      if (datePart.includes('/')) {
+          const dParts = datePart.split('/');
+          if (dParts.length >= 3) {
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10);
+              const p3 = parseInt(dParts[2], 10);
+              // Tự nhận diện YYYY/MM/DD hay DD/MM/YYYY dựa vào độ lớn của số
+              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
           }
+      } else if (datePart.includes('-')) {
+          const dParts = datePart.split('-');
+          if (dParts.length >= 3) {
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10);
+              const p3 = parseInt(dParts[2], 10);
+              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+          }
+      }
+
+      // 4. Đường cùng: Để JS tự lo
+      const fallbackDate = new Date(val);
+      if (!isNaN(fallbackDate.getTime())) {
+          return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
+      }
+
+      return null;
+  }
+
+  function selectQuickDays(days) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - days + 1);
+      
+      const pad = (n) => (n < 10 ? '0' + n : n);
+      selectedEndDate = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
+      selectedStartDate = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+      showDateFilter = false;
+  }
+
+  function clearDateFilter() {
+      selectedStartDate = '';
+      selectedEndDate = '';
+      showDateFilter = false;
+  }
+
+  function formatDisplayDate(dateStr) {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      return `${parts[2]}/${parts[1]}`;
+  }
+
+  function handleGlobalClick(e) {
+      if (showDateFilter && !e.target.closest('.date-filter-container')) {
+          showDateFilter = false;
       }
   }
 
-  // Đây là biến quan trọng nhất: processedReport chứa danh sách nhân viên ĐÃ CÓ orders
+  // [CODEGENESIS] VÁ LỖI: Bộ lọc diệt trùng Key ẩn
+  $: filteredYcxData = $ycxData.filter(item => {
+      if (!selectedStartDate && !selectedEndDate) return true;
+      
+      let dateVal = null;
+      // Quét toàn bộ key trong object, tìm mọi thứ tương đồng với "Ngày tạo"
+      for (const key of Object.keys(item)) {
+          const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
+          if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) {
+              dateVal = item[key];
+              break;
+          }
+      }
+      
+      const itemTime = parseUniversalDate(dateVal);
+      
+      // Cơ chế an toàn (Fail-Safe): Nếu dòng này không giải mã được ngày -> GIỮ LẠI tránh mất oan.
+      if (!itemTime) return true; 
+      
+      let isValid = true;
+      if (selectedStartDate) {
+          const start = new Date(selectedStartDate).setHours(0,0,0,0);
+          if (itemTime < start) isValid = false;
+      }
+      if (selectedEndDate) {
+          const end = new Date(selectedEndDate).setHours(23,59,59,999);
+          if (itemTime > end) isValid = false;
+      }
+      return isValid;
+  });
+
+  // Re-generate report dựa trên Data đã lọc chuẩn
+  $: {
+      if ($danhSachNhanVien.length > 0 && filteredYcxData.length > 0) {
+          const currentHash = `${$danhSachNhanVien.length}-${filteredYcxData.length}-${$selectedWarehouse}-${selectedStartDate}-${selectedEndDate}`;
+          if (currentHash !== lastDataHash) {
+              lastDataHash = currentHash;
+              const goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
+              const newMasterReport = reportService.generateMasterReportData(filteredYcxData, goals, false);
+              masterReportData.update(current => ({ ...current, sknv: newMasterReport }));
+          }
+      } else if (filteredYcxData.length === 0 && lastDataHash !== 'empty') {
+          lastDataHash = 'empty';
+          masterReportData.update(current => ({ ...current, sknv: [] }));
+      }
+  }
+
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -67,26 +185,17 @@
   function switchSubTab(tabId) { activeSubTab = tabId; viewingDetailId = null; }
   function handleEmployeeClick(event) { viewingDetailId = event.detail.employeeId; }
   function handleBackToSummary() { viewingDetailId = null; }
-  
-  function handleWarehouseChange(event) {
-      selectedWarehouse.set(event.target.value);
-  }
-
-  function handleCompose() { 
-      modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'sknv' }));
-  }
-  function handleExport() { 
-      actionService.handleExport('sknv');
-  }
-  function handleCapture() { 
-      actionService.handleCapture('sknv');
-  }
+  function handleWarehouseChange(event) { selectedWarehouse.set(event.target.value); }
+  function handleCompose() { modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'sknv' })); }
+  function handleExport() { actionService.handleExport('sknv'); }
+  function handleCapture() { actionService.handleCapture('sknv'); }
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
+<svelte:window on:click={handleGlobalClick} />
+
 <section id="health-employee-section" class="page-section {activeTab === 'health-employee-section' ? '' : 'hidden'}">
-    
     <div class="content-card mb-6 !p-0">
         <div class="modern-page-header flex flex-wrap justify-between items-center">
             
@@ -104,7 +213,7 @@
                     <label for="sknv-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
                     <select 
                         id="sknv-warehouse-selector" 
-                        class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" 
+                        class="p-2 border rounded-lg text-sm shadow-sm min-w-[100px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" 
                         value={$selectedWarehouse}
                         on:change={handleWarehouseChange}
                     >
@@ -113,6 +222,49 @@
                             <option value={kho}>{kho}</option>
                         {/each}
                     </select>
+                </div>
+
+                <div class="date-filter-container relative flex items-center gap-2 pl-2 md:pl-4 border-l-2 border-blue-100 ml-1 md:ml-2">
+                    <button 
+                        class="p-2 border rounded-lg text-sm shadow-sm font-semibold text-gray-700 bg-white border-gray-200 hover:bg-gray-50 flex items-center gap-2 transition"
+                        on:click={() => showDateFilter = !showDateFilter}
+                        title="Lọc theo ngày"
+                    >
+                        <i data-feather="calendar" class="w-4 h-4"></i>
+                        {#if selectedStartDate && selectedEndDate}
+                            <span class="text-xs text-blue-600 font-bold">{formatDisplayDate(selectedStartDate)} - {formatDisplayDate(selectedEndDate)}</span>
+                        {:else if selectedStartDate}
+                            <span class="text-xs text-blue-600 font-bold">Từ {formatDisplayDate(selectedStartDate)}</span>
+                        {:else if selectedEndDate}
+                            <span class="text-xs text-blue-600 font-bold">Đến {formatDisplayDate(selectedEndDate)}</span>
+                        {:else}
+                            <span class="hidden xl:inline text-xs">Lọc ngày</span>
+                        {/if}
+                    </button>
+
+                    {#if showDateFilter}
+                        <div class="absolute top-full left-0 mt-2 bg-white border border-gray-200 shadow-xl rounded-lg p-4 z-50 w-64 md:w-72">
+                            <div class="flex flex-col gap-3">
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-xs text-gray-500 font-semibold">Từ ngày</label>
+                                    <input type="date" bind:value={selectedStartDate} class="border p-1.5 rounded text-sm w-full outline-none focus:ring-1 focus:ring-blue-500">
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-xs text-gray-500 font-semibold">Đến ngày</label>
+                                    <input type="date" bind:value={selectedEndDate} class="border p-1.5 rounded text-sm w-full outline-none focus:ring-1 focus:ring-blue-500">
+                                </div>
+                                <div class="flex flex-wrap gap-1 mt-2">
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(3)}>3 Ngày</button>
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(5)}>5 Ngày</button>
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(7)}>7 Ngày</button>
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(10)}>10 Ngày</button>
+                                </div>
+                                <div class="border-t mt-1 pt-2 flex justify-end">
+                                    <button class="px-3 py-1.5 bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600 rounded text-xs font-semibold transition" on:click={clearDateFilter}>Xóa lọc</button>
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             </div>
 
