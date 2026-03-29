@@ -1,9 +1,11 @@
 // src/services/reports/general.report.js
-// Version 1.0 - General reports (Brand, Unexported)
+// Version 1.1 - Fix missing import helpers and apply fuzzy match for heSoQuyDoi
 import { get } from 'svelte/store';
 import * as utils from '../../utils.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { employeeMaNVMap } from '../../stores.js';
+// [HOTFIX] Thêm dòng import này để file hiểu 'helpers' là gì!
+import { helpers } from '../processing/helpers.js'; 
 
 export const generalReportLogic = {
     generateRealtimeBrandReport(realtimeYCXData, selectedCategory, selectedBrand) {
@@ -70,7 +72,10 @@ export const generalReportLogic = {
                 if (isNaN(thanhTien) || isNaN(soLuong)) return;
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
-                const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                
+                // [HOTFIX] Đã map đúng hàm getHeSoForCategory qua helpers
+                const heSo = helpers.getHeSoForCategory(row.nhomHang, heSoQuyDoi);
+                
                 // [FIX] Dùng revenueQuyDoi từ normalizer
                 const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
 
@@ -112,7 +117,10 @@ export const generalReportLogic = {
                 if (isNaN(thanhTien) || isNaN(soLuong)) return;
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
-                const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                
+                // [HOTFIX] Đã map đúng hàm getHeSoForCategory qua helpers
+                const heSo = helpers.getHeSoForCategory(row.nhomHang, heSoQuyDoi);
+                
                 // [FIX] Dùng revenueQuyDoi từ normalizer
                 const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
 

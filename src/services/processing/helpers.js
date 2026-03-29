@@ -4,11 +4,21 @@ import { config } from '../../config.js';
 // [FIX] Import thêm efficiencyConfig
 import { declarations, efficiencyConfig } from '../../stores.js';
 
+// [CODEGENESIS] Hàm vũ khí: Chuẩn hóa chuỗi (Xóa dấu tiếng Việt, viết thường, xóa khoảng trắng)
+const normalizeStr = (str) => {
+    if (!str) return '';
+    return str.toString()
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Xóa dấu
+        .trim();
+};
+
 export const helpers = {
     findColumnName(header, aliases) {
         for (const colName of header) {
-            const processedColName = String(colName || '').trim().toLowerCase();
-            if (aliases.includes(processedColName)) {
+            const processedColName = normalizeStr(colName);
+            // Chuẩn hóa luôn cả aliases để so sánh an toàn
+            if (aliases.map(a => normalizeStr(a)).includes(processedColName)) {
                 return colName;
             }
         }
@@ -17,45 +27,53 @@ export const helpers = {
 
     getHinhThucXuatTinhDoanhThu: () => {
         const declarationData = get(declarations).hinhThucXuat;
-        if (declarationData) return new Set(declarationData.split('\n').map(l => l.trim()).filter(Boolean));
-        return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU);
+        if (declarationData) {
+            // [HOTFIX] Chỉ cắt bằng phẩy/xuống dòng và trim(). Tuyệt đối không dùng normalizeStr ở đây để giữ nguyên Hoa/Thường.
+            return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
+        }
+        return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || []);
     },
 
     getHinhThucXuatTraGop: () => {
         const declarationData = get(declarations).hinhThucXuatGop;
-        if (declarationData) return new Set(declarationData.split('\n').map(l => l.trim()).filter(Boolean));
-        return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP);
+        if (declarationData) {
+            // [HOTFIX] Chỉ cắt bằng phẩy/xuống dòng và trim()
+            return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
+        }
+        return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || []);
     },
 
     getHeSoQuyDoi: () => {
         const heSoMap = {};
-        let sourceUsed = 'DEFAULT'; // Biến để debug xem đang lấy dữ liệu từ nguồn nào
+        let sourceUsed = 'DEFAULT'; 
 
         // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
         const dynamicConfig = get(efficiencyConfig);
         if (dynamicConfig && dynamicConfig.length > 0) {
             sourceUsed = 'ADMIN_CONFIG_STORE';
             dynamicConfig.forEach(item => {
-                // item cấu trúc: { id: "1491 - Smartphone", heSo: 1.5, ... }
                 if (item.id && item.heSo !== undefined && item.heSo !== null) {
-                    heSoMap[item.id.trim()] = parseFloat(item.heSo);
+                    heSoMap[normalizeStr(item.id)] = parseFloat(item.heSo);
                 }
             });
         }
 
         // ƯU TIÊN 2: Lấy từ Khai báo Text (Cũ - nếu Priority 1 không đủ hoặc rỗng)
-        // Logic merge: Chỉ thêm nếu chưa có trong map
         const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
-                const parts = line.split(',');
-                if (parts.length >= 2) {
-                    const key = parts[0].trim();
-                    const value = parseFloat(parts[1].trim());
-                    if (key && !isNaN(value)) {
-                         // Nếu chưa có thì mới thêm (Ưu tiên Config mới đè lên cũ)
-                         if (heSoMap[key] === undefined) {
-                             heSoMap[key] = value;
+                // [VÁ LỖI] Dùng lastIndexOf để tránh lỗi khi tên Ngành Hàng có chứa dấu phẩy
+                const lastCommaIndex = line.lastIndexOf(',');
+                if (lastCommaIndex > -1) {
+                    const rawKey = line.substring(0, lastCommaIndex);
+                    const rawVal = line.substring(lastCommaIndex + 1);
+                    
+                    const cleanKey = normalizeStr(rawKey);
+                    const value = parseFloat(rawVal.trim());
+                    
+                    if (cleanKey && !isNaN(value)) {
+                         if (heSoMap[cleanKey] === undefined) {
+                             heSoMap[cleanKey] = value;
                          }
                     }
                 }
@@ -63,23 +81,27 @@ export const helpers = {
         }
 
         // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
-        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI;
+        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI || {};
         Object.entries(defaultData).forEach(([key, value]) => {
-             if (heSoMap[key] === undefined) {
-                 heSoMap[key] = value;
+             const cleanKey = normalizeStr(key);
+             if (heSoMap[cleanKey] === undefined) {
+                 heSoMap[cleanKey] = value;
              }
         });
 
         // --- [DEBUG LOG THEO YÊU CẦU] ---
-        // Chỉ log khi map có dữ liệu để tránh spam
         if (Object.keys(heSoMap).length > 0) {
             // console.log(`[Helpers] Đã nạp ${Object.keys(heSoMap).length} hệ số quy đổi. Nguồn chính: ${sourceUsed}`);
-            // Mở comment dòng dưới nếu muốn soi chi tiết map khi cần
-            // console.log("Chi tiết Map Quy Đổi:", heSoMap);
         }
         // -------------------------------
 
         return heSoMap;
+    },
+
+    // [CODEGENESIS] Thêm hàm trung gian giúp file báo cáo gọi an toàn (áp dụng Fuzzy Match)
+    getHeSoForCategory: (nhomHangRaw, mapHeSo) => {
+        const cleanNhomHang = normalizeStr(nhomHangRaw);
+        return mapHeSo[cleanNhomHang] !== undefined ? mapHeSo[cleanNhomHang] : 1;
     },
 
     cleanCompetitionName(name) {
