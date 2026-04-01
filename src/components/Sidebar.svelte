@@ -3,6 +3,9 @@
   import { onMount } from 'svelte';
   import { activeTab, drawerState, isAdmin, modalState } from '../stores.js';
 
+  // State điều khiển menu trên Mobile
+  let isMobileOpen = false;
+
   // Hàm chuyển tab (Cập nhật store global)
   function navigateTo(targetId) {
     // [PHẪU THUẬT LOGIC] Thiết lập "Vùng an toàn" cho Admin
@@ -17,15 +20,18 @@
     // Nếu vào Khai báo mà chưa phải Admin -> Bật modal đăng nhập (Giữ nguyên logic gốc)
     if (targetId === 'declaration-section' && !$isAdmin) {
         modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
+        isMobileOpen = false; // Tự động đóng menu trên Mobile
         return;
     }
     
     activeTab.set(targetId);
+    isMobileOpen = false; // Tự động đóng menu trên Mobile sau khi click
   }
 
   // Hàm mở Drawer (Cập nhật store global)
   function openDrawer(drawerId) {
     drawerState.update(state => ({ ...state, activeDrawer: drawerId }));
+    isMobileOpen = false; // Tự động đóng menu trên Mobile
   }
 
   // Reactive: Helper để kiểm tra tab nào đang active (để tô màu)
@@ -38,7 +44,22 @@
   });
 </script>
 
-<nav id="sidebar" class="bg-white/80 backdrop-blur-sm shadow-lg fixed top-0 left-0 h-full z-30 p-3 flex flex-col justify-between">
+<button 
+    class="fixed bottom-6 right-6 z-50 bg-blue-600 text-white p-4 rounded-full shadow-2xl md:hidden hover:bg-blue-700 transition-transform active:scale-95 flex items-center justify-center"
+    on:click={() => isMobileOpen = !isMobileOpen}
+>
+    {#if isMobileOpen}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+    {:else}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+    {/if}
+</button>
+
+{#if isMobileOpen}
+    <div class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-20 md:hidden transition-opacity" on:click={() => isMobileOpen = false}></div>
+{/if}
+
+<nav id="sidebar" class="bg-white/80 backdrop-blur-sm shadow-lg fixed top-0 left-0 h-full z-30 p-3 flex flex-col justify-between {isMobileOpen ? 'mobile-open' : ''}">
     <div>
         <button 
            class="nav-link flex items-center p-3 rounded-lg font-semibold mb-4 w-full transition-colors
@@ -149,7 +170,7 @@
 <style>
   #sidebar { 
     width: 68px;
-    transition: width 0.3s ease-in-out; 
+    transition: transform 0.3s ease-in-out, width 0.3s ease-in-out; 
     overflow-x: hidden; 
   }
   #sidebar:hover { 

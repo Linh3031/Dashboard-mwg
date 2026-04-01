@@ -3,7 +3,7 @@
 
 #sidebar { 
     width: 68px; 
-    transition: width 0.3s ease-in-out; 
+    transition: transform 0.3s ease-in-out, width 0.3s ease-in-out; 
     overflow-x: hidden; 
 }
 #sidebar:hover { 
@@ -70,4 +70,26 @@
     font-size: 1.75rem; 
     font-weight: 700; 
     color: #1f2937; 
+}
+
+/* === GIAO DIỆN MOBILE (DƯỚI 768px) === */
+@media (max-width: 767px) {
+    #sidebar {
+        width: 256px !important; /* Mở full độ rộng menu khi hiển thị trên Mobile */
+        transform: translateX(-100%); /* Giấu menu đi bằng cách đẩy lùi sang trái */
+    }
+
+    #sidebar.mobile-open {
+        transform: translateX(0); /* Trượt ra khi được kích hoạt */
+        box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    }
+
+    #sidebar.mobile-open .menu-text {
+        opacity: 1;
+        width: auto;
+    }
+
+    #main-content {
+        margin-left: 0 !important; /* Giải phóng 100% không gian cho màn hình điện thoại */
+    }
 }
