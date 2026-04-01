@@ -15,17 +15,17 @@
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
   import { settingsService } from '../services/settings.service.js';
-  
   import LuykeSieuThi from './luyke/LuykeSieuThi.svelte';
   import LuykeThiDua from './luyke/LuykeThiDua.svelte';
   import LuykeThiDuaVung from './luyke/LuykeThiDuaVung.svelte';
-  // [NEW] Import component mới
   import LuykeCategoryView from './luyke/sub/LuykeCategoryView.svelte';
+
+  // [SURGICAL ADDITION] Import component DT CK Năm
+  import LuykeDtCkNam from './luyke/LuykeDtCkNam.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-luyke-sieu-thi';
-
-  // ... (Giữ nguyên phần logic load data cũ) ...
+  
   let showPlaceholder = true;
   $: showPlaceholder = ($danhSachNhanVien.length === 0);
 
@@ -33,7 +33,7 @@
   let selectedDates = [];
   let goals = {};
   $: goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
-
+  
   $: if ($selectedWarehouse) {
       settingsService.loadGoalsFromCloud($selectedWarehouse);
   }
@@ -49,7 +49,6 @@
       }
   }
 
-  // ... (Giữ nguyên logic masterReportData) ...
   $: {
       const _mappingTrigger = $categoryNameMapping;
       const _macroTrigger = $macroCategoryConfig;
@@ -65,25 +64,41 @@
       const deptMatch = !selectedDept || nv.boPhan === selectedDept;
       return whMatch && deptMatch;
   });
+
   let supermarketReport = {};
   $: supermarketReport = reportService.aggregateReport(filteredReport, $selectedWarehouse);
 
   let numDays = 1;
-  $: numDays = selectedDates.length > 0 ? selectedDates.length : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
+  $: numDays = selectedDates.length > 0 ?
+      selectedDates.length : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
 
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
   }
   
-  // ... (Giữ nguyên các hàm handle khác) ...
-  function handleWarehouseChange(event) { selectedWarehouse.set(event.target.value); }
-  function handleCompose() { modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' })); }
-  function handleExport() { actionService.handleExport('luyke'); }
-  function handleCapture() { actionService.handleCapture('luyke'); }
+  function handleWarehouseChange(event) { 
+      selectedWarehouse.set(event.target.value);
+  }
+  
+  function handleCompose() { 
+      modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' })); 
+  }
+  
+  function handleExport() { 
+      actionService.handleExport('luyke');
+  }
+  
+  function handleCapture() { 
+      actionService.handleCapture('luyke'); 
+  }
 
   $: if (activeTab === 'health-section') {
-    Promise.resolve().then(() => { if (typeof window.feather !== 'undefined') { window.feather.replace(); } });
+    Promise.resolve().then(() => { 
+        if (typeof window.feather !== 'undefined') { 
+            window.feather.replace(); 
+        } 
+    });
   }
 </script>
 
@@ -97,19 +112,21 @@
             <div class="modern-page-header flex flex-wrap justify-between items-center"> 
                 <div class="title-wrapper flex items-center gap-4 flex-wrap">
                     <i data-feather="activity" class="main-icon hidden sm:block"></i>
+             
                     <div class="flex items-center gap-2">
                         <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2> 
                         <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"><i data-feather="help-circle"></i></button>
                     </div>
+       
                     <div class="flex items-center gap-2 pl-4 border-l-2 border-blue-100 ml-2">
                          <label for="luyke-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
                         <select id="luyke-warehouse-selector" class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" value={$selectedWarehouse} on:change={handleWarehouseChange}>
-                            <option value="">-- Toàn bộ --</option>
+                             <option value="">-- Toàn bộ --</option>
                              {#each $warehouseList as kho}<option value={kho}>{kho}</option>{/each}
                         </select>
                     </div>
                 </div>
-                 <div class="flex items-center gap-2 ml-auto mt-2 sm:mt-0"> 
+                <div class="flex items-center gap-2 ml-auto mt-2 sm:mt-0"> 
                     <button id="compose-luyke-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}><i data-feather="pen-tool" class="w-4 h-4"></i><span class="hidden lg:inline">Nhận xét</span></button> 
                     <button id="export-luyke-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại" on:click={handleExport}><i data-feather="download" class="w-4 h-4"></i><span class="hidden lg:inline">Xuất Excel</span></button>
                     <button id="capture-luyke-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại" on:click={handleCapture}><i data-feather="camera" class="w-4 h-4"></i><span class="hidden lg:inline">Chụp ảnh</span></button> 
@@ -123,15 +140,20 @@
                             <i data-feather="home"></i> <span>Siêu thị Lũy kế</span> 
                         </button>
                         
-
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thi-dua' ? 'active' : ''}" data-target="subtab-luyke-thi-dua" data-title="ThiDuaLuyKe" on:click={handleSubTabClick}> 
                             <i data-feather="award"></i> <span>Thi đua ST Lũy kế</span> 
                         </button>
-                          <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-category' ? 'active' : ''}" data-target="subtab-luyke-category" data-title="ChiTietNganhHang" on:click={handleSubTabClick}> 
+
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-category' ? 'active' : ''}" data-target="subtab-luyke-category" data-title="ChiTietNganhHang" on:click={handleSubTabClick}> 
                             <i data-feather="grid"></i> <span>Chi tiết Ngành hàng</span> 
                         </button>
+
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thidua-vung' ? 'active' : ''}" data-target="subtab-luyke-thidua-vung" data-title="ThiDuaVung" on:click={handleSubTabClick}> 
                             <i data-feather="map"></i> <span>Thi Đua Vùng TNB-HCM</span> 
+                        </button>
+
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-dt-ck-nam' ? 'active' : ''}" data-target="subtab-dt-ck-nam" data-title="DTCKNam" on:click={handleSubTabClick}> 
+                            <i data-feather="calendar"></i> <span>DT CK Năm</span> 
                         </button>
                     </nav>
                 </div>
@@ -159,9 +181,18 @@
                         <div id="subtab-luyke-thidua-vung" class="sub-tab-content">
                             <LuykeThiDuaVung />
                         </div>
+
+                    {:else if activeSubTabId === 'subtab-dt-ck-nam'}
+                        <div id="subtab-dt-ck-nam" class="sub-tab-content">
+                            <LuykeDtCkNam selectedWarehouse={$selectedWarehouse} />
+                        </div>
                     {/if}
                 </div>
             </div>
         </div>
     </div>
 </section>
+
+<style>
+    /* Giữ nguyên style của HealthSection */
+</style>

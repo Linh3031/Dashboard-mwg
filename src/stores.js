@@ -41,6 +41,7 @@ export const thuongNongData = writable([]);
 export const thuongERPData = writable([]);
 export const pastedThiDuaReportData = writable([]);
 export const realtimeYCXData = writable([]);
+export const dtCkNamData = writable([]);
 export const thiDuaVungChiTiet = writable([]);
 export const thiDuaVungTong = writable([]);
 export const ycxDataThangTruoc = writable([]);
