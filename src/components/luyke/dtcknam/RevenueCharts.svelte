@@ -1,20 +1,18 @@
 <script>
     import { tick } from 'svelte';
     import { formatters } from '../../../utils/formatters.js';
-
     export let weeklyData = [];
     export let dailyData = [];
+    export let warehouseTitle = '';
 
     let chartInstanceBar = null;
     let chartInstanceLine = null;
-
     $: if (weeklyData.length > 0 || dailyData.length > 0) {
         tick().then(() => renderCharts());
     }
 
     function renderCharts() {
         if (typeof Chart === 'undefined') return;
-
         const ctxBar = document.getElementById('dt-ck-weekly-chart');
         if (ctxBar) {
             if (chartInstanceBar) chartInstanceBar.destroy();
@@ -29,6 +27,7 @@
                     }]
                 },
                 options: {
+                    animation: false, // [PHẪU THUẬT 1]: Tắt animation để html2canvas chụp được ngay lập tức
                     responsive: true, maintainAspectRatio: false,
                     plugins: { 
                         legend: { display: false },
@@ -50,7 +49,6 @@
             chartInstanceLine = new Chart(ctxLine, {
                 type: 'line',
                 data: {
-                    // [FIX] Cắt chuỗi lấy chuẩn Ngày/Tháng (VD: 15/4)
                     labels: dailyData.map(d => {
                         const parts = d.date.split('/');
                         return `${parts[0]}/${parts[1]}`;
@@ -64,6 +62,7 @@
                     }]
                 },
                 options: {
+                    animation: false, // [PHẪU THUẬT 1]: Tắt animation
                     responsive: true, maintainAspectRatio: false,
                     plugins: {
                         legend: { display: false },
@@ -82,11 +81,11 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Doanh thu Thực theo Tuần (ĐVT: Triệu)</h4>
+        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Doanh thu Thực theo Tuần (ĐVT: Triệu) <span class="text-indigo-600">{warehouseTitle}</span></h4>
         <div class="relative h-[250px] w-full"><canvas id="dt-ck-weekly-chart"></canvas></div>
     </div>
     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Tăng trưởng DT Thực theo Ngày</h4>
+        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Tăng trưởng DT Thực theo Ngày <span class="text-indigo-600">{warehouseTitle}</span></h4>
         <div class="relative h-[250px] w-full">
             {#if dailyData.length === 0}
                 <div class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm italic">Chưa có dữ liệu ngày</div>

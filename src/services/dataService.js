@@ -12,7 +12,9 @@ export const dataService = {
     init(controller) { this.appController = controller; },
 
     // --- File Handlers ---
-    handleFileChange: (file, key) => fileHandler.handleFileChange(file, key),
+    // --- File Handlers ---
+    // [SURGICAL MODIFICATION] Thêm isMultiMode
+    handleFileChange: (file, key, isMultiMode = false) => fileHandler.handleFileChange(file, key, isMultiMode),
     handleRealtimeFileInput: (event) => fileHandler.handleRealtimeFileInput(event),
     handleCategoryFile: (event) => fileHandler.handleCategoryFile(event),
     handleSpecialProductFileUpload: (event) => fileHandler.handleSpecialProductFileUpload(event),

@@ -51,11 +51,24 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
     let weekMap = new Map(), dayMap = new Map(), rootMap = new Map();
     let uniqueDays = new Set();
+    let uniqueWarehouses = new Set(); // [THÊM]: Thu thập mã kho
 
     sourceData.forEach(row => {
         const htx = cleanStr(row.hinhThucXuat || row.HINH_THUC_XUAT);
         if (validHTX.size > 0 && !validHTX.has(htx)) return;
         if (!isValidRow(row)) return;
+
+        // [THÊM]: Trích xuất mã kho an toàn (như bên FileInput.svelte)
+        // [PHẪU THUẬT]: Vét cạn mọi định dạng tên cột Mã Kho có thể xuất hiện từ Parser
+        const wh = row.maKhoTao || row.maKho || 
+                   row.MA_KHO_TAO || row.MA_KHO || 
+                   row['Mã kho tạo'] || row['Kho tạo'] || 
+                   row['Mã kho'] || row['Kho xuất'] || row.KHO_XUAT || 
+                   row['Mã siêu thị'] || row.MA_SIEU_THI;
+                   
+        if (wh && wh.toString().trim() !== '') {
+            uniqueWarehouses.add(wh.toString().trim());
+        }
 
         const dateRaw = row.ngayTao || row.NGAY_TAO;
         if (!dateRaw) return;
@@ -95,11 +108,11 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
             totalMetrics.quantity += qty; totalMetrics.revenue += rev; totalMetrics.revenueQD += revQD;
 
             let currentLevel = rootMap;
-            let pathPrefix = ''; // [FIX CÂY CHA CON]
+            let pathPrefix = ''; 
             
             activeDimensionIds.forEach((dimId, index) => {
                 const key = getDimensionValue(row, dimId);
-                pathPrefix += key + '||'; // Tạo đường dẫn tuyệt đối cho ID
+                pathPrefix += key + '||'; 
                 
                 if (!currentLevel.has(key)) {
                     currentLevel.set(key, { id: pathPrefix, name: key, quantity: 0, revenue: 0, revenueQD: 0, children: new Map(), level: index });
@@ -113,9 +126,12 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
 
     const totalDays = uniqueDays.size || 1;
 
+    // [THÊM]: Logic xuất chuỗi Text thông minh dựa trên số lượng kho thu được
+    const whArray = Array.from(uniqueWarehouses);
+    const warehouseTitle = whArray.length === 1 ? `- Kho ${whArray[0]}` : (whArray.length > 1 ? `- Gộp ${whArray.length} kho` : '');
+
     const convertAndSort = (map) => Array.from(map.values()).map(item => {
         const newItem = { ...item };
-        // Tính toán các cột Trung Bình
         newItem.avgQty = newItem.quantity / totalDays;
         newItem.avgRev = newItem.revenue / totalDays;
         newItem.avgRevQD = newItem.revenueQD / totalDays;
@@ -150,7 +166,7 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     });
 
     return {
-        metrics, totalMetrics, totalDays, filterOptions,
+        metrics, totalMetrics, totalDays, filterOptions, warehouseTitle,
         dailyData: Array.from(dayMap.values()).sort((a, b) => a.dateObj - b.dateObj),
         weeklyData: Array.from(weekMap.values()).sort((a, b) => a.sortDate - b.sortDate),
         treeData: convertAndSort(rootMap)

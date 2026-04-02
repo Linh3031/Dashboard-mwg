@@ -33,7 +33,8 @@ async function _handleFileRead(fileBlob) {
 
 export const fileHandler = {
     // 1. Xử lý các file dữ liệu chính (DSNV, Giờ công, YCX, Thưởng nóng...)
-    async handleFileChange(file, saveKey) {
+    // [ĐÃ THÊM] tham số isMultiMode
+    async handleFileChange(file, saveKey, isMultiMode = false) {
         const mapping = FILE_MAPPING[saveKey];
         if (!mapping) return { success: false, message: `Lỗi mapping: ${saveKey}` };
         
@@ -51,11 +52,31 @@ export const fileHandler = {
                 return { success: false, message: `Thiếu cột bắt buộc: ${missingColumns.join(', ')}` };
             }
 
-            // Lưu vào Store
-            mapping.store.set(normalizedData);
+            // --- BẮT ĐẦU LOGIC GỘP KHO (UPSERT) ---
+            if (isMultiMode) {
+                // Lấy dữ liệu hiện tại trong store
+                const currentData = get(mapping.store) || [];
+                
+                // Trích xuất danh sách kho từ file mới
+                const incomingWarehouses = [...new Set(normalizedData.map(d => 
+                    d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo']
+                ).filter(Boolean))];
+
+                // Loại bỏ dữ liệu cũ của các kho đang được nạp đè
+                const filteredOldData = currentData.filter(d => 
+                    !incomingWarehouses.includes(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'])
+                );
+
+                // Ghi đè vào store với dữ liệu đã gộp
+                mapping.store.set([...filteredOldData, ...normalizedData]);
+            } else {
+                // Logic chuẩn: Ghi đè hoàn toàn
+                mapping.store.set(normalizedData);
+            }
+            // --- KẾT THÚC LOGIC GỘP KHO ---
             
             // Lưu vào IndexedDB (Cache Local)
-            await storage.setItem(saveKey, normalizedData); 
+            await storage.setItem(saveKey, isMultiMode ? get(mapping.store) : normalizedData); 
             
             // Xử lý riêng cho DSNV (chỉ lưu local)
             if (saveKey === 'saved_danhsachnv') {
@@ -79,20 +100,18 @@ export const fileHandler = {
                         fileType: 'excel',
                         rowCount: normalizedData.length,
                         updatedAt: new Date(now),
-                        timestamp: now, // [FIX] Thêm timestamp để so sánh chính xác
+                        timestamp: now,
                         updatedBy: get(currentUser)?.email || 'Tôi'
                     };
                     
                     await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
                     
-                    // [FIX] Cập nhật ngay metadata vào LocalStorage để tránh conflict phiên bản
                     localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
 
                     updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
                 } catch (e) {
                     console.error("Lỗi upload cloud:", e);
                     updateSyncState(saveKey, 'error', `Lỗi lưu Cloud: ${e.message}`, null);
-                    // Không return false ở đây vì dữ liệu local đã ok
                 }
             } else {
                  updateSyncState(saveKey, 'synced', `✓ Đã tải ${normalizedData.length} dòng`, null);
@@ -108,7 +127,7 @@ export const fileHandler = {
         }
     },
 
-    // 2. Xử lý file Realtime (Tương tự YCX nhưng lưu vào store riêng)
+    // 2. Xử lý file Realtime
     async handleRealtimeFileInput(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -120,7 +139,6 @@ export const fileHandler = {
             const sheetName = workbook.SheetNames[0];
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
 
-            // Tái sử dụng logic chuẩn hóa của 'ycx' vì cấu trúc file giống nhau
             const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
 
             if (!success) {
@@ -128,14 +146,10 @@ export const fileHandler = {
                 return;
             }
 
-            // Cập nhật store
             realtimeYCXData.set(normalizedData);
-            
-            // Ghi nhận analytics
             analyticsService.trackAction();
             
             console.log(`[FileHandler] Đã nạp ${normalizedData.length} dòng realtime.`);
-            // Reset input
             event.target.value = null;
 
         } catch (error) {
@@ -160,16 +174,13 @@ export const fileHandler = {
                 throw new Error(error);
             }
 
-            // Cập nhật Store
             categoryStructure.set(normalizedData);
             
-            // Tách danh sách Hãng (Brand) từ dữ liệu
             const brands = [...new Set(normalizedData.map(i => i.nhaSanXuat).filter(Boolean))].sort();
             brandList.set(brands);
 
             console.log(`[FileHandler] Đã nạp ${normalizedData.length} dòng cấu trúc & ${brands.length} hãng.`);
             
-            // Reset input
             event.target.value = null;
             return { success: true, count: normalizedData.length };
 

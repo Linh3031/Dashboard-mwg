@@ -1,4 +1,4 @@
-import { coreCapture } from '../engine.js';
+import { coreCapture, copyCanvasState } from '../engine.js';
 
 export const processDefault = async (elements, baseTitle, options = {}) => {
     const container = document.createElement('div');
@@ -19,7 +19,10 @@ export const processDefault = async (elements, baseTitle, options = {}) => {
     }
     
     elements.forEach(el => {
-        container.appendChild(el.cloneNode(true));
+        const clone = el.cloneNode(true);
+        // [PHẪU THUẬT]: Hút điểm ảnh từ Canvas chuyển thành Image giống hệt luồng Chi tiết nhân viên
+        copyCanvasState(el, clone); 
+        container.appendChild(clone);
     });
 
     return await coreCapture(container, captureTitle, '', options);

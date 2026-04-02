@@ -2,7 +2,7 @@ import {
     danhSachNhanVien, rawGioCongData, ycxData, thuongNongData,
     ycxDataThangTruoc, thuongNongDataThangTruoc, thuongERPData, 
     thuongERPDataThangTruoc, competitionData, pastedThiDuaReportData,
-    dtCkNamData // [MỚI] Import store bạn vừa tạo
+    ycxDataCungKyNam // [CHỈ IMPORT MỚI DUY NHẤT STORE NÀY]
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 
@@ -15,8 +15,7 @@ export const FILE_MAPPING = {
     'saved_thuongnong': { store: thuongNongData, normalizeType: 'thuongnong', name: 'Thưởng nóng' },
     'saved_ycx_thangtruoc': { store: ycxDataThangTruoc, normalizeType: 'ycx', name: 'YCX Tháng trước' },
     'saved_thuongnong_thangtruoc': { store: thuongNongDataThangTruoc, normalizeType: 'thuongnong', name: 'Thưởng nóng TT' },
-    // [CODEGENESIS FIX] Khai báo định danh mới, dùng chung cỗ máy normalizeType là 'ycx'
-    'saved_dt_ck_nam': { store: dtCkNamData, normalizeType: 'ycx', name: 'Doanh thu CK Năm' } 
+    'saved_ycx_cungkynam': { store: ycxDataCungKyNam, normalizeType: 'ycx', name: 'YCX Cùng kỳ năm' } 
 };
 
 export const PASTE_MAPPING = {

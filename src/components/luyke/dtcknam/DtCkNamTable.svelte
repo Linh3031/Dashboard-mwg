@@ -86,11 +86,12 @@
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
             {@const hasFilter = currentFilters[dim.id] !== undefined}
+          
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
                     <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
                         {#if isActive}
-                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">{activeIndex + 1}</span>
+                             <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">{activeIndex + 1}</span>
                         {:else}
                             <span class="w-4 h-4 rounded border border-gray-400"></span>
                         {/if}
@@ -129,7 +130,7 @@
     </div>
 </div>
 
-<div class="overflow-x-auto">
+<div class="overflow-x-auto dtcknam-table-wrapper">
     <table class="w-full text-sm text-left">
         <thead class="text-gray-700 uppercase font-bold sticky top-0 z-10 shadow-sm border-b-2 border-gray-300">
             <tr>
@@ -183,3 +184,28 @@
         </tbody>
     </table>
 </div>
+
+<style>
+    /* [PHẪU THUẬT]: Đồng bộ Style trị bệnh cắt chữ từ tab LuykeCategoryTreeTable */
+    :global(.capture-container .dtcknam-table-wrapper) {
+        width: 1050px !important; min-width: 1050px !important; max-width: 1050px !important;
+        margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
+    }
+    :global(.capture-container .dtcknam-table-wrapper) { overflow: visible !important; }
+    
+    :global(.capture-container .dtcknam-table-wrapper table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
+    :global(.capture-container .dtcknam-table-wrapper th),
+    :global(.capture-container .dtcknam-table-wrapper td) {
+        padding: 8px 6px !important;
+        white-space: normal !important; overflow: visible !important;
+        height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
+    }
+
+    /* Mở khóa giới hạn của class 'truncate' có trong file DtCkNamRow */
+    :global(.capture-container .dtcknam-table-wrapper .truncate) {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        max-width: none !important;
+    }
+</style>

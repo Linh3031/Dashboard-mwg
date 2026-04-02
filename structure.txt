@@ -149,6 +149,12 @@ src/components/drawers/GoalDrawer.svelte
 src/components/drawers/InterfaceDrawer.svelte
 src/components/luyke
 src/components/luyke/LuykeThiDua.svelte
+src/components/luyke/dtcknam
+src/components/luyke/dtcknam/RevenueCharts.svelte
+src/components/luyke/dtcknam/DtCkNamTable.svelte
+src/components/luyke/dtcknam/DtCkNamLogic.js
+src/components/luyke/dtcknam/KpiBoard.svelte
+src/components/luyke/dtcknam/DtCkNamRow.svelte
 src/components/luyke/LuykeUnexportedTable.svelte
 src/components/luyke/TdvTop20Modal.svelte
 src/components/luyke/ThiDuaVungTNB.svelte
