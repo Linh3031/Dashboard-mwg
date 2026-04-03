@@ -35,12 +35,12 @@
   $: syncState = $fileSyncState[saveKey];
   $: dataCount = $dataStore ? $dataStore.length : 0;
 
-  // [PHẪU THUẬT]: Chỉ điểm chính xác từ khóa "maKhoTao"
+  // Chỉ điểm chính xác từ khóa "maKhoTao"
   $: uniqueWarehouses = (isMultiMode && $dataStore) 
         ? [...new Set($dataStore.map(d => d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo']).filter(Boolean))] 
         : [];
 
-  // [TÍNH NĂNG MỚI]: Tự động nội soi "Tháng" từ cột "Ngày tạo"
+  // Tự động nội soi "Tháng" từ cột "Ngày tạo"
   $: uniqueMonths = (isMultiMode && $dataStore)
         ? [...new Set($dataStore.map(d => {
             const dateVal = d.ngayTao || d['Ngày tạo'];
@@ -71,7 +71,6 @@
               statusHTML = syncState.message;
           } else {
               statusClass = "text-green-600 font-medium";
-              // [PHẪU THUẬT]: Ép chết dòng chữ "Đã đồng bộ", thay bằng Tổng số dòng nếu ở chế độ Multi
               statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)` : syncState.message;
               if (syncState.metadata?.fileName && !isMultiMode) fileName = syncState.metadata.fileName;
           }
@@ -124,6 +123,34 @@
       });
   }
 
+  // [PHẪU THUẬT LÕI]: Thêm hàm Xóa theo Tháng
+  function removeMonth(targetMonth) {
+      if (!dataStore) return;
+      dataStore.update(currentData => {
+          return currentData.filter(d => {
+              const dateVal = d.ngayTao || d['Ngày tạo'];
+              if (!dateVal) return true; // Giữ lại những dòng không có ngày để tránh xóa nhầm
+              try {
+                  const dateObj = new Date(dateVal);
+                  if (isNaN(dateObj)) return true;
+                  const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                  const y = dateObj.getFullYear();
+                  const rowMonth = `${m}/${y}`;
+                  return rowMonth !== targetMonth; // Chỉ loại bỏ những dòng trùng với Tháng cần xóa
+              } catch(e) { return true; }
+          });
+      });
+  }
+
+  // [PHẪU THUẬT LÕI]: Thêm hàm Reset Toàn Bộ Store
+  function clearAllData() {
+      if (!dataStore) return;
+      if (confirm(`Bạn có chắc chắn muốn XÓA TOÀN BỘ dữ liệu của "${label}" không?`)) {
+          dataStore.set([]); // Reset mảng về rỗng
+          fileName = "Chưa thêm file";
+      }
+  }
+
   function handleContainerClick(e) {
       if (e.target.closest('a') || e.target.closest('button.remove-wh-btn')) return;
       if (e.target.closest('.btn-download-cloud')) {
@@ -169,7 +196,7 @@
         </div> 
         
         {#if saveKey === 'saved_danhsachnv'}
-            <button on:click={() => dataService.handleTemplateDownload()} class="data-input-group__link text-left">Tải file mẫu</button> 
+            <button on:click={() => dataService.handleTemplateDownload()} class="data-input-group__link text-left pointer-events-auto relative z-50">Tải file mẫu</button> 
         {/if}
 
         <input type="file" id="file-{saveKey}" class="hidden" accept=".xlsx, .xls, .csv" on:change={handleChange} disabled={isLoading} multiple={isMultiMode}> 
@@ -179,28 +206,50 @@
         </div> 
 
         {#if isMultiMode && (uniqueWarehouses.length > 0 || uniqueMonths.length > 0)}
-            <div class="mt-3 flex flex-col gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
+            <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-50">
                 
-                {#if uniqueWarehouses.length > 0}
-                <div class="flex flex-wrap gap-2">
-                    <div class="text-[11px] text-slate-500 w-full font-bold uppercase mb-1 flex items-center gap-1">
-                        <i data-feather="database" class="w-3 h-3"></i> Dữ liệu đang có ({uniqueWarehouses.length} kho):
+                <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                    <div class="text-[11px] text-slate-500 font-bold uppercase flex items-center gap-1">
+                        <i data-feather="database" class="w-3 h-3"></i> Tóm tắt dữ liệu Gộp:
                     </div>
-                    {#each uniqueWarehouses as whCode}
-                        <div class="flex items-center gap-1 bg-white border border-slate-300 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
-                            {whCode}
-                            <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click={() => removeWarehouse(whCode)} title="Xóa dữ liệu kho {whCode}">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                            </button>
-                        </div>
-                    {/each}
+                    <button class="text-[10px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-bold px-2 py-1 rounded transition-colors remove-wh-btn shadow-sm" on:click|stopPropagation={clearAllData} title="Xóa trắng toàn bộ dữ liệu này">
+                        Xóa tất cả
+                    </button>
+                </div>
+
+                {#if uniqueWarehouses.length > 0}
+                <div>
+                    <div class="text-[10px] text-indigo-500 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
+                        <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        {#each uniqueWarehouses as whCode}
+                            <div class="flex items-center gap-1 bg-white border border-indigo-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
+                                {whCode}
+                                <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeWarehouse(whCode)} title="Xóa dữ liệu kho {whCode}">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                        {/each}
+                    </div>
                 </div>
                 {/if}
 
                 {#if uniqueMonths.length > 0}
-                <div class="text-xs text-emerald-700 font-medium flex items-center gap-1 border-t border-slate-200 pt-2 mt-1">
-                    <i data-feather="calendar" class="w-3.5 h-3.5"></i>
-                    Tháng dữ liệu: <b>{uniqueMonths.join(', ')}</b>
+                <div class="{uniqueWarehouses.length > 0 ? 'pt-2 border-t border-slate-200' : ''}">
+                    <div class="text-[10px] text-emerald-600 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
+                        <i data-feather="calendar" class="w-3 h-3"></i> Tháng dữ liệu ({uniqueMonths.length}):
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        {#each uniqueMonths as monthStr}
+                            <div class="flex items-center gap-1 bg-white border border-emerald-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-emerald-800">
+                                {monthStr}
+                                <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeMonth(monthStr)} title="Xóa toàn bộ dữ liệu của tháng {monthStr}">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                        {/each}
+                    </div>
                 </div>
                 {/if}
             </div>

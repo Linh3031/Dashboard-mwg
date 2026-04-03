@@ -3,6 +3,7 @@
   import { 
     masterReportData, 
     ycxData, 
+    ycxDataThangTruoc,
     danhSachNhanVien, 
     luykeGoalSettings, 
     selectedWarehouse,
@@ -17,6 +18,7 @@
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
+  import MultiMonthRevenueTable from './health-staff/MultiMonthRevenueTable.svelte';
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
   import IncomeTable from './health-staff/IncomeTable.svelte';
   import PerformanceView from './health-staff/performance/PerformanceView.svelte';
@@ -29,6 +31,27 @@
   let activeSubTab = 'sknv';
   let viewingDetailId = null;
   let processedReport = [];
+  let isMultiMonthMode = false;
+
+  // [PHẪU THUẬT 2]: Gộp 2 luồng YCX, Lọc đúng Kho, Bỏ qua lọc ngày để bảo toàn các tháng cũ
+  $: combinedMultiMonthData = [...($ycxData || []), ...($ycxDataThangTruoc || [])].filter(item => {
+      if ($selectedWarehouse) {
+          const wh = item.maKhoTao || item.maKho || item['Mã kho tạo'] || item['Kho tạo'] || item.ma_kho;
+          if (wh && String(wh).trim() !== String($selectedWarehouse).trim()) return false;
+      }
+      return true;
+  });
+
+  // [TÍNH TOÁN CẢNH BÁO]: Đếm xem thực sự đang có bao nhiêu tháng
+  $: uniqueMonthsCount = new Set(combinedMultiMonthData.map(d => {
+      let dateVal = null;
+      for (const key of Object.keys(d)) {
+          const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
+          if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) { dateVal = d[key]; break; }
+      }
+      const dt = parseUniversalDate(dateVal); 
+      return dt ? new Date(dt).getMonth() + '-' + new Date(dt).getFullYear() : ''; 
+  }).filter(Boolean)).size;
   
   // State Bộ lọc ngày
   let selectedStartDate = '';
@@ -318,9 +341,23 @@
                 {:else if activeSubTab === 'doanhthu'}
                     <div id="subtab-doanhthu" class="sub-tab-content">
                         {#if !viewingDetailId}
-                            <div id="revenue-report-container-lk">
-                                <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} />
-                            </div>
+                            
+                            {#if !isMultiMonthMode}
+                                <div id="revenue-report-container-lk">
+                                    <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} on:toggleMode={() => isMultiMonthMode = true} />
+                                </div>
+                            {:else}
+                                {#if combinedMultiMonthData.length > 0 && uniqueMonthsCount <= 1}
+                                     <div class="mb-4 mt-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700 flex items-center gap-2">
+                                        <i data-feather="alert-triangle" class="w-4 h-4"></i>
+                                        <b>Lưu ý:</b> Dữ liệu hiện tại chỉ có 1 tháng. Hãy vào tab <b class="text-indigo-600">Cập nhật dữ liệu</b> tải lên dạng "Gộp file" ở ô <b>YCX Lũy kế tháng trước</b> để biểu đồ này phát huy tác dụng.
+                                     </div>
+                                {/if}
+
+                                <div id="revenue-multi-month-container-lk">
+                                    <MultiMonthRevenueTable rawData={combinedMultiMonthData} on:viewDetail={handleEmployeeClick} on:toggleMode={() => isMultiMonthMode = false} />
+                                </div>
+                            {/if}
                         {:else}
                             <div id="dtnv-lk-capture-area">
                                 <RevenueDetailView employeeId={viewingDetailId} on:back={handleBackToSummary} />

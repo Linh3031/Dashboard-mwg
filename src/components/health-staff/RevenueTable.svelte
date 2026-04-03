@@ -6,7 +6,6 @@
   
   export let reportData = [];
 
-  // [LOGGER] Theo dõi dữ liệu đầu vào
   $: {
       console.log(`[RevenueTable ${new Date().toLocaleTimeString()}] Store Value:`, $kpiStore);
       console.log(`[RevenueTable] Report Data Length:`, reportData.length);
@@ -16,7 +15,6 @@
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // [MODIFIED] Thêm cột Hạng vào đầu
   const columns = [
       { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'bg-gray-100 text-gray-700 w-14' },
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
@@ -29,7 +27,7 @@
   ];
 
   function handleSort(key) {
-      if (key === 'rank') return; // Không cho sort cột rank
+      if (key === 'rank') return;
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
       else { sortKey = key; sortDirection = 'desc'; }
   }
@@ -41,13 +39,12 @@
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
 
-  // [NEW] Logic Gamification: Đánh số thứ tự & làm nổi bật Top
   $: topCount = sortedData.length <= 15 ? 3 : 5;
 
   function getRowStyle(index) {
-      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
       if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
       if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
       return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
   }
@@ -113,7 +110,16 @@
                 <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
             </div>
         </div>
-        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+            
+            <div class="flex items-center gap-2 ml-1 border-l border-gray-300 pl-4" title="Chuyển sang chế độ xem nhiều tháng">
+                <span class="text-xs font-semibold text-gray-500 cursor-pointer" on:click={() => dispatch('toggleMode')}>Xem nhiều tháng</span>
+                <button class="bg-gray-300 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
+                    <span class="translate-x-0 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <div class="overflow-x-auto">

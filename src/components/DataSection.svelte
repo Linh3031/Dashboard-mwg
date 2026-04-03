@@ -234,7 +234,6 @@
                     icon="file-text"
                     link="https://report.mwgroup.vn/home/dashboard/077"
                     saveKey="saved_ycx"
-                    isMultiMode={true}
                 />
                 
                 <PasteInput
