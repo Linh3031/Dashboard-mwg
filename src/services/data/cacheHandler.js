@@ -22,7 +22,8 @@ export const cacheHandler = {
             updateSyncState('saved_danhsachnv', 'error', 'Chưa có DSNV. Vui lòng tải file.', null);
         }
         
-        const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc'];
+        // [SURGICAL FIX]: Bổ sung 'saved_ycx_cungkynam' vào mảng để tiến trình Hydration không bỏ sót
+        const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
         await Promise.all(otherFiles.map(async (key) => {
             const data = await storage.getItem(key);
             if (data && data.length > 0) {
