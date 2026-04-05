@@ -1,7 +1,6 @@
 <svelte:window on:click={() => showCategoryFilter = false} />
 
 <script>
-    import { onMount } from 'svelte';
     import { dataProcessing } from '../../../services/dataProcessing.js';
   
     export let data2025 = [];
@@ -14,26 +13,37 @@
     let showCategoryFilter = false;
     let selectedCategories = [];
     let allCategories = [];
+    let filterSearchQuery = ''; 
 
     let isProcessing = true; 
     let processedData = [];
     let kpiTotals = { dt25: 0, dtqd25: 0, sl25: 0, dt26: 0, dtqd26: 0, sl26: 0, growthQtyPct: 0, growthRevPct: 0 };
 
-    onMount(() => {
+    // [FIX UI]: Reactive block tự động cập nhật danh mục và thiết lập tick TẤT CẢ khi có dữ liệu mới
+    $: if (data2025 || data2026) {
         const cSet = new Set();
-        [...data2025, ...data2026].forEach(r => {
+        [...(data2025 || []), ...(data2026 || [])].forEach(r => {
             const nganh = String(r.nganhHang || r.NGANH_HANG || r['Ngành hàng'] || 'Khác').trim();
             if (nganh) cSet.add(nganh);
         });
-        allCategories = Array.from(cSet).sort();
+        const newCats = Array.from(cSet).sort();
 
-        try {
-            const saved = localStorage.getItem('dtck_ssg_cats_v4');
-            selectedCategories = saved ? JSON.parse(saved) : [...allCategories];
-        } catch(e) { selectedCategories = [...allCategories]; }
-    });
+        if (JSON.stringify(newCats) !== JSON.stringify(allCategories)) {
+            allCategories = newCats;
+            try {
+                const saved = localStorage.getItem('dtck_ssg_cats_v6');
+                selectedCategories = saved ? JSON.parse(saved) : [...allCategories];
+                // Nếu không có cache hoặc cache bị rỗng ban đầu, mặc định chọn TẤT CẢ
+                if (selectedCategories.length === 0 && !saved) selectedCategories = [...allCategories];
+            } catch(e) { 
+                selectedCategories = [...allCategories]; 
+            }
+        }
+    }
 
-    $: { localStorage.setItem('dtck_ssg_cats_v4', JSON.stringify(selectedCategories)); }
+    $: { localStorage.setItem('dtck_ssg_cats_v6', JSON.stringify(selectedCategories)); }
+
+    $: displayCategories = allCategories.filter(c => c.toLowerCase().includes(filterSearchQuery.toLowerCase()));
 
     $: triggerDeps = [data2025, data2026, ssgMonths, selectedCategories];
 
@@ -58,20 +68,14 @@
         return null;
     };
 
-    // [PHẪU THUẬT LOGIC 1]: Kỹ thuật Map-Caching
-    // Hàm này chỉ chạy đúng 1 lần cho mỗi cục data (2025, 2026) để lấy TÊN CỘT THẬT SỰ
     const buildColumnCache = (sampleRow) => {
         const cache = { hasStatusCols: false, mapping: {} };
         if (!sampleRow) return cache;
-        
         const rowKeys = Object.keys(sampleRow);
         const normalize = (k) => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
         const normalizedKeys = rowKeys.map(original => ({ original, norm: normalize(original) }));
 
-        // Kiểm tra xem có cột trạng thái không
-        cache.hasStatusCols = normalizedKeys.some(k => 
-            ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(k.norm)
-        );
+        cache.hasStatusCols = normalizedKeys.some(k => ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(k.norm));
 
         const findRealKey = (possibleKeys) => {
             for (let pk of possibleKeys) {
@@ -96,7 +100,6 @@
             thanhTien: findRealKey(['revenue', 'doanhThu', 'thanhTien', 'Thành tiền']),
             revenueQuyDoi: findRealKey(['revenueQuyDoi', 'doanhThuQuyDoi', 'Doanh thu quy đổi'])
         };
-
         return cache;
     };
 
@@ -105,7 +108,6 @@
         const map = new Map();
         kpiTotals = { dt25: 0, dtqd25: 0, sl25: 0, dt26: 0, dtqd26: 0, sl26: 0 };
 
-        // [PHẪU THUẬT LOGIC 2]: Khởi tạo Cache 1 lần duy nhất thay vì quét cho từng dòng
         const cache25 = buildColumnCache(data2025 && data2025.length > 0 ? data2025[0] : null);
         const cache26 = buildColumnCache(data2026 && data2026.length > 0 ? data2026[0] : null);
 
@@ -113,6 +115,32 @@
             if (typeof val === 'number') return val;
             return parseFloat(String(val).replace(/,/g, '')) || 0;
         };
+
+        // [FEATURE]: Xác định Tháng Tạm Tính và Hệ số Dự kiến (Projection Factor)
+        let maxTs = 0;
+        (data2026 || []).forEach(r => {
+            const dateRaw = r[cache26.mapping.ngayTao];
+            if (dateRaw) {
+                const d = parseSafeDate(dateRaw);
+                if (d && d.getTime() > maxTs) maxTs = d.getTime();
+            }
+        });
+        
+        let partialMonth = -1;
+        let projFactor = 1;
+        if (maxTs > 0) {
+            const maxD = new Date(maxTs);
+            const mDay = maxD.getDate();
+            const mMonth = maxD.getMonth() + 1;
+            const mYear = maxD.getFullYear();
+            const totalDays = new Date(mYear, mMonth, 0).getDate();
+            
+            // Nếu ngày lớn nhất trong data nhỏ hơn tổng số ngày của tháng -> Đây là tháng tạm tính
+            if (mDay < totalDays) {
+                partialMonth = mMonth;
+                projFactor = totalDays / mDay; // Hệ số nội suy
+            }
+        }
 
         const processRow = (row, is2025) => {
             const cache = is2025 ? cache25 : cache26;
@@ -141,14 +169,22 @@
             const nhomHang = row[mapping.nhomHang] !== undefined ? String(row[mapping.nhomHang]).trim() : 'Khác';
             const nhaSanXuat = row[mapping.nhaSanXuat] !== undefined ? String(row[mapping.nhaSanXuat]).trim() : 'Khác';
 
-            if (selectedCategories.length > 0 && !selectedCategories.includes(nganhHang || 'Khác')) return;
+            // [FIX LOGIC]: Lọc cứng rắn: Nếu không nằm trong mảng selectedCategories -> Bỏ qua
+            if (!selectedCategories.includes(nganhHang)) return;
 
-            const soLuong = parseMoney(row[mapping.soLuong]);
-            const thanhTien = parseMoney(row[mapping.thanhTien]);
+            let soLuong = parseMoney(row[mapping.soLuong]);
+            let thanhTien = parseMoney(row[mapping.thanhTien]);
             
             const rawQd = row[mapping.revenueQuyDoi];
-            const revenueQuyDoi = (rawQd !== undefined && rawQd !== '') ? parseMoney(rawQd) : thanhTien;
+            let revenueQuyDoi = (rawQd !== undefined && rawQd !== '') ? parseMoney(rawQd) : thanhTien;
             
+            // [APPLY PROJECTION]: Nếu là dòng của tháng 2026 đang tạm tính, nhân với hệ số
+            if (!is2025 && monthNum === partialMonth) {
+                soLuong *= projFactor;
+                thanhTien *= projFactor;
+                revenueQuyDoi *= projFactor;
+            }
+
             if (is2025) { 
                 kpiTotals.sl25 += soLuong; 
                 kpiTotals.dt25 += thanhTien;
@@ -245,7 +281,7 @@
                 </div>
             </div>
             <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500">
-                <p class="text-xs font-bold text-blue-600 uppercase mb-1">DT Thực 2026 / % QĐ</p>
+                <p class="text-xs font-bold text-blue-600 uppercase mb-1">DT Tạm tính 2026 / % QĐ</p>
                 <div class="flex items-end gap-2">
                     <h3 class="text-xl font-black text-blue-800">{fmtRev(kpiTotals.dt26)}</h3>
                     <span class="text-sm font-bold text-blue-600 mb-0.5" title="Tỷ lệ quy đổi: (DTQĐ / DT) - 1">
@@ -272,30 +308,46 @@
                 <table class="w-full text-sm text-left relative">
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase font-bold sticky top-0 z-10 shadow-sm">
                         <tr>
-                            <th class="px-3 py-3 border-b border-gray-200 bg-gray-50 min-w-[220px] relative group cursor-pointer" on:click|stopPropagation={() => showCategoryFilter = !showCategoryFilter}>
+                            <th class="px-3 py-3 border-b border-gray-200 bg-gray-50 min-w-[220px] relative group cursor-pointer" on:click|stopPropagation={() => { showCategoryFilter = !showCategoryFilter; filterSearchQuery = ''; }}>
                                 <div class="flex items-center justify-between">
                                     <span>Cơ cấu phân cấp</span>
                                     <svg class="w-4 h-4 text-gray-400 group-hover:text-blue-500 {selectedCategories.length < allCategories.length ? 'text-blue-500' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
                                 </div>
+                                
                                 {#if showCategoryFilter}
-                                    <div class="absolute top-full left-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-md w-64 max-h-64 overflow-y-auto z-50 p-2 normal-case font-normal text-sm cursor-default" on:click|stopPropagation>
-                                        <button class="text-blue-600 font-bold mb-2 w-full text-left text-sm hover:bg-blue-50 px-2 py-1.5 rounded transition-colors" on:click={() => selectedCategories = selectedCategories.length === allCategories.length ? [] : [...allCategories]}>
-                                            {selectedCategories.length === allCategories.length ? '[ ] Bỏ chọn tất cả' : '[✓] Chọn tất cả'}
-                                        </button>
-                                        <div class="flex flex-col">
-                                            {#each allCategories as opt}
-                                                <label class="flex items-center gap-2 p-1.5 hover:bg-gray-50 cursor-pointer rounded">
-                                                    <input type="checkbox" value={opt} bind:group={selectedCategories} class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"> <span class="truncate">{opt}</span>
+                                    <div class="absolute top-full left-0 mt-2 w-[280px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 normal-case font-normal cursor-default" on:click|stopPropagation>
+                                        <div class="flex justify-between items-center mb-3">
+                                            <span class="text-xs font-bold text-gray-500 uppercase">Lọc Danh Mục</span>
+                                            <div class="flex items-center gap-3">
+                                                <button on:click={() => selectedCategories = [...allCategories]} class="text-[11px] font-bold text-blue-600 hover:text-blue-800">Chọn tất cả</button>
+                                                <button on:click={() => selectedCategories = []} class="text-[11px] font-bold text-orange-600 hover:text-orange-800">Bỏ chọn hết</button>
+                                            </div>
+                                        </div>
+                                        <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm danh mục..." class="w-full text-sm border border-gray-300 rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-blue-500"/>
+                                        
+                                        <div class="max-h-56 overflow-y-auto space-y-1 custom-scrollbar">
+                                            {#each displayCategories as opt}
+                                                {@const isSelected = selectedCategories.includes(opt)}
+                                                <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded cursor-pointer" on:click|preventDefault={() => {
+                                                    if (isSelected) selectedCategories = selectedCategories.filter(x => x !== opt);
+                                                    else selectedCategories = [...selectedCategories, opt];
+                                                }}>
+                                                    <input type="checkbox" checked={isSelected} class="rounded text-blue-600 pointer-events-none" tabindex="-1">
+                                                    <span class="text-sm text-gray-700 truncate {isSelected ? 'font-bold text-blue-800' : ''}">{opt}</span>
                                                 </label>
                                             {/each}
                                         </div>
+                                        <div class="mt-2 pt-2 border-t text-right">
+                                            <button on:click={() => showCategoryFilter = false} class="text-xs font-bold bg-slate-100 px-4 py-1.5 rounded-md hover:bg-slate-200">Đóng</button>
+                                        </div>
                                     </div>
+                                    <div class="fixed inset-0 z-40" on:click|stopPropagation={() => showCategoryFilter = false}></div>
                                 {/if}
                             </th>
                             <th class="px-3 py-3 border-b border-gray-200 bg-gray-100 text-right border-l group cursor-pointer" on:click={() => toggleSort('sl25')}><div class="flex justify-end gap-1">SL 2025 {#if sortKey === 'sl25'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
                             <th class="px-3 py-3 border-b border-gray-200 bg-gray-100 text-right group cursor-pointer" on:click={() => toggleSort('dt25')}><div class="flex justify-end gap-1">DT 2025 {#if sortKey === 'dt25'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
-                            <th class="px-3 py-3 border-b border-gray-200 bg-blue-50 text-right border-l text-blue-700 group cursor-pointer" on:click={() => toggleSort('sl26')}><div class="flex justify-end gap-1">SL 2026 {#if sortKey === 'sl26'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
-                            <th class="px-3 py-3 border-b border-gray-200 bg-blue-50 text-right text-blue-700 group cursor-pointer" on:click={() => toggleSort('dt26')}><div class="flex justify-end gap-1">DT 2026 {#if sortKey === 'dt26'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
+                            <th class="px-3 py-3 border-b border-gray-200 bg-blue-50 text-right border-l text-blue-700 group cursor-pointer" on:click={() => toggleSort('sl26')}><div class="flex justify-end gap-1">SL Dự kiến 26 {#if sortKey === 'sl26'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
+                            <th class="px-3 py-3 border-b border-gray-200 bg-blue-50 text-right text-blue-700 group cursor-pointer" on:click={() => toggleSort('dt26')}><div class="flex justify-end gap-1">DT Dự kiến 26 {#if sortKey === 'dt26'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
                             <th class="px-3 py-3 border-b border-gray-200 bg-emerald-50 text-right border-l text-emerald-700 group cursor-pointer" on:click={() => toggleSort('growthQtyVal')} title="Giá trị tăng trưởng SL"><div class="flex justify-end gap-1">Tăng SL {#if sortKey === 'growthQtyVal'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
                             <th class="px-3 py-3 border-b border-gray-200 bg-emerald-50 text-right text-emerald-700 group cursor-pointer" on:click={() => toggleSort('growthQty')}><div class="flex justify-end gap-1">% SL {#if sortKey === 'growthQty'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
                             <th class="px-3 py-3 border-b border-gray-200 bg-orange-50 text-right border-l text-orange-700 group cursor-pointer" on:click={() => toggleSort('growthRevVal')} title="Giá trị tăng trưởng DT"><div class="flex justify-end gap-1">Tăng DT {#if sortKey === 'growthRevVal'}<span class="text-blue-500">{sortDirection === 'asc' ? '↑' : '↓'}</span>{:else}<span class="text-gray-300 group-hover:text-gray-500">↕</span>{/if}</div></th>
@@ -368,7 +420,7 @@
 </div>
 
 <style>
-    .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+    .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

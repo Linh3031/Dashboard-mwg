@@ -21,7 +21,6 @@
     let ssgMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     let allMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     let showSsgMonthsDropdown = false;
-
     $: data2026All = [...($ycxDataThangTruoc || []), ...($ycxData || [])];
 
     // [FIX]: Trình phân tích Ngày tháng đa năng (Tránh Invalid Date của Cache)
@@ -35,20 +34,35 @@
         if (parts) return new Date(parts[3], parts[2] - 1, parts[1]);
         return null;
     };
-
+    
     const parseDateMax = (dateVal) => {
         const d = parseSafeDate(dateVal);
         return d ? d.getTime() : 0;
     };
+    
+    // [FIX]: Dùng reduce để chặn lỗi Maximum Call Stack khi mảng có 200.000 dòng
     $: maxTs2026 = data2026All.length > 0 
         ? data2026All.reduce((max, r) => {
             const ts = parseDateMax(r.ngayTao || r.NGAY_TAO);
             return ts > max ? ts : max;
         }, 0) 
         : 0;
-    $: maxDateStr2026 = maxTs2026 > 0 
-        ? `${String(new Date(maxTs2026).getDate()).padStart(2,'0')}/${String(new Date(maxTs2026).getMonth()+1).padStart(2,'0')}/${new Date(maxTs2026).getFullYear()}` 
-        : '';
+
+    // [FEATURE]: Tạo thông báo Banner Tạm tính Dự kiến
+    $: bannerInfo = (() => {
+        if (maxTs2026 === 0) return null;
+        const d = new Date(maxTs2026);
+        const maxDay = d.getDate();
+        const month = d.getMonth() + 1;
+        const year = d.getFullYear();
+        const daysInMonth = new Date(year, month, 0).getDate(); // Lấy tổng số ngày của tháng đó
+        
+        if (maxDay < daysInMonth) {
+            return `Dữ liệu tháng ${month}/${year} đang tạm tính dự kiến (Tiến độ: ${maxDay}/${daysInMonth} ngày)`;
+        } else {
+            return `Dữ liệu 2026 tính đến: ${String(maxDay).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year}`;
+        }
+    })();
 
     onMount(() => {
         try {
@@ -57,7 +71,7 @@
         } catch(e) {}
         setTimeout(() => { isInitializing = false; }, 500);
     });
-
+    
     $: { localStorage.setItem('dtck_ssg_months_v3', JSON.stringify(ssgMonths)); }
 
     // [FIX]: Lấy tháng an toàn
@@ -66,7 +80,7 @@
         if (!d) return null;
         return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
     };
-
+    
     $: if ($ycxDataCungKyNam && $ycxDataCungKyNam.length > 0) {
         const months = new Set();
         $ycxDataCungKyNam.forEach(row => {
@@ -84,7 +98,7 @@
         if (!selectedMonth) return true;
         return getMonthYear(row.ngayTao || row.NGAY_TAO) === selectedMonth;
     });
-
+    
     async function switchMode(mode) {
         if (viewMode === mode) return;
         isTransitioning = true;
@@ -97,7 +111,7 @@
 
     $: isSyncing = $fileSyncState && $fileSyncState['saved_ycx_cungkynam'] && $fileSyncState['saved_ycx_cungkynam'].status === 'downloading';
     $: showLoading = isInitializing || isSyncing;
-
+    
     let dashboardData = { metrics: {}, totalMetrics: {}, totalDays: 1, filterOptions: {}, dailyData: [], treeData: [] };
     let currentFilters = {};
     let activeDimensionIds = ['nganhHang', 'nhomHang'];
@@ -148,10 +162,10 @@
                 Tháng so sánh ({ssgMonths.length}/12) ▾
             </button>
             
-            {#if maxDateStr2026}
-                <div class="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Dữ liệu 2026 tính đến: {maxDateStr2026}
+            {#if bannerInfo}
+                <div class="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    {bannerInfo}
                 </div>
             {/if}
 

@@ -153,7 +153,7 @@
                         </button>
 
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-dt-ck-nam' ? 'active' : ''}" data-target="subtab-dt-ck-nam" data-title="DTCKNam" on:click={handleSubTabClick}> 
-                            <i data-feather="calendar"></i> <span>DT CK Năm</span> 
+                            <i data-feather="calendar"></i> <span>SSG</span> 
                         </button>
                     </nav>
                 </div>
