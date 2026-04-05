@@ -1,7 +1,7 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
-  import { dataProcessing } from '../../services/dataProcessing.js'; 
+  import { dataProcessing } from '../../services/dataProcessing.js';
   import { danhSachNhanVien } from '../../stores.js';
   
   export let rawData = [];
@@ -13,12 +13,19 @@
   let uniqueMonths = [];
   let groupedData = [];
 
-  // [PHẪU THUẬT LOGIC]: Copy nguyên bản hàm parseMoney từ salesProcessor.js
+  // [PHẪU THUẬT]: Làm tròn không số lẻ, giữ nguyên chia 1 triệu
+  const formatRevenueNoDecimal = (val) => {
+      if (!val || isNaN(val)) return '-';
+      return Math.round(val / 1000000).toLocaleString('vi-VN');
+  };
+
   const parseMoney = (value) => {
       if (typeof value === 'number') return value;
       if (!value) return 0;
       return parseFloat(String(value).replace(/,/g, '')) || 0;
   };
+
+  const normStr = (val) => String(val || "").trim();
 
   function parseUniversalDate(val) {
       if (val === null || val === undefined || val === '') return null;
@@ -33,14 +40,16 @@
       if (parts[0].includes('/')) {
           const dParts = parts[0].split('/');
           if (dParts.length >= 3) {
-              const p1 = parseInt(dParts[0], 10); const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
               if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
               return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
           }
       } else if (parts[0].includes('-')) {
           const dParts = parts[0].split('-');
           if (dParts.length >= 3) {
-              const p1 = parseInt(dParts[0], 10); const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
               if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
               return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
           }
@@ -51,62 +60,55 @@
   }
 
   $: validEmpIds = new Set(($danhSachNhanVien || []).map(e => String(e.maNV || e.ma_nv || e.MANHANVIEN || e['Mã NV'] || '').trim()));
-
+  
   $: {
       const monthsSet = new Set();
       const map = new Map();
-      const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi ? dataProcessing.getHeSoQuyDoi() : {};
       const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
-
+      
       rawData.forEach(row => {
-          // 1. [ĐỒNG BỘ]: Chỉ lấy Mã NV từ cột Người tạo bằng RegEx giống salesProcessor.js
-          const msnvMatch = String(row.nguoiTao || row['Người tạo'] || '').match(/(\d+)/);
+          const msnvMatch = normStr(row.nguoiTao || row['Người tạo']).match(/(\d+)/);
           if (!msnvMatch) return;
-          const empId = msnvMatch[1].trim();
+          const empId = msnvMatch[1];
 
-          // Chặn cửa nhân viên ngoài shop
           if (validEmpIds.size > 0 && !validEmpIds.has(empId)) return;
 
-          // Lấy Tên NV chuẩn xác từ danhSachNhanVien
-          const empFromList = $danhSachNhanVien.find(e => String(e.maNV || e.ma_nv || e.MANHANVIEN || '').trim() === empId);
+          const empFromList = $danhSachNhanVien.find(e => normStr(e.maNV || e.ma_nv || e.MANHANVIEN) === empId);
           const hoTen = empFromList ? empFromList.hoTen : 'Unknown';
 
-          // 2. [ĐỒNG BỘ]: Kiểm tra Hình thức xuất
-          const htx = String(row.hinhThucXuat || row.HINH_THUC_XUAT || row['Hình thức xuất'] || '').trim();
-          if (validHTX.size > 0 && !validHTX.has(htx)) return;
+          const htx = normStr(row.hinhThucXuat || row.HINH_THUC_XUAT || row['Hình thức xuất']);
+          if (!validHTX.has(htx)) return;
 
-          // 3. [ĐỒNG BỘ CỐT LÕI]: Logic Đã Xuất / Chưa Xuất y hệt salesProcessor.js
           let isValid = false;
-          const trangThaiXuat = String(row.trangThaiXuat || row.TRANG_THAI_XUAT || '').trim();
+          const trangThaiXuat = normStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
           const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
-
+          
           if (isDaXuat) {
-              isValid = true; // Đã xuất thì không cần check Thu/Hủy/Trả
+              isValid = true;
           } else if (trangThaiXuat === 'Chưa xuất') {
-              const thuTien = String(row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || '').trim();
-              const huy = String(row.trangThaiHuy || row.TRANG_THAI_HUY || '').trim();
-              const tra = String(row.tinhTrangTra || row.TINH_TRANG_TRA || '').trim();
+              const thuTien = normStr(row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN);
+              const huy = normStr(row.trangThaiHuy || row.TRANG_THAI_HUY);
+              const tra = normStr(row.tinhTrangTra || row.TINH_TRANG_TRA);
               if (thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả') {
                   isValid = true;
               }
           }
           if (!isValid) return;
 
-          // 4. Map Ngày tháng
-          let dateVal = null;
-          for (const key of Object.keys(row)) {
-              const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
-              if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) {
-                  dateVal = row[key]; break;
+          let dateVal = row.ngayTao || row.ngayHenGiao;
+          if (!dateVal) {
+              for (const key of Object.keys(row)) {
+                  const normKey = key.toLowerCase().replace(/[\s_]/g, '');
+                  if (normKey.includes('ngàytạo') || normKey.includes('ngaytao') || normKey === 'createdate') {
+                      dateVal = row[key]; break;
+                  }
               }
           }
           const parsedDate = parseUniversalDate(dateVal);
           if(!parsedDate) return;
           
           const d = new Date(parsedDate);
-          const m = (d.getMonth() + 1).toString().padStart(2, '0');
-          const y = d.getFullYear();
-          const monthKey = `${m}/${y}`;
+          const monthKey = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
           monthsSet.add(monthKey);
 
           if(!map.has(empId)) {
@@ -116,12 +118,16 @@
           const emp = map.get(empId);
           if(!emp.months[monthKey]) emp.months[monthKey] = { dtqd: 0, dt: 0 };
 
-          // 5. [ĐỒNG BỘ]: Tính tiền không nhồi thêm hệ số 0.3 trả góp
           const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN || row.DoanhThu || row['Thành tiền']);
-          const heSo = heSoQuyDoi[row.nhomHang || row.NHOM_HANG || row['Nhóm hàng']] || 1;
+          let dtqd = 0;
           
-          let dtqd = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
-          if (typeof dtqd === 'string') dtqd = parseMoney(dtqd); // Chống lỗi text Excel
+          if (row.revenueQuyDoi !== undefined) {
+              dtqd = parseMoney(row.revenueQuyDoi);
+          } else {
+              const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi ? dataProcessing.getHeSoQuyDoi() : {};
+              const heSo = heSoQuyDoiMap[row.nhomHang || row.NHOM_HANG || row['Nhóm hàng']] || 1;
+              dtqd = thanhTien * heSo;
+          }
 
           emp.months[monthKey].dt += thanhTien;
           emp.months[monthKey].dtqd += dtqd;
@@ -134,9 +140,26 @@
           const [mb, yb] = b.split('/');
           return new Date(ya, ma-1) - new Date(yb, mb-1);
       });
-
       groupedData = Array.from(map.values());
   }
+
+  // Tính Tổng & Trung bình
+  $: footerStats = (() => {
+      const count = groupedData.length || 1;
+      const stats = { total: { dtqd: 0, months: {} }, avg: { dtqd: 0, months: {} } };
+      uniqueMonths.forEach(m => stats.total.months[m] = 0);
+
+      groupedData.forEach(item => {
+          stats.total.dtqd += item.totalDtqd;
+          uniqueMonths.forEach(m => {
+              if (item.months[m]) stats.total.months[m] += item.months[m].dtqd;
+          });
+      });
+
+      stats.avg.dtqd = stats.total.dtqd / count;
+      uniqueMonths.forEach(m => { stats.avg.months[m] = stats.total.months[m] / count; });
+      return stats;
+  })();
 
   $: sortedData = [...groupedData].sort((a, b) => {
       let valA = 0, valB = 0;
@@ -145,6 +168,7 @@
       } else if (sortKey === 'total') {
           valA = a.totalDtqd; valB = b.totalDtqd;
       } else if (sortKey.startsWith('month_')) {
+          // [FIXED] Trả lại đúng logic split nguyên bản
           const parts = sortKey.split('_');
           const m = parts[1];
           const type = parts[2];
@@ -174,7 +198,7 @@
       if (index === 1) return 'bg-slate-100/50 hover:bg-slate-200/60'; 
       if (index === 2) return 'bg-orange-50/30 hover:bg-orange-100/50';
       if (index < topCount) return 'bg-blue-50/20 hover:bg-blue-50/60'; 
-      return 'bg-white hover:bg-slate-50 border-b border-gray-100'; 
+      return 'bg-white hover:bg-slate-50 border-b border-gray-100';
   }
 
   function getRankIcon(index) {
@@ -237,24 +261,49 @@
                 </tr>
             </thead>
             <tbody>
-                 {#if sortedData.length === 0}
+                {#if sortedData.length === 0}
                     <tr><td colspan={3 + uniqueMonths.length * 2} class="p-12 text-center text-gray-400 italic bg-gray-50">Không có dữ liệu của NV siêu thị hiện tại hoặc dữ liệu không hợp lệ.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
                         <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
                             <td class="px-2 py-3 text-center border-r border-gray-100 font-bold sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)} {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">{getRankIcon(index)}</td>
                             <td class="px-4 py-3 font-semibold text-slate-700 truncate border-r border-gray-100 group-hover:text-indigo-700 sticky left-[56px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)}" title={item.hoTen}>{formatters.getShortEmployeeName(item.hoTen, item.maNV)}</td>
-                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 bg-indigo-50/40 sticky left-[236px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatters.formatRevenue(item.totalDtqd)}</td>
+                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 bg-indigo-50/40 sticky left-[236px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(item.totalDtqd)}</td>
                             {#each uniqueMonths as month}
                                 {@const mData = item.months[month] || {dtqd: 0, dt: 0}}
                                 {@const tyle = mData.dt > 0 ? (mData.dtqd / mData.dt) - 1 : 0}
-                                <td class="px-3 py-3 text-right font-bold text-gray-800 border-r border-gray-100 border-l-2 border-l-slate-200">{mData.dtqd > 0 ? formatters.formatRevenue(mData.dtqd) : '-'}</td>
-                                <td class="px-3 py-3 text-right text-slate-400 text-xs border-r border-gray-100 font-medium">{mData.dtqd > 0 ? formatters.formatPercentage(tyle) : '-'}</td>
+                                {@const isBelowAvg = mData.dtqd > 0 && mData.dtqd < footerStats.avg.months[month]}
+                                <td class="px-3 py-3 text-right font-bold border-r border-gray-100 border-l-2 border-l-slate-200 {isBelowAvg ? 'bg-red-50 text-red-500' : 'text-gray-800'}">
+                                    {mData.dtqd > 0 ? formatRevenueNoDecimal(mData.dtqd) : '-'}
+                                </td>
+                                <td class="px-3 py-3 text-right text-xs border-r border-gray-100 font-medium {isBelowAvg ? 'bg-red-50 text-red-400' : 'text-slate-400'}">
+                                    {mData.dtqd > 0 ? formatters.formatPercentage(tyle) : '-'}
+                                </td>
                             {/each}
                          </tr>
                     {/each}
                 {/if}
             </tbody>
+            {#if sortedData.length > 0}
+            <tfoot class="sticky bottom-0 z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+                <tr class="bg-slate-100 text-slate-600 font-bold text-xs uppercase border-t-2 border-slate-300">
+                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-slate-100 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Trung Bình</td>
+                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-slate-200 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(footerStats.avg.dtqd)}</td>
+                    {#each uniqueMonths as month}
+                        <td class="px-3 py-3 text-right border-r border-gray-200 border-l-2 border-l-slate-300">{formatRevenueNoDecimal(footerStats.avg.months[month])}</td>
+                        <td class="bg-slate-100 border-r border-gray-200"></td>
+                    {/each}
+                </tr>
+                <tr class="bg-indigo-600 text-white font-black text-xs uppercase">
+                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-indigo-600 border-r border-indigo-500 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Tổng Cộng</td>
+                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-indigo-700 border-r border-indigo-500 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(footerStats.total.dtqd)}</td>
+                    {#each uniqueMonths as month}
+                        <td class="px-3 py-3 text-right border-r border-indigo-500 border-l-2 border-l-indigo-400">{formatRevenueNoDecimal(footerStats.total.months[month])}</td>
+                        <td class="bg-indigo-600 border-r border-indigo-500"></td>
+                    {/each}
+                </tr>
+            </tfoot>
+            {/if}
         </table>
     </div>
 </div>
