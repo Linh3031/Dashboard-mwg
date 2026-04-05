@@ -15,11 +15,11 @@
   export let isMultiMode = false; 
 
   let fileName = "Chưa thêm file";
-  let statusHTML = ""; 
+  let statusHTML = "";
   let isLoading = false;
   let statusClass = "text-gray-500";
-  let localError = ""; 
-  
+  let localError = "";
+
   const storeMap = {
       'saved_danhsachnv': danhSachNhanVien,
       'saved_giocong': rawGioCongData,
@@ -48,12 +48,28 @@
             try {
                 const dateObj = new Date(dateVal);
                 if (isNaN(dateObj)) return null;
+            
                 const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
                 const y = dateObj.getFullYear();
                 return `${m}/${y}`; // Format ra 03/2026
             } catch(e) { return null; }
         }).filter(Boolean))].sort()
         : [];
+
+  // [TÍNH NĂNG MỚI]: Tìm ngày cập nhật gần nhất
+  $: maxDateStr = (() => {
+        if (!$dataStore || $dataStore.length === 0) return '';
+        let maxTs = 0;
+        $dataStore.forEach(d => {
+            const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO;
+            if (!dateVal) return;
+            const ts = new Date(dateVal).getTime();
+            if (!isNaN(ts) && ts > maxTs) maxTs = ts;
+        });
+        if (maxTs === 0) return '';
+        const d = new Date(maxTs);
+        return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  })();
 
   $: {
       if (isLoading) {
@@ -71,12 +87,14 @@
               statusHTML = syncState.message;
           } else {
               statusClass = "text-green-600 font-medium";
-              statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)` : syncState.message;
+              let dateInfo = maxDateStr ? ` <span class="text-[11px] text-blue-600 ml-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">(Đến: ${maxDateStr})</span>` : '';
+              statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)${dateInfo}` : `${syncState.message}${dateInfo}`;
               if (syncState.metadata?.fileName && !isMultiMode) fileName = syncState.metadata.fileName;
           }
       } else if (dataCount > 0) {
           statusClass = "text-green-600";
-          statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)` : `✓ Đã tải ${dataCount} dòng (Local)`;
+          let dateInfo = maxDateStr ? ` <span class="text-[11px] text-blue-600 ml-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">(Đến: ${maxDateStr})</span>` : '';
+          statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)${dateInfo}` : `✓ Đã tải ${dataCount} dòng (Local)${dateInfo}`;
       } else {
           statusHTML = "";
       }
@@ -87,7 +105,7 @@
       if (files.length === 0) return;
 
       isLoading = true;
-      localError = ""; 
+      localError = "";
 
       if (!dataStore) {
           localError = `Hệ thống chưa map key '${saveKey}'.`;
@@ -97,7 +115,7 @@
 
       try {
           for (const file of files) {
-              fileName = file.name; 
+              fileName = file.name;
               const result = await dataService.handleFileChange(file, saveKey, isMultiMode);
               if (!result.success) {
                   localError += `Lỗi file ${file.name}: ${result.message}<br/>`;
@@ -123,30 +141,30 @@
       });
   }
 
-  // [PHẪU THUẬT LÕI]: Thêm hàm Xóa theo Tháng
   function removeMonth(targetMonth) {
       if (!dataStore) return;
       dataStore.update(currentData => {
           return currentData.filter(d => {
               const dateVal = d.ngayTao || d['Ngày tạo'];
-              if (!dateVal) return true; // Giữ lại những dòng không có ngày để tránh xóa nhầm
+              if (!dateVal) return true; 
               try {
                   const dateObj = new Date(dateVal);
+          
                   if (isNaN(dateObj)) return true;
                   const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
                   const y = dateObj.getFullYear();
                   const rowMonth = `${m}/${y}`;
-                  return rowMonth !== targetMonth; // Chỉ loại bỏ những dòng trùng với Tháng cần xóa
+                  return rowMonth !== targetMonth; 
+ 
               } catch(e) { return true; }
           });
       });
   }
 
-  // [PHẪU THUẬT LÕI]: Thêm hàm Reset Toàn Bộ Store
   function clearAllData() {
       if (!dataStore) return;
       if (confirm(`Bạn có chắc chắn muốn XÓA TOÀN BỘ dữ liệu của "${label}" không?`)) {
-          dataStore.set([]); // Reset mảng về rỗng
+          dataStore.set([]);
           fileName = "Chưa thêm file";
       }
   }
@@ -171,6 +189,7 @@
            <i data-feather={icon} class="h-5 w-5 feather"></i>
            {#if link}
                 <a href={link} target="_blank" class="text-blue-700 underline font-bold cursor-pointer relative z-50 hover:text-blue-900 pointer-events-auto" on:click|stopPropagation title="Mở báo cáo nguồn">
+                 
                     {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
                 </a>
            {:else}
@@ -187,6 +206,7 @@
         <div class="flex items-center gap-2"> 
             <label for="file-{saveKey}" class="data-input-group__file-trigger whitespace-nowrap" class:opacity-50={isLoading}>
                 {#if isLoading}
+                 
                     Đang chạy...
                 {:else}
                     Thêm file
@@ -194,7 +214,7 @@
             </label>
             <span class="data-input-group__file-name truncate" title={fileName}>{fileName}</span> 
         </div> 
-        
+      
         {#if saveKey === 'saved_danhsachnv'}
             <button on:click={() => dataService.handleTemplateDownload()} class="data-input-group__link text-left pointer-events-auto relative z-50">Tải file mẫu</button> 
         {/if}
@@ -203,52 +223,72 @@
         
         <div class="data-input-group__status-wrapper"> 
             <span class="data-input-group__status-text {statusClass}">{@html statusHTML}</span> 
+    
         </div> 
 
         {#if isMultiMode && (uniqueWarehouses.length > 0 || uniqueMonths.length > 0)}
             <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-50">
                 
                 <div class="flex justify-between items-center border-b border-slate-200 pb-2">
-                    <div class="text-[11px] text-slate-500 font-bold uppercase flex items-center gap-1">
-                        <i data-feather="database" class="w-3 h-3"></i> Tóm tắt dữ liệu Gộp:
+                    <div class="flex flex-col gap-1">
+            
+                        <div class="text-[11px] text-slate-500 font-bold uppercase flex items-center gap-1">
+                            <i data-feather="database" class="w-3 h-3"></i> Tóm tắt dữ liệu Gộp:
+                        </div>
+                     
+                        {#if maxDateStr}
+                            <div class="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 shadow-sm w-max mt-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 
+                                Dữ liệu đến: {maxDateStr}
+                            </div>
+                        {/if}
+          
                     </div>
-                    <button class="text-[10px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-bold px-2 py-1 rounded transition-colors remove-wh-btn shadow-sm" on:click|stopPropagation={clearAllData} title="Xóa trắng toàn bộ dữ liệu này">
+                    <button class="text-[10px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-bold px-2 py-1 rounded transition-colors remove-wh-btn shadow-sm h-max" on:click|stopPropagation={clearAllData} title="Xóa trắng toàn bộ dữ liệu này">
                         Xóa tất cả
                     </button>
+   
                 </div>
 
                 {#if uniqueWarehouses.length > 0}
                 <div>
                     <div class="text-[10px] text-indigo-500 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
+                       
                         <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
                     </div>
                     <div class="flex flex-wrap gap-2">
                         {#each uniqueWarehouses as whCode}
+                       
                             <div class="flex items-center gap-1 bg-white border border-indigo-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
                                 {whCode}
                                 <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeWarehouse(whCode)} title="Xóa dữ liệu kho {whCode}">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
+                
                             </div>
                         {/each}
                     </div>
                 </div>
                 {/if}
 
+            
                 {#if uniqueMonths.length > 0}
                 <div class="{uniqueWarehouses.length > 0 ? 'pt-2 border-t border-slate-200' : ''}">
                     <div class="text-[10px] text-emerald-600 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
-                        <i data-feather="calendar" class="w-3 h-3"></i> Tháng dữ liệu ({uniqueMonths.length}):
+                        <i data-feather="calendar" class="w-3 h-3"></i> Tháng ({uniqueMonths.length}):
                     </div>
+                  
                     <div class="flex flex-wrap gap-2">
                         {#each uniqueMonths as monthStr}
                             <div class="flex items-center gap-1 bg-white border border-emerald-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-emerald-800">
+                          
                                 {monthStr}
                                 <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeMonth(monthStr)} title="Xóa toàn bộ dữ liệu của tháng {monthStr}">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
                             </div>
                         {/each}
+      
                     </div>
                 </div>
                 {/if}

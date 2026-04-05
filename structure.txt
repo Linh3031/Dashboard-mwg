@@ -99,6 +99,7 @@ src/components/health-staff/shared
 src/components/health-staff/shared/UMedalIcon.svelte
 src/components/health-staff/shared/MedalIcon.svelte
 src/components/health-staff/shared/EvaluationBadge.svelte
+src/components/health-staff/MultiMonthRevenueTable.svelte
 src/components/health-staff/detail
 src/components/health-staff/detail/DetailTableCategory.svelte
 src/components/health-staff/detail/DetailView.svelte
@@ -155,6 +156,7 @@ src/components/luyke/dtcknam/DtCkNamTable.svelte
 src/components/luyke/dtcknam/DtCkNamLogic.js
 src/components/luyke/dtcknam/KpiBoard.svelte
 src/components/luyke/dtcknam/DtCkNamRow.svelte
+src/components/luyke/dtcknam/SsgNamTable.svelte
 src/components/luyke/LuykeUnexportedTable.svelte
 src/components/luyke/TdvTop20Modal.svelte
 src/components/luyke/ThiDuaVungTNB.svelte

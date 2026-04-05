@@ -9,83 +9,115 @@ export const AVAILABLE_DIMENSIONS = [
     { id: 'nhanVienTao', label: 'Người tạo', default: false }
 ];
 
-const parseMoney = (val) => parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0;
 const cleanStr = (s) => (s || '').toString().trim();
-const getVal = (row, key) => row[key] || row[key.toUpperCase()] || row[key.toLowerCase()] || '';
 
-const isValidRow = (row) => {
-    const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || "").trim();
-    const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || "").trim();
-    const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || "").trim();
-    const xuat = (row.trangThaiXuat || row.TRANG_THAI_XUAT || "").trim();
-    return thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất';
+const parseSafeDate = (dateVal) => {
+    if (!dateVal) return null;
+    if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) return d;
+    const str = String(dateVal).trim();
+    const parts = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+    if (parts) return new Date(parts[3], parts[2] - 1, parts[1]);
+    return null;
+};
+
+// Hàm trích xuất tự động loại bỏ Dấu Tiếng Việt và Khoảng trắng
+const getVal = (row, possibleKeys) => {
+    const rowKeys = Object.keys(row);
+    for (let rk of rowKeys) {
+        const normRk = rk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
+        for (let pk of possibleKeys) {
+            const normPk = pk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
+            if (normRk === normPk) {
+                return row[rk] !== undefined && row[rk] !== null ? String(row[rk]).trim() : '';
+            }
+        }
+    }
+    return '';
 };
 
 const getDimensionValue = (row, dimId) => {
-    let fieldName = dimId === 'nhanVienTao' ? 'nguoiTao' : dimId;
-    const val = getVal(row, fieldName);
+    let val = '';
+    if (dimId === 'nhanVienTao') val = getVal(row, ['nguoiTao', 'nhanVienTao', 'Người tạo']);
+    else if (dimId === 'nganhHang') val = getVal(row, ['nganhHang', 'Ngành hàng']);
+    else if (dimId === 'nhomHang') val = getVal(row, ['nhomHang', 'Nhóm hàng']);
+    else if (dimId === 'nhaSanXuat') val = getVal(row, ['nhaSanXuat', 'Nhà sản xuất']);
+    else if (dimId === 'tenSanPham') val = getVal(row, ['tenSanPham', 'Tên sản phẩm']);
+
     if (!val) return '(Trống)';
     if (dimId === 'nhanVienTao') {
-        let maNV = getVal(row, 'maNhanVien') || getVal(row, 'MANHANVIEN') || (val.match(/(\d+)/) || [])[1];
+        let maNV = getVal(row, ['maNhanVien', 'Mã nhân viên']) || (val.match(/(\d+)/) || [])[1];
         return formatters.getShortEmployeeName(val, maNV || '');
     }
     if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') return val.toString().trim();
     return cleanStr(val);
 };
 
-function getWeekRangeLabel(dateRaw) {
-    const d = new Date(dateRaw);
+function getWeekRangeLabel(dateObj) {
+    const d = new Date(dateObj);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); 
     const mon = new Date(d.setDate(diff));
     const sun = new Date(mon.getTime());
     sun.setDate(mon.getDate() + 6);
-    return `${mon.getDate()}/${mon.getMonth()+1} - ${sun.getDate()}/${sun.getMonth()+1}`;
+    return `${String(mon.getDate()).padStart(2,'0')}/${String(mon.getMonth()+1).padStart(2,'0')} - ${String(sun.getDate()).padStart(2,'0')}/${String(sun.getMonth()+1).padStart(2,'0')}`;
 }
 
 export function processDashboardData(sourceData, activeDimensionIds, currentFilters, sortConfig) {
-    const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi ? dataProcessing.getHeSoQuyDoi() : {};
     const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
     
     let metrics = { actualRev: 0, convertedRev: 0, traChamRev: 0 };
-    let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
+    let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0 };
     let weekMap = new Map(), dayMap = new Map(), rootMap = new Map();
     let uniqueDays = new Set();
-    let uniqueWarehouses = new Set(); // [THÊM]: Thu thập mã kho
+    let uniqueWarehouses = new Set();
 
     sourceData.forEach(row => {
-        const htx = cleanStr(row.hinhThucXuat || row.HINH_THUC_XUAT);
-        if (validHTX.size > 0 && !validHTX.has(htx)) return;
-        if (!isValidRow(row)) return;
+        const normalizeKey = (k) => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
+        // [PHẪU THUẬT LOGIC]: Tự động nhận diện dữ liệu nén
+        const hasStatusCols = Object.keys(row).some(k => 
+            ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(normalizeKey(k))
+        );
 
-        // [THÊM]: Trích xuất mã kho an toàn (như bên FileInput.svelte)
-        // [PHẪU THUẬT]: Vét cạn mọi định dạng tên cột Mã Kho có thể xuất hiện từ Parser
-        const wh = row.maKhoTao || row.maKho || 
-                   row.MA_KHO_TAO || row.MA_KHO || 
-                   row['Mã kho tạo'] || row['Kho tạo'] || 
-                   row['Mã kho'] || row['Kho xuất'] || row.KHO_XUAT || 
-                   row['Mã siêu thị'] || row.MA_SIEU_THI;
-                   
-        if (wh && wh.toString().trim() !== '') {
-            uniqueWarehouses.add(wh.toString().trim());
+        let htx = '';
+        if (hasStatusCols) {
+            htx = getVal(row, ['hinhThucXuat', 'Hình thức xuất']);
+            const thuTien = getVal(row, ['trangThaiThuTien', 'Trạng thái thu tiền']);
+            const huy = getVal(row, ['trangThaiHuy', 'Trạng thái hủy']);
+            const tra = getVal(row, ['tinhTrangTra', 'Tình trạng trả']);
+            const xuat = getVal(row, ['trangThaiXuat', 'Trạng thái xuất']);
+
+            const isValidState = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất';
+            const isValidHtx = validHTX.size === 0 || validHTX.has(htx);
+
+            if (!isValidHtx || !isValidState) return;
         }
 
-        const dateRaw = row.ngayTao || row.NGAY_TAO;
-        if (!dateRaw) return;
-        const dateObj = new Date(dateRaw);
-        const dateStr = dateObj.toLocaleDateString('vi-VN');
+        const wh = getVal(row, ['maKhoTao', 'maKho', 'Mã kho tạo']);
+        if (wh !== '') uniqueWarehouses.add(wh);
+
+        const dateRaw = getVal(row, ['ngayTao', 'Ngày tạo']);
+        const dateObj = parseSafeDate(dateRaw);
+        if (!dateObj) return;
+        
+        const dateStr = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
         uniqueDays.add(dateStr);
 
-        const qty = parseInt(row.soLuong || row.SO_LUONG || 0);
-        const rev = parseMoney(row.thanhTien || row.THANH_TIEN || row.DoanhThu);
-        const nhomHang = cleanStr(row.nhomHang || row.NHOM_HANG || row.nganhHang);
+        const parseMoney = (val) => {
+            if (typeof val === 'number') return val;
+            return parseFloat(String(val).replace(/,/g, '')) || 0;
+        };
+        
+        const qty = parseMoney(getVal(row, ['soLuong', 'Số lượng']));
+        const rev = parseMoney(getVal(row, ['revenue', 'doanhThu', 'thanhTien', 'Thành tiền']));
+        const revQDRaw = getVal(row, ['revenueQuyDoi', 'doanhThuQuyDoi', 'Doanh thu quy đổi']);
+        const revQD = revQDRaw !== '' ? parseMoney(revQDRaw) : rev;
         
         const isTraGop = htx.toLowerCase().includes('trả góp') || htx.toLowerCase().includes('trả chậm');
-        let heSo = heSoQuyDoiMap[nhomHang] || 1;
-        if (isTraGop) heSo += 0.3;
-        const revQD = (row.revenueQuyDoi || row.doanhThuQuyDoi) ? parseMoney(row.revenueQuyDoi || row.doanhThuQuyDoi) : (rev * heSo);
         
-        metrics.actualRev += rev; metrics.convertedRev += revQD;
+        metrics.actualRev += rev; 
+        metrics.convertedRev += revQD;
         if (isTraGop) metrics.traChamRev += rev;
 
         if (!dayMap.has(dateStr)) dayMap.set(dateStr, { date: dateStr, rev: 0, dateObj });
@@ -125,8 +157,6 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     });
 
     const totalDays = uniqueDays.size || 1;
-
-    // [THÊM]: Logic xuất chuỗi Text thông minh dựa trên số lượng kho thu được
     const whArray = Array.from(uniqueWarehouses);
     const warehouseTitle = whArray.length === 1 ? `- Kho ${whArray[0]}` : (whArray.length > 1 ? `- Gộp ${whArray.length} kho` : '');
 
@@ -151,8 +181,22 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
         const uniqueValues = new Set();
         const otherFilters = { ...currentFilters }; delete otherFilters[targetDim.id];
         sourceData.forEach(row => {
-            if (validHTX.size > 0 && !validHTX.has(cleanStr(row.hinhThucXuat || row.HINH_THUC_XUAT))) return;
-            if (!isValidRow(row)) return;
+            const normalizeKey = (k) => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
+            const hasStatusCols = Object.keys(row).some(k => 
+                ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(normalizeKey(k))
+            );
+
+            if (hasStatusCols) {
+                const htx = getVal(row, ['hinhThucXuat', 'Hình thức xuất']);
+                if (validHTX.size > 0 && !validHTX.has(htx)) return;
+                
+                const thuTien = getVal(row, ['trangThaiThuTien', 'Trạng thái thu tiền']);
+                const huy = getVal(row, ['trangThaiHuy', 'Trạng thái hủy']);
+                const tra = getVal(row, ['tinhTrangTra', 'Tình trạng trả']);
+                const xuat = getVal(row, ['trangThaiXuat', 'Trạng thái xuất']);
+                if (!(thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất')) return;
+            }
+
             let isValid = true;
             for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
                 if (filterValues !== undefined && !filterValues.includes(getDimensionValue(row, filterKey))) { isValid = false; break; }
