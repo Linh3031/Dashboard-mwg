@@ -219,8 +219,8 @@
         <div class="flex items-center gap-2">
             <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600"><i data-feather="layers" class="w-5 h-5"></i></div>
             <div>
-                <h3 class="font-bold text-indigo-900 text-lg uppercase">Phân tích Lũy kế Đa tháng</h3>
-                <p class="text-xs text-indigo-600/80">Chỉ thống kê NV thuộc DS hiện tại. Thuật toán đồng bộ 100% với Kỳ hiện tại</p>
+                <h3 class="font-bold text-indigo-900 text-lg uppercase">Phân tích Lũy kế nhiều tháng</h3>
+                <p class="text-xs text-indigo-600/80">Chỉ thống kê NV thuộc danh sách do QL cập nhật</p>
             </div>
         </div>
         <div class="flex items-center gap-3">
