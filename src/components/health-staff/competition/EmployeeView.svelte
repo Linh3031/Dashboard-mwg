@@ -15,6 +15,12 @@
       return tenGoc;
   }
 
+  // --- THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
+  // Sử dụng Math.max(..., 1) để tránh lỗi chia cho 0 vào ngày mùng 1 đầu tháng
+  $: today = new Date();
+  $: currentDay = Math.max(today.getDate() - 1, 1);
+  $: daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+
   // --- STATE ---
   let columnSettings = [];
   let sortKey = 'totalScore';
@@ -42,7 +48,6 @@
   $: {
       const stMappedData = {};
       ($competitionData || []).forEach(item => {
-          // Lấy cấu hình map của Siêu Thị
           const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
           
           let linkedEmpProg = '';
@@ -50,7 +55,6 @@
               linkedEmpProg = luykeMap.linkedEmpProgram;
           }
           
-          // NẾU CÓ LINK CHỈ ĐỊNH ĐẾN CỘT NHÂN VIÊN -> TÍNH TARGET VÀ GÁN
           if (linkedEmpProg) {
               const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
               const isQty = item.type === 'soLuong';
@@ -62,13 +66,11 @@
 
       const newTargets = {};
       (columnSettings || []).forEach(col => {
-          // Lấy Target trực tiếp bằng tenGoc đã được Link
           newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
       });
       categoryTargets = newTargets;
   }
 
-  // Palette màu cho header
   const headerColors = [
       'bg-red-100 text-red-900 border-red-200', 'bg-orange-100 text-orange-900 border-orange-200',
       'bg-amber-100 text-amber-900 border-amber-200', 'bg-lime-100 text-lime-900 border-lime-200',
@@ -160,8 +162,11 @@
                 emp.competitions.forEach(comp => {
                     const val = comp.giaTri || 0;
                     const pTarget = categoryTargets[comp.tenGoc] || 0;
-                    // BẢNG CHÂN LÝ: Đạt nếu (Có Target & Val >= Target) HOẶC (Chưa Target & Val > 0)
-                    if ((pTarget > 0 && val >= pTarget) || (pTarget === 0 && val > 0)) {
+                    
+                    // --- ÁP DỤNG SỐ DỰ KIẾN VÀO BẢNG CHÂN LÝ ---
+                    const projectedVal = (val / currentDay) * daysInMonth;
+                    
+                    if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) {
                         score++;
                     }
                 });
@@ -220,7 +225,9 @@
           const score = item.competitions.reduce((acc, c) => {
               const val = c.giaTri || 0;
               const pTarget = categoryTargets[c.tenGoc] || 0;
-              return ((pTarget > 0 && val >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
+              const projectedVal = (val / currentDay) * daysInMonth;
+              
+              return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
           }, 0);
           return total + score;
       }, 0);
@@ -292,7 +299,8 @@
                             {@const score = item.competitions.reduce((acc, c) => {
                                 const val = c.giaTri || 0;
                                 const pTarget = categoryTargets[c.tenGoc] || 0;
-                                return ((pTarget > 0 && val >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
+                                const projectedVal = (val / currentDay) * daysInMonth;
+                                return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
                             }, 0)}
                             
                             <tr 
@@ -313,12 +321,15 @@
                                     {@const comp = item.competitions.find(c => c.tenGoc === col.tenGoc)}
                                     {@const val = comp?.giaTri || 0}
                                     {@const pTarget = categoryTargets[col.tenGoc] || 0}
-                                    {@const isBelow = pTarget > 0 && val < pTarget}
+                                    {@const projectedVal = (val / currentDay) * daysInMonth}
+                                    
+                                    {@const isBelow = pTarget > 0 && projectedVal < pTarget}
                                     {@const isNoTarget = pTarget === 0 && val === 0}
                                     {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
-                                    {@const textColorClass = isRevenue ? 'text-blue-700' : 'text-gray-900'}
+                                    {@const textColorClass = isBelow ? 'text-yellow-900' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
+
+<td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
                                     
-                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-50/50' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : ""}>
                                         {#if val === 0}
                                             <span class="text-gray-300 font-normal">{isNoTarget ? '0' : '-'}</span>
                                         {:else}
@@ -346,9 +357,23 @@
                             {/each}
                         </tr>
 
+                        <tr class="bg-yellow-50 text-yellow-800 font-semibold border-t border-gray-300">
+                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
+                                TRUNG BÌNH
+                            </td>
+                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-green-700">
+                                {allEmployees.length > 0 ? formatters.formatNumber(calculateTotalScore() / allEmployees.length, 1) : 0}
+                            </td>
+                            {#each visibleColumns as col}
+                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px] bg-yellow-50">
+                                    {allEmployees.length > 0 ? formatters.formatNumber(calculateTotal(col) / allEmployees.length, 0) : 0}
+                                </td>
+                            {/each}
+                        </tr>
+
                         <tr class="bg-gray-200 text-gray-900 font-bold border-t border-gray-300">
                             <td colspan="2" class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
-                                TỔNG KẾT
+                                TỔNG
                             </td>
                             <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[200px] z-30 text-center text-[13px]">
                                 {calculateTotalScore()}
