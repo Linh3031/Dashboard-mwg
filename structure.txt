@@ -160,6 +160,7 @@ src/components/luyke/dtcknam/SsgNamTable.svelte
 src/components/luyke/LuykeUnexportedTable.svelte
 src/components/luyke/TdvTop20Modal.svelte
 src/components/luyke/ThiDuaVungTNB.svelte
+src/components/luyke/AddressStatistics.svelte
 src/components/luyke/LuykeThiDuaVung.svelte
 src/components/luyke/LuykeQdcTable.svelte
 src/components/luyke/TdvInfographic.svelte
@@ -181,9 +182,15 @@ src/components/luyke/HcmTdvInfographic.svelte
 src/components/luyke/inventory
 src/components/luyke/inventory/InventoryToolbar.svelte
 src/components/luyke/inventory/InventoryLogic.js
+src/components/luyke/address
+src/components/luyke/address/AddressYtdView.svelte
+src/components/luyke/address/AddressProductDetail.svelte
+src/components/luyke/address/AddressTreeItem.svelte
+src/components/luyke/address/addressLogic.js
 src/components/luyke/ThiDuaVungHCM.svelte
 src/components/luyke/LuykeDtCkNam.svelte
 src/components/luyke/LuykeCategoryTable.svelte
+src/components/luyke/AddressDashboard.svelte
 src/components/luyke/LuykeEfficiencyTable.svelte
 src/components/luyke/LuykeSieuThi.svelte
 src/global.d.ts

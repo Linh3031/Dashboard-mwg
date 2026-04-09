@@ -27,7 +27,8 @@ export const config = {
             trangThaiThuTien: { required: true, displayName: 'Trạng thái thu tiền', aliases: ['trạng thái thu tiền'] },
             trangThaiHuy: { required: true, displayName: 'Trạng thái hủy', aliases: ['trạng thái hủy'] },
             tinhTrangTra: { required: true, displayName: 'Tình trạng trả', aliases: ['tình trạng nhập trả của sản phẩm đổi với sản phẩm chính', 'tình trạng trả'] },
-            trangThaiXuat: { required: true, displayName: 'Trạng thái xuất', aliases: ['trạng thái xuất'] }
+            trangThaiXuat: { required: true, displayName: 'Trạng thái xuất', aliases: ['trạng thái xuất'] },
+            diaChi: { required: false, displayName: 'Địa chỉ khách hàng', aliases: ['địa chỉ khách hàng', 'dia chi khach hang'] }
         },
         giocong: {
             maNV: { required: false, displayName: 'Mã NV', aliases: ['mã nv', 'msnv'] },

@@ -22,6 +22,9 @@
 
   // [SURGICAL ADDITION] Import component DT CK Năm
   import LuykeDtCkNam from './luyke/LuykeDtCkNam.svelte';
+  
+  // [SỬA Ở ĐÂY]: Đổi import từ AddressDashboard sang lớp vỏ bọc AddressYtdView
+  import AddressYtdView from './luyke/address/AddressYtdView.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-luyke-sieu-thi';
@@ -155,6 +158,9 @@
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-dt-ck-nam' ? 'active' : ''}" data-target="subtab-dt-ck-nam" data-title="DTCKNam" on:click={handleSubTabClick}> 
                             <i data-feather="calendar"></i> <span>SSG</span> 
                         </button>
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-address' ? 'active' : ''}" data-target="subtab-luyke-address" on:click={() => activeSubTabId = 'subtab-luyke-address'}> 
+                            <i data-feather="map-pin"></i> <span>Thống kê địa chỉ</span> 
+                        </button>
                     </nav>
                 </div>
 
@@ -185,6 +191,10 @@
                     {:else if activeSubTabId === 'subtab-dt-ck-nam'}
                         <div id="subtab-dt-ck-nam" class="sub-tab-content">
                             <LuykeDtCkNam selectedWarehouse={$selectedWarehouse} />
+                        </div>
+                       {:else if activeSubTabId === 'subtab-luyke-address'}
+                        <div id="subtab-luyke-address" class="sub-tab-content">
+                            <AddressYtdView />
                         </div>
                     {/if}
                 </div>
