@@ -162,33 +162,6 @@ export const normalizers = {
                     revenue = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
                 }
                 newRow.revenue = revenue; 
-                // 5. [GENESIS ADD] Chuẩn hóa và bóc tách Địa chỉ
-                newRow.apDuong = '';
-                newRow.xaPhuong = '';
-                newRow.tinhThanh = '';
-                
-                if (newRow.diaChi) {
-                    const rawAddr = String(newRow.diaChi).trim();
-                    // Lọc bỏ rác hoặc các chuỗi vô nghĩa
-                    if (!rawAddr.includes('Hạn thanh toán') && !rawAddr.startsWith('***') && !/^\d+$/.test(rawAddr)) {
-                        // Tách theo dấu phẩy, dọn rác khoảng trắng
-                        const parts = rawAddr.split(',').map(s => s.trim()).filter(s => s);
-                        
-                        if (parts.length >= 3) {
-                            newRow.tinhThanh = parts.pop();
-                            newRow.xaPhuong = parts.pop();
-                            newRow.apDuong = parts.join(', ');
-                        } else if (parts.length === 2) {
-                            newRow.xaPhuong = parts.pop();
-                            newRow.apDuong = parts.pop();
-                        } else {
-                            newRow.apDuong = rawAddr; // Thiếu thông tin, ném hết vào cột Ấp
-                        }
-                    } else {
-                        // Nếu là rác (có Hạn thanh toán, chuỗi số...), đẩy vào cột 1, để trống Xã/Tỉnh
-                        newRow.apDuong = rawAddr; 
-                    }
-                }
 
                 // 2. Xác định Hệ số gốc (Base Rate) - [VÁ LỖI CỰC MẠNH: DÙNG GET HỆ SỐ FOR CATEGORY]
                 const productKey = String(newRow.nhomHang || '');

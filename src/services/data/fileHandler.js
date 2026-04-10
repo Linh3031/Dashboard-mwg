@@ -47,14 +47,39 @@ export const fileHandler = {
         try {
             const workbook = await _handleFileRead(file);
             const sheetName = workbook.SheetNames[0];
-            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
             
+            // [GENESIS FIX]: Lấy toàn bộ Header thô để quét Địa chỉ thủ công
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+            const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
+            const rawAddressCol = headers.find(h => 
+                h.toLowerCase().includes('địa chỉ') || 
+                h.toLowerCase().includes('dia chi') || 
+                h.toLowerCase().includes('address')
+            );
+
             let { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
             
             if (!success) {
                 updateSyncState(saveKey, 'error', `Thiếu cột: ${missingColumns.join(', ')}`);
                 return { success: false, message: `Thiếu cột bắt buộc` };
             }
+
+            // --- 🚨 [ATOMIC FIX: FORCED ADDRESS INJECTION] 🚨 ---
+            // Nếu là dòng YCX, và tìm thấy cột địa chỉ gốc, ÉP BUỘC tiêm vào data đã chuẩn hóa
+            if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
+                if (rawAddressCol) {
+                    console.log(`[FileHandler] Đã kích hoạt khiên bảo vệ Địa Chỉ cho cột: "${rawAddressCol}"`);
+                    normalizedData = normalizedData.map((row, index) => {
+                        return {
+                            ...row,
+                            diaChi: String(rawData[index][rawAddressCol] || '').trim()
+                        };
+                    });
+                } else {
+                    console.warn("[FileHandler] File tải lên KHÔNG CÓ cột chứa chữ 'Địa chỉ'!");
+                }
+            }
+            // ----------------------------------------------------
 
             if (isMultiMode && (saveKey === 'saved_ycx_cungkynam' || saveKey === 'saved_ycx_thangtruoc')) {
                 const currentData = get(mapping.store) || [];
@@ -102,7 +127,6 @@ export const fileHandler = {
                 updateSyncState(saveKey, 'uploading', 'Đang tải lên Cloud...');
                 try {
                     const path = `warehouse_data/${warehouse}/${saveKey}_${Date.now()}_${file.name}`;
-                    // [HOTFIX]: Sửa chữ downloadUrl thành downloadURL
                     const downloadURL = await storageService.uploadFileToStorage(file, path);
                     const now = Date.now();
                     const metadata = { downloadURL, fileName: file.name, fileType: 'excel', rowCount: normalizedData.length, updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' };

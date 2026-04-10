@@ -64,8 +64,6 @@ function getMetaTimestamp(meta, sourceName) {
         }
     }
 
-    // Log debug để kiểm tra
-    console.log(`[SYNC-DEBUG] ${sourceName} | Method: ${method} | TS: ${ts} | Time: ${new Date(ts).toLocaleString()}`);
     return ts;
 }
 
@@ -118,14 +116,7 @@ export const syncHandler = {
 
                 if (isNewer) {
                     const msg = isMyUpload ? `Có bản mới từ bạn ${timeAgo}` : `Có cập nhật mới từ ${cloudMeta.updatedBy} ${timeAgo}`;
-                    
-                    // [TÙY CHỌN MẠNH TAY] Nếu Store đang trống HOẶC Local quá cũ, tự động tải luôn
-                    // Hiện tại: Chỉ báo Update Available (để an toàn). 
-                    // Nếu bạn muốn tự tải luôn khi F5, bỏ comment dòng dưới:
-                    // if (isStoreEmpty) { 
-                        updateSyncState(key, 'update_available', msg, cloudMeta);
-                    // } else { ... logic auto download ... }
-                    
+                    updateSyncState(key, 'update_available', msg, cloudMeta);
                     console.log("-> Trạng thái: UPDATE AVAILABLE");
                 } else {
                     if (isStoreEmpty) {
@@ -164,48 +155,81 @@ export const syncHandler = {
         const state = get(fileSyncState)[key];
         const warehouse = get(selectedWarehouse);
         
-        // [FIX] Nếu không có metadata trong state (do bấm nút tải khi chưa check xong), 
-        // thử lấy từ cloudData (cần load lại hoặc truyền vào). 
-        // Ở đây ta giả định state đã có meta từ bước syncDownFromCloud
-        if (!state?.metadata?.downloadURL || !warehouse) {
-            console.error(`[Download] Không tìm thấy URL tải cho ${key}`);
+        if (!state?.metadata || !warehouse) {
+            console.error(`[Download] Không có metadata cho ${key}`);
             return;
         }
         
         updateSyncState(key, 'downloading', 'Đang tải xuống...', state.metadata);
-        console.log(`[Download] Bắt đầu tải ${key} từ ${state.metadata.downloadURL}`);
         
         try {
-            // Thêm timestamp vào URL để tránh Cache trình duyệt (Browser Caching)
-            const cacheBusterUrl = `${state.metadata.downloadURL}${state.metadata.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
-            const response = await fetch(cacheBusterUrl);
-            
             if (FILE_MAPPING[key]) {
-                const blob = await response.blob();
-                const workbook = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                         const data = new Uint8Array(e.target.result);
-                         resolve(XLSX.read(data, { type: 'array', cellDates: true, cellText: true }));
-                    };
-                    reader.onerror = reject;
-                    reader.readAsArrayBuffer(blob);
-                });
-                const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
                 const mapping = FILE_MAPPING[key];
-                const { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
-                mapping.store.set(normalizedData);
-                await storage.setItem(key, normalizedData);
+                let allNormalizedData = [];
+
+                // 🚨 [ATOMIC FIX: XỬ LÝ CHẾ ĐỘ MẢNG FILES] 🚨
+                if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
+                    console.log(`[Download] Kích hoạt chế độ tải MẢNG cho ${key}. Tổng số file: ${state.metadata.files.length}`);
+                    
+                    for (const fileMeta of state.metadata.files) {
+                        if (!fileMeta.downloadURL) continue;
+                        console.log(`- Đang tải file: ${fileMeta.fileName}`);
+                        
+                        const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                        const response = await fetch(cacheBusterUrl);
+                        const blob = await response.blob();
+                        
+                        const workbook = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                                 const data = new Uint8Array(e.target.result);
+                                 resolve(XLSX.read(data, { type: 'array', cellDates: true, cellText: true }));
+                            };
+                            reader.onerror = reject;
+                            reader.readAsArrayBuffer(blob);
+                        });
+                        
+                        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
+                        const { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+                        
+                        // Gộp dữ liệu của file này vào tổng
+                        allNormalizedData = [...allNormalizedData, ...normalizedData];
+                    }
+                } 
+                // Xử lý chế độ file đơn (DSNV, Giờ Công...)
+                else if (state.metadata.downloadURL) {
+                    console.log(`[Download] Tải file đơn từ ${state.metadata.downloadURL}`);
+                    const cacheBusterUrl = `${state.metadata.downloadURL}${state.metadata.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                    const response = await fetch(cacheBusterUrl);
+                    const blob = await response.blob();
+                    const workbook = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                             const data = new Uint8Array(e.target.result);
+                             resolve(XLSX.read(data, { type: 'array', cellDates: true, cellText: true }));
+                        };
+                        reader.onerror = reject;
+                        reader.readAsArrayBuffer(blob);
+                    });
+                    const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
+                    const { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+                    allNormalizedData = normalizedData;
+                } else {
+                    throw new Error("Không có URL tải hợp lệ trong Metadata.");
+                }
+
+                // Lưu dữ liệu tổng hợp
+                mapping.store.set(allNormalizedData);
+                await storage.setItem(key, allNormalizedData);
                 
-                // [FIX] Lưu Timestamp chuẩn
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_FILE');
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
                 
                 localStorage.setItem(`_meta_${warehouse}_${key}`, JSON.stringify(metaToSave));
-                updateSyncState(key, 'synced', `✓ Đã đồng bộ (${normalizedData.length} dòng)`, metaToSave);
+                updateSyncState(key, 'synced', `✓ Đã đồng bộ (${allNormalizedData.length} dòng)`, metaToSave);
             
             } else if (PASTE_MAPPING[key]) {
-                const textContent = await response.text();
+                const textContent = await (await fetch(`${state.metadata.downloadURL}?t=${Date.now()}`)).text();
                 const mapping = PASTE_MAPPING[key];
                 let processedCount = 0;
                 
@@ -233,7 +257,6 @@ export const syncHandler = {
                     }
                 }
                 
-                // [FIX] Lưu Timestamp chuẩn
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_PASTE');
                 const metaToSave = { 
                     ...state.metadata, 
@@ -245,7 +268,7 @@ export const syncHandler = {
                 updateSyncState(key, 'synced', `✓ Đã đồng bộ`, metaToSave);
                 window.dispatchEvent(new CustomEvent('cloud-paste-loaded', { detail: { key, text: textContent } }));
             }
-            console.log(`[Download] Thành công ${key}`);
+            console.log(`[Download] Hoàn tất ${key}`);
             return { success: true };
         } catch (e) {
             console.error(e);

@@ -2,13 +2,43 @@
     import { ycxData, ycxDataThangTruoc } from '../../../stores.js';
     import AddressDashboard from '../AddressDashboard.svelte';
 
-    // Đã xóa biến viewMode thừa thãi
     let selectedMonths = [];
     let allMonths = [];
     let showMonthDropdown = false;
 
     // 1. Gộp toàn bộ data 2026 từ 2 store
     $: combinedData = [...($ycxDataThangTruoc || []), ...($ycxData || [])];
+
+    // --- 🚨 TRẠM GÁC LOG CHUYÊN SÂU (QUÉT TOÀN BỘ) 🚨 ---
+    $: {
+        if ($ycxDataThangTruoc && $ycxDataThangTruoc.length > 0) {
+            console.group("%c🔥 QUÉT TÌM KEY TRÊN TOÀN BỘ 33.130 DÒNG", "color: white; background: blue; font-size: 14px; font-weight: bold; padding: 4px;");
+            
+            // Dùng Set để gom TẤT CẢ các tên cột từng xuất hiện trong bất kỳ dòng nào
+            const allKeys = new Set();
+            $ycxDataThangTruoc.forEach(row => {
+                Object.keys(row).forEach(k => allKeys.add(k));
+            });
+
+            console.log("1. Danh sách TỔNG HỢP tất cả các cột tồn tại trong bộ nhớ:", Array.from(allKeys));
+            
+            // Tìm các cột tình nghi
+            const suspectKeys = Array.from(allKeys).filter(k => 
+                k.toLowerCase().includes('dia') || 
+                k.toLowerCase().includes('chi') || 
+                k.toLowerCase().includes('add') || 
+                k.toLowerCase().includes('địa')
+            );
+            
+            console.log("2. Các cột tình nghi là Địa chỉ (quét toàn mạng):", suspectKeys.length > 0 ? suspectKeys : "❌ VẪN KHÔNG TÌM THẤY! CACHE ĐÃ BỊ LƯU THIẾU TỪ TRƯỚC.");
+
+            if (suspectKeys.length === 0) {
+                console.log("%c💡 HÀNH ĐỘNG CẦN THIẾT: Vào mục Upload, hãy UP LẠI FILE THÁNG TRƯỚC để hệ thống ghi đè cache mới với config đã sửa!", "color: yellow; font-size: 14px; background: red; padding: 2px;");
+            }
+            
+            console.groupEnd();
+        }
+    }
 
     // 2. Hàm trích xuất Tháng (1-12) an toàn
     const getMonth = (dateVal) => {
@@ -33,14 +63,13 @@
             });
             allMonths = Array.from(mSet).sort((a, b) => a - b);
             
-            // Mặc định tick chọn tất cả các tháng để hiển thị data Lũy kế
             if (selectedMonths.length === 0 && allMonths.length > 0) {
                 selectedMonths = [...allMonths];
             }
         }
     }
 
-    // 4. Lọc data cuối cùng (Chỉ phụ thuộc vào bộ lọc tick chọn)
+    // 4. Lọc data cuối cùng
     $: finalData = combinedData.filter(row => {
         const m = getMonth(row.ngayTao || row.NGAY_TAO);
         return m && selectedMonths.includes(m);
@@ -54,7 +83,6 @@
 <svelte:window on:click={closeDropdown} />
 
 <div class="flex flex-col gap-4">
-    
     <div class="flex items-center gap-4 pb-2 border-b border-gray-100">
         <h2 class="text-xl font-bold text-blue-800">Thống kê địa chỉ khách hàng</h2>
         
@@ -83,5 +111,4 @@
     <div class="w-full">
         <AddressDashboard ycxData={finalData} />
     </div>
-    
 </div>

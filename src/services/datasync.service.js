@@ -224,12 +224,59 @@ export const datasyncService = {
         try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
+    // --- 🚨 [ATOMIC FIX: METADATA ARRAY FOR MULTI-FILES] 🚨 ---
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
-        try { await setDoc(khoRef, dataToSave, { merge: true }); } catch (error) { throw error; }
+        
+        // Danh sách các key áp dụng chiến thuật "Gộp mảng link tải"
+        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc'];
+
+        try {
+            if (multiModeKeys.includes(key)) {
+                // Đọc Metadata cũ từ Cloud
+                const docSnap = await getDoc(khoRef);
+                let existingFiles = [];
+                
+                if (docSnap.exists() && docSnap.data()[key]) {
+                    const existingData = docSnap.data()[key];
+                    if (Array.isArray(existingData.files)) {
+                        existingFiles = existingData.files;
+                    } else if (existingData.downloadURL) { 
+                        // [Backward Compatibility] Tự động bọc file lẻ từ hệ thống cũ vào mảng
+                        existingFiles = [existingData];
+                    }
+                }
+
+                // Chống trùng lặp (Ghi đè nếu up lại file cùng tên)
+                existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
+                
+                // Nhét file mới vào
+                existingFiles.push({
+                    ...metadata,
+                    updatedAt: new Date().toISOString(), // Dùng chuỗi ISO cho an toàn trong Array
+                    updatedBy: getCurrentUserEmail()
+                });
+
+                const dataToSave = { 
+                    [key]: { 
+                        files: existingFiles, 
+                        isMulti: true, // Cắm cờ để máy phụ biết đây là mảng
+                        updatedAt: serverTimestamp(), 
+                        updatedBy: getCurrentUserEmail() 
+                    } 
+                };
+                await setDoc(khoRef, dataToSave, { merge: true });
+
+            } else {
+                // Các file bình thường (Như DSNV) -> Giữ nguyên logic ghi đè 1-1
+                const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
+                await setDoc(khoRef, dataToSave, { merge: true });
+            }
+        } catch (error) { 
+            throw error; 
+        }
     },
 
     async loadWarehouseData(kho) {

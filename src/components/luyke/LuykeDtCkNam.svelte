@@ -21,7 +21,7 @@
     let ssgMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     let allMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     let showSsgMonthsDropdown = false;
-    $: data2026All = [...($ycxDataThangTruoc || []), ...($ycxData || [])];
+    $: data2026All = ($ycxDataThangTruoc || []).concat($ycxData || []);
 
     // [FIX]: Trình phân tích Ngày tháng đa năng (Tránh Invalid Date của Cache)
     const parseSafeDate = (dateVal) => {

@@ -1,3 +1,4 @@
+// src/components/luyke/dtcknam/DtCkNamLogic.js
 import { formatters } from '../../../utils/formatters.js';
 import { dataProcessing } from '../../../services/dataProcessing.js';
 
@@ -22,38 +23,6 @@ const parseSafeDate = (dateVal) => {
     return null;
 };
 
-// Hàm trích xuất tự động loại bỏ Dấu Tiếng Việt và Khoảng trắng
-const getVal = (row, possibleKeys) => {
-    const rowKeys = Object.keys(row);
-    for (let rk of rowKeys) {
-        const normRk = rk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
-        for (let pk of possibleKeys) {
-            const normPk = pk.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
-            if (normRk === normPk) {
-                return row[rk] !== undefined && row[rk] !== null ? String(row[rk]).trim() : '';
-            }
-        }
-    }
-    return '';
-};
-
-const getDimensionValue = (row, dimId) => {
-    let val = '';
-    if (dimId === 'nhanVienTao') val = getVal(row, ['nguoiTao', 'nhanVienTao', 'Người tạo']);
-    else if (dimId === 'nganhHang') val = getVal(row, ['nganhHang', 'Ngành hàng']);
-    else if (dimId === 'nhomHang') val = getVal(row, ['nhomHang', 'Nhóm hàng']);
-    else if (dimId === 'nhaSanXuat') val = getVal(row, ['nhaSanXuat', 'Nhà sản xuất']);
-    else if (dimId === 'tenSanPham') val = getVal(row, ['tenSanPham', 'Tên sản phẩm']);
-
-    if (!val) return '(Trống)';
-    if (dimId === 'nhanVienTao') {
-        let maNV = getVal(row, ['maNhanVien', 'Mã nhân viên']) || (val.match(/(\d+)/) || [])[1];
-        return formatters.getShortEmployeeName(val, maNV || '');
-    }
-    if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') return val.toString().trim();
-    return cleanStr(val);
-};
-
 function getWeekRangeLabel(dateObj) {
     const d = new Date(dateObj);
     const day = d.getDay();
@@ -64,7 +33,51 @@ function getWeekRangeLabel(dateObj) {
     return `${String(mon.getDate()).padStart(2,'0')}/${String(mon.getMonth()+1).padStart(2,'0')} - ${String(sun.getDate()).padStart(2,'0')}/${String(sun.getMonth()+1).padStart(2,'0')}`;
 }
 
+// --- [PHẪU THUẬT HIỆU NĂNG]: KHỞI TẠO TỪ ĐIỂN CỘT ---
+function buildKeyMap(firstRow) {
+    if (!firstRow) return {};
+    const keys = Object.keys(firstRow);
+    const map = {};
+
+    const normalize = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
+
+    // Danh sách các cột mục tiêu và bí danh của chúng
+    const targetCols = {
+        hinhThucXuat: ['hinhthucxuat'],
+        trangThaiThuTien: ['trangthaithutien'],
+        trangThaiHuy: ['trangthaihuy'],
+        tinhTrangTra: ['tinhtrangtra'],
+        trangThaiXuat: ['trangthaixuat'],
+        maKho: ['makhotao', 'makho'],
+        ngayTao: ['ngaytao'],
+        soLuong: ['soluong', 'slban'],
+        revenue: ['revenue', 'doanhthu', 'thanhtien', 'giaban'],
+        revenueQuyDoi: ['revenuequydoi', 'doanhthuquydoi'],
+        nguoiTao: ['nguoitao', 'nhanvientao'],
+        maNhanVien: ['manhanvien', 'manv', 'msnv'],
+        nganhHang: ['nganhhang'],
+        nhomHang: ['nhomhang'],
+        nhaSanXuat: ['nhasanxuat', 'hang'],
+        tenSanPham: ['tensanpham']
+    };
+
+    // Ánh xạ duy nhất 1 lần cho file
+    for (let k of keys) {
+        const normK = normalize(k);
+        for (const [logicalKey, aliases] of Object.entries(targetCols)) {
+            if (aliases.includes(normK) && !map[logicalKey]) {
+                map[logicalKey] = k; // Lưu lại đúng cái tên key gốc của Object (Ví dụ: "Hình thức xuất")
+            }
+        }
+    }
+    return map;
+}
+
 export function processDashboardData(sourceData, activeDimensionIds, currentFilters, sortConfig) {
+    if (!sourceData || sourceData.length === 0) {
+        return { metrics: { actualRev: 0, convertedRev: 0, traChamRev: 0 }, totalMetrics: { quantity: 0, revenue: 0, revenueQD: 0 }, totalDays: 1, filterOptions: {}, warehouseTitle: '', dailyData: [], weeklyData: [], treeData: [] };
+    }
+
     const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
     
     let metrics = { actualRev: 0, convertedRev: 0, traChamRev: 0 };
@@ -73,48 +86,69 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     let uniqueDays = new Set();
     let uniqueWarehouses = new Set();
 
-    sourceData.forEach(row => {
-        const normalizeKey = (k) => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
-        // [PHẪU THUẬT LOGIC]: Tự động nhận diện dữ liệu nén
-        const hasStatusCols = Object.keys(row).some(k => 
-            ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(normalizeKey(k))
-        );
+    // 1. Quét dòng đầu tiên để tạo KeyMap (Tốc độ ánh sáng)
+    const keyMap = buildKeyMap(sourceData[0]);
+    const hasStatusCols = !!(keyMap.hinhThucXuat || keyMap.trangThaiThuTien || keyMap.tinhTrangTra || keyMap.trangThaiXuat);
 
-        let htx = '';
+    const getFastDimValue = (row, dimId) => {
+        let val = '';
+        if (dimId === 'nhanVienTao') val = row[keyMap.nguoiTao];
+        else if (dimId === 'nganhHang') val = row[keyMap.nganhHang];
+        else if (dimId === 'nhomHang') val = row[keyMap.nhomHang];
+        else if (dimId === 'nhaSanXuat') val = row[keyMap.nhaSanXuat];
+        else if (dimId === 'tenSanPham') val = row[keyMap.tenSanPham];
+
+        val = val !== undefined && val !== null ? String(val).trim() : '';
+
+        if (!val) return '(Trống)';
+        if (dimId === 'nhanVienTao') {
+            let maNV = row[keyMap.maNhanVien] || (val.match(/(\d+)/) || [])[1];
+            return formatters.getShortEmployeeName(val, maNV || '');
+        }
+        if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') return val;
+        return cleanStr(val);
+    };
+
+    const parseMoney = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
+        return parseFloat(String(val).replace(/,/g, '')) || 0;
+    };
+
+    // 2. VÒNG LẶP CHÍNH - KHÔNG DÙNG REGEX HAY HÀM XỬ LÝ CHUỖI NẶNG
+    for (let i = 0; i < sourceData.length; i++) {
+        const row = sourceData[i];
+
         if (hasStatusCols) {
-            htx = getVal(row, ['hinhThucXuat', 'Hình thức xuất']);
-            const thuTien = getVal(row, ['trangThaiThuTien', 'Trạng thái thu tiền']);
-            const huy = getVal(row, ['trangThaiHuy', 'Trạng thái hủy']);
-            const tra = getVal(row, ['tinhTrangTra', 'Tình trạng trả']);
-            const xuat = getVal(row, ['trangThaiXuat', 'Trạng thái xuất']);
+            const htx = row[keyMap.hinhThucXuat] || '';
+            const thuTien = row[keyMap.trangThaiThuTien] || '';
+            const huy = row[keyMap.trangThaiHuy] || '';
+            const tra = row[keyMap.tinhTrangTra] || '';
+            const xuat = row[keyMap.trangThaiXuat] || '';
 
             const isValidState = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất';
             const isValidHtx = validHTX.size === 0 || validHTX.has(htx);
 
-            if (!isValidHtx || !isValidState) return;
+            if (!isValidHtx || !isValidState) continue;
         }
 
-        const wh = getVal(row, ['maKhoTao', 'maKho', 'Mã kho tạo']);
-        if (wh !== '') uniqueWarehouses.add(wh);
+        const wh = row[keyMap.maKho];
+        if (wh !== undefined && wh !== '') uniqueWarehouses.add(wh);
 
-        const dateRaw = getVal(row, ['ngayTao', 'Ngày tạo']);
+        const dateRaw = row[keyMap.ngayTao];
         const dateObj = parseSafeDate(dateRaw);
-        if (!dateObj) return;
+        if (!dateObj) continue;
         
         const dateStr = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
         uniqueDays.add(dateStr);
-
-        const parseMoney = (val) => {
-            if (typeof val === 'number') return val;
-            return parseFloat(String(val).replace(/,/g, '')) || 0;
-        };
         
-        const qty = parseMoney(getVal(row, ['soLuong', 'Số lượng']));
-        const rev = parseMoney(getVal(row, ['revenue', 'doanhThu', 'thanhTien', 'Thành tiền']));
-        const revQDRaw = getVal(row, ['revenueQuyDoi', 'doanhThuQuyDoi', 'Doanh thu quy đổi']);
-        const revQD = revQDRaw !== '' ? parseMoney(revQDRaw) : rev;
+        const qty = parseMoney(row[keyMap.soLuong]);
+        const rev = parseMoney(row[keyMap.revenue]);
+        const revQDRaw = row[keyMap.revenueQuyDoi];
+        const revQD = revQDRaw !== undefined && revQDRaw !== '' ? parseMoney(revQDRaw) : rev;
         
-        const isTraGop = htx.toLowerCase().includes('trả góp') || htx.toLowerCase().includes('trả chậm');
+        const htxRaw = String(row[keyMap.hinhThucXuat] || '').toLowerCase();
+        const isTraGop = htxRaw.includes('trả góp') || htxRaw.includes('trả chậm');
         
         metrics.actualRev += rev; 
         metrics.convertedRev += revQD;
@@ -130,7 +164,7 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
         let skip = false;
         if (Object.keys(currentFilters).length > 0) {
             for (const [key, selectedValues] of Object.entries(currentFilters)) {
-                if (selectedValues !== undefined && !selectedValues.includes(getDimensionValue(row, key))) { 
+                if (selectedValues !== undefined && !selectedValues.includes(getFastDimValue(row, key))) { 
                     skip = true; break; 
                 }
             }
@@ -143,7 +177,7 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
             let pathPrefix = ''; 
             
             activeDimensionIds.forEach((dimId, index) => {
-                const key = getDimensionValue(row, dimId);
+                const key = getFastDimValue(row, dimId);
                 pathPrefix += key + '||'; 
                 
                 if (!currentLevel.has(key)) {
@@ -154,7 +188,7 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
                 currentLevel = groupObj.children;
             });
         }
-    });
+    }
 
     const totalDays = uniqueDays.size || 1;
     const whArray = Array.from(uniqueWarehouses);
@@ -180,32 +214,32 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     AVAILABLE_DIMENSIONS.forEach(targetDim => {
         const uniqueValues = new Set();
         const otherFilters = { ...currentFilters }; delete otherFilters[targetDim.id];
-        sourceData.forEach(row => {
-            const normalizeKey = (k) => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]/g, '');
-            const hasStatusCols = Object.keys(row).some(k => 
-                ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(normalizeKey(k))
-            );
-
+        
+        for (let i = 0; i < sourceData.length; i++) {
+            const row = sourceData[i];
+            
             if (hasStatusCols) {
-                const htx = getVal(row, ['hinhThucXuat', 'Hình thức xuất']);
-                if (validHTX.size > 0 && !validHTX.has(htx)) return;
-                
-                const thuTien = getVal(row, ['trangThaiThuTien', 'Trạng thái thu tiền']);
-                const huy = getVal(row, ['trangThaiHuy', 'Trạng thái hủy']);
-                const tra = getVal(row, ['tinhTrangTra', 'Tình trạng trả']);
-                const xuat = getVal(row, ['trangThaiXuat', 'Trạng thái xuất']);
-                if (!(thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất')) return;
+                const htx = row[keyMap.hinhThucXuat] || '';
+                const thuTien = row[keyMap.trangThaiThuTien] || '';
+                const huy = row[keyMap.trangThaiHuy] || '';
+                const tra = row[keyMap.tinhTrangTra] || '';
+                const xuat = row[keyMap.trangThaiXuat] || '';
+
+                const isValidState = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất';
+                const isValidHtx = validHTX.size === 0 || validHTX.has(htx);
+
+                if (!isValidHtx || !isValidState) continue;
             }
 
             let isValid = true;
             for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
-                if (filterValues !== undefined && !filterValues.includes(getDimensionValue(row, filterKey))) { isValid = false; break; }
+                if (filterValues !== undefined && !filterValues.includes(getFastDimValue(row, filterKey))) { isValid = false; break; }
             }
             if (isValid) {
-                const val = getDimensionValue(row, targetDim.id);
+                const val = getFastDimValue(row, targetDim.id);
                 if (val && val !== '(Trống)') uniqueValues.add(val);
             }
-        });
+        }
         filterOptions[targetDim.id] = Array.from(uniqueValues).sort();
     });
 

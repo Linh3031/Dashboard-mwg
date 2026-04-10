@@ -1,3 +1,4 @@
+
 // src/config.js
 // Version 2.4 - Add Installment Sectors
 // Chứa tất cả các cấu hình tĩnh của ứng dụng.
@@ -28,7 +29,7 @@ export const config = {
             trangThaiHuy: { required: true, displayName: 'Trạng thái hủy', aliases: ['trạng thái hủy'] },
             tinhTrangTra: { required: true, displayName: 'Tình trạng trả', aliases: ['tình trạng nhập trả của sản phẩm đổi với sản phẩm chính', 'tình trạng trả'] },
             trangThaiXuat: { required: true, displayName: 'Trạng thái xuất', aliases: ['trạng thái xuất'] },
-            diaChi: { required: false, displayName: 'Địa chỉ khách hàng', aliases: ['địa chỉ khách hàng', 'dia chi khach hang'] }
+            diaChi: { required: false, displayName: 'Địa chỉ', aliases: ['địa chỉ', 'dia chi', 'address', 'địa chỉ giao hàng', 'địa chỉ kh'] }
         },
         giocong: {
             maNV: { required: false, displayName: 'Mã NV', aliases: ['mã nv', 'msnv'] },
