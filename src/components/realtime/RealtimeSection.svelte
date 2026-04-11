@@ -12,9 +12,12 @@
   import BrandTab from './brand/BrandTab.svelte';
   import CompetitionTab from './competition/CompetitionTab.svelte';
   import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
+  // [NEW] Import tab Địa chỉ Realtime
+  import RealtimeAddressTab from './address/RealtimeAddressTab.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-realtime-sieu-thi';
+
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
@@ -93,7 +96,7 @@
                         class="hidden" 
                         accept=".xlsx, .xls, .csv"
                         on:change={handleFileUpload}
-                    >
+                     >
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -103,18 +106,18 @@
                      </button>
                     <button id="export-realtime-btn" class="action-btn action-btn--export" title="Xuất Excel" on:click={handleExport}>
                          <i data-feather="download" class="w-4 h-4"></i>
-                        <span class="hidden lg:inline">Xuất Excel</span>
+                         <span class="hidden lg:inline">Xuất Excel</span>
                     </button>
                     <button id="capture-realtime-btn" class="action-btn action-btn--capture" title="Chụp ảnh" on:click={handleCapture}>
                         <i data-feather="camera" class="w-4 h-4"></i>
-                        <span class="hidden lg:inline">Chụp</span>
+                         <span class="hidden lg:inline">Chụp</span>
                      </button>
                 </div>
             </div>
         </div>
 
         <div class="content-card__body p-4">
-            <div class="mb-6 overflow-x-auto pb-2">
+           <div class="mb-6 overflow-x-auto pb-2">
                 <nav id="realtime-subtabs-nav" class="flex space-x-2 border-b border-gray-100 pb-1 w-full min-w-max" aria-label="Tabs">
                     <button 
                         class="sub-tab-btn {activeSubTabId === 'subtab-realtime-sieu-thi' ? 'active' : ''}" 
@@ -185,6 +188,16 @@
                         <i data-feather="credit-card"></i>
                         <span>Trả chậm Real</span>
                     </button>
+                    
+                    <button 
+                        class="sub-tab-btn {activeSubTabId === 'subtab-realtime-dia-chi' ? 'active' : ''}" 
+                        data-target="subtab-realtime-dia-chi"
+                        data-title="DiaChiRealtime"
+                        on:click={handleSubTabClick}
+                    >
+                        <i data-feather="map-pin"></i>
+                        <span>Địa chỉ Real</span>
+                    </button>
                 </nav>
             </div>
 
@@ -193,7 +206,7 @@
                     <div id="subtab-realtime-sieu-thi" class="sub-tab-content" data-capture-preset="mobile-optimized">
                         <SummaryTab {selectedWarehouse} />
                     </div>
-                
+                 
                 {:else if activeSubTabId === 'subtab-realtime-nhan-vien'}
                     <div id="subtab-realtime-nhan-vien" class="sub-tab-content" data-capture-preset="large-font-report">
                         <EmployeeTab {selectedWarehouse} />
@@ -222,6 +235,11 @@
                 {:else if activeSubTabId === 'subtab-realtime-tragop'}
                     <div id="subtab-realtime-tragop" class="sub-tab-content">
                         <InstallmentView inputData={$realtimeYCXData} />
+                    </div>
+                    
+                {:else if activeSubTabId === 'subtab-realtime-dia-chi'}
+                    <div id="subtab-realtime-dia-chi" class="sub-tab-content">
+                        <RealtimeAddressTab />
                     </div>
                     
                 {:else}

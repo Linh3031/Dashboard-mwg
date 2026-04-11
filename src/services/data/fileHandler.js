@@ -148,15 +148,37 @@ export const fileHandler = {
         }
     },
 
-    async handleRealtimeFileInput(event) {
+  async handleRealtimeFileInput(event) {
         const file = event.target.files[0];
         if (!file) return;
         try {
             const workbook = await _handleFileRead(file);
             const sheetName = workbook.SheetNames[0];
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
-            const { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
+            
+            // --- [ATOMIC FIX: COPY TỪ LŨY KẾ SANG ĐỂ CỨU ĐỊA CHỈ] ---
+            const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
+            const rawAddressCol = headers.find(h => 
+                h.toLowerCase().includes('địa chỉ') || 
+                h.toLowerCase().includes('dia chi') || 
+                h.toLowerCase().includes('address')
+            );
+            // --------------------------------------------------------
+
+            let { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
             if (!success) { alert(`File thiếu cột: ${missingColumns.join(', ')}`); return; }
+
+            // --- TIÊM ĐỊA CHỈ VÀO REALTIME Y HỆT LŨY KẾ ---
+            if (rawAddressCol) {
+                normalizedData = normalizedData.map((row, index) => {
+                    return {
+                        ...row,
+                        diaChi: String(rawData[index][rawAddressCol] || '').trim()
+                    };
+                });
+            }
+            // ----------------------------------------------
+
             realtimeYCXData.set(normalizedData);
             analyticsService.trackAction();
             event.target.value = null;
