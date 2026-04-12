@@ -289,10 +289,10 @@ export const datasyncService = {
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? docSnap.data() : null; } catch (error) { throw error; }
     },
 
-    // --- [GENESIS FIX]: HÀM TIÊU DIỆT BÓNG MA THEO THÁNG TRÊN CLOUD ---
+   // --- [GENESIS FIX]: HÀM TIÊU DIỆT BÓNG MA (BAO GỒM CẢ FILE CŨ) ---
     async deleteMonthFromMultiMetadata(kho, key, targetMonth) {
         const db = getDB();
-        if (!db || !kho) return;
+        if (!db || !kho) return null;
         const khoRef = doc(db, "warehouseData", kho);
 
         try {
@@ -301,13 +301,22 @@ export const datasyncService = {
                 const existingData = docSnap.data()[key];
                 
                 if (Array.isArray(existingData.files)) {
-                    // Xóa thẳng tay những file nào mà bên trong nó có chứa "Tháng" đang cần xóa
+                    // [NÂNG CẤP]: Cắt cổ cả những file cũ (Legacy) không có nhãn tháng
                     const updatedFiles = existingData.files.filter(f => {
-                        if (!f.uploadedMonths) return true; // Giữ lại data rác cũ không có định dạng tháng
-                        return !f.uploadedMonths.includes(targetMonth);
+                        // 1. Nếu có nhãn chuẩn -> Lọc theo nhãn
+                        if (f.uploadedMonths) return !f.uploadedMonths.includes(targetMonth);
+                        
+                        // 2. Nếu file cũ không có nhãn -> Quét thẳng vào tên file (VD: "tháng 4_2025")
+                        const [m, y] = targetMonth.split('/'); // "04/2025" -> m="04", y="2025"
+                        const mNum = parseInt(m, 10); // "04" -> 4
+                        const regex = new RegExp(`(${mNum}|${m})[\\s_\\-\\/]*${y}`, 'i');
+                        
+                        if (regex.test(f.fileName)) {
+                            return false; // Trùng tên tháng/năm -> BĂM!
+                        }
+                        return true; // Tha cho các file khác
                     });
 
-                    // Cập nhật lại Cloud & Đánh thức máy phụ bằng timestamp mới
                     const dataToSave = { 
                         [key]: { 
                             files: updatedFiles, 
@@ -318,12 +327,17 @@ export const datasyncService = {
                         } 
                     };
                     await setDoc(khoRef, dataToSave, { merge: true });
-                    console.log(`[DataSync] Đã băm nát các file chứa tháng ${targetMonth} trên Cloud.`);
+                    console.log(`[DataSync] Đã dọn dẹp tháng ${targetMonth} trên Cloud.`);
+                    
+                    // TRẢ VỀ META MỚI ĐỂ LOCAL ĐỒNG BỘ
+                    return dataToSave[key]; 
                 }
             }
+            return null;
         } catch (error) { 
             console.error("[DataSync] Lỗi xóa tháng trên Cloud:", error); 
             throw error;
         }
     }
+
 };

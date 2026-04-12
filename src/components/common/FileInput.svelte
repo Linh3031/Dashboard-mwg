@@ -143,19 +143,19 @@
       });
   }
 
-  // --- [GENESIS FIX]: NỐI DÂY ĐIỆN CHO NÚT "X" XÓA THEO THÁNG ---
+// --- [GENESIS FIX]: NỐI DÂY ĐIỆN VÀ ĐỒNG BỘ ĐỒNG HỒ F5 ---
   async function removeMonth(targetMonth) {
       if (!dataStore) return;
       if (!confirm(`Bạn có chắc chắn muốn xóa dữ liệu của tháng ${targetMonth} không?`)) return;
 
       const kho = get(selectedWarehouse);
-      
       isLoading = true; 
+      let newCloudMeta = null;
 
-      // 1. DIỆT TRÊN CLOUD (Để máy khác và lần sau F5 không bị tải lại)
+      // 1. DIỆT TRÊN CLOUD & LẤY ĐỒNG HỒ MỚI NHẤT
       if (isMultiMode && kho) {
           try {
-              await datasyncService.deleteMonthFromMultiMetadata(kho, saveKey, targetMonth);
+              newCloudMeta = await datasyncService.deleteMonthFromMultiMetadata(kho, saveKey, targetMonth);
           } catch (e) {
               alert("Lỗi khi xóa trên Cloud: " + e.message);
               isLoading = false;
@@ -163,7 +163,7 @@
           }
       }
 
-      // 2. DIỆT TRÊN RAM (Để UI của bạn giật mất cái file đó ngay lập tức)
+      // 2. DIỆT TRÊN RAM
       dataStore.update(currentData => {
           return currentData.filter(d => {
               const dateVal = d.ngayTao || d['Ngày tạo'];
@@ -173,17 +173,31 @@
                   if (isNaN(dateObj)) return true;
                   const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
                   const y = dateObj.getFullYear();
-                  const rowMonth = `${m}/${y}`;
-                  return rowMonth !== targetMonth; 
+                  return `${m}/${y}` !== targetMonth; 
               } catch(e) { return true; }
           });
       });
 
-      // 3. DIỆT TRÊN Ổ CỨNG MÁY BẠN (IndexedDB - Để F5 không lấy rác ở Local lên)
+      // 3. DIỆT TRÊN Ổ CỨNG MÁY BẠN
       try {
           await storage.setItem(saveKey, get(dataStore));
       } catch (e) {
           console.error("Lỗi cập nhật Local Storage:", e);
+      }
+
+      // 4. CHỐT HẠ: CHỈNH ĐỒNG HỒ LOCAL BẰNG VỚI CLOUD ĐỂ CHỐNG F5
+      if (newCloudMeta) {
+          localStorage.setItem(`_meta_${kho}_${saveKey}`, JSON.stringify(newCloudMeta));
+          fileSyncState.update(s => ({
+              ...s,
+              [saveKey]: {
+                  ...s[saveKey],
+                  metadata: newCloudMeta,
+                  status: 'synced',
+                  message: `✓ Đã xóa tháng ${targetMonth}`,
+                  timestamp: Date.now()
+              }
+          }));
       }
 
       isLoading = false;
