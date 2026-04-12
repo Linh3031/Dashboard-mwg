@@ -229,7 +229,11 @@ export const syncHandler = {
                 updateSyncState(key, 'synced', `✓ Đã đồng bộ (${allNormalizedData.length} dòng)`, metaToSave);
             
             } else if (PASTE_MAPPING[key]) {
-                const textContent = await (await fetch(`${state.metadata.downloadURL}?t=${Date.now()}`)).text();
+                // [GENESIS FIX] Sửa lỗi URL chứa 2 dấu '?' phá vỡ Token của Firebase
+                const downloadUrl = state.metadata.downloadURL;
+                const cacheBusterUrl = `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                
+                const textContent = await (await fetch(cacheBusterUrl)).text();
                 const mapping = PASTE_MAPPING[key];
                 let processedCount = 0;
                 

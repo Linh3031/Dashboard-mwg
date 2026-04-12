@@ -55,7 +55,7 @@ export const datasyncService = {
         }
     },
 
-    // --- [NEW] LƯU TRỮ TARGET TỶ LỆ (%) CÁ NHÂN ---
+    // --- LƯU TRỮ TARGET TỶ LỆ (%) CÁ NHÂN ---
     async savePersonalTargetRatio(kho, ratio) {
         const db = getDB();
         if (!db || !kho) return;
@@ -230,12 +230,10 @@ export const datasyncService = {
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         
-        // Danh sách các key áp dụng chiến thuật "Gộp mảng link tải"
         const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc'];
 
         try {
             if (multiModeKeys.includes(key)) {
-                // Đọc Metadata cũ từ Cloud
                 const docSnap = await getDoc(khoRef);
                 let existingFiles = [];
                 
@@ -244,25 +242,31 @@ export const datasyncService = {
                     if (Array.isArray(existingData.files)) {
                         existingFiles = existingData.files;
                     } else if (existingData.downloadURL) { 
-                        // [Backward Compatibility] Tự động bọc file lẻ từ hệ thống cũ vào mảng
                         existingFiles = [existingData];
                     }
                 }
 
-                // Chống trùng lặp (Ghi đè nếu up lại file cùng tên)
-                existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
+                if (metadata.uploadedMonths && metadata.uploadedMonths.length > 0) {
+                    existingFiles = existingFiles.filter(f => {
+                        if (!f.uploadedMonths) return f.fileName !== metadata.fileName;
+                        const isOverlap = f.uploadedMonths.some(m => metadata.uploadedMonths.includes(m));
+                        return !isOverlap; 
+                    });
+                } else {
+                    existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
+                }
                 
-                // Nhét file mới vào
                 existingFiles.push({
                     ...metadata,
-                    updatedAt: new Date().toISOString(), // Dùng chuỗi ISO cho an toàn trong Array
+                    updatedAt: new Date().toISOString(), 
                     updatedBy: getCurrentUserEmail()
                 });
 
                 const dataToSave = { 
                     [key]: { 
                         files: existingFiles, 
-                        isMulti: true, // Cắm cờ để máy phụ biết đây là mảng
+                        isMulti: true, 
+                        timestamp: Date.now(),
                         updatedAt: serverTimestamp(), 
                         updatedBy: getCurrentUserEmail() 
                     } 
@@ -270,7 +274,6 @@ export const datasyncService = {
                 await setDoc(khoRef, dataToSave, { merge: true });
 
             } else {
-                // Các file bình thường (Như DSNV) -> Giữ nguyên logic ghi đè 1-1
                 const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
                 await setDoc(khoRef, dataToSave, { merge: true });
             }
@@ -284,5 +287,43 @@ export const datasyncService = {
         if (!db || !kho) return null;
         const khoRef = doc(db, "warehouseData", kho);
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? docSnap.data() : null; } catch (error) { throw error; }
+    },
+
+    // --- [GENESIS FIX]: HÀM TIÊU DIỆT BÓNG MA THEO THÁNG TRÊN CLOUD ---
+    async deleteMonthFromMultiMetadata(kho, key, targetMonth) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists() && docSnap.data()[key]) {
+                const existingData = docSnap.data()[key];
+                
+                if (Array.isArray(existingData.files)) {
+                    // Xóa thẳng tay những file nào mà bên trong nó có chứa "Tháng" đang cần xóa
+                    const updatedFiles = existingData.files.filter(f => {
+                        if (!f.uploadedMonths) return true; // Giữ lại data rác cũ không có định dạng tháng
+                        return !f.uploadedMonths.includes(targetMonth);
+                    });
+
+                    // Cập nhật lại Cloud & Đánh thức máy phụ bằng timestamp mới
+                    const dataToSave = { 
+                        [key]: { 
+                            files: updatedFiles, 
+                            isMulti: true, 
+                            timestamp: Date.now(), 
+                            updatedAt: serverTimestamp(), 
+                            updatedBy: getCurrentUserEmail() 
+                        } 
+                    };
+                    await setDoc(khoRef, dataToSave, { merge: true });
+                    console.log(`[DataSync] Đã băm nát các file chứa tháng ${targetMonth} trên Cloud.`);
+                }
+            }
+        } catch (error) { 
+            console.error("[DataSync] Lỗi xóa tháng trên Cloud:", error); 
+            throw error;
+        }
     }
 };

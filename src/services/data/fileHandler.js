@@ -129,7 +129,21 @@ export const fileHandler = {
                     const path = `warehouse_data/${warehouse}/${saveKey}_${Date.now()}_${file.name}`;
                     const downloadURL = await storageService.uploadFileToStorage(file, path);
                     const now = Date.now();
-                    const metadata = { downloadURL, fileName: file.name, fileType: 'excel', rowCount: normalizedData.length, updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' };
+                    
+                    // [GENESIS FIX]: Bắt buộc trích xuất danh sách tháng từ data để ném lên Cloud
+                    const extractedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
+
+                    const metadata = { 
+                        downloadURL, 
+                        fileName: file.name, 
+                        fileType: 'excel', 
+                        rowCount: normalizedData.length, 
+                        uploadedMonths: extractedMonths, // <--- THÊM TRƯỜNG NÀY ĐỂ CLOUD KHÔNG XÓA NHẦM
+                        updatedAt: new Date(now), 
+                        timestamp: now, 
+                        updatedBy: get(currentUser)?.email || 'Tôi' 
+                    };
+                    
                     await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
                     localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
                     updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
