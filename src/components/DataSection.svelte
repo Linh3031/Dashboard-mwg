@@ -3,6 +3,8 @@
   import { onMount, onDestroy } from 'svelte';
   import FileInput from './common/FileInput.svelte';
   import PasteInput from './common/PasteInput.svelte';
+  import TourGuide from './common/TourGuide.svelte'; // [GENESIS]: Import Component Tour Engine
+  
   import { 
       warehouseList,
       selectedWarehouse,
@@ -21,6 +23,26 @@
   let isClusterMode = false;
   let currentClusterCode = '';
 
+  // ==========================================
+  // --- CẤU HÌNH TOUR GUIDE ---
+  // ==========================================
+  let isTourActive = false;
+  const dataTourSteps = [
+        { id: 'danh-sach-nv', title: 'Bước 1: Danh sách nhân viên', content: 'Việc đầu tiên cần làm mỗi tháng! Bạn hãy tải file mẫu về, điền danh sách nhân sự của kho và upload lên đây để hệ thống nhận diện.', openDetails: 'block-yellow' },
+        { id: 'general-overview', title: 'Tổng quan Dữ liệu', content: 'Dữ liệu tại trang này được chia làm 3 khối chính tương ứng với tần suất bạn phải thao tác: Mỗi ngày, Khi cần thiết, và Mỗi tháng.' },
+        { id: 'block-blue', title: 'Khối 1: Sử dụng nhanh mỗi ngày', content: 'Chứa 90% dữ liệu bạn sẽ cần thao tác. Mỗi ngày bạn chỉ cần đổ 1 file Excel (YCX) và dán 2 bảng dữ liệu từ BI vào đây là xong.' },
+        { id: 'input-ycx', title: 'Yêu cầu xuất lũy kế (File Excel)', content: 'Dùng để xem Doanh thu thực tế, chi tiết từng ngành hàng, địa chỉ khách hàng và theo dõi sức bán (Velocity).' },
+        { id: 'input-data-lk', title: 'Data lũy kế (Copy từ BI)', content: 'Dùng để xem xếp hạng Thi đua siêu thị, Doanh thu hệ thống ghi nhận từ BI và tỷ lệ hoàn thành Target.' },
+        { id: 'input-thidua-nv', title: 'Thi đua nhân viên (Copy từ BI)', content: 'Để theo dõi điểm thi đua và thứ hạng cá nhân của từng nhân viên theo ghi nhận của hệ thống.' },
+        { id: 'block-green', title: 'Khối 2: Chi tiết Năng suất', content: 'Khu vực này dùng để xem giờ công, thưởng nóng, thưởng ERP. Hệ thống sẽ tự động tổng hợp để ước tính thu nhập dự kiến.', openDetails: 'block-green' },
+        { id: 'block-yellow', title: 'Khối 3: Cập nhật 1 tháng 1 lần', content: 'Chứa các file cũ dùng để đối chiếu dữ liệu.', openDetails: 'block-yellow' },
+        { id: 'input-ycx-thang-truoc', title: 'YCX Lũy kế tháng trước', content: 'Dùng để so sánh sự tăng giảm với cùng kỳ tháng trước. Bạn có thể tải lên nhiều file để xem dữ liệu nhiều tháng.', openDetails: 'block-yellow' },
+        { id: 'input-ycx-nam-truoc', title: 'YCX Lũy kế năm trước', content: 'Dùng để so sánh tăng trưởng SSG 1 tháng hoặc đối chiếu lũy kế nguyên năm.', openDetails: 'block-yellow' }
+  ];
+
+  // ==========================================
+  // --- LOGIC GỐC CỦA DATA SECTION ---
+  // ==========================================
   $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
       checkClusterStatus($danhSachNhanVien);
   } else {
@@ -36,15 +58,12 @@
           currentClusterCode = clusters[0]; 
           
           warehouseList.update(list => {
-               if (!list.includes(currentClusterCode)) {
-                   return [currentClusterCode, ...list];
-               }
+               if (!list.includes(currentClusterCode)) return [currentClusterCode, ...list];
                return list;
           });
           if (!$selectedWarehouse || $selectedWarehouse !== currentClusterCode) {
                console.log(`[Cluster] Detected cluster: ${currentClusterCode}`);
           }
-          
           clusterService.loadSavedData(currentClusterCode);
       } else {
           isClusterMode = false;
@@ -102,9 +121,7 @@
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
             if (data && data.length > 0) {
                 checkClusterStatus(data);
-                if (!isClusterMode) {
-                    await triggerSync(savedWh);
-                }
+                if (!isClusterMode) await triggerSync(savedWh);
                 if (dsnvUnsubscribe) {
                     dsnvUnsubscribe();
                     dsnvUnsubscribe = null;
@@ -151,10 +168,33 @@
       }
   }
 
+  // ==========================================
+  // --- LOGIC NHẬN DIỆN NEW USER & AUTO TOUR ---
+  // ==========================================
+  let hasSeenTour = true;
+
+function handleManualTourStart() {
+      isTourActive = true;
+      localStorage.setItem('has_seen_tour_data_section', 'true');
+  }
+
   $: if (activeTab === 'data-section') {
-    Promise.resolve().then(() => {
-      if (typeof window.feather !== 'undefined') window.feather.replace();
-    });
+      Promise.resolve().then(() => {
+          if (typeof window.feather !== 'undefined') window.feather.replace();
+      });
+
+      // Vẫn giữ tính năng tự động bật Tour cho user mới
+      if (typeof localStorage !== 'undefined') {
+          const seen = localStorage.getItem('has_seen_tour_data_section');
+          if (!seen) {
+              setTimeout(() => {
+                  if (!isTourActive && activeTab === 'data-section') {
+                      isTourActive = true;
+                      localStorage.setItem('has_seen_tour_data_section', 'true');
+                  }
+              }, 1000);
+          }
+      }
   }
 </script>
 
@@ -163,9 +203,24 @@
          <div class="flex flex-wrap items-center gap-4 w-full">
             <div class="flex items-center gap-x-3">
                 <h2 class="page-header__title">Cập nhật dữ liệu</h2>
-                <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
-                    <i data-feather="help-circle" class="feather"></i>
-                </button>
+                
+               <div class="relative flex items-center">
+                    <button class="page-header__help-btn relative hover:bg-blue-100 hover:text-blue-700 transition-colors z-10" on:click={handleManualTourStart} title="Xem hướng dẫn">
+                        <i data-feather="help-circle" class="feather"></i>
+                        
+                        <span class="absolute top-0 right-0 -mt-1 -mr-1 flex h-3 w-3">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500 shadow-sm"></span>
+                        </span>
+                    </button>
+
+                    {#if !hasSeenTour}
+                        <div class="absolute left-full ml-3 whitespace-nowrap bg-blue-600 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-lg animate-bounce z-20 flex items-center pointer-events-none">
+                            <div class="absolute w-2 h-2 bg-blue-600 transform -rotate-45 -left-1"></div>
+                            Hướng dẫn sử dụng
+                        </div>
+                    {/if}
+                </div>
             </div>
             
             <div id="data-warehouse-selector-container" class="flex-shrink-0 flex items-center gap-2">
@@ -221,7 +276,7 @@
     </div>
    
     <div class="flex flex-col gap-1 mb-1"> 
-        <div class="content-card data-card--blue flex flex-col gap-4 !mb-3"> 
+        <div class="content-card data-card--blue flex flex-col gap-4 !mb-3" data-tour="block-blue"> 
              <h3 class="content-card__header data-header--blue flex items-center">
                 <i data-feather="zap" class="h-5 w-5 feather mr-2"></i>
                 <span>SỬ DỤNG NHANH MỖI NGÀY</span>
@@ -229,20 +284,13 @@
             </h3>
             
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                 <FileInput 
-                    label="Yêu cầu xuất lũy kế"
-                    icon="file-text"
-                    link="https://report.mwgroup.vn/home/dashboard/077"
-                    saveKey="saved_ycx"
-                />
+                 <div class="h-fit" data-tour="input-ycx">
+                     <FileInput label="Yêu cầu xuất lũy kế" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx" />
+                 </div>
                 
-                <PasteInput
-                    label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"}
-                    icon="clipboard"
-                    link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1"
-                    saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"}
-                    on:paste={handlePasteCumulative}
-                />
+                <div class="h-fit" data-tour="input-data-lk">
+                    <PasteInput label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"} icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"} on:paste={handlePasteCumulative} />
+                </div>
                 
                 {#if isClusterMode}
                     <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative">
@@ -252,11 +300,13 @@
                     </div>
                 {/if}
                 
-                <PasteInput label="Thi đua nhân viên" icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=bcdtnv&rt=2&dm=1" saveKeyPaste="daily_paste_thiduanv" saveKeyRaw="raw_paste_thiduanv" saveKeyProcessed="daily_paste_thiduanv"/>
+                <div class="h-fit" data-tour="input-thidua-nv">
+                    <PasteInput label="Thi đua nhân viên" icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=bcdtnv&rt=2&dm=1" saveKeyPaste="daily_paste_thiduanv" saveKeyRaw="raw_paste_thiduanv" saveKeyProcessed="daily_paste_thiduanv"/>
+                </div>
             </div>
          </div>
         
-        <details class="content-card data-card--green group !mb-2 !mt-2"> 
+        <details class="content-card data-card--green group !mb-2 !mt-2" data-tour="block-green"> 
             <summary class="content-card__header data-header--green flex items-center justify-between cursor-pointer list-none select-none !mb-0">
                 <div class="flex items-center flex-wrap">
                     <i data-feather="users" class="h-5 w-5 feather mr-2"></i>
@@ -274,7 +324,7 @@
         </details>
     </div>
     
-    <details class="content-card data-card--yellow group"> 
+    <details class="content-card data-card--yellow group" data-tour="block-yellow"> 
          <summary class="content-card__header data-header--yellow flex items-center justify-between cursor-pointer list-none select-none !mb-0">
              <div class="flex items-center flex-wrap">
                  <i data-feather="calendar" class="h-5 w-5 feather mr-2"></i>
@@ -289,19 +339,27 @@
             
             <div class="grid md:grid-cols-3 gap-4"> 
                  <div class="space-y-4"> 
-                     <FileInput label="Danh sách nhân viên" icon="users" saveKey="saved_danhsachnv" />
-                </div> 
+                     <div class="h-fit w-full" data-tour="danh-sach-nv">
+                        <FileInput label="Danh sách nhân viên" icon="users" saveKey="saved_danhsachnv" />
+                     </div>
+                 </div> 
                  <div class="space-y-4"> 
-                     <FileInput label="YCX Lũy Kế tháng trước" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx_thangtruoc" isMultiMode={true} />
+                     <div class="h-fit w-full" data-tour="input-ycx-thang-truoc">
+                         <FileInput label="YCX Lũy Kế tháng trước" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx_thangtruoc" isMultiMode={true} />
+                     </div>
                      <FileInput label="Thưởng nóng tháng trước" icon="gift" link="https://report.mwgroup.vn/home/dashboard/105" saveKey="saved_thuongnong_thangtruoc" />
                  </div> 
                  <div class="space-y-4"> 
-                     <FileInput label="YCX Lũy kế năm trước" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx_cungkynam" isMultiMode={true} />
+                     <div class="h-fit w-full" data-tour="input-ycx-nam-truoc">
+                         <FileInput label="YCX Lũy kế năm trước" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx_cungkynam" isMultiMode={true} />
+                     </div>
                      <PasteInput label="Thưởng ERP tháng trước" icon="clipboard" link="https://bi.thegioididong.com/reward?id=-1&tab=1" saveKeyPaste="saved_thuongerp_thangtruoc" />
                 </div> 
             </div>
         </div>
     </details> 
+
+    <TourGuide bind:isActive={isTourActive} steps={dataTourSteps} />
 </section>
 
 <style>
