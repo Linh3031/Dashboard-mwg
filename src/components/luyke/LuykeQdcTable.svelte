@@ -17,7 +17,6 @@
   let filterSearch = '';
   let saveTimer;
   let localConfig = [];
-
   // [CHỐT HẠ MÀU SẮC]: Thay Tailwind bằng mã màu HEX để HTML2Canvas nhận diện 100%
   const BAR_COLORS = [
       '#ef4444', '#f97316', '#f59e0b', '#facc15',
@@ -94,11 +93,9 @@
           if (childItems.length > 0) {
               finalResults.push({
                   id: config.id, name: config.name, isMacro: true, 
-          
                   dtqd: childItems.reduce((sum, i) => sum + (i.dtqd || 0), 0),
                   dt: childItems.reduce((sum, i) => sum + (i.dt || 0), 0),
-                  quantity: childItems.reduce((sum, i) => sum + (i.quantity ||
-i.sl || 0), 0),
+                  quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.sl || 0), 0),
                   _children: childItems 
               });
           } 
@@ -111,8 +108,7 @@ i.sl || 0), 0),
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
-  $: maxVal = sortedItems.length > 0 ?
-(sortedItems[0].dtqd || 1) : 1;
+  $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
 
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) { isSettingsOpen = false;
@@ -147,31 +143,24 @@ i.sl || 0), 0),
                     {#if filterList.length === 0}
                          <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
                     {:else}
-                
-                        {#each filterList as group}
+                         {#each filterList as group}
                             {@const isChecked = localConfig.includes(group.name)}
                             <div class="filter-item" on:click={() => toggleQdcSelection(group.name)}>
-                          
-                                <input type="checkbox" checked={isChecked} />
+                                 <input type="checkbox" checked={isChecked} />
                                  {#if group.type === 'macro'}
-                                  <label class="{isChecked ?
-'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
+                                     <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} flex items-center gap-1">
                                         <i data-feather="layers" class="w-3 h-3"></i> {group.name}
                                     </label>
-             
                                  {:else}
-                                     <label class="{isChecked ?
-'font-bold text-blue-700' : ''}">{group.name}</label>
+                                     <label class="{isChecked ? 'font-bold text-blue-700' : ''}">{group.name}</label>
                                  {/if}
                             </div>
                         {/each}
-            
                     {/if}
                  </div>
                 <div class="filter-actions">
                     <button class="filter-btn-link" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                     <button class="filter-btn-link text-red-600" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
-     
                 </div>
             </div>
         {/if}
@@ -187,29 +176,24 @@ i.sl || 0), 0),
     {:else}
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
-          {@const percent = maxVal > 0 ?
-(item.dtqd / maxVal) * 100 : 0}
+          {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
           {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
           
           <div class="py-2 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1 
                       {item.isMacro ? 'bg-teal-50/30 hover:bg-teal-50/50' : 'hover:bg-gray-50'}">
            <div class="flex items-center gap-3">
-          
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                
                <div class="flex-grow min-w-0 relative qdc-content-wrapper">
                    
                    <div class="flex justify-between items-center mb-1 relative z-10 qdc-info-row">
-         
                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1 {item.isMacro ? 'text-teal-800' : 'text-gray-700'}" title={item.name}>
                            {#if item.isMacro} <i data-feather="layers" class="w-3 h-3 text-teal-600"></i> {/if}
                            {item.name}
-            
                        </span>
                        <span class="text-sm font-bold whitespace-nowrap text-gray-800">
                         {formatters.formatRevenue(item.dtqd)}
                        </span>
-               
                    </div>
                    
                    <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-1 shadow-inner relative z-0 qdc-bar-row">
@@ -218,21 +202,18 @@ i.sl || 0), 0),
                    
                    <div class="flex justify-between text-[10px] text-gray-500 flex-wrap gap-y-1">
                       <div class="flex gap-2">
-            
                            <span>DT: <strong>{formatters.formatRevenue(item.dt)}</strong></span>
-                           <span class="{item.isMacro ?
-'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                           <span class="{item.isMacro ? 'text-teal-600' : 'text-blue-600'}">QĐ: <strong>{formatters.formatRevenue(item.dtqd)}</strong></span>
+                           <span class="text-amber-600">ĐG: <strong>{formatters.formatRevenue((item.dt || 0) / (item.quantity || item.sl || 1))}</strong></span>
                        </div>
                        <div class="flex gap-2">
                            <span>SL: {formatters.formatNumber(item.quantity || item.sl)}</span>
-                   
                            <span>TB: <strong>{formatters.formatNumber((item.quantity || item.sl) / numDays, 0)}</strong>/ngày</span>
                        </div>
                     </div>
                </div>
-           </div>
+            </div>
           </div>
-       
         {/each}
       </div>
     {/if}
@@ -267,7 +248,7 @@ i.sl || 0), 0),
         z-index: 1 !important;
         width: 100% !important;
         /* THAY min-height BẰNG height ĐỂ BẢO ĐẢM TRÁNH SẬP 0PX */
-        height: 8px !important; 
+        height: 8px !important;
         min-height: 8px !important;
     }
     :global(.capture-container .qdc-info-row span:last-child) {
@@ -287,7 +268,8 @@ i.sl || 0), 0),
         print-color-adjust: exact !important;
         height: 100% !important; 
         min-height: 8px !important;
-        box-shadow: none !important; /* Lấy đi bóng đổ trong lúc chụp */
+        box-shadow: none !important;
+        /* Lấy đi bóng đổ trong lúc chụp */
     }
 
     /* Trị bệnh cắt cụt dòng do html2canvas gặp flexbox */

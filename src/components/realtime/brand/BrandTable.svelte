@@ -117,29 +117,19 @@
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
             {@const hasFilter = currentFilters[dim.id] !== undefined}
-      
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
-                    <button 
-                        class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}"
-                        on:click={() => handleDimensionToggle(dim.id)}
-                    >
+                    <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
                         {#if isActive}
-                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
-                                {activeIndex + 1}
-                            </span>
+                            <span class="flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">{activeIndex + 1}</span>
                         {:else}
-                             <span class="w-4 h-4 rounded border border-gray-400"></span>
+                            <span class="w-4 h-4 rounded border border-gray-400"></span>
                         {/if}
                         {dim.label}
                     </button>
-    
-                    <button 
-                        class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}"
-                        on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}
-                    >
+                    <button class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}" on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}>
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                         </svg>
                         {#if hasFilter}
                              <span class="absolute -top-1 -right-1 flex h-3 w-3">
@@ -149,16 +139,15 @@
                         {/if}
                     </button>
                 </div>
-             
                 {#if openFilterId === dim.id}
                     <div class="absolute top-full left-0 mt-2 w-[280px] bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-3 animate-fade-in-down">
                         <div class="flex justify-between items-center mb-3">
                             <span class="text-xs font-bold text-gray-500 uppercase">Lọc {dim.label}</span>
                             <div class="flex items-center gap-3">
                                 <button on:click={() => dispatch('filterChange', { key: dim.id, selected: [] })} class="text-[11px] font-bold text-orange-600 hover:text-orange-800 transition-colors">Bỏ chọn hết</button>
-                                {#if hasFilter}
+                                 {#if hasFilter}
                                     <button on:click={() => clearFilter(dim.id)} class="text-[11px] font-bold text-red-500 hover:text-red-700 transition-colors">Xóa lọc</button>
-                                {/if}
+                                 {/if}
                             </div>
                         </div>
                         <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors"/>
@@ -199,21 +188,27 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
                                 </button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-300 rounded" title="Thu gọn">
-                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
                                 </button>
                             </div>
                          </div>
                     </th>
                     
                     <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('quantity')}>
-                        <div class="flex items-center justify-end">
-                            Số lượng {@html SortIcon({ active: sortConfig.key === 'quantity', direction: sortConfig.direction })}
+                         <div class="flex items-center justify-end">
+                            SL {@html SortIcon({ active: sortConfig.key === 'quantity', direction: sortConfig.direction })}
                         </div>
                     </th>
-                
+                    
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200" on:click={() => handleSort('revenue')}>
                          <div class="flex items-center justify-end">
-                            Doanh thu {@html SortIcon({ active: sortConfig.key === 'revenue', direction: sortConfig.direction })}
+                            DT thực {@html SortIcon({ active: sortConfig.key === 'revenue', direction: sortConfig.direction })}
+                         </div>
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-amber-100 bg-amber-50/50" on:click={() => handleSort('donGia')}>
+                         <div class="flex items-center justify-end text-amber-800">
+                            Đơn giá {@html SortIcon({ active: sortConfig.key === 'donGia', direction: sortConfig.direction })}
                          </div>
                     </th>
                     
@@ -246,6 +241,11 @@
                     <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
                     <td class="py-3 px-4 text-right">{fmtQty(totalMetrics.quantity)}</td>
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenue)}</td>
+                    
+                    <td class="py-3 px-4 text-right bg-amber-50/50 text-amber-800">
+                        {totalMetrics.quantity > 0 ? fmtRev(totalMetrics.revenue / totalMetrics.quantity) : '-'}
+                    </td>
+
                     <td class="py-3 px-4 text-right">{fmtRev(totalMetrics.revenueQD)}</td>
                     
                     <td class="py-3 px-4 text-center">
@@ -261,14 +261,14 @@
             
             <tbody>
                 {#if data.length === 0}
-                     <tr><td colspan="7" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="8" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
                     {#each data as group (group.id)}
                         <TableRowRecursive 
-                             {group} 
+                            {group} 
                             {expandedRows} 
                             {toggleRow} 
-                             {LEVEL_COLORS}
+                            {LEVEL_COLORS}
                             {fmtQty} 
                             {fmtRev}
                             {fmtPct}
@@ -287,9 +287,9 @@
     /* [FIX GENESIS v3.0]: BỘ CSS CHỐNG CẮT CHỮ CHO CAPTURE */
     :global(.capture-container .brand-filter-section) { display: none !important; }
     :global(.capture-container .brand-table-wrapper) {
-        width: 750px !important;
-        min-width: 750px !important;
-        max-width: 750px !important;
+        width: 850px !important; /* Tăng xíu width để chứa cột mới */
+        min-width: 850px !important;
+        max-width: 850px !important;
         margin: 0 auto !important;
         border-radius: 0 !important;
         border: none !important;

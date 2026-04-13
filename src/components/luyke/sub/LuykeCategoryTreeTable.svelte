@@ -29,7 +29,7 @@
     };
     const fmtPct = (n) => (n || 0).toFixed(1) + '%';
     const LEVEL_COLORS = ['text-red-700 font-bold', 'text-blue-700 font-semibold', 'text-purple-700 font-medium', 'text-emerald-700', 'text-orange-700'];
-
+    
     function handleSort(key) {
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
         else { sortKey = key; sortDirection = 'desc'; }
@@ -42,6 +42,9 @@
             if (key === 'percentQD') {
                 valA = a.revenue ? (a.revenueQD / a.revenue) : 0;
                 valB = b.revenue ? (b.revenueQD / b.revenue) : 0;
+            } else if (key === 'donGia') { // [GENESIS ADD]
+                valA = a.quantity ? (a.revenue / a.quantity) : 0;
+                valB = b.quantity ? (b.revenue / b.quantity) : 0;
             } else {
                 if (isCompareMode && !isVelocityMode) {
                     const currA = a[key] || 0; const prevA = a[`${key}CK`] || 0;
@@ -61,7 +64,7 @@
     }
 
     $: sortedData = sortTree(data, sortKey, sortDirection, compareSortType);
-
+    
     function toggleRow(id) {
         if (expandedRows.has(id)) expandedRows.delete(id); else expandedRows.add(id);
         expandedRows = expandedRows;
@@ -72,6 +75,7 @@
         expandedRows = expandedRows;
     }
     function collapseAll() { expandedRows = new Set(); }
+    
     function toggleFilterDropdown(dimId) { if (openFilterId === dimId) openFilterId = null; else { openFilterId = dimId; filterSearchQuery = ''; } }
     
     function toggleFilterItem(dimId, value) {
@@ -108,7 +112,7 @@
             return a.localeCompare(b);
         });
     };
-
+    
     function handleDimensionToggle(dimId) {
         let newIds = [...activeIds];
         if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId); else newIds.push(dimId);
@@ -134,7 +138,6 @@
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
             {@const hasFilter = currentFilters[dim.id] !== undefined}
-        
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
                     <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
@@ -142,7 +145,6 @@
                         {:else}<span class="w-4 h-4 rounded border border-gray-400"></span>{/if}
                         {dim.label}
                     </button>
-       
                     <button class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}" on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}>
                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                     </button>
@@ -158,7 +160,6 @@
                                  {/if}
                              </div>
                          </div>
-  
                          <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors"/>
                          <div class="max-h-56 overflow-y-auto space-y-1 custom-scrollbar">
                             {#each getDisplayOptions(dim.id) as option (option)}
@@ -179,7 +180,7 @@
                     <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
             </div>
-        {/each}
+         {/each}
     </div>
 </div>
 
@@ -192,7 +193,7 @@
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
                              <div class="flex gap-1 ml-auto">
-                                <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                                 <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
@@ -200,18 +201,25 @@
                  
                     <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
                         <div class="flex items-center justify-end gap-1">
-                            {isVelocityMode ? 'SL TB/Ngày' : 'Số lượng'}
+                            {isVelocityMode ? 'SL TB/Ngày' : 'SL'}
                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('quantity')}">▲▼</div>
                         </div>
                         {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
                     </th>
                     
-                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu">
+                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu thực">
                         <div class="flex items-center justify-end gap-1">
-                            {isVelocityMode ? 'DT TB/Ngày' : 'Doanh thu'} 
+                            {isVelocityMode ? 'DT TB/Ngày' : 'DT thực'} 
                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenue')}">▲▼</div>
                         </div>
                         {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
+                    </th>
+
+                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-amber-100 bg-amber-50/50 transition-colors select-none group relative" on:click={() => handleSort('donGia')} title="Sắp xếp theo Đơn giá">
+                         <div class="flex items-center justify-end gap-1 text-amber-800">
+                             Đơn giá
+                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('donGia')}">▲▼</div>
+                        </div>
                     </th>
 
                     <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
@@ -224,10 +232,10 @@
 
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-center border-b w-24 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('percentQD')} title="Sắp xếp theo % Quy đổi">
-                            <div class="flex items-center justify-center gap-1">
+                             <div class="flex items-center justify-center gap-1">
                                 % QĐ
                                 <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">▲▼</div>
-                            </div>
+                             </div>
                         </th>
                     {/if}
                     
@@ -239,7 +247,7 @@
                     {#if !isVelocityMode}
                         <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group relative" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
                             <div class="flex items-center justify-end gap-1">
-                                DT Trả chậm 
+                                 DT Trả chậm 
                                 <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueTraCham')}">▲▼</div>
                             </div>
                             {#if isCompareMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
@@ -282,10 +290,14 @@
                             {@const diff = getDiff(totalMetrics.revenue, totalMetrics.revenueCK)}
                             <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenue, totalMetrics.revenueCK)}</div>
                             <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueCK)}</b> <br/>
+                                 Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueCK)}</b> <br/>
                                 Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenue, totalMetrics.revenueCK)})</b>
                             </div>
                         {/if}
+                    </td>
+
+                    <td class="py-3 px-4 text-right bg-amber-50/50 text-amber-800">
+                        {totalMetrics.quantity > 0 ? fmtRev(totalMetrics.revenue / totalMetrics.quantity) : '-'}
                     </td>
 
                     <td class="py-3 px-4 text-right group relative">
@@ -301,7 +313,7 @@
                             {@const diff = getDiff(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}
                             <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}</div>
                             <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueQDCK)}</b> <br/>
+                                 Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueQDCK)}</b> <br/>
                                 Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)})</b>
                             </div>
                         {/if}
@@ -341,7 +353,7 @@
             </thead>
             <tbody>
                 {#if sortedData.length === 0}
-                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 6 : 4) : (hasInventoryData ? 9 : 7)}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 7 : 5) : (hasInventoryData ? 10 : 8)}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
                 {:else}
                     {#each sortedData as group (group.id)}
                         <TableRowRecursive {group} {expandedRows} {toggleRow} {LEVEL_COLORS} {fmtQty} {fmtRev} {fmtPct} {isVelocityMode} {hasInventoryData} {isCompareMode} />
@@ -362,7 +374,9 @@
     :global(.capture-container .luyke-filter-section) { display: none !important; }
     :global(.capture-container .velocity-toolbar) { display: none !important; }
     :global(.capture-container .luyke-table-wrapper) {
-        width: 1050px !important; min-width: 1050px !important; max-width: 1050px !important;
+        width: 1150px !important; /* Nới rộng ra 100px để chứa cột đơn giá */
+        min-width: 1150px !important; 
+        max-width: 1150px !important;
         margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
     }
     :global(.capture-container .overflow-x-auto) { overflow: visible !important; }

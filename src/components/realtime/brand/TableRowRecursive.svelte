@@ -9,26 +9,23 @@
 
     export let isVelocityMode = false;
     export let hasInventoryData = false;
-    // [GENESIS ADD]: Nhận trạng thái So sánh từ bảng cha
     export let isCompareMode = false;
 
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
     $: paddingLeft = `${group.level * 24 + 16}px`;
+
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
     $: qdPercent = group.revenue > 0 ? ((group.revenueQD / group.revenue) * 100) - 100 : 0;
 
-    // [GENESIS SURGICAL] Sửa hàm nhận diện Class theo đúng định dạng trả về của InventoryLogic
     const getAlertClass = (status) => {
         if (status === 'alert') return 'text-red-600 font-bold bg-red-50';
         if (status === 'ok') return 'text-emerald-600 font-bold';
         return 'text-gray-400';
     };
 
-    // [FIX DISPLAY] Hàm format số nguyên cho tồn kho (bỏ số lẻ)
     const fmtInt = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
-
-    // [GENESIS ADD]: Hàm tính toán chênh lệch hiển thị UI
+    
     const getDiff = (current, prev) => (current || 0) - (prev || 0);
     const getPct = (current, prev) => {
         if (!prev) return current > 0 ? '+100%' : '0%';
@@ -108,6 +105,10 @@
             </div>
         {/if}
     </td>
+
+    <td class="py-2 px-4 text-right font-medium text-amber-700 bg-amber-50/30">
+        {group.quantity > 0 ? fmtRev(group.revenue / group.quantity) : '-'}
+    </td>
     
     <td class="py-2 px-4 text-right group relative">
         <div class="flex items-center justify-end gap-1.5 text-gray-600">
@@ -140,13 +141,11 @@
 
     {#if hasInventoryData}
         <td class="py-2 px-4 text-right font-bold text-emerald-700 bg-emerald-50/30">
-            {group.inventoryQty !== undefined ? fmtInt(group.inventoryQty) : '-'}
+             {group.inventoryQty !== undefined ? fmtInt(group.inventoryQty) : '-'}
         </td>
         <td class="py-2 px-4 text-center text-xs {getAlertClass(group.inventoryStatus)}">
             {#if group.inventoryStatus === 'alert'}
-                <div class="flex items-center justify-center gap-1">
-                    ⚠️ {group.inventoryMessage}
-                </div>
+                <div class="flex items-center justify-center gap-1">⚠️ {group.inventoryMessage}</div>
             {:else if group.inventoryStatus === 'ok'}
                 <span>✓ {group.inventoryMessage}</span>
             {:else}
@@ -160,7 +159,7 @@
             <div class="flex items-center justify-end gap-1.5 text-yellow-700">
                 <span>{fmtRev(group.revenueTraCham)}</span>
                 {#if isCompareMode}
-                    {@const diff = getDiff(group.revenueTraCham, group.revenueTraChamCK)}
+                     {@const diff = getDiff(group.revenueTraCham, group.revenueTraChamCK)}
                     <span class="text-yellow-200 font-light">|</span>
                     <span class="text-xs {getDiffColor(diff)} font-medium">
                         {diff > 0 ? '+' : ''}{fmtRev(diff)}

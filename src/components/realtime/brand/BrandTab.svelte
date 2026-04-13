@@ -211,6 +211,9 @@
                 } else if (sortConfig.key === 'percentQD') {
                     valA = a.revenue > 0 ? a.revenueQD / a.revenue : 0;
                     valB = b.revenue > 0 ? b.revenueQD / b.revenue : 0;
+                } else if (sortConfig.key === 'donGia') { // [GENESIS ADD]
+                    valA = a.quantity > 0 ? a.revenue / a.quantity : 0;
+                    valB = b.quantity > 0 ? b.revenue / b.quantity : 0;
                 } else {
                     valA = a[sortConfig.key];
                     valB = b[sortConfig.key];
