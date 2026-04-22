@@ -3,13 +3,16 @@
     import { selectedWarehouse } from '../../../stores.js';
 
     // Props nhận từ cha
-    export let totalTarget = 0;   // Mục tiêu tháng (Quy đổi)
-    export let currentRevenue = 0; // Đã đạt (Quy đổi)
+    export let totalTarget = 0;
+    // Mục tiêu tháng (Quy đổi)
+    export let currentRevenue = 0;
+    // Đã đạt (Quy đổi)
     export let warehouseId = '';
 
     // State nội bộ
     let targetRatio = 100;
     let remainingDays = 1;
+    let pastDays = 1;
 
     // --- HELPER FORMAT ---
     // Yêu cầu: Số nguyên (0 số lẻ) cho gọn
@@ -22,8 +25,12 @@
         const month = now.getMonth() + 1;
         const daysInMonth = new Date(year, month, 0).getDate();
         const currentDay = now.getDate();
-        let remain = daysInMonth - currentDay+1;
-        return remain > 0 ? remain : 0; 
+        let remain = daysInMonth - currentDay + 1;
+        
+        // Tính số ngày đã qua để chia trung bình. Nếu là mùng 1 thì mặc định chia cho 1
+        pastDays = currentDay > 1 ? currentDay - 1 : 1;
+
+        return remain > 0 ? remain : 0;
     }
 
     // --- TÍNH TOÁN SỐ LIỆU ---
@@ -47,6 +54,7 @@
     $: mainMetrics = calculateMetrics(targetRatio, totalTarget, currentRevenue);
     $: prevMetrics = calculateMetrics(targetRatio - 10, totalTarget, currentRevenue);
     $: nextMetrics = calculateMetrics(targetRatio + 10, totalTarget, currentRevenue);
+    $: tbNgay = currentRevenue / pastDays;
 
     // --- PERSISTENCE ---
     $: if ($selectedWarehouse || warehouseId) {
@@ -64,7 +72,7 @@
 
 <div class="bg-slate-50 border border-indigo-100 rounded-lg p-4 my-4 shadow-sm">
     
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-stretch">
         
         <div class="flex flex-col justify-center gap-3 pr-2">
             <div class="flex items-center gap-2 text-indigo-700">
@@ -91,6 +99,19 @@
                     >
                     <span class="absolute right-0.5 top-0.5 text-[9px] text-gray-400 font-bold">%</span>
                 </div>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between px-4 py-3 rounded-lg border border-teal-200 bg-white shadow-sm h-full">
+            <div class="flex flex-col justify-center gap-1">
+                <span class="text-xs font-bold text-teal-600 uppercase tracking-wide">TB Ngày Thực tế</span>
+                <div class="mt-1">
+                    <span class="text-[10px] text-gray-400 block">Đã qua ({pastDays} ngày)</span>
+                    <span class="text-sm font-bold text-gray-600">{fmt(currentRevenue)}</span>
+                </div>
+            </div>
+            <div class="text-right pl-2">
+                <span class="text-3xl font-black text-teal-700 leading-none block">{fmt(tbNgay)}</span>
             </div>
         </div>
 
