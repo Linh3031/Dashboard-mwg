@@ -76,6 +76,8 @@ src/components/realtime/brand
 src/components/realtime/brand/BrandTab.svelte
 src/components/realtime/brand/TableRowRecursive.svelte
 src/components/realtime/brand/BrandTable.svelte
+src/components/realtime/address
+src/components/realtime/address/RealtimeAddressTab.svelte
 src/components/realtime/competition
 src/components/realtime/competition/CompetitionTab.svelte
 src/components/realtime/competition/SpecialProgramTable.svelte
@@ -140,6 +142,7 @@ src/components/common/PasteInput.svelte
 src/components/common/FileInput.svelte
 src/components/common/VersionManager.svelte
 src/components/common/GlobalNotification.svelte
+src/components/common/TourGuide.svelte
 src/components/common/SortableTh.svelte
 src/components/DataSection.svelte
 src/components/HealthEmployeeSection.svelte
@@ -187,6 +190,7 @@ src/components/luyke/address/AddressYtdView.svelte
 src/components/luyke/address/AddressProductDetail.svelte
 src/components/luyke/address/AddressTreeItem.svelte
 src/components/luyke/address/addressLogic.js
+src/components/luyke/address/addressParser.js
 src/components/luyke/ThiDuaVungHCM.svelte
 src/components/luyke/LuykeDtCkNam.svelte
 src/components/luyke/LuykeCategoryTable.svelte

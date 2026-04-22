@@ -47,7 +47,7 @@ export const luykeParser = {
         defaults.dtDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến");
         defaults.dtqdDuKien = findValueAfterKeyword(allLines, "DT Dự Kiến (QĐ)", true);
         defaults.dtTraCham = findValueAfterKeyword(allLines, "DT Siêu thị");
-        defaults.tyLeTraCham = findValueAfterKeyword(allLines, "Tỷ Trọng Trả Góp");
+        defaults.tyLeTraCham = findValueAfterKeyword(allLines, "Tỷ Trọng Trả Chậm");
 
         // Tìm tăng trưởng cùng kỳ
         const dtckIndex = allLines.findIndex(line => line.includes('DTCK Tháng'));
