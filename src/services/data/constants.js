@@ -19,6 +19,7 @@ export const FILE_MAPPING = {
 };
 
 export const PASTE_MAPPING = {
+    // --- DỮ LIỆU KHO LẺ & TIỀN TỐ ĐA KHO ---
     'daily_paste_luyke': { 
         processFunc: dataProcessing.parseCompetitionDataFromLuyKe, 
         store: competitionData,
@@ -42,5 +43,23 @@ export const PASTE_MAPPING = {
         store: pastedThiDuaReportData,
         isThiDuaNV: true,
         name: 'Thi đua NV'
+    },
+
+    // --- [NEW] NHÓM DỮ LIỆU CỤM ---
+    'cluster_summary_data': {
+        name: 'Báo cáo Tổng hợp Cụm',
+        isThiDuaNV: false,
+        bypassHandler: true // Cờ hiệu để pasteHandler bỏ qua, vì DataSection đã tự xử lý
+    },
+    'cluster_paste_luyke': {
+        processFunc: dataProcessing.parseCompetitionDataFromLuyKe,
+        store: competitionData,
+        isThiDuaNV: false,
+        name: 'Data Lũy Kế Cụm'
+    },
+    'cluster_paste_comp': {
+        name: 'Thi đua Cụm',
+        isThiDuaNV: false,
+        bypassHandler: true
     }
 };

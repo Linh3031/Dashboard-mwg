@@ -3,7 +3,77 @@ import { competitionData, luykeNameMappings } from '../../../stores.js';
 import { get } from 'svelte/store';
 
 export const luykeParser = {
-    // 1. Phân tích các chỉ số KPI chính (DT, DTQĐ, %HT)
+    // --- [NEW]: BỘ GIẢI MÃ BÁO CÁO TỔNG HỢP CỤM ---
+    parseClusterSummaryData: (text) => {
+        if (!text || !text.trim()) throw new Error("Dữ liệu rỗng");
+        
+        // Cắt dòng và loại bỏ toàn bộ các dòng trống/khoảng trắng thừa
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
+        
+        let result = {};
+        let dtlkCount = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const nextLine = (i + 1 < lines.length) ? lines[i + 1] : '';
+
+            // 1. DTLK thứ 2
+            if (line === 'DTLK') {
+                dtlkCount++;
+                if (dtlkCount === 2) {
+                    result.doanhThuThuc = parseFloat(nextLine.replace(/,/g, '')) || 0;
+                }
+            }
+            // 2. DT Dự kiến
+            else if (line === 'DT Dự Kiến') {
+                result.doanhThuThucDuKien = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            }
+            // 3. DTQĐ
+            else if (line === 'DTQĐ') {
+                result.doanhThuQuyDoi = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            }
+            // 4. DT Dự Kiến (QĐ)
+            else if (line === 'DT Dự Kiến (QĐ)') {
+                result.doanhThuQuyDoiDuKien = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            }
+            // 5. Target (QĐ)
+            else if (line === 'Target (QĐ)') {
+                result.targetDTQD = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            }
+            // 6. % HT Target Dự Kiến (QĐ)
+            else if (line === '% HT Target Dự Kiến (QĐ)') {
+                result.tyLeHoanThanh = nextLine;
+            }
+            // 7. DTCK Tháng (Cắt làm 2: Giá trị & %)
+            else if (line === 'DTCK Tháng') {
+                const parts = nextLine.split(/\s+/);
+                result.dtckThangGiaTri = parts[0] ? parseFloat(parts[0].replace(/,/g, '')) : 0;
+                result.dtckThangTangTruong = parts[1] || '0%';
+            }
+            // 8. Lượt Khách CK Tháng (Cắt làm 2: Giá trị & %)
+            else if (line === 'Lượt Khách CK Tháng') {
+                const parts = nextLine.split(/\s+/);
+                result.luotKhachCKGiaTri = parts[0] ? parseFloat(parts[0].replace(/,/g, '')) : 0;
+                result.luotKhachCKTangTruong = parts[1] || '0%';
+            }
+            // 9. Tỷ Trọng Trả Chậm
+            else if (line === 'Tỷ Trọng Trả Chậm') {
+                result.tyLeTraCham = nextLine;
+            }
+            // 10. DT Siêu thị (Trả chậm)
+            else if (line === 'DT Siêu thị') {
+                result.dtTraCham = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            }
+        }
+
+        if (Object.keys(result).length === 0) {
+            throw new Error("Không tìm thấy từ khóa hợp lệ. Vui lòng copy đúng bảng báo cáo BI.");
+        }
+
+        return result;
+    },
+
+    // --- (GIỮ NGUYÊN LOGIC CŨ Ở DƯỚI) ---
     parseLuyKePastedData: (text) => {
         const defaults = {
             mainKpis: {},
@@ -49,7 +119,6 @@ export const luykeParser = {
         defaults.dtTraCham = findValueAfterKeyword(allLines, "DT Siêu thị");
         defaults.tyLeTraCham = findValueAfterKeyword(allLines, "Tỷ Trọng Trả Chậm");
 
-        // Tìm tăng trưởng cùng kỳ
         const dtckIndex = allLines.findIndex(line => line.includes('DTCK Tháng'));
         if (dtckIndex !== -1 && dtckIndex + 1 < allLines.length) {
             const valueLine = allLines[dtckIndex + 1];
@@ -62,7 +131,6 @@ export const luykeParser = {
             }
         }
 
-        // Tìm lượt khách
         const luotKhachIndex = allLines.findIndex(line => line.includes('Lượt Khách CK Tháng'));
         if (luotKhachIndex !== -1 && luotKhachIndex + 1 < allLines.length) {
             const valueLine = allLines[luotKhachIndex + 1];
@@ -78,7 +146,6 @@ export const luykeParser = {
         return defaults;
     },
 
-    // 2. Phân tích danh sách các chương trình thi đua (Tổng hợp)
     parseCompetitionDataFromLuyKe: (text) => {
         if (!text || !text.trim()) return [];
         const lines = text.split('\n').map(l => l.trim());
@@ -112,7 +179,6 @@ export const luykeParser = {
         }
         if (currentCompetition) results.push(currentCompetition);
 
-        // [NEW] Tự động nạp tên chương trình vào danh sách Rút gọn Siêu thị
         const currentMappings = get(luykeNameMappings) || {};
         let hasChanges = false;
         results.forEach(item => {

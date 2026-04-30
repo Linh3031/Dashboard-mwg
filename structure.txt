@@ -23,6 +23,11 @@ src/styles/specific-realtime.css
 src/components
 src/components/ToolsSection.svelte
 src/components/CapturePreviewDebug.svelte
+src/components/data-section
+src/components/data-section/DataHeader.svelte
+src/components/data-section/MonthlyDataBlock.svelte
+src/components/data-section/DailyDataBlock.svelte
+src/components/data-section/ProductivityDataBlock.svelte
 src/components/DeclarationSection.svelte
 src/components/HealthSection.svelte
 src/components/admin

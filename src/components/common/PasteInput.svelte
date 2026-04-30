@@ -1,13 +1,15 @@
 <script>
   /* global feather */
-  import { onMount } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
+  import { get } from 'svelte/store';
   import { dataService } from '../../services/dataService.js';
   import { 
     competitionData,
     pastedThiDuaReportData,
     thuongERPData,
     thuongERPDataThangTruoc,
-    fileSyncState 
+    fileSyncState,
+    selectedWarehouse
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
@@ -17,12 +19,15 @@
   export let saveKeyRaw = ""; 
   export let saveKeyProcessed = ""; 
 
+  const dispatch = createEventDispatcher();
+
   let textareaEl;
   let pastedText = "";
   let localError = "";
 
   const storeMap = {
     'daily_paste_luyke': competitionData,
+    'cluster_paste_luyke': competitionData,
     'daily_paste_thiduanv': pastedThiDuaReportData,
     'daily_paste_thuongerp': thuongERPData,
     'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc
@@ -30,24 +35,34 @@
   
   const unitMap = {
     'daily_paste_luyke': 'CT thi đua',
+    'cluster_paste_luyke': 'CT thi đua',
     'daily_paste_thiduanv': 'nhân viên',
     'daily_paste_thuongerp': 'nhân viên',
     'saved_thuongerp_thangtruoc': 'nhân viên'
   };
 
-  const countStore = storeMap[saveKeyProcessed || saveKeyPaste];
+  $: baseKey = (() => {
+      const pk = saveKeyProcessed || saveKeyPaste;
+      for (const k of Object.keys(storeMap)) {
+          if (pk.startsWith(k)) return k;
+      }
+      return pk;
+  })();
 
-  $: syncState = $fileSyncState[saveKeyPaste];
+  $: countStore = storeMap[baseKey];
+  $: unit = unitMap[baseKey] || 'dòng';
   $: dataCount = countStore ? $countStore?.length || 0 : 0;
 
+  $: syncState = $fileSyncState[saveKeyPaste];
+  
   let statusHTML = "";
   let statusClass = "text-gray-500";
   let isLoading = false;
 
   $: {
-      const unit = unitMap[saveKeyPaste] || 'dòng';
-      const countDisplay = `(${dataCount} ${unit})`;
-
+      // [FIX] Ẩn cái chữ (0 dòng) vô duyên ở ô Báo cáo Cụm
+      const countDisplay = baseKey === 'cluster_summary_data' ? '' : `(${dataCount} ${unit})`;
+      
       if (isLoading) {
           statusHTML = "Đang xử lý...";
           statusClass = "text-blue-600 font-semibold";
@@ -71,23 +86,20 @@
               statusClass = "text-red-600";
               statusHTML = syncState.message;
           } else if (syncState.status === 'synced' || syncState.status === 'cached') {
-              // [FIX LOGIC] Chỉ báo lỗi 0 NV nếu ĐÃ CÓ TEXT (pastedText > 0)
-              // Nếu pastedText trống, nghĩa là chưa tải nội dung về, thì không coi là lỗi
-              if (dataCount === 0 && saveKeyPaste === 'daily_paste_thiduanv' && pastedText.length > 0) {
+              if (dataCount === 0 && baseKey === 'daily_paste_thiduanv' && pastedText.trim().length > 0) {
                   statusClass = "text-red-600 font-bold";
                   statusHTML = `⚠ Đã xử lý 0 NV. Vui lòng kiểm tra DSNV!`;
               } else {
                   statusClass = "text-green-600 font-medium";
                   const prefix = syncState.status === 'synced' ? '✓ Đã đồng bộ' : '✓ Đã tải';
+                  
                   let cleanMsg = syncState.message
                       .replace('✓ Đã đồng bộ', '')
                       .replace('✓ Đã tải', '')
                       .replace('(Local)', '')
                       .trim();
-                  
-                  // Logic hiển thị thông minh: Nếu chưa có text, gợi ý tải
-                  if (pastedText.length === 0 && syncState.status === 'synced') {
-                      // Đã đồng bộ metadata nhưng chưa có text -> Hiển thị nút tải lại cho chắc
+
+                  if (pastedText.trim().length === 0 && syncState.status === 'synced') {
                        statusHTML = `
                           <span class="mr-2 text-gray-500">✓ Đã biết có dữ liệu trên Cloud.</span>
                           <button class="px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded hover:bg-green-100 border border-green-200 font-bold btn-download-cloud pointer-events-auto shadow-sm">
@@ -95,15 +107,15 @@
                           </button>
                       `;
                   } else {
-                       // Hiển thị bình thường
-                       if (cleanMsg.includes('dòng') || cleanMsg.includes('nhân viên') || cleanMsg.includes('CT')) {
+                       if (cleanMsg.includes('dòng') || cleanMsg.includes('nhân viên') || cleanMsg.includes('CT') || cleanMsg.includes('chỉ số')) {
                            if(cleanMsg.includes('trước') || cleanMsg.includes('vừa xong')) {
-                               statusHTML = `${prefix} ${countDisplay} ${cleanMsg}`;
+                               statusHTML = `${prefix} ${countDisplay} ${cleanMsg}`.trim();
                            } else {
-                               statusHTML = `${prefix} ${countDisplay}`;
+                               // [FIX] Nếu là Báo cáo cụm, nó sẽ lấy thẳng cái msg "✓ Đã trích xuất (12 chỉ số)"
+                               statusHTML = baseKey === 'cluster_summary_data' ? cleanMsg : `${prefix} ${countDisplay}`;
                            }
                       } else {
-                           statusHTML = `${prefix} ${countDisplay} ${cleanMsg}`;
+                           statusHTML = `${prefix} ${countDisplay} ${cleanMsg}`.trim();
                       }
                   }
               }
@@ -111,7 +123,9 @@
                statusClass = "text-gray-500 italic";
                statusHTML = "Đang kiểm tra đồng bộ...";
           }
-      } else if (dataCount > 0) {
+      } 
+      // [FIX] CHỐNG NHẬN VƠ PHANTOM DATA: Chỉ báo xanh Local khi dataCount > 0 VÀ cái ô text này thực sự có chữ
+      else if (dataCount > 0 && pastedText.trim().length > 0) {
           statusClass = "text-green-600";
           statusHTML = `✓ Đã tải ${countDisplay} (Local)`;
       } else {
@@ -122,6 +136,38 @@
   onMount(() => {
     const textLoadKey = saveKeyRaw || saveKeyPaste;
     pastedText = localStorage.getItem(textLoadKey) || "";
+    
+    if (!$fileSyncState[saveKeyPaste]) {
+        let targetWh = null;
+        for (const k of Object.keys(storeMap)) {
+            if (saveKeyPaste.startsWith(k + '_')) {
+                targetWh = saveKeyPaste.replace(k + '_', '');
+                break;
+            }
+        }
+        
+        // [FIX] Dạy cho UI biết Báo cáo Cụm được lưu ở đâu để khôi phục trí nhớ
+        let wh = targetWh || get(selectedWarehouse);
+        if (saveKeyPaste === 'cluster_summary_data') wh = 'CLUSTER_ALL';
+
+        if (wh) {
+            const metaStr = localStorage.getItem(`_meta_${wh}_${saveKeyPaste}`);
+            if (metaStr) {
+                try {
+                    const meta = JSON.parse(metaStr);
+                    // Lấy chính xác message lúc lưu để hiện ra
+                    const restoreMsg = saveKeyPaste === 'cluster_summary_data' 
+                        ? `✓ Đã trích xuất (${meta.rowCount || 0} chỉ số)`
+                        : `✓ Đã đồng bộ`;
+
+                    fileSyncState.update(s => ({
+                        ...s,
+                        [saveKeyPaste]: { status: 'synced', message: restoreMsg, metadata: meta }
+                    }));
+                } catch(e){}
+            }
+        }
+    }
     
     window.addEventListener('cloud-paste-loaded', (e) => {
         if (e.detail.key === saveKeyPaste) {
@@ -138,6 +184,8 @@
       pastedText = text;
       localError = "";
       clearTimeout(pasteTimer);
+      
+      dispatch('paste', text);
       
       if (!text || text.trim().length < 5) return;
       

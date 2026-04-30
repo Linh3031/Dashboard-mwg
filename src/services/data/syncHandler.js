@@ -17,7 +17,7 @@ export function formatTimeAgo(dateInput) {
     if (!dateInput) return '';
     try {
         const date = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
-        if (isNaN(date.getTime())) return ''; // Check ngày lỗi
+        if (isNaN(date.getTime())) return ''; 
         const seconds = Math.floor((new Date() - date) / 1000);
         
         let interval = seconds / 3600;
@@ -30,40 +30,22 @@ export function formatTimeAgo(dateInput) {
     }
 }
 
-// --- [DEBUG] HÀM CHUẨN HÓA THỜI GIAN CỰC MẠNH ---
 function getMetaTimestamp(meta, sourceName) {
     if (!meta) return 0;
     
     let ts = 0;
-    let method = 'none';
-
-    // 1. Ưu tiên Timestamp số học (Do code mới thêm vào)
     if (typeof meta.timestamp === 'number') {
         ts = meta.timestamp;
-        method = 'prop_timestamp';
-    }
-    // 2. Xử lý updatedAt
-    else if (meta.updatedAt) {
-        // Trường hợp A: Firestore Timestamp Object (có hàm toMillis)
+    } else if (meta.updatedAt) {
         if (typeof meta.updatedAt.toMillis === 'function') {
             ts = meta.updatedAt.toMillis();
-            method = 'firestore_fn';
-        }
-        // Trường hợp B: Object { seconds, nanoseconds } (JSON từ Firestore)
-        else if (typeof meta.updatedAt.seconds === 'number') {
+        } else if (typeof meta.updatedAt.seconds === 'number') {
             ts = meta.updatedAt.seconds * 1000;
-            method = 'firestore_json';
-        }
-        // Trường hợp C: Chuỗi ISO String hoặc Date Object
-        else {
+        } else {
             const d = new Date(meta.updatedAt);
-            if (!isNaN(d.getTime())) {
-                ts = d.getTime();
-                method = 'date_parse';
-            }
+            if (!isNaN(d.getTime())) ts = d.getTime();
         }
     }
-
     return ts;
 }
 
@@ -72,14 +54,12 @@ export const syncHandler = {
         if (!warehouse) return { success: false, message: "Chưa chọn kho." };
         console.group(`[SYNC-DEBUG] Bắt đầu kiểm tra kho: ${warehouse}`);
         
-        // Set trạng thái "Checking"
         [...Object.keys(FILE_MAPPING), ...Object.keys(PASTE_MAPPING)].forEach(key => {
             const mapping = FILE_MAPPING[key] || PASTE_MAPPING[key];
             if (mapping && !mapping.localOnly) updateSyncState(key, 'checking', 'Đang so sánh dữ liệu...', null);
         });
 
         try {
-            // Lấy dữ liệu mới nhất từ Cloud (Server)
             const cloudData = await datasyncService.loadWarehouseData(warehouse);
             if (!cloudData) {
                  console.groupEnd();
@@ -87,26 +67,19 @@ export const syncHandler = {
             }
             const userEmail = get(currentUser)?.email;
 
-            // Hàm xử lý chung cho cả File và Paste
             const processKey = async (key, mapping) => {
                 const cloudMeta = cloudData[key];
-                
-                // Lấy Local Meta
                 const localMetaStr = localStorage.getItem(`_meta_${warehouse}_${key}`);
                 const localMeta = localMetaStr ? JSON.parse(localMetaStr) : {};
                 
                 if (!cloudMeta) return;
 
                 console.groupCollapsed(`🔍 Kiểm tra: ${key}`);
-                
                 const timeAgo = formatTimeAgo(cloudMeta.updatedAt);
                 const isMyUpload = cloudMeta.updatedBy === userEmail;
 
-                // --- SO SÁNH THỜI GIAN ---
                 const cloudTs = getMetaTimestamp(cloudMeta, 'CLOUD');
                 const localTs = getMetaTimestamp(localMeta, 'LOCAL');
-                
-                // Logic: Cloud phải lớn hơn Local ít nhất 2 giây (tránh sai số mạng)
                 const isNewer = cloudTs > (localTs + 2000); 
 
                 console.log(`Kết quả: Cloud ${isNewer ? '>' : '<='} Local. Chênh lệch: ${(cloudTs - localTs)/1000}s`);
@@ -131,7 +104,6 @@ export const syncHandler = {
                 console.groupEnd();
             };
 
-            // Chạy vòng lặp kiểm tra
             for (const [key, mapping] of Object.entries(FILE_MAPPING)) {
                 if (mapping.localOnly) continue;
                 await processKey(key, mapping);
@@ -163,17 +135,31 @@ export const syncHandler = {
         updateSyncState(key, 'downloading', 'Đang tải xuống...', state.metadata);
         
         try {
-            if (FILE_MAPPING[key]) {
-                const mapping = FILE_MAPPING[key];
+            // --- 🚨 [GENESIS PREFIX ROUTING CHO SYNC] 🚨 ---
+            let mapping = FILE_MAPPING[key] || PASTE_MAPPING[key];
+            let baseKey = key;
+            let isPaste = !!PASTE_MAPPING[key];
+
+            if (!mapping) {
+                for (const pKey of Object.keys(PASTE_MAPPING)) {
+                    if (key.startsWith(pKey + '_')) {
+                        mapping = PASTE_MAPPING[pKey];
+                        baseKey = pKey;
+                        isPaste = true;
+                        break;
+                    }
+                }
+            }
+            // ----------------------------------------------
+
+            if (!isPaste) {
                 let allNormalizedData = [];
 
-                // 🚨 [ATOMIC FIX: XỬ LÝ CHẾ ĐỘ MẢNG FILES] 🚨
                 if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
                     console.log(`[Download] Kích hoạt chế độ tải MẢNG cho ${key}. Tổng số file: ${state.metadata.files.length}`);
                     
                     for (const fileMeta of state.metadata.files) {
                         if (!fileMeta.downloadURL) continue;
-                        console.log(`- Đang tải file: ${fileMeta.fileName}`);
                         
                         const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
                         const response = await fetch(cacheBusterUrl);
@@ -191,14 +177,10 @@ export const syncHandler = {
                         
                         const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
                         const { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
-                        
-                        // Gộp dữ liệu của file này vào tổng
                         allNormalizedData = [...allNormalizedData, ...normalizedData];
                     }
                 } 
-                // Xử lý chế độ file đơn (DSNV, Giờ Công...)
                 else if (state.metadata.downloadURL) {
-                    console.log(`[Download] Tải file đơn từ ${state.metadata.downloadURL}`);
                     const cacheBusterUrl = `${state.metadata.downloadURL}${state.metadata.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
                     const response = await fetch(cacheBusterUrl);
                     const blob = await response.blob();
@@ -218,7 +200,6 @@ export const syncHandler = {
                     throw new Error("Không có URL tải hợp lệ trong Metadata.");
                 }
 
-                // Lưu dữ liệu tổng hợp
                 mapping.store.set(allNormalizedData);
                 await storage.setItem(key, allNormalizedData);
                 
@@ -226,19 +207,18 @@ export const syncHandler = {
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
                 
                 localStorage.setItem(`_meta_${warehouse}_${key}`, JSON.stringify(metaToSave));
-                updateSyncState(key, 'synced', `✓ Đã đồng bộ (${allNormalizedData.length} dòng)`, metaToSave);
+                updateSyncState(key, 'synced', `✓ Đã đồng bộ`, metaToSave);
             
-            } else if (PASTE_MAPPING[key]) {
-                // [GENESIS FIX] Sửa lỗi URL chứa 2 dấu '?' phá vỡ Token của Firebase
+            } else if (isPaste) {
                 const downloadUrl = state.metadata.downloadURL;
                 const cacheBusterUrl = `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
                 
                 const textContent = await (await fetch(cacheBusterUrl)).text();
-                const mapping = PASTE_MAPPING[key];
                 let processedCount = 0;
                 
                 if (mapping.isThiDuaNV) {
-                     localStorage.setItem('raw_paste_thiduanv', textContent);
+                    // [FIX] Lưu text raw theo đúng Key của kho để khỏi bị đè
+                    localStorage.setItem(key + '_raw', textContent);
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {
                         dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
@@ -246,7 +226,7 @@ export const syncHandler = {
                         const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
                         mapping.store.set(processedData);
                         processedCount = processedData.length;
-                        localStorage.setItem('daily_paste_thiduanv', JSON.stringify(processedData)); 
+                        localStorage.setItem(key, JSON.stringify(processedData)); 
                     }
                 } else if (mapping.processFunc) {
                     const processedData = mapping.processFunc(textContent);
@@ -254,7 +234,7 @@ export const syncHandler = {
                     processedCount = processedData?.length || 0;
                     localStorage.setItem(key, textContent);
                     
-                    if (key === 'daily_paste_luyke') {
+                    if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
                          const comps = dataProcessing.parseCompetitionDataFromLuyKe(textContent);
                          dataProcessing.parseLuyKePastedData(textContent);
                          processedCount = comps.length;

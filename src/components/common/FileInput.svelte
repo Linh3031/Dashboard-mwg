@@ -1,15 +1,15 @@
 <script>
   import { onMount } from 'svelte';
-  import { get } from 'svelte/store'; // [GENESIS FIX]
+  import { get } from 'svelte/store';
   import { dataService } from '../../services/dataService.js';
-  import { datasyncService } from '../../services/datasync.service.js'; // [GENESIS FIX]
-  import { storage } from '../../services/storage.service.js'; // [GENESIS FIX]
+  import { datasyncService } from '../../services/datasync.service.js';
+  import { storage } from '../../services/storage.service.js';
   import { 
       danhSachNhanVien, rawGioCongData, ycxData, thuongNongData,
       ycxDataThangTruoc, thuongNongDataThangTruoc,
       ycxDataCungKyNam,
       fileSyncState,
-      selectedWarehouse // [GENESIS FIX]
+      selectedWarehouse
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
@@ -23,6 +23,10 @@
   let isLoading = false;
   let statusClass = "text-gray-500";
   let localError = "";
+
+  // [NEW LOGIC]: Cảm biến nhận diện có phải Khối dữ liệu Tháng/Năm không
+  $: isMonthlyOrYearly = saveKey.includes('thangtruoc') || saveKey.includes('cungkynam');
+  $: showMonthSummary = isMultiMode && isMonthlyOrYearly;
 
   const storeMap = {
       'saved_danhsachnv': danhSachNhanVien,
@@ -54,7 +58,7 @@
                 if (isNaN(dateObj)) return null;
                 const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
                 const y = dateObj.getFullYear();
-                return `${m}/${y}`; // Format ra 03/2026
+                return `${m}/${y}`;
             } catch(e) { return null; }
         }).filter(Boolean))].sort()
         : [];
@@ -143,7 +147,6 @@
       });
   }
 
-// --- [GENESIS FIX]: NỐI DÂY ĐIỆN VÀ ĐỒNG BỘ ĐỒNG HỒ F5 ---
   async function removeMonth(targetMonth) {
       if (!dataStore) return;
       if (!confirm(`Bạn có chắc chắn muốn xóa dữ liệu của tháng ${targetMonth} không?`)) return;
@@ -152,8 +155,7 @@
       isLoading = true; 
       let newCloudMeta = null;
 
-      // 1. DIỆT TRÊN CLOUD & LẤY ĐỒNG HỒ MỚI NHẤT
-      if (isMultiMode && kho) {
+      if (isMultiMode && kho && kho !== 'ALL') {
           try {
               newCloudMeta = await datasyncService.deleteMonthFromMultiMetadata(kho, saveKey, targetMonth);
           } catch (e) {
@@ -163,7 +165,6 @@
           }
       }
 
-      // 2. DIỆT TRÊN RAM
       dataStore.update(currentData => {
           return currentData.filter(d => {
               const dateVal = d.ngayTao || d['Ngày tạo'];
@@ -178,14 +179,12 @@
           });
       });
 
-      // 3. DIỆT TRÊN Ổ CỨNG MÁY BẠN
       try {
           await storage.setItem(saveKey, get(dataStore));
       } catch (e) {
           console.error("Lỗi cập nhật Local Storage:", e);
       }
 
-      // 4. CHỐT HẠ: CHỈNH ĐỒNG HỒ LOCAL BẰNG VỚI CLOUD ĐỂ CHỐNG F5
       if (newCloudMeta) {
           localStorage.setItem(`_meta_${kho}_${saveKey}`, JSON.stringify(newCloudMeta));
           fileSyncState.update(s => ({
@@ -199,7 +198,6 @@
               }
           }));
       }
-
       isLoading = false;
   }
 
@@ -265,7 +263,7 @@
             <span class="data-input-group__status-text {statusClass}">{@html statusHTML}</span> 
         </div> 
 
-        {#if isMultiMode && (uniqueWarehouses.length > 0 || uniqueMonths.length > 0)}
+        {#if isMultiMode && (uniqueWarehouses.length > 0 || (uniqueMonths.length > 0 && showMonthSummary))}
             <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-50">
                 
                 <div class="flex justify-between items-center border-b border-slate-200 pb-2">
@@ -283,7 +281,7 @@
                     <button class="text-[10px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-bold px-2 py-1 rounded transition-colors remove-wh-btn shadow-sm h-max" on:click|stopPropagation={clearAllData} title="Xóa trắng toàn bộ dữ liệu này">
                         Xóa tất cả
                     </button>
-                </div>
+                 </div>
 
                 {#if uniqueWarehouses.length > 0}
                 <div>
@@ -303,7 +301,7 @@
                 </div>
                 {/if}
 
-                {#if uniqueMonths.length > 0}
+                {#if uniqueMonths.length > 0 && showMonthSummary}
                 <div class="{uniqueWarehouses.length > 0 ? 'pt-2 border-t border-slate-200' : ''}">
                     <div class="text-[10px] text-emerald-600 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
                         <i data-feather="calendar" class="w-3 h-3"></i> Tháng ({uniqueMonths.length}):

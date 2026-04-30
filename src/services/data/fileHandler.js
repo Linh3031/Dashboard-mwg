@@ -48,7 +48,6 @@ export const fileHandler = {
             const workbook = await _handleFileRead(file);
             const sheetName = workbook.SheetNames[0];
             
-            // [GENESIS FIX]: Lấy toàn bộ Header thô để quét Địa chỉ thủ công
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
             const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
             const rawAddressCol = headers.find(h => 
@@ -64,22 +63,28 @@ export const fileHandler = {
                 return { success: false, message: `Thiếu cột bắt buộc` };
             }
 
-            // --- 🚨 [ATOMIC FIX: FORCED ADDRESS INJECTION] 🚨 ---
-            // Nếu là dòng YCX, và tìm thấy cột địa chỉ gốc, ÉP BUỘC tiêm vào data đã chuẩn hóa
+            // --- 🚨 [BỘ KHIÊN BẢO VỆ DỮ LIỆU GỐC] 🚨 ---
+            // Phục hồi lại các cột bị hệ thống cũ (normalizers.js) vô tình gọt mất
             if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
-                if (rawAddressCol) {
-                    console.log(`[FileHandler] Đã kích hoạt khiên bảo vệ Địa Chỉ cho cột: "${rawAddressCol}"`);
-                    normalizedData = normalizedData.map((row, index) => {
-                        return {
-                            ...row,
-                            diaChi: String(rawData[index][rawAddressCol] || '').trim()
-                        };
-                    });
-                } else {
-                    console.warn("[FileHandler] File tải lên KHÔNG CÓ cột chứa chữ 'Địa chỉ'!");
-                }
+                console.log(`[FileHandler] Đã kích hoạt Khiên bảo vệ Dữ liệu gốc (Địa chỉ & Mã kho)`);
+                normalizedData = normalizedData.map((row, index) => {
+                    const rawRow = rawData[index];
+                    
+                    // 1. Phục hồi Địa chỉ
+                    const diaChi = rawAddressCol ? String(rawRow[rawAddressCol] || '').trim() : row.diaChi;
+                    
+                    // 2. Phục hồi Mã kho tạo (Chống bị gọt mất do không có trong config.js cũ)
+                    const maKhoGoc = rawRow['Mã kho tạo'] || rawRow['Kho tạo'] || rawRow['Mã Kho Tạo'] || rawRow['maKhoTao'] || row.maKhoTao || row.maKho;
+
+                    return {
+                        ...row,
+                        diaChi: diaChi,
+                        maKhoTao: maKhoGoc ? String(maKhoGoc).trim() : row.maKhoTao,
+                        maKho: maKhoGoc ? String(maKhoGoc).trim() : row.maKho
+                    };
+                });
             }
-            // ----------------------------------------------------
+            // ------------------------------------------
 
             if (isMultiMode && (saveKey === 'saved_ycx_cungkynam' || saveKey === 'saved_ycx_thangtruoc')) {
                 const currentData = get(mapping.store) || [];
@@ -106,8 +111,9 @@ export const fileHandler = {
             } 
             else if (isMultiMode) {
                 const currentData = get(mapping.store) || [];
-                const incomingWarehouses = [...new Set(normalizedData.map(d => d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo']).filter(Boolean))];
-                const filteredOldData = currentData.filter(d => !incomingWarehouses.includes(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo']));
+                // [FIX] Convert sang chuỗi để so sánh cho chuẩn
+                const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
+                const filteredOldData = currentData.filter(d => !incomingWarehouses.includes(String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()));
                 normalizedData = [...filteredOldData, ...normalizedData];
                 mapping.store.set(normalizedData);
             } else {
@@ -126,27 +132,52 @@ export const fileHandler = {
             if (warehouse && !mapping.localOnly) {
                 updateSyncState(saveKey, 'uploading', 'Đang tải lên Cloud...');
                 try {
-                    const path = `warehouse_data/${warehouse}/${saveKey}_${Date.now()}_${file.name}`;
+                    const storagePathWh = warehouse === 'ALL' ? 'CLUSTER' : warehouse;
+                    const path = `warehouse_data/${storagePathWh}/${saveKey}_${Date.now()}_${file.name}`;
                     const downloadURL = await storageService.uploadFileToStorage(file, path);
                     const now = Date.now();
-                    
-                    // [GENESIS FIX]: Bắt buộc trích xuất danh sách tháng từ data để ném lên Cloud
                     const extractedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
 
-                    const metadata = { 
-                        downloadURL, 
-                        fileName: file.name, 
-                        fileType: 'excel', 
-                        rowCount: normalizedData.length, 
-                        uploadedMonths: extractedMonths, // <--- THÊM TRƯỜNG NÀY ĐỂ CLOUD KHÔNG XÓA NHẦM
-                        updatedAt: new Date(now), 
-                        timestamp: now, 
-                        updatedBy: get(currentUser)?.email || 'Tôi' 
-                    };
-                    
-                    await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
-                    localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
-                    updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
+                    // --- 🚨 [GENESIS AUTO-SPLITTER ENGINE] 🚨 ---
+                    if (warehouse === 'ALL') {
+                        // [FIX] Lọc mảng rỗng và ép kiểu chuỗi để đếm kho chuẩn xác
+                        const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
+                        
+                        console.log(`[Auto-Splitter] Phát hiện ${incomingWarehouses.length} kho trong file:`, incomingWarehouses);
+
+                        await Promise.all(incomingWarehouses.map(async (kho) => {
+                            const khoDataCount = normalizedData.filter(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim() === kho).length;
+                            const khoMetadata = { 
+                                downloadURL, fileName: file.name, fileType: 'excel', 
+                                rowCount: khoDataCount, 
+                                uploadedMonths: extractedMonths, 
+                                updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
+                            };
+                            await datasyncService.saveWarehouseMetadata(kho, saveKey, khoMetadata);
+                            localStorage.setItem(`_meta_${kho}_${saveKey}`, JSON.stringify(khoMetadata));
+                        }));
+
+                        const allMetadata = { 
+                            downloadURL, fileName: file.name, fileType: 'excel', 
+                            rowCount: normalizedData.length, 
+                            uploadedMonths: extractedMonths, 
+                            updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
+                        };
+                        localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(allMetadata));
+                        updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho`, allMetadata);
+
+                    } else {
+                        const metadata = { 
+                            downloadURL, fileName: file.name, fileType: 'excel', 
+                            rowCount: normalizedData.length, uploadedMonths: extractedMonths, 
+                            updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
+                        };
+                        
+                        await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
+                        localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
+                        updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
+                    }
+                    // ----------------------------------------------
                 } catch (e) {
                     updateSyncState(saveKey, 'error', `Lỗi lưu Cloud: ${e.message}`, null);
                 }
@@ -170,19 +201,16 @@ export const fileHandler = {
             const sheetName = workbook.SheetNames[0];
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
             
-            // --- [ATOMIC FIX: COPY TỪ LŨY KẾ SANG ĐỂ CỨU ĐỊA CHỈ] ---
             const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
             const rawAddressCol = headers.find(h => 
                 h.toLowerCase().includes('địa chỉ') || 
                 h.toLowerCase().includes('dia chi') || 
                 h.toLowerCase().includes('address')
             );
-            // --------------------------------------------------------
 
             let { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
             if (!success) { alert(`File thiếu cột: ${missingColumns.join(', ')}`); return; }
 
-            // --- TIÊM ĐỊA CHỈ VÀO REALTIME Y HỆT LŨY KẾ ---
             if (rawAddressCol) {
                 normalizedData = normalizedData.map((row, index) => {
                     return {
@@ -191,7 +219,6 @@ export const fileHandler = {
                     };
                 });
             }
-            // ----------------------------------------------
 
             realtimeYCXData.set(normalizedData);
             analyticsService.trackAction();

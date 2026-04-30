@@ -123,3 +123,6 @@ export const interfaceSettings = writable({
 });
 export const firebaseStore = writable({ app: null, auth: null, db: null, storage: null });
 export const fileSyncState = writable({});
+
+// --- [NEW] STORE LƯU DỮ LIỆU TỔNG HỢP CỤM ---
+export const clusterSummaryData = writable(null);
