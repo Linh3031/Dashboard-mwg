@@ -38,7 +38,8 @@
     'cluster_paste_luyke': 'CT thi đua',
     'daily_paste_thiduanv': 'nhân viên',
     'daily_paste_thuongerp': 'nhân viên',
-    'saved_thuongerp_thangtruoc': 'nhân viên'
+    'saved_thuongerp_thangtruoc': 'nhân viên',
+    'cluster_summary_data': 'dòng' // Đưa Báo cáo cụm về chuẩn chung
   };
 
   $: baseKey = (() => {
@@ -50,18 +51,35 @@
   })();
 
   $: countStore = storeMap[baseKey];
-  $: unit = unitMap[baseKey] || 'dòng';
-  $: dataCount = countStore ? $countStore?.length || 0 : 0;
-
-  $: syncState = $fileSyncState[saveKeyPaste];
+  $: unit = unitMap[baseKey] || unitMap[saveKeyPaste] || 'dòng';
   
+  // Ưu tiên lấy số lượng từ metadata (nếu có lưu trên Cloud) để hiển thị chuẩn xác
+  $: syncState = $fileSyncState[saveKeyPaste];
+  $: dataCount = syncState?.metadata?.rowCount ?? (countStore ? $countStore?.length || 0 : 0);
+
   let statusHTML = "";
   let statusClass = "text-gray-500";
   let isLoading = false;
 
+  export function formatTimeAgo(dateInput) {
+      if (!dateInput) return '';
+      try {
+          const date = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
+          if (isNaN(date.getTime())) return ''; 
+          const seconds = Math.floor((new Date() - date) / 1000);
+          
+          let interval = seconds / 3600;
+          if (interval > 1) return Math.floor(interval) + " giờ trước";
+          interval = seconds / 60;
+          if (interval > 1) return Math.floor(interval) + " phút trước";
+          return "vừa xong";
+      } catch (e) {
+          return '';
+      }
+  }
+
   $: {
-      // [FIX] Ẩn cái chữ (0 dòng) vô duyên ở ô Báo cáo Cụm
-      const countDisplay = baseKey === 'cluster_summary_data' ? '' : `(${dataCount} ${unit})`;
+      const countDisplay = dataCount > 0 ? `(${dataCount} ${unit})` : '';
       
       if (isLoading) {
           statusHTML = "Đang xử lý...";
@@ -72,9 +90,11 @@
       } else if (syncState) {
           if (syncState.status === 'update_available') {
               statusClass = "text-orange-600 font-semibold";
-              const msg = syncState.message || "Có dữ liệu mới";
+              const timeAgo = syncState.metadata ? formatTimeAgo(syncState.metadata.timestamp || syncState.metadata.updatedAt) : '';
+              const sender = syncState.metadata?.updatedBy || 'người khác';
+              
               statusHTML = `
-                  <span class="mr-2">${msg}</span>
+                  <span class="mr-2">Có cập nhật mới từ ${sender} ${timeAgo}</span>
                   <button class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 border border-blue-300 font-bold btn-download-cloud pointer-events-auto shadow-sm">
                       Tải & Xử lý
                   </button>
@@ -91,13 +111,9 @@
                   statusHTML = `⚠ Đã xử lý 0 NV. Vui lòng kiểm tra DSNV!`;
               } else {
                   statusClass = "text-green-600 font-medium";
-                  const prefix = syncState.status === 'synced' ? '✓ Đã đồng bộ' : '✓ Đã tải';
-                  
-                  let cleanMsg = syncState.message
-                      .replace('✓ Đã đồng bộ', '')
-                      .replace('✓ Đã tải', '')
-                      .replace('(Local)', '')
-                      .trim();
+                  const prefix = syncState.status === 'synced' ? '✓ Đã đồng bộ' : '✓ Đã tải (Local)';
+                  const timeAgo = syncState.metadata ? formatTimeAgo(syncState.metadata.timestamp || syncState.metadata.updatedAt) : '';
+                  const timeDisplay = timeAgo ? ` ${timeAgo}` : '';
 
                   if (pastedText.trim().length === 0 && syncState.status === 'synced') {
                        statusHTML = `
@@ -107,16 +123,7 @@
                           </button>
                       `;
                   } else {
-                       if (cleanMsg.includes('dòng') || cleanMsg.includes('nhân viên') || cleanMsg.includes('CT') || cleanMsg.includes('chỉ số')) {
-                           if(cleanMsg.includes('trước') || cleanMsg.includes('vừa xong')) {
-                               statusHTML = `${prefix} ${countDisplay} ${cleanMsg}`.trim();
-                           } else {
-                               // [FIX] Nếu là Báo cáo cụm, nó sẽ lấy thẳng cái msg "✓ Đã trích xuất (12 chỉ số)"
-                               statusHTML = baseKey === 'cluster_summary_data' ? cleanMsg : `${prefix} ${countDisplay}`;
-                           }
-                      } else {
-                           statusHTML = `${prefix} ${countDisplay} ${cleanMsg}`.trim();
-                      }
+                       statusHTML = `${prefix} ${countDisplay}${timeDisplay}`;
                   }
               }
           } else if (syncState.status === 'checking') {
@@ -124,7 +131,6 @@
                statusHTML = "Đang kiểm tra đồng bộ...";
           }
       } 
-      // [FIX] CHỐNG NHẬN VƠ PHANTOM DATA: Chỉ báo xanh Local khi dataCount > 0 VÀ cái ô text này thực sự có chữ
       else if (dataCount > 0 && pastedText.trim().length > 0) {
           statusClass = "text-green-600";
           statusHTML = `✓ Đã tải ${countDisplay} (Local)`;
@@ -146,7 +152,6 @@
             }
         }
         
-        // [FIX] Dạy cho UI biết Báo cáo Cụm được lưu ở đâu để khôi phục trí nhớ
         let wh = targetWh || get(selectedWarehouse);
         if (saveKeyPaste === 'cluster_summary_data') wh = 'CLUSTER_ALL';
 
@@ -155,14 +160,9 @@
             if (metaStr) {
                 try {
                     const meta = JSON.parse(metaStr);
-                    // Lấy chính xác message lúc lưu để hiện ra
-                    const restoreMsg = saveKeyPaste === 'cluster_summary_data' 
-                        ? `✓ Đã trích xuất (${meta.rowCount || 0} chỉ số)`
-                        : `✓ Đã đồng bộ`;
-
                     fileSyncState.update(s => ({
                         ...s,
-                        [saveKeyPaste]: { status: 'synced', message: restoreMsg, metadata: meta }
+                        [saveKeyPaste]: { status: 'synced', message: `✓ Đã đồng bộ`, metadata: meta }
                     }));
                 } catch(e){}
             }

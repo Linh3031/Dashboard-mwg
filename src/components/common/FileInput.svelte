@@ -24,7 +24,6 @@
   let statusClass = "text-gray-500";
   let localError = "";
 
-  // [NEW LOGIC]: Cảm biến nhận diện có phải Khối dữ liệu Tháng/Năm không
   $: isMonthlyOrYearly = saveKey.includes('thangtruoc') || saveKey.includes('cungkynam');
   $: showMonthSummary = isMultiMode && isMonthlyOrYearly;
 
@@ -43,12 +42,10 @@
   $: syncState = $fileSyncState[saveKey];
   $: dataCount = $dataStore ? $dataStore.length : 0;
 
-  // Chỉ điểm chính xác từ khóa "maKhoTao"
   $: uniqueWarehouses = (isMultiMode && $dataStore) 
         ? [...new Set($dataStore.map(d => d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo']).filter(Boolean))] 
         : [];
 
-  // Tự động nội soi "Tháng" từ cột "Ngày tạo"
   $: uniqueMonths = (isMultiMode && $dataStore)
         ? [...new Set($dataStore.map(d => {
             const dateVal = d.ngayTao || d['Ngày tạo'];
@@ -63,7 +60,6 @@
         }).filter(Boolean))].sort()
         : [];
 
-  // Tìm ngày cập nhật gần nhất
   $: maxDateStr = (() => {
         if (!$dataStore || $dataStore.length === 0) return '';
         let maxTs = 0;
@@ -224,11 +220,12 @@
 </script>
 
 <div class="data-input-group input-group--yellow" on:click={handleContainerClick}> 
+    <!-- [PHẪU THUẬT LOGIC]: Hạ z-index của các thẻ absolute/relative từ z-50 xuống z-10 để không đè Sidebar -->
     <div class="data-input-group__label relative z-10 flex justify-between items-center w-full"> 
        <div class="flex items-center">
            <i data-feather={icon} class="h-5 w-5 feather"></i>
            {#if link}
-                <a href={link} target="_blank" class="text-blue-700 underline font-bold cursor-pointer relative z-50 hover:text-blue-900 pointer-events-auto" on:click|stopPropagation title="Mở báo cáo nguồn">
+                <a href={link} target="_blank" class="text-blue-700 underline font-bold cursor-pointer relative z-10 hover:text-blue-900 pointer-events-auto" on:click|stopPropagation title="Mở báo cáo nguồn">
                     {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
                 </a>
            {:else}
@@ -254,7 +251,7 @@
         </div> 
       
         {#if saveKey === 'saved_danhsachnv'}
-            <button on:click={() => dataService.handleTemplateDownload()} class="data-input-group__link text-left pointer-events-auto relative z-50">Tải file mẫu</button> 
+            <button on:click={() => dataService.handleTemplateDownload()} class="data-input-group__link text-left pointer-events-auto relative z-10">Tải file mẫu</button> 
         {/if}
 
         <input type="file" id="file-{saveKey}" class="hidden" accept=".xlsx, .xls, .csv" on:change={handleChange} disabled={isLoading} multiple={isMultiMode}> 
@@ -264,7 +261,8 @@
         </div> 
 
         {#if isMultiMode && (uniqueWarehouses.length > 0 || (uniqueMonths.length > 0 && showMonthSummary))}
-            <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-50">
+            <!-- Hạ class z-50 xuống z-10 -->
+            <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-10">
                 
                 <div class="flex justify-between items-center border-b border-slate-200 pb-2">
                     <div class="flex flex-col gap-1">

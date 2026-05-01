@@ -24,10 +24,23 @@
         summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
     };
 
-    // --- LOGIC TIẾN ĐỘ DỰ KIẾN ---
-    $: today = new Date();
-    $: currentDay = Math.max(today.getDate() - 1, 1);
-    $: daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    // --- [ĐÃ PHẪU THUẬT] LOGIC TIẾN ĐỘ DỰ KIẾN ---
+    let currentDay = 1;
+    let daysInMonth = 30;
+
+    $: {
+        const today = new Date();
+        const d = today.getDate();
+        
+        if (d === 1) {
+            const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+            currentDay = lastMonth.getDate();
+            daysInMonth = lastMonth.getDate();
+        } else {
+            currentDay = Math.max(d - 1, 1);
+            daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        }
+    }
 
     // --- LOGIC TARGET CÁ NHÂN ---
     let targetRatio = 100;
@@ -291,16 +304,16 @@
        ========================================================================== */
     :global(.capture-container .capture-hide) { display: none !important; }
     
-    /* [cite: 429] Ép chiều ngang khung hình capture cho cả 2 mode */
+    /* Ép chiều ngang khung hình capture cho cả 2 mode */
     :global(.capture-container [data-capture-group="thidua-nhanvien-detail"]) { 
         width: 900px !important; min-width: 900px !important; 
         background-color: #f8fafc !important; padding: 25px !important; 
     }
 
-    /* [cite: 500] Tắt animation để html2canvas không chụp dở dang */
+    /* Tắt animation để html2canvas không chụp dở dang */
     :global(.capture-container *) { transition: none !important; animation: none !important; }
 
-    /* [cite: 430, 431] Dàn lại lưới cho 2 chế độ khi chụp ảnh */
+    /* Dàn lại lưới cho 2 chế độ khi chụp ảnh */
     :global(.capture-container .capture-kpi-grid) { grid-template-columns: repeat(4, 1fr) !important; gap: 15px !important; }
     
     /* Mode rút gọn dàn 5 cột, mode chi tiết dàn 3 cột để không bị hẹp */
@@ -311,7 +324,7 @@
     }
     :global(.capture-container .capture-detail-grid) { grid-template-columns: repeat(3, 1fr) !important; }
 
-    /* [cite: 434, 435, 443] Xử lý che chân chữ và rớt dòng */
+    /* Xử lý che chân chữ và rớt dòng */
     :global(.capture-container .capture-text) { 
         line-height: 1.5 !important; 
         padding-bottom: 3px !important; 
@@ -336,7 +349,7 @@
         print-color-adjust: exact !important;
     }
 
-    /* [cite: 501] Bảo toàn màu thanh progress khi chụp */
+    /* Bảo toàn màu thanh progress khi chụp */
     :global(.capture-container .capture-bar-bg),
     :global(.capture-container .capture-bar) { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; height: 6px !important; }
 </style>

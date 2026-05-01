@@ -15,11 +15,25 @@
       return tenGoc;
   }
 
-  // --- THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
-  // Sử dụng Math.max(..., 1) để tránh lỗi chia cho 0 vào ngày mùng 1 đầu tháng
-  $: today = new Date();
-  $: currentDay = Math.max(today.getDate() - 1, 1);
-  $: daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  // --- [ĐÃ PHẪU THUẬT] THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
+  let currentDay = 1;
+  let daysInMonth = 30;
+
+  $: {
+      const today = new Date();
+      const d = today.getDate();
+      
+      if (d === 1) {
+          // Vùng giáp hạt: Ngày mùng 1 đầu tháng -> Tự động dùng số ngày của tháng trước
+          const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+          currentDay = lastMonth.getDate();
+          daysInMonth = lastMonth.getDate();
+      } else {
+          // Ngày thường: Tính tiến độ theo tháng hiện tại
+          currentDay = Math.max(d - 1, 1);
+          daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      }
+  }
 
   // --- STATE ---
   let columnSettings = [];
@@ -328,7 +342,7 @@
                                     {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
                                     {@const textColorClass = isBelow ? 'text-yellow-900' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
 
-<td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
+                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
                                     
                                         {#if val === 0}
                                             <span class="text-gray-300 font-normal">{isNoTarget ? '0' : '-'}</span>

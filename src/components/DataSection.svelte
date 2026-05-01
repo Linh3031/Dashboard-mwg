@@ -8,14 +8,14 @@
       notificationStore,
       danhSachNhanVien,
       homeConfig,
-      fileSyncState,        // [NEW] Cập nhật UI ô dán
-      clusterSummaryData    // [NEW] Lưu data tổng hợp
+      fileSyncState,        
+      clusterSummaryData    
   } from '../stores.js';
   
   import { dataService } from '../services/dataService.js';
   import { clusterService } from '../services/cluster.service.js';
-  import { datasyncService } from '../services/datasync.service.js'; // [NEW] Đẩy lên Cloud
-  import { luykeParser } from '../services/processing/parsers/luyke.parser.js'; // [NEW] Bộ giải mã
+  import { datasyncService } from '../services/datasync.service.js'; 
+  import { luykeParser } from '../services/processing/parsers/luyke.parser.js'; 
 
   import TourGuide from './common/TourGuide.svelte';
   import DataHeader from './data-section/DataHeader.svelte';
@@ -73,12 +73,11 @@
       }
   }
 
-// --- [NEW LOGIC]: Xử lý dán Báo Cáo Tổng Hợp Cụm ---
+  // --- [PHẪU THUẬT LOGIC]: Tinh chỉnh Text và nạp Meta Đồng Bộ chuẩn ---
   async function handlePasteClusterSummary(event) {
       const text = event.detail;
       if (!text) return;
 
-      // Cập nhật UI ô PasteInput sang trạng thái "Đang xử lý"
       fileSyncState.update(s => ({
           ...s,
           'cluster_summary_data': { status: 'uploading', message: 'Đang trích xuất dữ liệu...' }
@@ -86,20 +85,28 @@
 
       try {
           const parsedData = luykeParser.parseClusterSummaryData(text);
-          console.log("[DataSection] Trích xuất thành công BC Cụm:", parsedData);
-          
           clusterSummaryData.set(parsedData);
-          await datasyncService.savePastedDataToFirestore('CLUSTER_ALL', 'clusterSummary', parsedData, { timestamp: Date.now() });
+          localStorage.setItem('cluster_summary_data', text);
 
-          // [FIX] Đếm số lượng chỉ số trích xuất được để báo cáo lên UI
+          // PUSH LÊN CLOUD (THỰC TẾ LÀ ĐÃ CÓ TỪ TRƯỚC)
+          const now = Date.now();
+          await datasyncService.savePastedDataToFirestore('CLUSTER_ALL', 'clusterSummary', parsedData, { timestamp: now });
+
           const count = Object.keys(parsedData).length;
 
-          // Cập nhật UI ô PasteInput sang màu XANH (Thành công)
+          // CẤY THÊM META ĐỂ UI HIỂU LÀ ĐÃ ĐỒNG BỘ FULL
+          const metaToSave = { timestamp: now, rowCount: count };
+          localStorage.setItem('_meta_CLUSTER_ALL_cluster_summary_data', JSON.stringify(metaToSave));
+
           fileSyncState.update(s => ({
               ...s,
-              'cluster_summary_data': { status: 'synced', message: `✓ Đã trích xuất (${count} chỉ số)` }
+              'cluster_summary_data': { 
+                  status: 'synced', 
+                  message: `✓ Đã đồng bộ (${count} chỉ số)`, 
+                  metadata: metaToSave 
+              }
           }));
-          notificationStore.set({ message: '✅ Đã trích xuất Báo cáo Cụm thành công!', type: 'success' });
+          notificationStore.set({ message: '✅ Đã trích xuất và đồng bộ Báo cáo Cụm!', type: 'success' });
           
       } catch (error) {
           console.error(error);
@@ -126,13 +133,11 @@
 
   function handlePasteCumulative(event) {
       const payload = event.detail;
-      // Payload giờ là object: { text: "...", kho: "908" }
       const text = payload.text || payload; 
       const kho = payload.kho || currentClusterCode;
 
       if (kho) {
           try {
-              // Cập nhật hàm này tùy theo cách clusterService đang viết
               clusterService.processCumulativeInput(text, kho);
               notificationStore.set({ message: `✅ Đã cập nhật Lũy kế kho ${kho}!`, type: 'success' });
           } catch (e) {
@@ -153,6 +158,30 @@
 
   onMount(async () => {
     if (typeof feather !== 'undefined') feather.replace();
+
+    // Khôi phục dữ liệu từ Cache (Hydration)
+    const savedClusterText = localStorage.getItem('cluster_summary_data');
+    if (savedClusterText) {
+        try {
+            const parsedData = luykeParser.parseClusterSummaryData(savedClusterText);
+            clusterSummaryData.set(parsedData);
+            const count = Object.keys(parsedData).length;
+            
+            const metaStr = localStorage.getItem(`_meta_CLUSTER_ALL_cluster_summary_data`);
+            let restoreMeta = metaStr ? JSON.parse(metaStr) : null;
+            
+            fileSyncState.update(s => ({
+                ...s,
+                'cluster_summary_data': { 
+                    status: 'synced', 
+                    message: `✓ Đã đồng bộ (${count} chỉ số)`, // Đổi text tại đây
+                    metadata: restoreMeta
+                }
+            }));
+        } catch(e) {
+            console.error("Lỗi phục hồi Báo cáo cụm từ LocalStorage:", e);
+        }
+    }
 
     const savedWh = localStorage.getItem('selectedWarehouse');
     if (savedWh) {
