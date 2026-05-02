@@ -39,7 +39,7 @@
     'daily_paste_thiduanv': 'nhân viên',
     'daily_paste_thuongerp': 'nhân viên',
     'saved_thuongerp_thangtruoc': 'nhân viên',
-    'cluster_summary_data': 'dòng' // Đưa Báo cáo cụm về chuẩn chung
+    'cluster_summary_data': 'dòng'
   };
 
   $: baseKey = (() => {
@@ -53,7 +53,6 @@
   $: countStore = storeMap[baseKey];
   $: unit = unitMap[baseKey] || unitMap[saveKeyPaste] || 'dòng';
   
-  // Ưu tiên lấy số lượng từ metadata (nếu có lưu trên Cloud) để hiển thị chuẩn xác
   $: syncState = $fileSyncState[saveKeyPaste];
   $: dataCount = syncState?.metadata?.rowCount ?? (countStore ? $countStore?.length || 0 : 0);
 
@@ -117,7 +116,7 @@
 
                   if (pastedText.trim().length === 0 && syncState.status === 'synced') {
                        statusHTML = `
-                          <span class="mr-2 text-gray-500">✓ Đã biết có dữ liệu trên Cloud.</span>
+                          <span class="mr-2 text-gray-500">✓ Có dữ liệu mới trên Cloud.</span>
                           <button class="px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded hover:bg-green-100 border border-green-200 font-bold btn-download-cloud pointer-events-auto shadow-sm">
                               Tải về máy
                           </button>
@@ -145,9 +144,12 @@
     
     if (!$fileSyncState[saveKeyPaste]) {
         let targetWh = null;
+        let baseKeyForMeta = saveKeyPaste; // [PHẪU THUẬT LOGIC]: Tách baseKey riêng
+        
         for (const k of Object.keys(storeMap)) {
             if (saveKeyPaste.startsWith(k + '_')) {
                 targetWh = saveKeyPaste.replace(k + '_', '');
+                baseKeyForMeta = k;
                 break;
             }
         }
@@ -156,7 +158,8 @@
         if (saveKeyPaste === 'cluster_summary_data') wh = 'CLUSTER_ALL';
 
         if (wh) {
-            const metaStr = localStorage.getItem(`_meta_${wh}_${saveKeyPaste}`);
+            // [PHẪU THUẬT LOGIC]: Tìm Meta bằng baseKey thay vì saveKeyPaste động
+            const metaStr = localStorage.getItem(`_meta_${wh}_${baseKeyForMeta}`);
             if (metaStr) {
                 try {
                     const meta = JSON.parse(metaStr);

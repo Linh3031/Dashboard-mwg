@@ -9,12 +9,14 @@
       danhSachNhanVien,
       homeConfig,
       fileSyncState,        
-      clusterSummaryData    
+      clusterSummaryData,
+      currentUser
   } from '../stores.js';
   
   import { dataService } from '../services/dataService.js';
   import { clusterService } from '../services/cluster.service.js';
   import { datasyncService } from '../services/datasync.service.js'; 
+  import { storageService } from '../services/storage.service.js'; 
   import { luykeParser } from '../services/processing/parsers/luyke.parser.js'; 
 
   import TourGuide from './common/TourGuide.svelte';
@@ -73,36 +75,47 @@
       }
   }
 
-  // --- [PHẪU THUẬT LOGIC]: Tinh chỉnh Text và nạp Meta Đồng Bộ chuẩn ---
   async function handlePasteClusterSummary(event) {
       const text = event.detail;
       if (!text) return;
 
       fileSyncState.update(s => ({
           ...s,
-          'cluster_summary_data': { status: 'uploading', message: 'Đang trích xuất dữ liệu...' }
+          'cluster_summary_data': { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
       }));
 
       try {
+          // 1. Phân tích và lưu store/local (Trải nghiệm người dùng mượt mà)
           const parsedData = luykeParser.parseClusterSummaryData(text);
           clusterSummaryData.set(parsedData);
           localStorage.setItem('cluster_summary_data', text);
-
-          // PUSH LÊN CLOUD (THỰC TẾ LÀ ĐÃ CÓ TỪ TRƯỚC)
-          const now = Date.now();
-          await datasyncService.savePastedDataToFirestore('CLUSTER_ALL', 'clusterSummary', parsedData, { timestamp: now });
-
           const count = Object.keys(parsedData).length;
+          const now = Date.now();
 
-          // CẤY THÊM META ĐỂ UI HIỂU LÀ ĐÃ ĐỒNG BỘ FULL
-          const metaToSave = { timestamp: now, rowCount: count };
+          // 2. [PHẪU THUẬT LOGIC]: Chuyển sang đường ống chuẩn Cloud (Tạo file .txt -> up Storage -> tạo Meta)
+          const blob = new Blob([text], { type: 'text/plain' });
+          const path = `warehouse_data/CLUSTER_ALL/cluster_summary_data_${now}.txt`;
+          const downloadUrl = await storageService.uploadFileToStorage(blob, path);
+
+          const metaToSave = {
+              downloadURL: downloadUrl,
+              fileName: 'du_lieu_dan_cum.txt',
+              fileType: 'text',
+              rowCount: count,
+              updatedAt: new Date(now),
+              timestamp: now,
+              updatedBy: $currentUser?.email || 'Tôi'
+          };
+
+          // 3. Đăng ký metadata chuẩn lên Firestore để syncHandler kéo về được
+          await datasyncService.saveWarehouseMetadata('CLUSTER_ALL', 'cluster_summary_data', metaToSave);
           localStorage.setItem('_meta_CLUSTER_ALL_cluster_summary_data', JSON.stringify(metaToSave));
 
           fileSyncState.update(s => ({
               ...s,
               'cluster_summary_data': { 
                   status: 'synced', 
-                  message: `✓ Đã đồng bộ (${count} chỉ số)`, 
+                  message: `✓ Đã đồng bộ (${count} dòng)`, 
                   metadata: metaToSave 
               }
           }));
@@ -159,7 +172,6 @@
   onMount(async () => {
     if (typeof feather !== 'undefined') feather.replace();
 
-    // Khôi phục dữ liệu từ Cache (Hydration)
     const savedClusterText = localStorage.getItem('cluster_summary_data');
     if (savedClusterText) {
         try {
@@ -174,7 +186,7 @@
                 ...s,
                 'cluster_summary_data': { 
                     status: 'synced', 
-                    message: `✓ Đã đồng bộ (${count} chỉ số)`, // Đổi text tại đây
+                    message: `✓ Đã đồng bộ (${count} dòng)`,
                     metadata: restoreMeta
                 }
             }));
@@ -206,16 +218,35 @@
   });
 
   async function triggerSync(warehouse) {
-      if (!warehouse || warehouse === 'ALL') return;
+      if (!warehouse) return; 
       isSyncing = true;
       try {
-          await Promise.all([
-              dataService.syncDownFromCloud(warehouse),
-              dataService.loadWarehouseSettings(warehouse)
-          ]);
+          if (warehouse === 'ALL') {
+              const validWarehouses = $warehouseList.filter(k => k && k !== 'ALL');
+              
+              if (validWarehouses.length > 0) {
+                  const syncPromises = [];
+                  
+                  syncPromises.push(dataService.syncDownFromCloud('ALL'));
+                  syncPromises.push(dataService.syncDownFromCloud('CLUSTER_ALL'));
+                  
+                  validWarehouses.forEach(kho => {
+                      syncPromises.push(dataService.syncDownFromCloud(kho));
+                      syncPromises.push(dataService.loadWarehouseSettings(kho));
+                  });
+                  
+                  await Promise.all(syncPromises);
+              }
+          } else {
+              await Promise.all([
+                  dataService.syncDownFromCloud(warehouse),
+                  dataService.loadWarehouseSettings(warehouse)
+              ]);
+          }
           notificationStore.set({ message: 'Đồng bộ thành công!', type: 'success' });
       } catch (error) {
             console.error("SYNC ERROR:", error);
+            notificationStore.set({ message: 'Đồng bộ bị lỗi!', type: 'error' });
       } finally {
             isSyncing = false;
       }
@@ -227,7 +258,8 @@
       if (newWarehouse) {
           localStorage.setItem('selectedWarehouse', newWarehouse);
           if (newWarehouse === 'ALL') {
-               notificationStore.set({ message: `Đang mở giao diện Quản lý Cụm`, type: 'info' });
+               notificationStore.set({ message: `Đang đồng bộ dữ liệu tất cả các kho...`, type: 'info' });
+               await triggerSync(newWarehouse);
           } else if (isClusterMode && newWarehouse === currentClusterCode) {
                notificationStore.set({ message: `Chế độ Cụm: ${newWarehouse}`, type: 'info' });
                clusterService.loadSavedData(newWarehouse);

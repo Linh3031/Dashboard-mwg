@@ -133,14 +133,44 @@
       }
   }
 
-  function removeWarehouse(whCode) {
+  async function removeWarehouse(whCode) {
       if (!dataStore) return;
+      if (!confirm(`Bạn có chắc chắn muốn xóa dữ liệu kho ${whCode}?`)) return;
+      isLoading = true;
+
+      const kho = get(selectedWarehouse) || 'ALL';
+
+      // 1. Tẩy Local & Store
       dataStore.update(currentData => {
           return currentData.filter(d => {
               const code = d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'];
-              return code !== whCode;
+              return String(code).trim() !== String(whCode).trim();
           });
       });
+      try { await storage.setItem(saveKey, get(dataStore)); } catch(e){}
+
+      // 2. [PHẪU THUẬT LOGIC]: Bắn cờ xóa lên Cloud để triệt tiêu F5
+      try {
+          // Xóa Meta của kho lẻ đó
+          const emptyMeta = { files: [], rowCount: 0, downloadURL: null, isDeleted: true, updatedAt: new Date().toISOString() };
+          await datasyncService.saveWarehouseMetadata(whCode, saveKey, emptyMeta);
+
+          // Cập nhật mảng Blacklist vào ALL
+          if (kho === 'ALL') {
+              let metaStr = localStorage.getItem(`_meta_ALL_${saveKey}`);
+              if (metaStr) {
+                  let metaAll = JSON.parse(metaStr);
+                  metaAll.deletedWarehouses = metaAll.deletedWarehouses || [];
+                  if (!metaAll.deletedWarehouses.includes(String(whCode))) {
+                      metaAll.deletedWarehouses.push(String(whCode));
+                  }
+                  await datasyncService.saveWarehouseMetadata('ALL', saveKey, metaAll);
+                  localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(metaAll));
+              }
+          }
+      } catch(e) { console.error("Lỗi xóa kho trên Cloud:", e); }
+
+      isLoading = false;
   }
 
   async function removeMonth(targetMonth) {
@@ -197,11 +227,38 @@
       isLoading = false;
   }
 
-  function clearAllData() {
+  async function clearAllData() {
       if (!dataStore) return;
       if (confirm(`Bạn có chắc chắn muốn XÓA TOÀN BỘ dữ liệu của "${label}" không?`)) {
+          isLoading = true;
           dataStore.set([]);
           fileName = "Chưa thêm file";
+          const kho = get(selectedWarehouse) || 'ALL';
+
+          // 1. Tẩy Local Storage
+          try { await storage.setItem(saveKey, []); } catch(e){}
+
+          // 2. [PHẪU THUẬT LOGIC]: Bắn lệnh Hạt nhân tẩy trắng toàn bộ Cloud Meta
+          try {
+              const emptyMeta = { files: [], rowCount: 0, downloadURL: null, isDeleted: true, updatedAt: new Date().toISOString() };
+              await datasyncService.saveWarehouseMetadata(kho, saveKey, emptyMeta);
+              
+              if (kho === 'ALL' && isMultiMode && uniqueWarehouses.length > 0) {
+                  await Promise.all(uniqueWarehouses.map(whCode => 
+                      datasyncService.saveWarehouseMetadata(whCode, saveKey, emptyMeta)
+                  ));
+              }
+          } catch(e) { console.error("Lỗi xóa toàn bộ Cloud:", e); }
+
+          // 3. Tẩy Local Meta State
+          localStorage.removeItem(`_meta_${kho}_${saveKey}`);
+          fileSyncState.update(s => {
+              const newState = {...s};
+              delete newState[saveKey];
+              return newState;
+          });
+          
+          isLoading = false;
       }
   }
 
@@ -220,7 +277,6 @@
 </script>
 
 <div class="data-input-group input-group--yellow" on:click={handleContainerClick}> 
-    <!-- [PHẪU THUẬT LOGIC]: Hạ z-index của các thẻ absolute/relative từ z-50 xuống z-10 để không đè Sidebar -->
     <div class="data-input-group__label relative z-10 flex justify-between items-center w-full"> 
        <div class="flex items-center">
            <i data-feather={icon} class="h-5 w-5 feather"></i>
@@ -261,7 +317,6 @@
         </div> 
 
         {#if isMultiMode && (uniqueWarehouses.length > 0 || (uniqueMonths.length > 0 && showMonthSummary))}
-            <!-- Hạ class z-50 xuống z-10 -->
             <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-10">
                 
                 <div class="flex justify-between items-center border-b border-slate-200 pb-2">

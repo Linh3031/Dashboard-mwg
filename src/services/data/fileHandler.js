@@ -64,16 +64,13 @@ export const fileHandler = {
             }
 
             // --- 🚨 [BỘ KHIÊN BẢO VỆ DỮ LIỆU GỐC] 🚨 ---
-            // Phục hồi lại các cột bị hệ thống cũ (normalizers.js) vô tình gọt mất
             if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
                 console.log(`[FileHandler] Đã kích hoạt Khiên bảo vệ Dữ liệu gốc (Địa chỉ & Mã kho)`);
                 normalizedData = normalizedData.map((row, index) => {
                     const rawRow = rawData[index];
                     
-                    // 1. Phục hồi Địa chỉ
                     const diaChi = rawAddressCol ? String(rawRow[rawAddressCol] || '').trim() : row.diaChi;
                     
-                    // 2. Phục hồi Mã kho tạo (Chống bị gọt mất do không có trong config.js cũ)
                     const maKhoGoc = rawRow['Mã kho tạo'] || rawRow['Kho tạo'] || rawRow['Mã Kho Tạo'] || rawRow['maKhoTao'] || row.maKhoTao || row.maKho;
 
                     return {
@@ -111,7 +108,6 @@ export const fileHandler = {
             } 
             else if (isMultiMode) {
                 const currentData = get(mapping.store) || [];
-                // [FIX] Convert sang chuỗi để so sánh cho chuẩn
                 const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
                 const filteredOldData = currentData.filter(d => !incomingWarehouses.includes(String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()));
                 normalizedData = [...filteredOldData, ...normalizedData];
@@ -138,9 +134,7 @@ export const fileHandler = {
                     const now = Date.now();
                     const extractedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
 
-                    // --- 🚨 [GENESIS AUTO-SPLITTER ENGINE] 🚨 ---
                     if (warehouse === 'ALL') {
-                        // [FIX] Lọc mảng rỗng và ép kiểu chuỗi để đếm kho chuẩn xác
                         const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
                         
                         console.log(`[Auto-Splitter] Phát hiện ${incomingWarehouses.length} kho trong file:`, incomingWarehouses);
@@ -164,6 +158,10 @@ export const fileHandler = {
                             updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
                         };
                         localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(allMetadata));
+                        
+                        // [PHẪU THUẬT LOGIC]: Lưu Meta tổng của ALL lên Cloud. Trình duyệt Ẩn danh sẽ tải trực tiếp từ đây!
+                        await datasyncService.saveWarehouseMetadata('ALL', saveKey, allMetadata);
+
                         updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho`, allMetadata);
 
                     } else {
@@ -177,7 +175,6 @@ export const fileHandler = {
                         localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
                         updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
                     }
-                    // ----------------------------------------------
                 } catch (e) {
                     updateSyncState(saveKey, 'error', `Lỗi lưu Cloud: ${e.message}`, null);
                 }

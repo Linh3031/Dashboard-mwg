@@ -14,7 +14,6 @@ const getCurrentUserEmail = () => {
 };
 
 export const datasyncService = {
-    // --- MỤC TIÊU (GOALS) ---
     async saveGoalSettings(kho, type, settings) {
         const db = getDB();
         if (!db || !kho) return;
@@ -55,7 +54,6 @@ export const datasyncService = {
         }
     },
 
-    // --- LƯU TRỮ TARGET TỶ LỆ (%) CÁ NHÂN ---
     async savePersonalTargetRatio(kho, ratio) {
         const db = getDB();
         if (!db || !kho) return;
@@ -87,7 +85,6 @@ export const datasyncService = {
         }
     },
 
-    // --- CÁC HÀM KHÁC (GIỮ NGUYÊN) ---
     async saveQdcConfig(kho, config) {
         const db = getDB();
         if (!db || !kho) return;
@@ -230,7 +227,8 @@ export const datasyncService = {
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         
-        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc'];
+        // [PHẪU THUẬT LOGIC]: Bổ sung 'saved_ycx' vào mảng kích hoạt chế độ Multi (Merge)
+        const multiModeKeys = ['saved_ycx', 'saved_ycx_cungkynam', 'saved_ycx_thangtruoc'];
 
         try {
             if (multiModeKeys.includes(key)) {
@@ -289,7 +287,6 @@ export const datasyncService = {
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? docSnap.data() : null; } catch (error) { throw error; }
     },
 
-   // --- [GENESIS FIX]: HÀM TIÊU DIỆT BÓNG MA (BAO GỒM CẢ FILE CŨ) ---
     async deleteMonthFromMultiMetadata(kho, key, targetMonth) {
         const db = getDB();
         if (!db || !kho) return null;
@@ -301,20 +298,17 @@ export const datasyncService = {
                 const existingData = docSnap.data()[key];
                 
                 if (Array.isArray(existingData.files)) {
-                    // [NÂNG CẤP]: Cắt cổ cả những file cũ (Legacy) không có nhãn tháng
                     const updatedFiles = existingData.files.filter(f => {
-                        // 1. Nếu có nhãn chuẩn -> Lọc theo nhãn
                         if (f.uploadedMonths) return !f.uploadedMonths.includes(targetMonth);
                         
-                        // 2. Nếu file cũ không có nhãn -> Quét thẳng vào tên file (VD: "tháng 4_2025")
-                        const [m, y] = targetMonth.split('/'); // "04/2025" -> m="04", y="2025"
-                        const mNum = parseInt(m, 10); // "04" -> 4
+                        const [m, y] = targetMonth.split('/'); 
+                        const mNum = parseInt(m, 10); 
                         const regex = new RegExp(`(${mNum}|${m})[\\s_\\-\\/]*${y}`, 'i');
                         
                         if (regex.test(f.fileName)) {
-                            return false; // Trùng tên tháng/năm -> BĂM!
+                            return false; 
                         }
-                        return true; // Tha cho các file khác
+                        return true; 
                     });
 
                     const dataToSave = { 
@@ -329,7 +323,6 @@ export const datasyncService = {
                     await setDoc(khoRef, dataToSave, { merge: true });
                     console.log(`[DataSync] Đã dọn dẹp tháng ${targetMonth} trên Cloud.`);
                     
-                    // TRẢ VỀ META MỚI ĐỂ LOCAL ĐỒNG BỘ
                     return dataToSave[key]; 
                 }
             }
