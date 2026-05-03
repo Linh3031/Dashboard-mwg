@@ -49,6 +49,30 @@ function getMetaTimestamp(meta, sourceName) {
     return ts;
 }
 
+// [PHẪU THUẬT LOGIC]: BỘ KHIÊN BẢO VỆ ĐỐI XỨNG (Symmetry Shield)
+function applyDataShield(rawData, normalizedData, baseKey) {
+    if (!baseKey.includes('ycx')) return normalizedData;
+    
+    const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
+    const rawAddressCol = headers.find(h =>
+        h.toLowerCase().includes('địa chỉ') ||
+        h.toLowerCase().includes('dia chi') ||
+        h.toLowerCase().includes('address')
+    );
+
+    return normalizedData.map((row, index) => {
+        const rawRow = rawData[index];
+        const diaChi = rawAddressCol ? String(rawRow[rawAddressCol] || '').trim() : row.diaChi;
+        const maKhoGoc = rawRow['Mã kho tạo'] || rawRow['Kho tạo'] || rawRow['Mã Kho Tạo'] || rawRow['maKhoTao'] || row.maKhoTao || row.maKho || rawRow['MA_KHO_TAO'] || rawRow['MA_KHO'];
+        return {
+            ...row,
+            diaChi: diaChi,
+            maKhoTao: maKhoGoc ? String(maKhoGoc).trim() : row.maKhoTao,
+            maKho: maKhoGoc ? String(maKhoGoc).trim() : row.maKho
+        };
+    });
+}
+
 export const syncHandler = {
     async syncDownFromCloud(warehouse) {
         if (!warehouse) return { success: false, message: "Chưa chọn kho." };
@@ -178,7 +202,6 @@ export const syncHandler = {
             return { success: false, message: 'Missing metadata' };
         }
 
-        // [PHẪU THUẬT LOGIC]: Chặn Đứng Tải Xuống Nếu Cloud Đã Báo Xóa
         if (state.metadata.isDeleted || (state.metadata.files?.length === 0 && !state.metadata.downloadURL)) {
             updateSyncState(stateKey, 'synced', `✓ Đã xóa trống dữ liệu`, state.metadata);
             mapping.store.set([]);
@@ -211,7 +234,10 @@ export const syncHandler = {
                         });
                         
                         const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
-                        const { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+                        let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+                        
+                        // [PHẪU THUẬT LOGIC]: Kích hoạt Khiên bảo vệ trước khi gộp mảng
+                        normalizedData = applyDataShield(rawData, normalizedData, baseKey);
                         allNormalizedData = [...allNormalizedData, ...normalizedData];
                     }
                 } 
@@ -229,16 +255,17 @@ export const syncHandler = {
                         reader.readAsArrayBuffer(blob);
                     });
                     const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
-                    const { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
-                    allNormalizedData = normalizedData;
+                    let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+                    
+                    // [PHẪU THUẬT LOGIC]: Kích hoạt Khiên bảo vệ
+                    allNormalizedData = applyDataShield(rawData, normalizedData, baseKey);
                 } else {
                     throw new Error("Không có URL tải hợp lệ trong Metadata.");
                 }
 
-                // [PHẪU THUẬT LOGIC]: Áp Dụng Blacklist Từ Cloud (Băm nát kho đã xóa khỏi file Excel)
                 if (state.metadata.deletedWarehouses && state.metadata.deletedWarehouses.length > 0) {
                     allNormalizedData = allNormalizedData.filter(d => {
-                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim();
+                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                         return !state.metadata.deletedWarehouses.includes(whCode);
                     });
                 }

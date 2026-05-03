@@ -38,17 +38,22 @@
   };
 
   let dataStore = storeMap[saveKey];
-
   $: syncState = $fileSyncState[saveKey];
   $: dataCount = $dataStore ? $dataStore.length : 0;
 
+  // [PHẪU THUẬT LOGIC]: Máy quét bóc tách mã kho hạng nặng chống cache rác
+  function getWhCode(d) {
+      if (!d) return null;
+      return d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || d['Mã Kho Tạo'] || d.makho || d.makhotao;
+  }
+
   $: uniqueWarehouses = (isMultiMode && $dataStore) 
-        ? [...new Set($dataStore.map(d => d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo']).filter(Boolean))] 
+        ? [...new Set($dataStore.map(d => getWhCode(d)).filter(Boolean).map(c => String(c).trim()))] 
         : [];
 
   $: uniqueMonths = (isMultiMode && $dataStore)
         ? [...new Set($dataStore.map(d => {
-            const dateVal = d.ngayTao || d['Ngày tạo'];
+            const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO;
             if (!dateVal) return null;
             try {
                 const dateObj = new Date(dateVal);
@@ -140,22 +145,18 @@
 
       const kho = get(selectedWarehouse) || 'ALL';
 
-      // 1. Tẩy Local & Store
       dataStore.update(currentData => {
           return currentData.filter(d => {
-              const code = d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'];
+              const code = getWhCode(d);
               return String(code).trim() !== String(whCode).trim();
           });
       });
       try { await storage.setItem(saveKey, get(dataStore)); } catch(e){}
 
-      // 2. [PHẪU THUẬT LOGIC]: Bắn cờ xóa lên Cloud để triệt tiêu F5
       try {
-          // Xóa Meta của kho lẻ đó
           const emptyMeta = { files: [], rowCount: 0, downloadURL: null, isDeleted: true, updatedAt: new Date().toISOString() };
           await datasyncService.saveWarehouseMetadata(whCode, saveKey, emptyMeta);
 
-          // Cập nhật mảng Blacklist vào ALL
           if (kho === 'ALL') {
               let metaStr = localStorage.getItem(`_meta_ALL_${saveKey}`);
               if (metaStr) {
@@ -193,7 +194,7 @@
 
       dataStore.update(currentData => {
           return currentData.filter(d => {
-              const dateVal = d.ngayTao || d['Ngày tạo'];
+              const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO;
               if (!dateVal) return true; 
               try {
                   const dateObj = new Date(dateVal);
@@ -235,10 +236,8 @@
           fileName = "Chưa thêm file";
           const kho = get(selectedWarehouse) || 'ALL';
 
-          // 1. Tẩy Local Storage
           try { await storage.setItem(saveKey, []); } catch(e){}
 
-          // 2. [PHẪU THUẬT LOGIC]: Bắn lệnh Hạt nhân tẩy trắng toàn bộ Cloud Meta
           try {
               const emptyMeta = { files: [], rowCount: 0, downloadURL: null, isDeleted: true, updatedAt: new Date().toISOString() };
               await datasyncService.saveWarehouseMetadata(kho, saveKey, emptyMeta);
@@ -250,7 +249,6 @@
               }
           } catch(e) { console.error("Lỗi xóa toàn bộ Cloud:", e); }
 
-          // 3. Tẩy Local Meta State
           localStorage.removeItem(`_meta_${kho}_${saveKey}`);
           fileSyncState.update(s => {
               const newState = {...s};

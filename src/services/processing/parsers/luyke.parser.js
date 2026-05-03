@@ -3,77 +3,113 @@ import { competitionData, luykeNameMappings } from '../../../stores.js';
 import { get } from 'svelte/store';
 
 export const luykeParser = {
-    // --- [NEW]: BỘ GIẢI MÃ BÁO CÁO TỔNG HỢP CỤM ---
+    // --- BỘ GIẢI MÃ BÁO CÁO TỔNG HỢP CỤM (V4.0 - THÊM CHI TIẾT TỪNG KHO) ---
     parseClusterSummaryData: (text) => {
         if (!text || !text.trim()) throw new Error("Dữ liệu rỗng");
         
-        // Cắt dòng và loại bỏ toàn bộ các dòng trống/khoảng trắng thừa
+        // Tách dòng và bảo toàn khoảng trắng/tab để xử lý
         const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
         
-        let result = {};
+        let result = {
+            chiTietKho: [] // Mảng chứa dữ liệu từng Shop
+        };
         let dtlkCount = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const nextLine = (i + 1 < lines.length) ? lines[i + 1] : '';
 
-            // 1. DTLK thứ 2
+            // [PHẦN 1: LOGIC CŨ LẤY TỔNG QUAN CỤM]
             if (line === 'DTLK') {
                 dtlkCount++;
-                if (dtlkCount === 2) {
-                    result.doanhThuThuc = parseFloat(nextLine.replace(/,/g, '')) || 0;
-                }
-            }
-            // 2. DT Dự kiến
-            else if (line === 'DT Dự Kiến') {
+                if (dtlkCount === 2) result.doanhThuThuc = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            } else if (line === 'DT Dự Kiến') {
                 result.doanhThuThucDuKien = parseFloat(nextLine.replace(/,/g, '')) || 0;
-            }
-            // 3. DTQĐ
-            else if (line === 'DTQĐ') {
+            } else if (line === 'DTQĐ') {
                 result.doanhThuQuyDoi = parseFloat(nextLine.replace(/,/g, '')) || 0;
-            }
-            // 4. DT Dự Kiến (QĐ)
-            else if (line === 'DT Dự Kiến (QĐ)') {
+            } else if (line === 'DT Dự Kiến (QĐ)') {
                 result.doanhThuQuyDoiDuKien = parseFloat(nextLine.replace(/,/g, '')) || 0;
-            }
-            // 5. Target (QĐ)
-            else if (line === 'Target (QĐ)') {
+            } else if (line === 'Target (QĐ)') {
                 result.targetDTQD = parseFloat(nextLine.replace(/,/g, '')) || 0;
-            }
-            // 6. % HT Target Dự Kiến (QĐ)
-            else if (line === '% HT Target Dự Kiến (QĐ)') {
+            } else if (line === '% HT Target Dự Kiến (QĐ)') {
                 result.tyLeHoanThanh = nextLine;
-            }
-            // 7. DTCK Tháng (Cắt làm 2: Giá trị & %)
-            else if (line === 'DTCK Tháng') {
+            } else if (line === 'DTCK Tháng') {
                 const parts = nextLine.split(/\s+/);
                 result.dtckThangGiaTri = parts[0] ? parseFloat(parts[0].replace(/,/g, '')) : 0;
                 result.dtckThangTangTruong = parts[1] || '0%';
-            }
-            // 8. Lượt Khách CK Tháng (Cắt làm 2: Giá trị & %)
-            else if (line === 'Lượt Khách CK Tháng') {
+            } else if (line === 'Lượt Khách CK Tháng') {
                 const parts = nextLine.split(/\s+/);
                 result.luotKhachCKGiaTri = parts[0] ? parseFloat(parts[0].replace(/,/g, '')) : 0;
                 result.luotKhachCKTangTruong = parts[1] || '0%';
-            }
-            // 9. Tỷ Trọng Trả Chậm
-            else if (line === 'Tỷ Trọng Trả Chậm') {
+            } else if (line === 'Tỷ Trọng Trả Chậm') {
                 result.tyLeTraCham = nextLine;
-            }
-            // 10. DT Siêu thị (Trả chậm)
-            else if (line === 'DT Siêu thị') {
+            } else if (line === 'DT Siêu thị') {
                 result.dtTraCham = parseFloat(nextLine.replace(/,/g, '')) || 0;
+            }
+            
+            // [PHẦN 2: LOGIC MỚI - LẤY CHI TIẾT TỪNG KHO]
+            if (/^(ĐML|ĐMM|ĐMS|TGD)/.test(line)) {
+                let storeName = "";
+                let valuesArray = [];
+
+                // KỊCH BẢN 1: Copy dán giữ được Tab (\t) (Khi copy từ web BI)
+                if (line.includes('\t')) {
+                    const parts = line.split('\t').map(p => p.trim()).filter(p => p !== '');
+                    storeName = parts[0];
+                    valuesArray = parts.slice(1);
+                } 
+                // KỊCH BẢN 2: Copy dán bị tách mỗi ô 1 dòng (Excel behavior)
+                else if (i + 1 < lines.length && /^[-0-9]/.test(lines[i + 1])) {
+                    storeName = line;
+                    let j = i + 1;
+                    while (j < lines.length && !/^(ĐML|ĐMM|ĐMS|TGD|Tổng)/.test(lines[j]) && /^[-\d]/.test(lines[j])) {
+                        valuesArray.push(lines[j]);
+                        j++;
+                    }
+                } 
+                // KỊCH BẢN 3: Dán dính chùm. Dùng Regex ép kiểu để lấy số.
+                else {
+                    const match = line.match(/^(ĐML|ĐMM|ĐMS|TGD.*?[a-zA-ZáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ()]+)\s*(.*)/i);
+                    if (match) {
+                        storeName = match[1].trim();
+                        const numbersStr = match[2];
+                        if (numbersStr.includes(' ')) {
+                            valuesArray = numbersStr.split(/\s+/).filter(v => v !== '');
+                        } else {
+                            valuesArray = numbersStr.match(/(?:-?\d{1,3}(?:,\d{3})*(?:\.\d+)?%?|undefined%)/g) || [];
+                        }
+                    }
+                }
+
+                if (storeName && valuesArray.length >= 15) {
+                    result.chiTietKho.push({
+                        tenKho: storeName,
+                        dtHomQua: parseFloat(String(valuesArray[0]).replace(/,/g, '')) || 0,
+                        dtThucLK: parseFloat(String(valuesArray[1]).replace(/,/g, '')) || 0,
+                        dtThucDuKien: parseFloat(String(valuesArray[2]).replace(/,/g, '')) || 0,
+                        dtqdLK: parseFloat(String(valuesArray[3]).replace(/,/g, '')) || 0,
+                        dtqdDuKien: parseFloat(String(valuesArray[4]).replace(/,/g, '')) || 0,
+                        tyLeTargetDuKien: valuesArray[5] || '0%',
+                        tangTruongDTQDCungKy: valuesArray[7] || '0%', 
+                        tyTrongTraCham: valuesArray[14] || '0%'       
+                    });
+                }
             }
         }
 
-        if (Object.keys(result).length === 0) {
+        if (Object.keys(result).length === 1 && result.chiTietKho.length === 0) {
             throw new Error("Không tìm thấy từ khóa hợp lệ. Vui lòng copy đúng bảng báo cáo BI.");
         }
+
+        // TỰ ĐỘNG IN RA CONSOLE Ở ĐÂY - BẠN CHỈ CẦN MỞ F12 ĐỂ XEM
+        console.group("=== DỮ LIỆU CỤM ĐÃ TRÍCH XUẤT ===");
+        console.log(JSON.parse(JSON.stringify(result)));
+        console.groupEnd();
 
         return result;
     },
 
-    // --- (GIỮ NGUYÊN LOGIC CŨ Ở DƯỚI) ---
+    // --- CÁC HÀM CŨ GIỮ NGUYÊN BÊN DƯỚI ---
     parseLuyKePastedData: (text) => {
         const defaults = {
             mainKpis: {},
