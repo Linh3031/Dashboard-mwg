@@ -16,9 +16,7 @@
   import { adminService } from '../../services/admin.service.js';
   import { datasyncService } from '../../services/datasync.service.js';
   
-  // [NEW] Gắn Module KpiBoard vào
   import KpiBoard from './KpiBoard.svelte';
-  
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
   import LuykeQdcTable from './LuykeQdcTable.svelte';
   import LuykeCategoryTable from './LuykeCategoryTable.svelte';
@@ -64,6 +62,13 @@
       ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false, target: goals?.[i.id] || i.target }))
   ];
 
+  // Hàm tiện ích cắt đuôi số lẻ cho %
+  const roundPct = (str) => {
+      if (!str || str.includes('undefined')) return '0%';
+      const num = parseFloat(str.replace(/,/g, '').replace('%', ''));
+      return isNaN(num) ? '0%' : Math.round(num) + '%';
+  };
+
   $: {
     localSupermarketReport = supermarketReport || {};
     localGoals = goals || {};
@@ -101,6 +106,7 @@
     comparisonData = { value: cluster.dtckThangGiaTri || 0, percentage: cluster.dtckThangTangTruong || '0%' };
     luotKhachData = { value: cluster.luotKhachCKGiaTri || 0, percentage: cluster.luotKhachCKTangTruong || '0%' };
 
+    // Lọc trùng và Cắt số lẻ
     if (cluster.chiTietKho && Array.isArray(cluster.chiTietKho)) {
         const seenNames = new Set();
         uniqueChiTietKho = cluster.chiTietKho.filter(kho => {
@@ -108,7 +114,12 @@
             if (seenNames.has(normalizedName)) return false;
             seenNames.add(normalizedName);
             return true;
-        });
+        }).map(kho => ({
+            ...kho,
+            tyTrongTraCham: roundPct(kho.tyTrongTraCham),
+            tangTruongDTQDCungKy: roundPct(kho.tangTruongDTQDCungKy),
+            tyLeTargetDuKien: roundPct(kho.tyLeTargetDuKien)
+        }));
     } else {
         uniqueChiTietKho = [];
     }
@@ -160,54 +171,79 @@
         <i data-feather="bar-chart" class="text-indigo-600"></i> Báo cáo Lũy kế Tổng Hợp Cụm
       </h2>
 
-      <!-- [SỰ KỲ DIỆU Ở ĐÂY]: Gắn vật tư vào Module KpiBoard -->
-      <KpiBoard 
-          {luykeCardData}
-          {localGoals}
-          {competitionSummary}
-          {comparisonData}
-          {luotKhachData}
-          {channelStats}
-          captureFilename="TongHopCum"
-          targetQdValue={luykeCardData.targetQD} 
+      <div class="exclusive-sieuthi-capture">
+          <KpiBoard 
+              {luykeCardData}
+              {localGoals}
+              {competitionSummary}
+              {comparisonData}
+              {luotKhachData}
+              {channelStats}
+              captureFilename="TongHopCum"
+              targetQdValue={luykeCardData.targetQD} 
+          />
+      </div>
+  </div>
+
+  <div class="exclusive-sieuthi-capture">
+      <DailyTargetSimulator 
+        totalTarget={luykeCardData.targetQD || 0}
+        currentRevenue={luykeCardData.dtQdLK || 0}
+        warehouseId={'ALL'}
       />
   </div>
 
-  <DailyTargetSimulator 
-    totalTarget={luykeCardData.targetQD || 0}
-    currentRevenue={luykeCardData.dtQdLK || 0}
-    warehouseId={'ALL'}
-  />
-
   {#if uniqueChiTietKho && uniqueChiTietKho.length > 0}
-    <div class="mt-4 mb-6" data-capture-group="kpi" data-capture-filename="ChiTietCacKho">
-        <h3 class="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-            <i data-feather="list" class="text-indigo-600 w-5 h-5"></i>
+    <!-- [UI REDESIGN]: Phân tách màu nền (bg-slate-100) để nổi khối danh sách ngang -->
+    <div class="mt-0 mb-6 bg-slate-100 border border-slate-200 rounded-xl p-4 md:p-5 exclusive-sieuthi-capture" data-capture-group="kpi" data-capture-filename="ChiTietCacKho">
+        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <i data-feather="server" class="text-indigo-600 w-5 h-5"></i>
             Chi Tiết Từng Kho
         </h3>
         
         <div class="flex flex-col gap-3">
             {#each uniqueChiTietKho as kho}
-                <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
+                <!-- Giao diện Dải ngang (Row), nền trắng làm nổi bật trên nền xám -->
+                <div class="bg-white border border-gray-200 rounded-lg p-3 md:p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
                     
-                    <div class="font-bold text-indigo-700 text-base md:w-1/4 break-words">{kho.tenKho}</div>
+                    <!-- Phân khu 1: Tên Kho (Trái) -->
+                    <div class="font-bold text-indigo-700 text-sm md:text-base md:w-1/4 break-words leading-tight">
+                        {kho.tenKho}
+                    </div>
                     
+                    <!-- Phân khu 2: Lưới Chỉ Số (Giữa) - Canh đều Font -->
                     <div class="flex-grow grid grid-cols-2 md:grid-cols-5 gap-y-3 gap-x-2 w-full text-sm">
-                        <div class="flex flex-col"><span class="text-gray-400 font-semibold text-[10px] uppercase">DT Hôm Qua</span><span class="font-bold text-gray-800">{formatters.formatNumber(kho.dtHomQua, 0)}</span></div>
-                        <div class="flex flex-col"><span class="text-gray-400 font-semibold text-[10px] uppercase">DTQĐ Lũy Kế</span><span class="font-black text-blue-700">{formatters.formatNumber(kho.dtqdLK, 0)}</span></div>
-                        <div class="flex flex-col"><span class="text-gray-400 font-semibold text-[10px] uppercase">DT Thực LK</span><span class="font-bold text-gray-700">{formatters.formatNumber(kho.dtThucLK, 0)}</span></div>
-                        <div class="flex flex-col"><span class="text-gray-400 font-semibold text-[10px] uppercase">Trả Chậm</span><span class="font-bold text-orange-600">{kho.tyTrongTraCham}</span></div>
-                        <div class="flex flex-col"><span class="text-gray-400 font-semibold text-[10px] uppercase">Tăng trưởng Cùng kỳ QĐ</span>
-                            <span class="font-bold {kho.tangTruongDTQDCungKy.includes('-') ? 'text-red-500' : 'text-green-600'} flex items-center gap-1">
+                        <div class="flex flex-col">
+                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">DT Hôm Qua</span>
+                            <span class="font-bold text-gray-800 text-sm">{formatters.formatNumber(kho.dtHomQua, 0)}</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">DTQĐ Lũy Kế</span>
+                            <span class="font-black text-blue-700 text-sm">{formatters.formatNumber(kho.dtqdLK, 0)}</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">DT Thực LK</span>
+                            <span class="font-bold text-gray-700 text-sm">{formatters.formatNumber(kho.dtThucLK, 0)}</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Trả Chậm</span>
+                            <span class="font-bold text-orange-600 text-sm">{kho.tyTrongTraCham}</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Tăng trưởng CK</span>
+                            <span class="font-bold text-sm {kho.tangTruongDTQDCungKy.includes('-') ? 'text-red-500' : 'text-green-600'} flex items-center gap-1">
                                 {#if kho.tangTruongDTQDCungKy.includes('-')}<i data-feather="trending-down" class="w-3 h-3"></i>{:else}<i data-feather="trending-up" class="w-3 h-3"></i>{/if}
                                 {kho.tangTruongDTQDCungKy}
                             </span>
                         </div>
                     </div>
 
-                    <div class="flex-shrink-0 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center w-full md:w-auto border-t md:border-t-0 md:border-l border-gray-100 pt-3 md:pt-0 pl-0 md:pl-6 mt-1 md:mt-0">
-                        <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Tỷ lệ HT (QĐ)</span>
-                        <span class="text-2xl lg:text-3xl font-black {kho.tyLeTargetDuKien.includes('-') ? 'text-red-600' : 'text-green-600'}">{kho.tyLeTargetDuKien}</span>
+                    <!-- Phân khu 3: Tỷ Lệ Hoàn Thành (Phải) -->
+                    <div class="flex-shrink-0 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center w-full md:w-auto border-t md:border-t-0 md:border-l border-gray-100 pt-3 md:pt-0 pl-0 md:pl-6 mt-1 md:mt-0 min-w-[100px]">
+                        <span class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Tỷ lệ HT</span>
+                        <span class="text-2xl font-black {kho.tyLeTargetDuKien.includes('-') ? 'text-red-600' : 'text-green-600'}">
+                            {kho.tyLeTargetDuKien}
+                        </span>
                     </div>
                 </div>
             {/each}
@@ -227,7 +263,17 @@
 </div>
 
 <style>
-    :global(.capture-container .exclusive-sieuthi-capture) { display: flex !important; flex-direction: column !important; gap: 16px !important; width: 450px !important; min-width: 450px !important; max-width: 450px !important; margin: 0 auto !important; }
+    /* BỘ GIÁP CHỐNG VỠ GIAO DIỆN KHI CHỤP ẢNH (HTML2CANVAS) */
+    :global(.capture-container .exclusive-sieuthi-capture) { 
+        display: flex !important; 
+        flex-direction: column !important; 
+        gap: 16px !important; 
+        width: 450px !important; /* KHÓA CỨNG BỀ NGANG FORM MOBILE */
+        min-width: 450px !important; 
+        max-width: 450px !important; 
+        margin: 0 auto !important; 
+    }
+    
     :global(.capture-container .exclusive-sieuthi-capture .luyke-widget) { height: auto !important; min-height: max-content !important; display: block !important; }
     :global(.capture-container .exclusive-sieuthi-capture .h-full) { height: auto !important; }
     :global(.capture-container .exclusive-sieuthi-capture .custom-scrollbar), :global(.capture-container .exclusive-sieuthi-capture .luyke-widget-body) { max-height: none !important; height: auto !important; overflow: visible !important; }
