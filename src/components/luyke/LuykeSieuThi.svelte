@@ -20,6 +20,7 @@
   import { datasyncService } from '../../services/datasync.service.js';
   import * as utils from '../../utils.js';
   
+  import KpiBoard from './KpiBoard.svelte';
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
   import LuykeQdcTable from './LuykeQdcTable.svelte';
   import LuykeCategoryTable from './LuykeCategoryTable.svelte';
@@ -99,7 +100,18 @@
     localSupermarketReport = supermarketReport || {};
     localGoals = goals || {};
 
-    const pastedText = typeof localStorage !== 'undefined' ? localStorage.getItem('daily_paste_luyke') : '';
+    // [PHẪU THUẬT LOGIC]: CHẶN ĐỨT ĐƯỜNG LÙI ẢO (NO GHOST FALLBACK)
+    let pastedText = '';
+    if (typeof localStorage !== 'undefined') {
+        if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
+            // Nếu đang chọn 1 kho cụ thể, CHỈ ĐƯỢC PHÉP lấy data của kho đó. 
+            // Không có thì chấp nhận rỗng để nhường sân cho số liệu Excel.
+            pastedText = localStorage.getItem(`daily_paste_luyke_${$selectedWarehouse}`) || '';
+        } else {
+            pastedText = localStorage.getItem('daily_paste_luyke') || '';
+        }
+    }
+
     const pastedData = dataProcessing.parseLuyKePastedData(pastedText || '');
     const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = pastedData;
 
@@ -123,6 +135,7 @@
         finalTyLeGop = tyLeTraCham / 100;
         finalTyLeQd = finalDtThuc > 0 ? ((finalDtQd / finalDtThuc) - 1) : 0;
     } else {
+        // [CƠ CHẾ FALLBACK 2]: Kích hoạt khi Kho ảo không có data paste.
         finalDtThuc = excelData.dtThuc;
         finalDtQd = excelData.dtQd;
         finalDtGop = excelData.dtGop;
@@ -249,95 +262,16 @@
         Báo cáo Lũy kế {$selectedWarehouse ? '- ' + $selectedWarehouse : '(Toàn bộ)'}
       </h2>
 
-      <div id="luyke-kpi-cards-container" data-capture-group="kpi" class="kpi-grid-fixed" data-capture-filename="SieuThiLuyKe {$selectedWarehouse ? '- ' + $selectedWarehouse : ''}">
-      
-        <div class="kpi-card-solid card-1">
-            <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
-            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
-            <div class="kpi-solid-sub">
-                <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
-                <span>MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)}</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-2">
-            <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
-            <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</div>
-            <div class="kpi-solid-sub">
-                <span>DK: {formatters.formatNumber((luykeCardData.dtQdDuKien || 0) / 1000000, 0)}</span>
-                <span>MT: {formatters.formatNumber(localGoals?.doanhThuQD || 0)}</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-3">
-            <div class="kpi-solid-header">% HT Target (QĐ) <i data-feather="target"></i></div>
-            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramTargetQd || 0)}</div>
-            <div class="kpi-solid-sub">
-                <span>% HT DT Thực: {formatters.formatPercentage(luykeCardData.phanTramTargetThuc || 0)}</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="target"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-4">
-            <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
-            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
-            <div class="kpi-solid-sub">
-                <span>Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}%</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-5">
-            <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
-            <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
-            <div class="kpi-solid-sub">
-                <span>Doanh số: {formatters.formatNumber((luykeCardData.dtGop || 0) / 1000000, 0)}</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-6">
-            <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
-            <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
-            <div class="kpi-solid-sub">
-                <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="award"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-7">
-            <div class="kpi-solid-header">Tăng trưởng CK <i data-feather="activity"></i></div>
-            <div class="kpi-solid-value">{comparisonData.percentage || 'N/A'}</div>
-            <div class="kpi-solid-sub">
-                <span>Lượt khách: {luotKhachData.percentage || 'N/A'}</span>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="activity"></i></div>
-        </div>
-
-        <div class="kpi-card-solid card-8">
-           <div class="kpi-solid-header">Tỷ trọng kênh <i data-feather="pie-chart"></i></div>
-            <div class="flex flex-col gap-1 mt-1">
-                <div class="flex justify-between items-baseline border-b border-white/20 pb-1">
-                    <span class="text-sm font-semibold opacity-90">ĐMX</span>
-                    <div class="text-right">
-                        <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.dxm.val, 0)}</span>
-                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.dxm.pct)})</span>
-                    </div>
-                </div>
-                <div class="flex justify-between items-baseline pt-1">
-                    <span class="text-sm font-semibold opacity-90">TGDD</span>
-                    <div class="text-right">
-                        <span class="text-lg font-bold">{formatters.formatRevenue(channelStats.tgdd.val, 0)}</span>
-                        <span class="text-xs opacity-90 ml-1 font-bold">({formatters.formatPercentage(channelStats.tgdd.pct)})</span>
-                    </div>
-                </div>
-            </div>
-            <div class="kpi-bg-icon"><i data-feather="pie-chart"></i></div>
-        </div>
-
-      </div>
+      <KpiBoard 
+          {luykeCardData}
+          {localGoals}
+          {competitionSummary}
+          {comparisonData}
+          {luotKhachData}
+          {channelStats}
+          captureFilename="SieuThiLuyKe {$selectedWarehouse ? '- ' + $selectedWarehouse : ''}"
+          targetQdValue={(localGoals?.doanhThuQD || 0) * 1000000} 
+      />
   </div>
 
   <DailyTargetSimulator 
@@ -374,7 +308,7 @@
 </div>
 
 <style>
-    /* 1. Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc - CHỈ TÁC DỤNG TẠI TAB NÀY */
+    /* Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc chống vỡ layout khi Capture */
     :global(.capture-container .exclusive-sieuthi-capture) {
         display: flex !important;
         flex-direction: column !important;
@@ -385,7 +319,6 @@
         margin: 0 auto !important; 
     }
 
-    /* 2. Trị bệnh "CẮT CỤT DÒNG": Phá vỡ class h-full và cơ chế flex bóp chiều cao */
     :global(.capture-container .exclusive-sieuthi-capture .luyke-widget) {
         height: auto !important;
         min-height: max-content !important;
@@ -396,7 +329,6 @@
         height: auto !important;
     }
 
-    /* 3. Phá vỡ giới hạn thanh cuộn để hiển thị full danh sách Top Nhóm Hàng */
     :global(.capture-container .exclusive-sieuthi-capture .custom-scrollbar),
     :global(.capture-container .exclusive-sieuthi-capture .luyke-widget-body) {
         max-height: none !important;

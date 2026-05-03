@@ -15,15 +15,13 @@
   import { reportService } from '../services/reportService.js';
   import { actionService } from '../services/action.service.js';
   import { settingsService } from '../services/settings.service.js';
+  
   import LuykeSieuThi from './luyke/LuykeSieuThi.svelte';
+  import LuykeCumSieuThi from './luyke/LuykeCumSieuThi.svelte'; // [NEW] Import file xử lý riêng cho Cụm
   import LuykeThiDua from './luyke/LuykeThiDua.svelte';
   import LuykeThiDuaVung from './luyke/LuykeThiDuaVung.svelte';
   import LuykeCategoryView from './luyke/sub/LuykeCategoryView.svelte';
-
-  // [SURGICAL ADDITION] Import component DT CK Năm
   import LuykeDtCkNam from './luyke/LuykeDtCkNam.svelte';
-  
-  // [SỬA Ở ĐÂY]: Đổi import từ AddressDashboard sang lớp vỏ bọc AddressYtdView
   import AddressYtdView from './luyke/address/AddressYtdView.svelte';
 
   export let activeTab;
@@ -36,6 +34,11 @@
   let selectedDates = [];
   let goals = {};
   $: goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
+  
+  // [PHẪU THUẬT LOGIC]: Tự động gán ALL (Toàn bộ) nếu chưa chọn gì để tránh màn hình trắng
+  $: if ($warehouseList && $warehouseList.length > 0 && !$selectedWarehouse) {
+      selectedWarehouse.set('ALL');
+  }
   
   $: if ($selectedWarehouse) {
       settingsService.loadGoalsFromCloud($selectedWarehouse);
@@ -63,7 +66,7 @@
 
   let filteredReport = [];
   $: filteredReport = ($masterReportData.luyke || []).filter(nv => {
-      const whMatch = !$selectedWarehouse || nv.maKho == $selectedWarehouse;
+      const whMatch = !$selectedWarehouse || $selectedWarehouse === 'ALL' || nv.maKho == $selectedWarehouse;
       const deptMatch = !selectedDept || nv.boPhan === selectedDept;
       return whMatch && deptMatch;
   });
@@ -123,8 +126,9 @@
        
                     <div class="flex items-center gap-2 pl-4 border-l-2 border-blue-100 ml-2">
                          <label for="luyke-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
+                        <!-- [PHẪU THUẬT LOGIC]: Value rỗng ("") đổi thành "ALL" cho đồng nhất -->
                         <select id="luyke-warehouse-selector" class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" value={$selectedWarehouse} on:change={handleWarehouseChange}>
-                             <option value="">-- Toàn bộ --</option>
+                             <option value="ALL">-- Toàn bộ --</option>
                              {#each $warehouseList as kho}<option value={kho}>{kho}</option>{/each}
                         </select>
                     </div>
@@ -167,7 +171,12 @@
                 <div id="luyke-subtabs-content"> 
                     {#if activeSubTabId === 'subtab-luyke-sieu-thi'}
                         <div id="subtab-luyke-sieu-thi" class="sub-tab-content">
-                            <LuykeSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
+                            <!-- [COMPONENT SWAPPING] Rẽ nhánh dựa vào tùy chọn Kho -->
+                            {#if $selectedWarehouse === 'ALL'}
+                                <LuykeCumSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
+                            {:else}
+                                <LuykeSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
+                            {/if}
                         </div>
                     
                     {:else if activeSubTabId === 'subtab-luyke-category'}
@@ -202,7 +211,3 @@
         </div>
     </div>
 </section>
-
-<style>
-    /* Giữ nguyên style của HealthSection */
-</style>
