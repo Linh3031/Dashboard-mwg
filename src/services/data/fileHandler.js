@@ -2,7 +2,8 @@
 import { get } from 'svelte/store';
 import { 
     selectedWarehouse, currentUser, realtimeYCXData, 
-    categoryStructure, brandList, specialProductList 
+    categoryStructure, brandList, specialProductList,
+    warehouseList // [PHẪU THUẬT LOGIC]: Import store chứa danh sách kho của User
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
@@ -65,7 +66,6 @@ export const fileHandler = {
 
             // --- 🚨 [BỘ KHIÊN BẢO VỆ DỮ LIỆU GỐC] 🚨 ---
             if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
-                console.log(`[FileHandler] Đã kích hoạt Khiên bảo vệ Dữ liệu gốc (Địa chỉ & Mã kho)`);
                 normalizedData = normalizedData.map((row, index) => {
                     const rawRow = rawData[index];
                     
@@ -81,7 +81,20 @@ export const fileHandler = {
                     };
                 });
             }
-            // ------------------------------------------
+
+            // --- 🚨 [PHẪU THUẬT LOGIC]: BỘ LỌC ĐỘC QUYỀN (FILTER SHIELD) 🚨 ---
+            // Tái định nghĩa: ALL = Chỉ các mã kho có trong bộ lọc của User
+            const warehouse = get(selectedWarehouse);
+            if (warehouse === 'ALL') {
+                const userAllowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && w !== 'CLUSTER_ALL');
+                if (userAllowedWarehouses.length > 0) {
+                    normalizedData = normalizedData.filter(d => {
+                        const khoCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim();
+                        return userAllowedWarehouses.includes(khoCode);
+                    });
+                }
+            }
+            // -----------------------------------------------------------------
 
             if (isMultiMode && (saveKey === 'saved_ycx_cungkynam' || saveKey === 'saved_ycx_thangtruoc')) {
                 const currentData = get(mapping.store) || [];
@@ -124,7 +137,6 @@ export const fileHandler = {
                 return { success: true };
             }
 
-            const warehouse = get(selectedWarehouse);
             if (warehouse && !mapping.localOnly) {
                 updateSyncState(saveKey, 'uploading', 'Đang tải lên Cloud...');
                 try {
@@ -137,8 +149,7 @@ export const fileHandler = {
                     if (warehouse === 'ALL') {
                         const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
                         
-                        console.log(`[Auto-Splitter] Phát hiện ${incomingWarehouses.length} kho trong file:`, incomingWarehouses);
-
+                        // Chia rổ dữ liệu lên Cloud cho từng kho thực tế
                         await Promise.all(incomingWarehouses.map(async (kho) => {
                             const khoDataCount = normalizedData.filter(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim() === kho).length;
                             const khoMetadata = { 
@@ -157,12 +168,14 @@ export const fileHandler = {
                             uploadedMonths: extractedMonths, 
                             updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
                         };
+                        
+                        // Vẫn lưu Meta ở Local để giao diện UI có thể sáng đèn Xanh
                         localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(allMetadata));
                         
-                        // [PHẪU THUẬT LOGIC]: Lưu Meta tổng của ALL lên Cloud. Trình duyệt Ẩn danh sẽ tải trực tiếp từ đây!
-                        await datasyncService.saveWarehouseMetadata('ALL', saveKey, allMetadata);
+                        // [PHẪU THUẬT LOGIC]: BỊT ỐNG XẢ GLOBAL. Không lưu đè lên Document ALL trên Cloud nữa.
+                        // await datasyncService.saveWarehouseMetadata('ALL', saveKey, allMetadata);
 
-                        updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho`, allMetadata);
+                        updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho quyền hạn`, allMetadata);
 
                     } else {
                         const metadata = { 
@@ -191,6 +204,7 @@ export const fileHandler = {
     },
 
   async handleRealtimeFileInput(event) {
+        // (Logic hàm này không có lỗi leakage, giữ nguyên)
         const file = event.target.files[0];
         if (!file) return;
         try {

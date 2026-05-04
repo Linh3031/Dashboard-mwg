@@ -85,16 +85,17 @@
       }));
 
       try {
-          // 1. Phân tích và lưu store/local (Trải nghiệm người dùng mượt mà)
           const parsedData = luykeParser.parseClusterSummaryData(text);
           clusterSummaryData.set(parsedData);
           localStorage.setItem('cluster_summary_data', text);
           const count = Object.keys(parsedData).length;
           const now = Date.now();
 
-          // 2. [PHẪU THUẬT LOGIC]: Chuyển sang đường ống chuẩn Cloud (Tạo file .txt -> up Storage -> tạo Meta)
+          // [PHẪU THUẬT LOGIC]: Tự động sinh ID cụm theo quyền quản lý hiện tại
+          const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
+
           const blob = new Blob([text], { type: 'text/plain' });
-          const path = `warehouse_data/CLUSTER_ALL/cluster_summary_data_${now}.txt`;
+          const path = `warehouse_data/${targetClusterId}/cluster_summary_data_${now}.txt`;
           const downloadUrl = await storageService.uploadFileToStorage(blob, path);
 
           const metaToSave = {
@@ -107,9 +108,9 @@
               updatedBy: $currentUser?.email || 'Tôi'
           };
 
-          // 3. Đăng ký metadata chuẩn lên Firestore để syncHandler kéo về được
-          await datasyncService.saveWarehouseMetadata('CLUSTER_ALL', 'cluster_summary_data', metaToSave);
-          localStorage.setItem('_meta_CLUSTER_ALL_cluster_summary_data', JSON.stringify(metaToSave));
+          // [PHẪU THUẬT LOGIC]: Lưu chính xác vào Document của Cụm này, không đè lên ALL
+          await datasyncService.saveWarehouseMetadata(targetClusterId, 'cluster_summary_data', metaToSave);
+          localStorage.setItem(`_meta_${targetClusterId}_cluster_summary_data`, JSON.stringify(metaToSave));
 
           fileSyncState.update(s => ({
               ...s,
@@ -179,8 +180,14 @@
             clusterSummaryData.set(parsedData);
             const count = Object.keys(parsedData).length;
             
-            const metaStr = localStorage.getItem(`_meta_CLUSTER_ALL_cluster_summary_data`);
-            let restoreMeta = metaStr ? JSON.parse(metaStr) : null;
+            // [PHẪU THUẬT LOGIC]: Tự động dò tìm Meta của cụm trên LocalStorage (vì ID cụm có thể là bất kỳ)
+            let restoreMeta = null;
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('_meta_CLUSTER_') && k.endsWith('_cluster_summary_data')) {
+                    try { restoreMeta = JSON.parse(localStorage.getItem(k)); break; } catch(e){}
+                }
+            }
             
             fileSyncState.update(s => ({
                 ...s,
@@ -228,7 +235,11 @@
                   const syncPromises = [];
                   
                   syncPromises.push(dataService.syncDownFromCloud('ALL'));
-                  syncPromises.push(dataService.syncDownFromCloud('CLUSTER_ALL'));
+                  
+                  // [PHẪU THUẬT LOGIC]: Gọi chính xác ID Cụm để đồng bộ (nếu người dùng thuộc về 1 Cụm)
+                  if (isClusterMode && currentClusterCode) {
+                      syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${currentClusterCode}`));
+                  }
                   
                   validWarehouses.forEach(kho => {
                       syncPromises.push(dataService.syncDownFromCloud(kho));

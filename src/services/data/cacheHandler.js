@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc } from '../../stores.js';
+import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList } from '../../stores.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { adminService } from '../admin.service.js';
@@ -22,11 +22,32 @@ export const cacheHandler = {
             updateSyncState('saved_danhsachnv', 'error', 'Chưa có DSNV. Vui lòng tải file.', null);
         }
         
-        // [SURGICAL FIX]: Bổ sung 'saved_ycx_cungkynam' vào mảng để tiến trình Hydration không bỏ sót
+        // [PHẪU THUẬT LOGIC - CACHE ISOLATION]: Không nạp bừa, chỉ nạp và ép filter theo warehouseList hiện hữu
         const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
+        
+        // Cập nhật danh sách kho trước để làm khiên lọc
+        let allowedWarehouses = [];
+        if (dsnvData && dsnvData.length > 0) {
+             const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
+             allowedWarehouses = dsKho.map(k => String(k).trim());
+        } else {
+             // Fallback: Lấy từ List hiện tại
+             allowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_')).map(k => String(k).trim());
+        }
+
         await Promise.all(otherFiles.map(async (key) => {
-            const data = await storage.getItem(key);
+            let data = await storage.getItem(key);
             if (data && data.length > 0) {
+                // Áp dụng Phễu lọc cho Cache nếu nó là các file YCX
+                if (key.includes('ycx') && allowedWarehouses.length > 0) {
+                     data = data.filter(d => {
+                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                        return allowedWarehouses.includes(whCode);
+                     });
+                     // Lẳng lặng ghi đè lại rác Local
+                     try { await storage.setItem(key, data); } catch(e){}
+                }
+
                 FILE_MAPPING[key].store.set(data);
                 updateSyncState(key, 'cached', `✓ Đã tải ${data.length} dòng (Local)`, null);
              }

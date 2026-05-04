@@ -1,6 +1,6 @@
 /* global XLSX */
 import { get } from 'svelte/store';
-import { fileSyncState, selectedWarehouse, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc } from '../../stores.js';
+import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc } from '../../stores.js';
 import { datasyncService } from '../datasync.service.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
@@ -81,10 +81,12 @@ export const syncHandler = {
         const isBatchMode = get(selectedWarehouse) === 'ALL';
         let targetKeys = [];
         
+        // [PHẪU THUẬT LOGIC]: Bịt ống xả CLUSTER_ALL, không tải về rác Cụm của người khác nữa
         if (isBatchMode) {
             if (warehouse === 'ALL') {
                 targetKeys = [...Object.keys(FILE_MAPPING), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc'];
-            } else if (warehouse === 'CLUSTER_ALL') {
+            } else if (warehouse.startsWith('CLUSTER_')) {
+                // Xử lý riêng cho Cụm thực tế thay vì cụm rác
                 targetKeys = ['cluster_summary_data'];
             } else {
                 targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv'];
@@ -100,14 +102,28 @@ export const syncHandler = {
 
         targetKeys.forEach(key => {
             let stateKey = key;
-            if (isBatchMode && warehouse !== 'ALL' && warehouse !== 'CLUSTER_ALL') {
+            if (isBatchMode && warehouse !== 'ALL' && !warehouse.startsWith('CLUSTER_')) {
                 stateKey = `${key}_${warehouse}`;
             }
             updateSyncState(stateKey, 'checking', 'Đang so sánh dữ liệu...', null);
         });
 
         try {
-            const cloudData = await datasyncService.loadWarehouseData(warehouse);
+            // [PHẪU THUẬT LOGIC]: Tái định tuyến Cloud Data. 
+            // KHÔNG LẤY TỪ NODE 'ALL'. Nếu là ALL, lấy từ kho đầu tiên trong danh sách hợp lệ để tạo cớ nạp Data.
+            // Data thực tế khi gộp (Multi) sẽ được tải tại downloadFileFromCloud.
+            let cloudData = null;
+            if (warehouse === 'ALL') {
+               // Báo "Đã đồng bộ" tạm, vì lệnh nạp gộp sẽ do Component (như DataHeader/App) tự kích hoạt 
+               // Hoặc quét sơ qua để lấy TimeStamp.
+               const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+               if(validWarehouses.length > 0) {
+                   cloudData = await datasyncService.loadWarehouseData(validWarehouses[0]);
+               }
+            } else {
+               cloudData = await datasyncService.loadWarehouseData(warehouse);
+            }
+
             const userEmail = get(currentUser)?.email;
 
             const processKey = async (key) => {
@@ -115,13 +131,16 @@ export const syncHandler = {
                 let stateKey = key;
                 let baseKey = key;
 
-                if (isBatchMode && warehouse !== 'ALL' && warehouse !== 'CLUSTER_ALL') {
+                if (isBatchMode && warehouse !== 'ALL' && !warehouse.startsWith('CLUSTER_')) {
                     stateKey = `${key}_${warehouse}`;
                 }
 
-                const cloudMeta = cloudData ? cloudData[baseKey] : null;
+                // [PHẪU THUẬT LOGIC]: Đọc Local Meta một cách thận trọng
                 const localMetaStr = localStorage.getItem(`_meta_${warehouse}_${baseKey}`);
-                const localMeta = localMetaStr ? JSON.parse(localMetaStr) : {};
+                let localMeta = localMetaStr ? JSON.parse(localMetaStr) : {};
+                
+                // Nếu là ALL, rác Local rất nhiều, ưu tiên lấy rác Cloud mới hơn nếu Cloud có
+                const cloudMeta = cloudData ? cloudData[baseKey] : null;
 
                 if (!cloudMeta) {
                     if (localMetaStr) {
@@ -214,37 +233,46 @@ export const syncHandler = {
         try {
             if (!isPaste) {
                 let allNormalizedData = [];
+                
+                // --- 🚨 [BỘ LỌC ĐỘC QUYỀN - TẠI ĐẦU RA] 🚨 ---
+                // Phải xác định trước danh sách kho hợp lệ
+                let allowedWarehouses = [];
+                if (warehouse === 'ALL') {
+                    allowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                } else {
+                    allowedWarehouses = [warehouse];
+                }
 
-                if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
-                    for (const fileMeta of state.metadata.files) {
-                        if (!fileMeta.downloadURL) continue;
-                        
-                        const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
-                        const response = await fetch(cacheBusterUrl);
-                        const blob = await response.blob();
-                        
-                        const workbook = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = (e) => {
-                                 const data = new Uint8Array(e.target.result);
-                                 resolve(XLSX.read(data, { type: 'array', cellDates: true, cellText: true }));
-                            };
-                            reader.onerror = reject;
-                            reader.readAsArrayBuffer(blob);
-                        });
-                        
-                        const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
-                        let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
-                        
-                        // [PHẪU THUẬT LOGIC]: Kích hoạt Khiên bảo vệ trước khi gộp mảng
-                        normalizedData = applyDataShield(rawData, normalizedData, baseKey);
-                        allNormalizedData = [...allNormalizedData, ...normalizedData];
-                    }
-                } 
-                else if (state.metadata.downloadURL) {
-                    const cacheBusterUrl = `${state.metadata.downloadURL}${state.metadata.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                // [BỘ QUÉT META RIÊNG LẺ] Thay vì lấy link tải từ rác ALL, ta kéo Meta từng kho hợp lệ 
+                let filesToDownload = [];
+                if (warehouse === 'ALL' && state.metadata.isMulti) {
+                     // Nếu là gộp, cố gắng gom từ Local các link đã tách
+                     for(let wh of allowedWarehouses) {
+                         const singleMetaStr = localStorage.getItem(`_meta_${wh}_${baseKey}`);
+                         if(singleMetaStr) {
+                             try {
+                                 const sm = JSON.parse(singleMetaStr);
+                                 if(!sm.isDeleted && sm.downloadURL) filesToDownload.push(sm);
+                             } catch(e){}
+                         }
+                     }
+                     // Fallback nếu rỗng, dùng chính file cũ nhưng sẽ lọc gắt gao bên dưới
+                     if(filesToDownload.length === 0 && state.metadata.files) {
+                         filesToDownload = state.metadata.files;
+                     }
+                } else if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
+                     filesToDownload = state.metadata.files;
+                } else if (state.metadata.downloadURL) {
+                     filesToDownload = [state.metadata];
+                }
+
+                for (const fileMeta of filesToDownload) {
+                    if (!fileMeta.downloadURL) continue;
+                    
+                    const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
                     const response = await fetch(cacheBusterUrl);
                     const blob = await response.blob();
+                    
                     const workbook = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = (e) => {
@@ -254,15 +282,25 @@ export const syncHandler = {
                         reader.onerror = reject;
                         reader.readAsArrayBuffer(blob);
                     });
+                    
                     const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
                     let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
                     
-                    // [PHẪU THUẬT LOGIC]: Kích hoạt Khiên bảo vệ
-                    allNormalizedData = applyDataShield(rawData, normalizedData, baseKey);
-                } else {
-                    throw new Error("Không có URL tải hợp lệ trong Metadata.");
+                    // Kích hoạt Khiên bảo vệ trước khi gộp mảng
+                    normalizedData = applyDataShield(rawData, normalizedData, baseKey);
+                    
+                    // LỌC GẮT GAO TRƯỚC KHI CHO VÀO RAM
+                    if (allowedWarehouses.length > 0) {
+                         normalizedData = normalizedData.filter(d => {
+                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                            return allowedWarehouses.includes(whCode);
+                         });
+                    }
+
+                    allNormalizedData = [...allNormalizedData, ...normalizedData];
                 }
 
+                // Dọn lại deletedWarehouses mồ côi
                 if (state.metadata.deletedWarehouses && state.metadata.deletedWarehouses.length > 0) {
                     allNormalizedData = allNormalizedData.filter(d => {
                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
@@ -277,7 +315,7 @@ export const syncHandler = {
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
                 
                 localStorage.setItem(`_meta_${warehouse}_${baseKey}`, JSON.stringify(metaToSave));
-                updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ`, metaToSave);
+                updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allNormalizedData.length} dòng)`, metaToSave);
             
             } else if (isPaste) {
                 const downloadUrl = state.metadata.downloadURL;
