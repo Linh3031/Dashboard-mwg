@@ -195,12 +195,21 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
                                     .replace(/[^a-zA-Z0-9]/g, '_')
                                     .replace(/_+/g, '_'); // Tránh nhiều dấu _ liền nhau
 
+            // [PHẪU THUẬT LOGIC]: Chuyển Base64 thành file vật lý (Blob) để tải thẳng
+            const res = await fetch(imageDataUrl);
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+
             const link = document.createElement('a');
             link.download = `${safeFileName}.png`;
-            link.href = imageDataUrl;
+            link.href = blobUrl;
+            
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            
+            // Xóa bộ nhớ đệm sau 1 giây
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
             
             notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
             setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);

@@ -168,6 +168,7 @@ src/components/luyke/dtcknam/SsgNamTable.svelte
 src/components/luyke/LuykeUnexportedTable.svelte
 src/components/luyke/TdvTop20Modal.svelte
 src/components/luyke/ThiDuaVungTNB.svelte
+src/components/luyke/LuykeCumSieuThi.svelte
 src/components/luyke/AddressStatistics.svelte
 src/components/luyke/LuykeThiDuaVung.svelte
 src/components/luyke/LuykeQdcTable.svelte
@@ -199,6 +200,7 @@ src/components/luyke/address/addressParser.js
 src/components/luyke/ThiDuaVungHCM.svelte
 src/components/luyke/LuykeDtCkNam.svelte
 src/components/luyke/LuykeCategoryTable.svelte
+src/components/luyke/KpiBoard.svelte
 src/components/luyke/AddressDashboard.svelte
 src/components/luyke/LuykeEfficiencyTable.svelte
 src/components/luyke/LuykeSieuThi.svelte

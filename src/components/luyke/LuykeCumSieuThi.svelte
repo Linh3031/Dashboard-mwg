@@ -193,9 +193,10 @@
       />
   </div>
 
-  {#if uniqueChiTietKho && uniqueChiTietKho.length > 0}
+{#if uniqueChiTietKho && uniqueChiTietKho.length > 0}
     <!-- [UI REDESIGN]: Phân tách màu nền (bg-slate-100) để nổi khối danh sách ngang -->
-    <div class="mt-0 mb-6 bg-slate-100 border border-slate-200 rounded-xl p-4 md:p-5 exclusive-sieuthi-capture" data-capture-group="kpi" data-capture-filename="ChiTietCacKho">
+    <!-- [PHẪU THUẬT LOGIC]: Đổi data-capture-group từ "kpi" thành "chi-tiet-kho" để ngắt liên kết ghép ảnh với KpiBoard -->
+    <div class="mt-0 mb-6 bg-slate-100 border border-slate-200 rounded-xl p-4 md:p-5 exclusive-sieuthi-capture" data-capture-group="chi-tiet-kho" data-capture-filename="ChiTietCacKho">
         <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <i data-feather="server" class="text-indigo-600 w-5 h-5"></i>
             Chi Tiết Từng Kho
@@ -203,16 +204,16 @@
         
         <div class="flex flex-col gap-3">
             {#each uniqueChiTietKho as kho}
-                <!-- Giao diện Dải ngang (Row), nền trắng làm nổi bật trên nền xám -->
-                <div class="bg-white border border-gray-200 rounded-lg p-3 md:p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full">
+                <!-- [PHẪU THUẬT LOGIC]: Gắn class capture-kho-card vào Wrapper -->
+                <div class="bg-white border border-gray-200 rounded-lg p-3 md:p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full capture-kho-card">
                     
-                    <!-- Phân khu 1: Tên Kho (Trái) -->
-                    <div class="font-bold text-indigo-700 text-sm md:text-base md:w-1/4 break-words leading-tight">
+                    <!-- Phân khu 1: Tên Kho (Trái) - Gắn class capture-kho-name -->
+                    <div class="font-bold text-indigo-700 text-sm md:text-base md:w-1/4 break-words leading-tight capture-kho-name">
                         {kho.tenKho}
                     </div>
                     
-                    <!-- Phân khu 2: Lưới Chỉ Số (Giữa) - Canh đều Font -->
-                    <div class="flex-grow grid grid-cols-2 md:grid-cols-5 gap-y-3 gap-x-2 w-full text-sm">
+                    <!-- Phân khu 2: Lưới Chỉ Số (Giữa) - Gắn class capture-kho-stats -->
+                    <div class="flex-grow grid grid-cols-2 md:grid-cols-5 gap-y-3 gap-x-2 w-full text-sm capture-kho-stats">
                         <div class="flex flex-col">
                             <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">DT Hôm Qua</span>
                             <span class="font-bold text-gray-800 text-sm">{formatters.formatNumber(kho.dtHomQua, 0)}</span>
@@ -238,8 +239,8 @@
                         </div>
                     </div>
 
-                    <!-- Phân khu 3: Tỷ Lệ Hoàn Thành (Phải) -->
-                    <div class="flex-shrink-0 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center w-full md:w-auto border-t md:border-t-0 md:border-l border-gray-100 pt-3 md:pt-0 pl-0 md:pl-6 mt-1 md:mt-0 min-w-[100px]">
+                    <!-- Phân khu 3: Tỷ Lệ Hoàn Thành (Phải) - Gắn class capture-kho-percent -->
+                    <div class="flex-shrink-0 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center w-full md:w-auto border-t md:border-t-0 md:border-l border-gray-100 pt-3 md:pt-0 pl-0 md:pl-6 mt-1 md:mt-0 min-w-[100px] capture-kho-percent">
                         <span class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Tỷ lệ HT</span>
                         <span class="text-2xl font-black {kho.tyLeTargetDuKien.includes('-') ? 'text-red-600' : 'text-green-600'}">
                             {kho.tyLeTargetDuKien}
@@ -277,4 +278,34 @@
     :global(.capture-container .exclusive-sieuthi-capture .luyke-widget) { height: auto !important; min-height: max-content !important; display: block !important; }
     :global(.capture-container .exclusive-sieuthi-capture .h-full) { height: auto !important; }
     :global(.capture-container .exclusive-sieuthi-capture .custom-scrollbar), :global(.capture-container .exclusive-sieuthi-capture .luyke-widget-body) { max-height: none !important; height: auto !important; overflow: visible !important; }
+
+    /* [PHẪU THUẬT LOGIC]: TÁI CẤU TRÚC KHỐI "CHI TIẾT TỪNG KHO" KHI CHỤP ẢNH TRONG MÔI TRƯỜNG 450px */
+    :global(.capture-container .capture-kho-card) {
+        flex-direction: column !important; /* Ép dọc thẻ cha để tránh chèn ép ngang */
+        gap: 12px !important;
+    }
+    
+    :global(.capture-container .capture-kho-name) {
+        width: 100% !important;
+        border-bottom: 1px dashed #cbd5e1 !important;
+        padding-bottom: 8px !important;
+    }
+    
+    :global(.capture-container .capture-kho-stats) {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important; /* Chia đều 2 cột rộng rãi thay vì 5 cột */
+        width: 100% !important;
+        gap: 16px 8px !important;
+    }
+    
+    :global(.capture-container .capture-kho-percent) {
+        width: 100% !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        border-top: 1px solid #e2e8f0 !important;
+        border-left: none !important;
+        padding-top: 12px !important;
+        padding-left: 0 !important;
+        margin-top: 4px !important;
+    }
 </style>

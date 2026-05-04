@@ -213,7 +213,8 @@
 <svelte:window on:click={handleWindowClick} />
 
 <div class="luyke-tier-2-container relative">
-    <h3 style="display: none;">{titleText}</h3>
+    <!-- [PHẪU THUẬT LOGIC]: Bỏ style display: none, dùng class CSS để chỉ hiện ra khi Camera quét qua -->
+    <h3 class="hidden-on-screen capture-title-show">{titleText}</h3>
 
     <LuykeCategoryToolbar
         {titleText} {titleIcon} {titleClass} {iconClass}
@@ -238,11 +239,14 @@
             {numDays} 
         />
     {:else if viewMode === 'list'}
+        <!-- [PHẪU THUẬT LOGIC]: Bơm rawSource và macroConfig xuống List để bóc tách Ngày Hẹn Giao -->
         <LuykeCategoryList 
             {sortedItems} 
             {showUnexported} 
             {numDays} 
             {sortMode} 
+            {rawSource}
+            macroConfig={$macroCategoryConfig}
             on:sort={handleListSort}
         />
     {:else}
@@ -251,5 +255,18 @@
 </div>
 
 <style>
+    /* Ẩn h3 trên giao diện bình thường, nhưng ép hiện ra khi Tool chụp ảnh lồng .capture-container vào */
+    .hidden-on-screen { display: none; }
+    :global(.capture-container .capture-title-show) { 
+        display: block !important; 
+        font-size: 20px; 
+        font-weight: 900; 
+        color: #c2410c; /* Cam đậm cho nổi bật */
+        margin-bottom: 16px; 
+        text-align: center; 
+        text-transform: uppercase;
+        border-bottom: 2px solid #fdba74;
+        padding-bottom: 8px;
+    }
     :global(.capture-container .luyke-toolbar) { display: none !important; }
 </style>
