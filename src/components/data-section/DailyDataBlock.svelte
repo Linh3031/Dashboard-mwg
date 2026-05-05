@@ -63,11 +63,12 @@
                 {/each}
             {:else}
                 <div class="h-fit w-full overflow-hidden">
+                    <!-- [PHẪU THUẬT LOGIC]: ÉP NỐI MÃ KHO VÀO KEY (ABSOLUTE ISOLATION) -->
                     <PasteInput 
-                        label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"} 
+                        label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : `Data lũy kế (${$selectedWarehouse})`} 
                         icon="clipboard" 
                         link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" 
-                        saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"} 
+                        saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : `daily_paste_luyke_${$selectedWarehouse}`} 
                         on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: $selectedWarehouse })} 
                     />
                 </div>
@@ -107,13 +108,14 @@
                 {/if}
 
                 <div class="h-fit w-full overflow-hidden">
+                    <!-- [PHẪU THUẬT LOGIC]: ÉP NỐI MÃ KHO VÀO KEY (ABSOLUTE ISOLATION) -->
                     <PasteInput 
-                        label="Thi đua nhân viên" 
+                        label={`Thi đua nhân viên (${$selectedWarehouse})`} 
                         icon="clipboard" 
                         link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=bcdtnv&rt=2&dm=1" 
-                        saveKeyPaste="daily_paste_thiduanv" 
-                        saveKeyRaw="raw_paste_thiduanv" 
-                        saveKeyProcessed="daily_paste_thiduanv"
+                        saveKeyPaste={`daily_paste_thiduanv_${$selectedWarehouse}`} 
+                        saveKeyRaw={`raw_paste_thiduanv_${$selectedWarehouse}`} 
+                        saveKeyProcessed={`daily_paste_thiduanv_${$selectedWarehouse}`}
                     />
                 </div>
             {/if}

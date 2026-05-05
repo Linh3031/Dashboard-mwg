@@ -138,40 +138,44 @@
       }
   }
 
-  onMount(() => {
-    const textLoadKey = saveKeyRaw || saveKeyPaste;
-    pastedText = localStorage.getItem(textLoadKey) || "";
-    
-    if (!$fileSyncState[saveKeyPaste]) {
-        let targetWh = null;
-        let baseKeyForMeta = saveKeyPaste; // [PHẪU THUẬT LOGIC]: Tách baseKey riêng
-        
-        for (const k of Object.keys(storeMap)) {
-            if (saveKeyPaste.startsWith(k + '_')) {
-                targetWh = saveKeyPaste.replace(k + '_', '');
-                baseKeyForMeta = k;
-                break;
-            }
-        }
-        
-        let wh = targetWh || get(selectedWarehouse);
-        if (saveKeyPaste === 'cluster_summary_data') wh = 'CLUSTER_ALL';
+  // [PHẪU THUẬT LOGIC]: Chuyển logic nạp LocalStorage sang khối Phản ứng
+  // Đảm bảo cứ khi saveKeyPaste có giá trị chuẩn (VD: daily_paste_luyke_908) là text tự hiện ra.
+  let currentSaveKey = "";
+  $: if (saveKeyPaste && saveKeyPaste !== currentSaveKey) {
+      currentSaveKey = saveKeyPaste;
+      const textLoadKey = saveKeyRaw || saveKeyPaste;
+      pastedText = localStorage.getItem(textLoadKey) || "";
+      
+      // Đồng thời cập nhật lại cái khiên Meta Sync
+      if (!$fileSyncState[saveKeyPaste]) {
+          let targetWh = null;
+          let baseKeyForMeta = saveKeyPaste; 
+          for (const k of Object.keys(storeMap)) {
+              if (saveKeyPaste.startsWith(k + '_')) {
+                  targetWh = saveKeyPaste.replace(k + '_', '');
+                  baseKeyForMeta = k;
+                  break;
+              }
+          }
+          let wh = targetWh || get(selectedWarehouse);
+          if (saveKeyPaste === 'cluster_summary_data') wh = 'CLUSTER_ALL';
 
-        if (wh) {
-            // [PHẪU THUẬT LOGIC]: Tìm Meta bằng baseKey thay vì saveKeyPaste động
-            const metaStr = localStorage.getItem(`_meta_${wh}_${baseKeyForMeta}`);
-            if (metaStr) {
-                try {
-                    const meta = JSON.parse(metaStr);
-                    fileSyncState.update(s => ({
-                        ...s,
-                        [saveKeyPaste]: { status: 'synced', message: `✓ Đã đồng bộ`, metadata: meta }
-                    }));
-                } catch(e){}
-            }
-        }
-    }
-    
+          if (wh) {
+              const metaStr = localStorage.getItem(`_meta_${wh}_${baseKeyForMeta}`);
+              if (metaStr) {
+                  try {
+                      const meta = JSON.parse(metaStr);
+                      fileSyncState.update(s => ({
+                          ...s,
+                          [saveKeyPaste]: { status: 'synced', message: `✓ Đã đồng bộ`, metadata: meta }
+                      }));
+                  } catch(e){}
+              }
+          }
+      }
+  }
+
+  onMount(() => {
     window.addEventListener('cloud-paste-loaded', (e) => {
         if (e.detail.key === saveKeyPaste) {
             pastedText = e.detail.text;

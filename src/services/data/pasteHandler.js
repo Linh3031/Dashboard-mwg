@@ -16,13 +16,12 @@ export const pasteHandler = {
         let targetWarehouse = null;
 
         // --- 🚨 [GENESIS PREFIX ROUTING ENGINE] 🚨 ---
-        // Nếu không tìm thấy key chính xác, bắt đầu bóc tách Tiền tố (Base) và Hậu tố (Mã kho)
         if (!mapping) {
             for (const key of Object.keys(PASTE_MAPPING)) {
                 if (primaryKey.startsWith(key + '_')) {
                     mapping = PASTE_MAPPING[key];
-                    baseKey = key; // Lấy tiền tố (VD: daily_paste_luyke)
-                    targetWarehouse = primaryKey.replace(key + '_', ''); // Lấy mã kho ở đuôi (VD: 908)
+                    baseKey = key; // Lấy tiền tố
+                    targetWarehouse = primaryKey.replace(key + '_', ''); // Lấy mã kho ở đuôi
                     break;
                 }
             }
@@ -30,12 +29,10 @@ export const pasteHandler = {
 
         if (!mapping) return { success: false, message: `Lỗi mapping paste` };
 
-        // [BYPASS] Dành cho Báo cáo Cụm: Người gác cổng sẽ mở cửa cho qua thẳng, 
-        // vì logic trích xuất đã được xử lý riêng bên ngoài (DataSection.svelte)
+        // [BYPASS] Dành cho Báo cáo Cụm
         if (mapping.bypassHandler) {
              return { success: true, message: `Bypassed to component logic` };
         }
-        // ----------------------------------------------
         
         updateSyncState(saveKeyPaste, 'uploading', 'Đang xử lý...');
         try {
@@ -49,16 +46,18 @@ export const pasteHandler = {
                 processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
                 mapping.store.set(processedData);
                 
+                // [PHẪU THUẬT LOGIC]: Ghi đúng vào Key Đích Danh (Có nối kho)
                 if(saveKeyRaw) localStorage.setItem(saveKeyRaw, pastedText);
                 if(saveKeyProcessed) localStorage.setItem(saveKeyProcessed, JSON.stringify(processedData));
                 processedCount = processedData.length;
             } else if (mapping.processFunc) {
                 processedData = mapping.processFunc(pastedText);
                 mapping.store.set(processedData);
+                
+                // [PHẪU THUẬT LOGIC]: Ghi đúng vào Key Đích Danh
                 localStorage.setItem(saveKeyPaste, pastedText);
                 processedCount = processedData?.length || 0;
                 
-                // [FIX] Sử dụng baseKey để kiểm tra, đảm bảo nó vẫn chạy đúng dù có gắn đuôi mã kho hay không
                 if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
                      const comps = dataProcessing.parseCompetitionDataFromLuyKe(pastedText);
                      dataProcessing.parseLuyKePastedData(pastedText);
@@ -66,7 +65,7 @@ export const pasteHandler = {
                 }
             }
             
-            // [SMART ROUTING] Ưu tiên lấy mã kho từ Hậu tố của key. Nếu không có thì mới lấy từ Bộ lọc (selectedWarehouse)
+            // [SMART ROUTING]
             const warehouse = targetWarehouse || get(selectedWarehouse);
             
             // Chặn không cho lưu vào thư mục ảo 'ALL' trên Cloud
@@ -75,7 +74,6 @@ export const pasteHandler = {
                     updateSyncState(saveKeyPaste, 'uploading', 'Đang lưu Cloud...');
                     const blob = new Blob([pastedText], { type: 'text/plain' });
                     
-                    // [FIX] Sử dụng baseKey (VD: daily_paste_luyke) làm tên file và key trên Firestore để đồng bộ chuẩn xác
                     const path = `warehouse_data/${warehouse}/${baseKey}_${Date.now()}.txt`;
                     const downloadUrl = await storageService.uploadFileToStorage(blob, path);
                     const now = Date.now();
@@ -89,11 +87,9 @@ export const pasteHandler = {
                         updatedBy: get(currentUser)?.email || 'Tôi'
                     };
                     
-                    // Ném dữ liệu vào đúng Document của Kho tương ứng
                     await datasyncService.saveWarehouseMetadata(warehouse, baseKey, metadata);
                     localStorage.setItem(`_meta_${warehouse}_${baseKey}`, JSON.stringify(metadata));
 
-                    // Cập nhật lại UI bằng saveKeyPaste để đúng cái ô vừa dán sáng đèn Xanh
                     updateSyncState(saveKeyPaste, 'synced', `✓ Đã đồng bộ kho ${warehouse}`, metadata);
                 } catch (e) {
                     console.error("Cloud paste upload error:", e);
