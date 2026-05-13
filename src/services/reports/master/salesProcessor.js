@@ -31,7 +31,7 @@ export const salesProcessor = {
             // Map chi tiết
             doanhThuTheoNganhHang: {}, 
             doanhThuTheoNhomHang: {}, 
-            tongSoLuong: 0, // [GENESIS FIX]: Thêm biến lưu tổng số lượng
+            tongSoLuong: 0, 
             
             // Quy đổi chuẩn (QDC)
             qdc: {},
@@ -50,8 +50,10 @@ export const salesProcessor = {
         };
 
         // Init QDC Groups
-        for (const key in PG.QDC_GROUPS) {
-            data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
+        if (PG && PG.QDC_GROUPS) {
+            for (const key in PG.QDC_GROUPS) {
+                data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
+            }
         }
         return data;
     },
@@ -68,24 +70,28 @@ export const salesProcessor = {
         if (sourceData && Array.isArray(sourceData)) {
             sourceData.forEach(row => {
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
-                if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
+                if (msnvMatch && msnvMatch[1].trim() === String(employee.maNV)) {
                     
                     const hinhThucXuat = row.hinhThucXuat;
                     const trangThaiXuat = normalizeStr(row.trangThaiXuat);
                     
-                    // [STRICT] Bắt buộc phải có HTX trong danh sách
+                    // [PHẪU THUẬT GENESIS]: Đồng bộ điều kiện hợp lệ với detail.report.js [cite: 4]
+                    // Chỉ tính những đơn: Đã thu tiền + Chưa hủy + Chưa trả
+                    const isBaseValid = normalizeStr(row.trangThaiThuTien) === 'Đã thu' &&
+                                        normalizeStr(row.trangThaiHuy) === 'Chưa hủy' &&
+                                        normalizeStr(row.tinhTrangTra) === 'Chưa trả';
+
                     const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
                     
                     // --- LOGIC ĐÃ XUẤT ---
                     const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
 
-                    if (isDoanhThuHTX && isDaXuat) {
+                    // Thêm isBaseValid vào điều kiện tính doanh thu thực 
+                    if (isDoanhThuHTX && isDaXuat && isBaseValid) {
                         const thanhTien = parseMoney(row.thanhTien);
                         const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
                         const heSo = heSoQuyDoi[row.nhomHang] || 1;
                         
-                        // [FIX] Lấy doanh thu quy đổi chính xác từ Normalizer (đã tính trả góp)
-                        // Fallback về cách tính cũ nếu row.revenueQuyDoi chưa tồn tại
                         const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
                         
                         const nhomIdObj = row.maNhomHang 
@@ -95,7 +101,6 @@ export const salesProcessor = {
                             ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } 
                             : parseIdentity(row.nganhHang);
 
-                        // A. Map chi tiết
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
                             const key = String(idObj.id).trim();
@@ -108,21 +113,20 @@ export const salesProcessor = {
                             }
                             container[key].revenue += thanhTien;
                             container[key].quantity += soLuong;
-                            container[key].revenueQuyDoi += revenueQuyDoi; // [UPDATED]
+                            container[key].revenueQuyDoi += revenueQuyDoi;
                         }
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
 
                         data.doanhThu += thanhTien;
-                        data.doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
-                        data.tongSoLuong += soLuong; // [GENESIS FIX]: Cộng dồn số lượng để chia đơn giá TB
+                        data.doanhThuQuyDoi += revenueQuyDoi;
+                        data.tongSoLuong += soLuong;
 
                         if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
                             data.doanhThuTraGop += thanhTien;
                         }
 
-                        // C. Phân loại nhóm
                         const nhomHangCode = String(nhomIdObj.id).trim();
                         
                         if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { data.dtICT += thanhTien; }
@@ -134,7 +138,6 @@ export const salesProcessor = {
                         if (PG.VAS && PG.VAS.includes(nhomHangCode)) { data.dtVAS += thanhTien; }
                         if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) { data.dtBaoHiem += thanhTien; }
 
-                        // Dynamic Keyword Logic
                         const rawNhomHang = normalize(row.nhomHang);
                         const rawNganhHang = normalize(row.nganhHang);
                         const cleanNhomId = normalize(nhomHangCode);
@@ -169,37 +172,24 @@ export const salesProcessor = {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
                                 data.qdc[key].dt += thanhTien; 
-                                data.qdc[key].dtqd += revenueQuyDoi; // [UPDATED]
+                                data.qdc[key].dtqd += revenueQuyDoi;
                             }
                         }
                     } 
                     
                     // --- LOGIC CHƯA XUẤT ---
-                    else if (isDoanhThuHTX && trangThaiXuat === 'Chưa xuất') {
+                    else if (isDoanhThuHTX && trangThaiXuat === 'Chưa xuất' && isBaseValid) {
+                        const thanhTien = parseMoney(row.thanhTien);
+                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
                         
-                        const valThuTien = normalizeStr(row.trangThaiThuTien);
-                        const valHuy = normalizeStr(row.trangThaiHuy);
-                        const valTra = normalizeStr(row.tinhTrangTra);
-
-                        const isThuTien = valThuTien === 'Đã thu';
-                        const isChuaHuy = valHuy === 'Chưa hủy';
-                        const isChuaTra = valTra === 'Chưa trả';
-
-                        if (isThuTien && isChuaHuy && isChuaTra) {
-                            const thanhTien = parseMoney(row.thanhTien);
-                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                            // [FIX] Lấy doanh thu quy đổi chính xác (Chưa xuất)
-                            const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
-                            
-                            data.doanhThuChuaXuat += thanhTien;
-                            data.doanhThuQuyDoiChuaXuat += revenueQuyDoi; // [UPDATED]
-                        } 
+                        data.doanhThuChuaXuat += thanhTien;
+                        data.doanhThuQuyDoiChuaXuat += revenueQuyDoi;
                     }
                 }
             });
         }
 
-        // [GENESIS FIX]: Bơm tính toán Đơn Giá vào đây trước khi xuất data ra ngoài
         data.donGiaTrungBinh = data.tongSoLuong > 0 ? data.doanhThu / data.tongSoLuong : 0;
         data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
         data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
@@ -211,7 +201,6 @@ export const salesProcessor = {
         return data;
     },
 
-    // --- TÍNH TỶ LỆ PHẦN TRĂM ---
     calculateStaticRatios(data) {
         const totalRevenue = data.doanhThu > 0 ? data.doanhThu : 1;
         return {

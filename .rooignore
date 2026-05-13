@@ -1,0 +1,31 @@
+# 1. Thư mục hệ thống & thư viện (Khổng lồ, tuyệt đối cấm AI tự đọc)
+node_modules/
+.git/
+
+# 2. Thư mục build của Svelte (Code đã biên dịch, không có giá trị phân tích)
+.svelte-kit/
+build/
+dist/
+
+# 3. Môi trường & Bảo mật (Tuyệt đối không rò rỉ lên server)
+.env
+.env.*
+
+# 4. File tĩnh & Asset (AI text không cần phân tích hình ảnh/font chữ)
+src/assets/
+public/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.ico
+*.woff
+*.woff2
+*.ttf
+
+# 5. Các file log và lock (Rất dài và tốn token vô ích)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+*.log

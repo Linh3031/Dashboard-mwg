@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_01_SKNV.txt
-GENERATED AT: 2/22/2026, 4:12:10 PM
+GENERATED AT: 5/13/2026, 7:07:23 PM
 
 
 >>> FILE_START: src/components/health-staff/CategoryRevenueView.svelte
@@ -983,8 +983,10 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 
   let sortKey = 'tongThuNhap';
   let sortDirection = 'desc';
-  // Cấu hình cột
+  
+  // [MODIFIED] Thêm cột Hạng vào đầu
   const columns = [
+      { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'w-14' },
       { key: 'hoTen', label: 'Nhân viên', align: 'left' },
       { key: 'gioCong', label: 'Giờ công', align: 'right' },
       { key: 'tongThuNhap', label: 'Tổng Thu Nhập', align: 'right' },
@@ -992,13 +994,14 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       { key: 'thuNhapThangTruoc', label: 'Tháng trước', align: 'right' },
       { key: 'chenhLechThuNhap', label: '+/- Tháng trước', align: 'right' }
   ];
+
   function handleSort(key) {
+      if (key === 'rank') return; // Không cho sort cột rank
       if (sortKey === key) {
-          sortDirection = sortDirection === 'desc' ?
-'asc' : 'desc';
+          sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
       } else {
           sortKey = key;
-sortDirection = 'desc';
+          sortDirection = 'desc';
       }
   }
 
@@ -1013,6 +1016,27 @@ sortDirection = 'desc';
       // Xử lý số
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
+
+  // [NEW] Logic Gamification: Đánh số thứ tự & làm nổi bật Top
+  $: topCount = sortedData.length <= 15 ? 3 : 5;
+
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      // Giữ tông cam chủ đạo của Tab Thu Nhập khi hover dòng thường
+      return index % 2 === 0 ? 'bg-white hover:bg-orange-50' : 'bg-slate-50/50 hover:bg-orange-50';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
   // Tính tổng
   $: totals = reportData.reduce((acc, item) => {
       acc.gioCong += item.gioCong || 0;
@@ -1022,25 +1046,24 @@ sortDirection = 'desc';
       acc.chenhLechThuNhap += item.chenhLechThuNhap || 0;
       return acc;
   }, { gioCong: 0, tongThuNhap: 0, thuNhapDuKien: 0, thuNhapThangTruoc: 0, chenhLechThuNhap: 0 });
+
   // Tính trung bình Thu nhập dự kiến để so sánh
-  $: avgIncome = reportData.length > 0 ?
-totals.thuNhapDuKien / reportData.length : 0;
+  $: avgIncome = reportData.length > 0 ? totals.thuNhapDuKien / reportData.length : 0;
 
   // Hàm style cho ô dữ liệu
   function getCellClass(item, colKey) {
       if (colKey === 'tongThuNhap') return 'font-bold text-blue-700';
+
       if (colKey === 'thuNhapDuKien') {
           // Dưới trung bình thì màu đỏ, trên thì xanh
           return item.thuNhapDuKien < avgIncome 
-              ?
-'font-bold text-red-600 bg-red-50' 
+              ? 'font-bold text-red-600 bg-red-50' 
               : 'font-bold text-green-700 bg-green-50';
       }
 
       if (colKey === 'chenhLechThuNhap') {
           return item.chenhLechThuNhap >= 0 
-              ?
-'font-bold text-green-600' 
+              ? 'font-bold text-green-600' 
               : 'font-bold text-red-600';
       }
 
@@ -1055,14 +1078,12 @@ totals.thuNhapDuKien / reportData.length : 0;
                 <i data-feather="briefcase" class="w-5 h-5"></i>
             </div>
             <div>
-  
               <h3 class="font-bold text-gray-800 text-lg uppercase">Bảng Lương & Thu Nhập</h3>
                 <p class="text-xs text-gray-500">
                     Thu nhập DK TB: <span class="font-bold text-orange-600">{formatters.formatRevenue(avgIncome)}</span>
                 </p>
             </div>
-      
-  </div>
+        </div>
         <span class="text-xs font-bold bg-orange-100 text-orange-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: VNĐ</span>
     </div>
 
@@ -1070,72 +1091,63 @@ totals.thuNhapDuKien / reportData.length : 0;
         <table class="min-w-full text-sm text-left border-collapse">
             <thead class="bg-gray-100 text-xs uppercase text-gray-500 font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
-                    {#each columns 
-as col}
+                    {#each columns as col}
                         <th 
-                            class="px-4 py-3 cursor-pointer hover:bg-gray-200 transition select-none whitespace-nowrap {col.align === 'right' ?
-'text-right' : 'text-left'}"
+                            class="px-4 py-3 transition select-none whitespace-nowrap {col.headerClass || ''} {col.align === 'right' ? 'text-right' : (col.align === 'center' ? 'text-center' : 'text-left')} {col.key !== 'rank' ? 'cursor-pointer hover:bg-gray-200' : ''}"
                             on:click={() => handleSort(col.key)}
                         >
-                            <div class="flex items-center gap-1 {col.align === 'right' ?
-'justify-end' : ''}">
+                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : (col.align === 'center' ? 'justify-center' : '')}">
                                 {col.label}
                                 {#if sortKey === col.key}
-                               
-     <span class="ml-1 text-orange-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                                    <span class="ml-1 text-orange-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>
                                 {/if}
                             </div>
                         </th>
-   
-                 {/each}
+                    {/each}
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
                 {#if sortedData.length === 0}
-                    <tr><td colspan={columns.length} 
-class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. Vui lòng tải file Thưởng/Giờ công.</td></tr>
+                    <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. Vui lòng tải file Thưởng/Giờ công.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr class="hover:bg-orange-50 transition-colors duration-150 group {index % 2 === 0 ?
-'bg-white' : 'bg-slate-50/50'}">
+                        <tr class="transition-colors duration-150 group {getRowStyle(index)}">
+                            
+                            <td class="px-2 py-3 text-center border-r border-gray-100 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
+                                {getRankIcon(index)}
+                            </td>
+
                             <td class="px-4 py-3 font-semibold text-gray-700 whitespace-nowrap border-r border-gray-100 group-hover:text-orange-800">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
- 
-                           <td class="px-4 py-3 text-right border-r border-gray-100 font-medium">
+                            <td class="px-4 py-3 text-right border-r border-gray-100 font-medium">
                                 {formatters.formatNumberOrDash(item.gioCong)}
                             </td>
-       
-                     <td class="px-4 py-3 text-right {getCellClass(item, 'tongThuNhap')}">
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'tongThuNhap')}">
                                 {formatters.formatRevenue(item.tongThuNhap)}
                             </td>
-              
-              <td class="px-4 py-3 text-right {getCellClass(item, 'thuNhapDuKien')}">
+                            <td class="px-4 py-3 text-right {getCellClass(item, 'thuNhapDuKien')}">
                                 {formatters.formatRevenue(item.thuNhapDuKien)}
                             </td>
-                     
-       <td class="px-4 py-3 text-right text-gray-600 font-medium">
+                            <td class="px-4 py-3 text-right text-gray-600 font-medium">
                                 {formatters.formatRevenue(item.thuNhapThangTruoc)}
                             </td>
-                            
-<td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'chenhLechThuNhap')}">
+                            <td class="px-4 py-3 text-right border-l border-gray-100 {getCellClass(item, 'chenhLechThuNhap')}">
                                 {formatters.formatRevenue(item.chenhLechThuNhap)}
                             </td>
                         </tr>
-         
-           {/each}
+                    {/each}
                 {/if}
             </tbody>
             <tfoot class="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300 text-xs uppercase">
                 <tr>
-                    <td class="px-4 py-3">TỔNG CỘNG</td>
-   
-                 <td class="px-4 py-3 text-right">{formatters.formatNumberOrDash(totals.gioCong)}</td>
+                    <td class="px-4 py-3 text-center tracking-wider" colspan="2">TỔNG CỘNG</td>
+                    
+                    <td class="px-4 py-3 text-right">{formatters.formatNumberOrDash(totals.gioCong)}</td>
                     <td class="px-4 py-3 text-right text-blue-700">{formatters.formatRevenue(totals.tongThuNhap)}</td>
                     <td class="px-4 py-3 text-right text-green-700">{formatters.formatRevenue(totals.thuNhapDuKien)}</td>
                     <td class="px-4 py-3 text-right">{formatters.formatRevenue(totals.thuNhapThangTruoc)}</td>
-         
-           <td class="px-4 py-3 text-right">{formatters.formatRevenue(totals.chenhLechThuNhap)}</td>
+                    <td class="px-4 py-3 text-right">{formatters.formatRevenue(totals.chenhLechThuNhap)}</td>
                 </tr>
             </tfoot>
         </table>
@@ -1143,12 +1155,331 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 </div>
 
 <style>
-    .animate-fade-in { animation: fadeIn 0.4s ease-out;
-}
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0);
-} }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 <<< FILE_END: src/components/health-staff/IncomeTable.svelte
+
+>>> FILE_START: src/components/health-staff/MultiMonthRevenueTable.svelte
+<script>
+  import { createEventDispatcher } from 'svelte';
+  import { formatters } from '../../utils/formatters.js';
+  import { dataProcessing } from '../../services/dataProcessing.js';
+  import { danhSachNhanVien } from '../../stores.js';
+  
+  export let rawData = [];
+
+  const dispatch = createEventDispatcher();
+  let sortKey = 'total';
+  let sortDirection = 'desc';
+
+  let uniqueMonths = [];
+  let groupedData = [];
+
+  // [PHẪU THUẬT]: Làm tròn không số lẻ, giữ nguyên chia 1 triệu
+  const formatRevenueNoDecimal = (val) => {
+      if (!val || isNaN(val)) return '-';
+      return Math.round(val / 1000000).toLocaleString('vi-VN');
+  };
+
+  const parseMoney = (value) => {
+      if (typeof value === 'number') return value;
+      if (!value) return 0;
+      return parseFloat(String(value).replace(/,/g, '')) || 0;
+  };
+
+  const normStr = (val) => String(val || "").trim();
+
+  function parseUniversalDate(val) {
+      if (val === null || val === undefined || val === '') return null;
+      if (val instanceof Date) return new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
+      if (typeof val === 'number') {
+          const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
+          const tempDate = new Date(jsEpoch);
+          return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
+      }
+      const str = String(val).trim();
+      const parts = str.split(/[\s,T]+/); 
+      if (parts[0].includes('/')) {
+          const dParts = parts[0].split('/');
+          if (dParts.length >= 3) {
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
+              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+          }
+      } else if (parts[0].includes('-')) {
+          const dParts = parts[0].split('-');
+          if (dParts.length >= 3) {
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
+              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+          }
+      }
+      const fallbackDate = new Date(val);
+      if (!isNaN(fallbackDate.getTime())) return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
+      return null;
+  }
+
+  $: validEmpIds = new Set(($danhSachNhanVien || []).map(e => String(e.maNV || e.ma_nv || e.MANHANVIEN || e['Mã NV'] || '').trim()));
+  
+  $: {
+      const monthsSet = new Set();
+      const map = new Map();
+      const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
+      
+      rawData.forEach(row => {
+          const msnvMatch = normStr(row.nguoiTao || row['Người tạo']).match(/(\d+)/);
+          if (!msnvMatch) return;
+          const empId = msnvMatch[1];
+
+          if (validEmpIds.size > 0 && !validEmpIds.has(empId)) return;
+
+          const empFromList = $danhSachNhanVien.find(e => normStr(e.maNV || e.ma_nv || e.MANHANVIEN) === empId);
+          const hoTen = empFromList ? empFromList.hoTen : 'Unknown';
+
+          const htx = normStr(row.hinhThucXuat || row.HINH_THUC_XUAT || row['Hình thức xuất']);
+          if (!validHTX.has(htx)) return;
+
+          let isValid = false;
+          const trangThaiXuat = normStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
+          const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
+          
+          if (isDaXuat) {
+              isValid = true;
+          } else if (trangThaiXuat === 'Chưa xuất') {
+              const thuTien = normStr(row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN);
+              const huy = normStr(row.trangThaiHuy || row.TRANG_THAI_HUY);
+              const tra = normStr(row.tinhTrangTra || row.TINH_TRANG_TRA);
+              if (thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả') {
+                  isValid = true;
+              }
+          }
+          if (!isValid) return;
+
+          let dateVal = row.ngayTao || row.ngayHenGiao;
+          if (!dateVal) {
+              for (const key of Object.keys(row)) {
+                  const normKey = key.toLowerCase().replace(/[\s_]/g, '');
+                  if (normKey.includes('ngàytạo') || normKey.includes('ngaytao') || normKey === 'createdate') {
+                      dateVal = row[key]; break;
+                  }
+              }
+          }
+          const parsedDate = parseUniversalDate(dateVal);
+          if(!parsedDate) return;
+          
+          const d = new Date(parsedDate);
+          const monthKey = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+          monthsSet.add(monthKey);
+
+          if(!map.has(empId)) {
+              map.set(empId, { maNV: empId, hoTen: hoTen, months: {}, totalDtqd: 0, totalDt: 0 });
+          }
+          
+          const emp = map.get(empId);
+          if(!emp.months[monthKey]) emp.months[monthKey] = { dtqd: 0, dt: 0 };
+
+          const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN || row.DoanhThu || row['Thành tiền']);
+          let dtqd = 0;
+          
+          if (row.revenueQuyDoi !== undefined) {
+              dtqd = parseMoney(row.revenueQuyDoi);
+          } else {
+              const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi ? dataProcessing.getHeSoQuyDoi() : {};
+              const heSo = heSoQuyDoiMap[row.nhomHang || row.NHOM_HANG || row['Nhóm hàng']] || 1;
+              dtqd = thanhTien * heSo;
+          }
+
+          emp.months[monthKey].dt += thanhTien;
+          emp.months[monthKey].dtqd += dtqd;
+          emp.totalDt += thanhTien;
+          emp.totalDtqd += dtqd;
+      });
+
+      uniqueMonths = Array.from(monthsSet).sort((a,b) => {
+          const [ma, ya] = a.split('/');
+          const [mb, yb] = b.split('/');
+          return new Date(ya, ma-1) - new Date(yb, mb-1);
+      });
+      groupedData = Array.from(map.values());
+  }
+
+  // Tính Tổng & Trung bình
+  $: footerStats = (() => {
+      const count = groupedData.length || 1;
+      const stats = { total: { dtqd: 0, months: {} }, avg: { dtqd: 0, months: {} } };
+      uniqueMonths.forEach(m => stats.total.months[m] = 0);
+
+      groupedData.forEach(item => {
+          stats.total.dtqd += item.totalDtqd;
+          uniqueMonths.forEach(m => {
+              if (item.months[m]) stats.total.months[m] += item.months[m].dtqd;
+          });
+      });
+
+      stats.avg.dtqd = stats.total.dtqd / count;
+      uniqueMonths.forEach(m => { stats.avg.months[m] = stats.total.months[m] / count; });
+      return stats;
+  })();
+
+  $: sortedData = [...groupedData].sort((a, b) => {
+      let valA = 0, valB = 0;
+      if (sortKey === 'hoTen') {
+         return sortDirection === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
+      } else if (sortKey === 'total') {
+          valA = a.totalDtqd; valB = b.totalDtqd;
+      } else if (sortKey.startsWith('month_')) {
+          // [FIXED] Trả lại đúng logic split nguyên bản
+          const parts = sortKey.split('_');
+          const m = parts[1];
+          const type = parts[2];
+
+          const aM = a.months[m] || {dtqd: 0, dt: 0};
+          const bM = b.months[m] || {dtqd: 0, dt: 0};
+
+          if (type === 'dtqd') {
+              valA = aM.dtqd; valB = bM.dtqd;
+          } else if (type === 'tyle') {
+              valA = aM.dt > 0 ? (aM.dtqd / aM.dt) - 1 : -1;
+              valB = bM.dt > 0 ? (bM.dtqd / bM.dt) - 1 : -1;
+          }
+      }
+      return sortDirection === 'asc' ? valA - valB : valB - valA;
+  });
+
+  $: topCount = sortedData.length <= 15 ? 3 : 5;
+
+  function handleSort(key) {
+      if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      else { sortKey = key; sortDirection = 'desc'; }
+  }
+
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-amber-50/40 hover:bg-amber-100/60';
+      if (index === 1) return 'bg-slate-100/50 hover:bg-slate-200/60'; 
+      if (index === 2) return 'bg-orange-50/30 hover:bg-orange-100/50';
+      if (index < topCount) return 'bg-blue-50/20 hover:bg-blue-50/60'; 
+      return 'bg-white hover:bg-slate-50 border-b border-gray-100';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
+  function handleRowClick(employeeId) {
+      dispatch('viewDetail', { employeeId });
+  }
+</script>
+
+<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in" data-capture-group="revenue-multi-month-table">
+    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-indigo-50">
+        <div class="flex items-center gap-2">
+            <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600"><i data-feather="layers" class="w-5 h-5"></i></div>
+            <div>
+                <h3 class="font-bold text-indigo-900 text-lg uppercase">Phân tích Lũy kế nhiều tháng</h3>
+                <p class="text-xs text-indigo-600/80">Chỉ thống kê NV thuộc danh sách do QL cập nhật</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+            <div class="flex items-center gap-2 ml-1 border-l border-indigo-200 pl-4" title="Tắt chế độ xem nhiều tháng">
+                <span class="text-xs font-bold text-indigo-700 cursor-pointer" on:click={() => dispatch('toggleMode')}>Xem nhiều tháng</span>
+                <button class="bg-indigo-600 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
+                    <span class="translate-x-4 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto custom-scrollbar">
+        <table class="min-w-full text-sm text-left border-collapse" style="min-width: {350 + uniqueMonths.length * 160}px">
+            <thead class="uppercase text-xs shadow-[0_2px_4px_rgba(0,0,0,0.02)] relative z-30">
+                 <tr class="bg-slate-50 border-b border-gray-200 text-slate-500">
+                    <th rowspan="2" class="px-2 py-3 text-center w-[56px] min-w-[56px] border-r border-gray-200 sticky left-0 z-30 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] font-bold">Hạng</th>
+                    <th rowspan="2" class="px-4 py-3 text-left w-[180px] min-w-[180px] max-w-[180px] border-r border-gray-200 cursor-pointer hover:bg-slate-100 sticky left-[56px] z-30 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] font-bold" on:click={() => handleSort('hoTen')}>
+                        <div class="flex items-center text-slate-700">Nhân viên{#if sortKey === 'hoTen'}<span class="ml-1 text-indigo-500">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                    </th>
+                    <th rowspan="2" class="px-4 py-3 text-right border-r border-gray-200 cursor-pointer hover:bg-slate-100 sticky left-[236px] z-30 bg-indigo-50/50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] font-black text-indigo-900" on:click={() => handleSort('total')}>
+                        <div class="flex items-center justify-end">Tổng DTQĐ{#if sortKey === 'total'}<span class="ml-1 text-indigo-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                    </th>
+                    {#each uniqueMonths as month}
+                        <th colspan="2" class="px-4 py-2 text-center border-r border-gray-200 border-l-2 border-l-slate-300 font-bold tracking-wider text-slate-600">Tháng {month}</th>
+                    {/each}
+                </tr>
+                <tr class="bg-white border-b border-gray-200">
+                    {#each uniqueMonths as month}
+                        <th class="px-3 py-2 text-right text-slate-600 border-r border-gray-100 border-l-2 border-l-slate-300 cursor-pointer hover:bg-slate-50 font-semibold" on:click={() => handleSort(`month_${month}_dtqd`)}>
+                            <div class="flex items-center justify-end">DT QĐ{#if sortKey === `month_${month}_dtqd`}<span class="ml-1 text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                        </th>
+                        <th class="px-3 py-2 text-right text-slate-400 border-r border-gray-200 cursor-pointer hover:bg-slate-50 font-medium" on:click={() => handleSort(`month_${month}_tyle`)}>
+                            <div class="flex items-center justify-end">% QĐ{#if sortKey === `month_${month}_tyle`}<span class="ml-1 text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                        </th>
+                    {/each}
+                </tr>
+            </thead>
+            <tbody>
+                {#if sortedData.length === 0}
+                    <tr><td colspan={3 + uniqueMonths.length * 2} class="p-12 text-center text-gray-400 italic bg-gray-50">Không có dữ liệu của NV siêu thị hiện tại hoặc dữ liệu không hợp lệ.</td></tr>
+                {:else}
+                    {#each sortedData as item, index (item.maNV)}
+                        <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
+                            <td class="px-2 py-3 text-center border-r border-gray-100 font-bold sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)} {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">{getRankIcon(index)}</td>
+                            <td class="px-4 py-3 font-semibold text-slate-700 truncate border-r border-gray-100 group-hover:text-indigo-700 sticky left-[56px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)}" title={item.hoTen}>{formatters.getShortEmployeeName(item.hoTen, item.maNV)}</td>
+                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 bg-indigo-50/40 sticky left-[236px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(item.totalDtqd)}</td>
+                            {#each uniqueMonths as month}
+                                {@const mData = item.months[month] || {dtqd: 0, dt: 0}}
+                                {@const tyle = mData.dt > 0 ? (mData.dtqd / mData.dt) - 1 : 0}
+                                {@const isBelowAvg = mData.dtqd > 0 && mData.dtqd < footerStats.avg.months[month]}
+                                <td class="px-3 py-3 text-right font-bold border-r border-gray-100 border-l-2 border-l-slate-200 {isBelowAvg ? 'bg-red-50 text-red-500' : 'text-gray-800'}">
+                                    {mData.dtqd > 0 ? formatRevenueNoDecimal(mData.dtqd) : '-'}
+                                </td>
+                                <td class="px-3 py-3 text-right text-xs border-r border-gray-100 font-medium {isBelowAvg ? 'bg-red-50 text-red-400' : 'text-slate-400'}">
+                                    {mData.dtqd > 0 ? formatters.formatPercentage(tyle) : '-'}
+                                </td>
+                            {/each}
+                         </tr>
+                    {/each}
+                {/if}
+            </tbody>
+            {#if sortedData.length > 0}
+            <tfoot class="sticky bottom-0 z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+                <tr class="bg-slate-100 text-slate-600 font-bold text-xs uppercase border-t-2 border-slate-300">
+                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-slate-100 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Trung Bình</td>
+                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-slate-200 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(footerStats.avg.dtqd)}</td>
+                    {#each uniqueMonths as month}
+                        <td class="px-3 py-3 text-right border-r border-gray-200 border-l-2 border-l-slate-300">{formatRevenueNoDecimal(footerStats.avg.months[month])}</td>
+                        <td class="bg-slate-100 border-r border-gray-200"></td>
+                    {/each}
+                </tr>
+                <tr class="bg-indigo-600 text-white font-black text-xs uppercase">
+                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-indigo-600 border-r border-indigo-500 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Tổng Cộng</td>
+                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-indigo-700 border-r border-indigo-500 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(footerStats.total.dtqd)}</td>
+                    {#each uniqueMonths as month}
+                        <td class="px-3 py-3 text-right border-r border-indigo-500 border-l-2 border-l-indigo-400">{formatRevenueNoDecimal(footerStats.total.months[month])}</td>
+                        <td class="bg-indigo-600 border-r border-indigo-500"></td>
+                    {/each}
+                </tr>
+            </tfoot>
+            {/if}
+        </table>
+    </div>
+</div>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.4s ease-out; } 
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
+<<< FILE_END: src/components/health-staff/MultiMonthRevenueTable.svelte
 
 >>> FILE_START: src/components/health-staff/ProgramGoalTables.svelte
 <script>
@@ -1251,7 +1582,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   
   export let reportData = [];
 
-  // [LOGGER] Theo dõi dữ liệu đầu vào
   $: {
       console.log(`[RevenueTable ${new Date().toLocaleTimeString()}] Store Value:`, $kpiStore);
       console.log(`[RevenueTable] Report Data Length:`, reportData.length);
@@ -1261,21 +1591,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   let sortKey = 'doanhThu';
   let sortDirection = 'desc';
 
-  // [CẤU HÌNH] Cập nhật cột cuối cùng thành DTQĐ Chưa Xuất
   const columns = [
+      { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'bg-gray-100 text-gray-700 w-14' },
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
-      // [STYLE FIX] Đổi border-blue-200 để khớp tông màu header xanh
       { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
       { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
       { key: 'hieuQuaQuyDoi', label: '% QĐ', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
-      // [STYLE FIX] Đổi border-green-200
       { key: 'doanhThuTraGop', label: 'DT Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800 border-l border-green-200' },
       { key: 'tyLeTraCham', label: '% Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800' },
-      // [FIX] Hiển thị DTQĐ Chưa Xuất thay vì DT Thực
       { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', align: 'right', headerClass: 'bg-yellow-50 text-yellow-800 border-l border-yellow-200' }
   ];
 
   function handleSort(key) {
+      if (key === 'rank') return;
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
       else { sortKey = key; sortDirection = 'desc'; }
   }
@@ -1287,7 +1615,24 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
 
-  // [FIX] Cập nhật logic tính tổng cho cột mới
+  $: topCount = sortedData.length <= 15 ? 3 : 5;
+
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
   $: totals = reportData.reduce((acc, item) => {
       acc.doanhThu += item.doanhThu || 0;
       acc.doanhThuQuyDoi += item.doanhThuQuyDoi || 0;
@@ -1300,7 +1645,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
   function getCellClass(item, colKey) {
-      // [FIX] Thêm key mới vào danh sách in đậm
       const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuQuyDoiChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
       let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
 
@@ -1342,7 +1686,16 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                 <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
             </div>
         </div>
-        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+            
+            <div class="flex items-center gap-2 ml-1 border-l border-gray-300 pl-4" title="Chuyển sang chế độ xem nhiều tháng">
+                <span class="text-xs font-semibold text-gray-500 cursor-pointer" on:click={() => dispatch('toggleMode')}>Xem nhiều tháng</span>
+                <button class="bg-gray-300 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
+                    <span class="translate-x-0 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <div class="overflow-x-auto">
@@ -1350,8 +1703,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             <thead class="uppercase text-xs font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
                     {#each columns as col}
-                        <th class="px-4 py-3 cursor-pointer transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : 'text-left'}" on:click={() => handleSort(col.key)}>
-                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : ''}">
+                        <th class="px-4 py-3 transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : (col.align === 'center' ? 'text-center' : 'text-left')} {col.key !== 'rank' ? 'cursor-pointer hover:bg-gray-200' : ''}" on:click={() => handleSort(col.key)}>
+                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : (col.align === 'center' ? 'justify-center' : '')}">
                                 {col.label}
                                 {#if sortKey === col.key}<span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                             </div>
@@ -1364,7 +1717,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr class="hover:bg-blue-50 transition-colors duration-150 group cursor-pointer {index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}" on:click={() => handleRowClick(item.maNV)}>
+                        <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
+                            
+                            <td class="px-2 py-3 text-center border-r border-gray-200 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
+                                {getRankIcon(index)}
+                            </td>
+
                             <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 group-hover:text-blue-800 group-hover:underline">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
@@ -1381,7 +1739,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             </tbody>
             <tfoot class="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300 text-xs uppercase">
                 <tr>
-                    <td class="px-4 py-3">TỔNG CỘNG</td>
+                    <td class="px-4 py-3 text-center tracking-wider" colspan="2">TỔNG CỘNG</td>
+                    
                     <td class="px-4 py-3 text-right text-base">{formatters.formatRevenue(totals.doanhThu)}</td>
                     <td class="px-4 py-3 text-right text-base text-blue-700">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</td>
                     <td class="px-4 py-3 text-right text-base text-blue-700">{formatters.formatPercentage(totalPctQD)}</td>
@@ -1452,326 +1811,357 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 <script>
     import { createEventDispatcher, afterUpdate } from 'svelte';
     import { formatters } from '../../../utils/formatters.js';
-    // [FIX GENESIS] Import ycxData để tra cứu thông tin chuẩn
-    import { competitionNameMappings, ycxData } from '../../../stores.js';
+    import { competitionNameMappings, ycxData, competitionData, danhSachNhanVien, selectedWarehouse, luykeNameMappings } from '../../../stores.js';
     import { settingsService } from '../../../services/settings.service.js';
+    import { datasyncService } from '../../../services/datasync.service.js';
 
     export let employeeId;
     export let allReportData = []; 
 
     const dispatch = createEventDispatcher();
-
-    // --- LOGIC TÍNH TOÁN ---
+    
+    // --- STATE ---
+    let viewMode = 'rut_gon'; 
     let employee = null;
-    // [FIX GENESIS] Biến hiển thị đã được làm sạch
-    let displayInfo = {
-        name: '',
-        code: '',
-        dept: ''
-    };
-
+    let displayInfo = { name: '', code: '' }; 
+    
     let stats = {
-        dat: [],
-        ganDat: [],
-        canCoGang: [],
+        compactList: [],
+        dat: [], 
+        ganDat: [], 
+        canCoGang: [], 
+        chuaCoSoBan: [], 
         summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
     };
 
-    // [FIX GENESIS] Thêm $ycxData vào dependency
+    // --- [ĐÃ PHẪU THUẬT] LOGIC TIẾN ĐỘ DỰ KIẾN ---
+    let currentDay = 1;
+    let daysInMonth = 30;
+
+    $: {
+        const today = new Date();
+        const d = today.getDate();
+        
+        if (d === 1) {
+            const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+            currentDay = lastMonth.getDate();
+            daysInMonth = lastMonth.getDate();
+        } else {
+            currentDay = Math.max(d - 1, 1);
+            daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        }
+    }
+
+    // --- LOGIC TARGET CÁ NHÂN ---
+    let targetRatio = 100;
+    let categoryTargets = {};
+
+    $: if ($selectedWarehouse) {
+        datasyncService.loadPersonalTargetRatio($selectedWarehouse)
+            .then(ratio => targetRatio = ratio)
+            .catch(() => targetRatio = 100);
+    }
+
+    $: emps = $danhSachNhanVien || [];
+    $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
+    $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
+
+    $: {
+        const stMappedData = {};
+        ($competitionData || []).forEach(item => {
+            const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
+            let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
+            
+            if (linkedEmpProg) {
+                const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
+                const isQty = item.type === 'soLuong';
+                const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
+                stMappedData[linkedEmpProg] = pTarget;
+            }
+        });
+
+        let columnSettings = settingsService.loadPastedCompetitionViewSettings() || [];
+        const newTargets = {};
+        columnSettings.forEach(col => {
+            newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
+        });
+        categoryTargets = newTargets;
+    }
+
+    function getColorClass(percent) {
+        if (percent >= 100) return 'text-blue-600';
+        if (percent >= 80) return 'text-green-600';
+        return 'text-red-600';
+    }
+
     $: {
         if (employeeId && allReportData.length > 0) {
             let rawEmp = allReportData.find(e => e.maNV === employeeId);
-
             if (rawEmp) {
-                // Clone object để xử lý hiển thị
                 employee = { ...rawEmp };
-                
-                // --- LOGIC FIX TÊN & BỘ PHẬN ---
                 const cleanCode = String(employeeId).trim();
                 let realName = employee.hoTen || employee.name || '';
-                let realDept = employee.boPhan || '';
 
-                // 1. Tra cứu ngược trong danh sách nhân viên chuẩn (ycxData)
-                if ($ycxData && $ycxData.length) {
-                    const dbEmp = $ycxData.find(e => 
-                        String(e.ma_nv || e.maNV || '').trim() === cleanCode ||
-                        (e.nguoiTao && String(e.nguoiTao).includes(cleanCode))
-                    );
+                if ($ycxData?.length) {
+                    const dbEmp = $ycxData.find(e => String(e.ma_nv || e.maNV || '').trim() === cleanCode || (e.nguoiTao && String(e.nguoiTao).includes(cleanCode)));
                     if (dbEmp) {
                         realName = dbEmp.ten_nv || dbEmp.hoTen || realName;
-                        // Ưu tiên lấy bộ phận từ DB nếu báo cáo bị thiếu hoặc lỗi
-                        if (!realDept || realDept === 'Chưa phân loại' || realDept === 'Nhân viên không tìm thấy') {
-                            realDept = dbEmp.ma_kho || dbEmp.boPhan || dbEmp.vi_tri || '';
-                        }
                     }
                 }
+                realName = realName.replace(cleanCode, '').replace(/[-–—\s]+$/, '').trim();
+                displayInfo = { name: realName, code: cleanCode };
 
-                // 2. Làm sạch tên (Loại bỏ mã nhân viên thừa trong tên)
-                // VD: "Phan Mai Thị Ái Trâm - 12277" -> Xóa "12277"
-                if (realName.includes(cleanCode)) {
-                    realName = realName.replace(cleanCode, '');
-                }
-                // Xóa dấu gạch ngang/khoảng trắng thừa ở cuối chuỗi
-                realName = realName.replace(/[-–—\s]+$/, '').trim();
+                let columnSettings = settingsService.loadPastedCompetitionViewSettings() || [];
+                const activeColumns = columnSettings.filter(col => col.visible).map(col => ({
+                    ...col, label: $competitionNameMappings[col.tenGoc] || col.label || col.tenGoc
+                }));
 
-                // Cập nhật biến hiển thị
-                displayInfo = {
-                    name: realName,
-                    code: cleanCode,
-                    dept: realDept
-                };
-                // -------------------------------
+                let datList = [], ganDatList = [], canCoGangList = [], chuaCoSoBanList = [];
 
-                // Lấy cấu hình tên cột hiển thị
-                let columnSettings = settingsService.loadPastedCompetitionViewSettings();
-                if (!columnSettings || columnSettings.length === 0) {
-                     columnSettings = settingsService.loadPastedCompetitionViewSettings(); 
-                }
-                
-                const activeColumns = columnSettings
-                    .filter(col => col.visible)
-                    .map(col => ({
-                        ...col,
-                        label: $competitionNameMappings[col.tenGoc] || col.label || col.tenGoc
-                    }));
-
-                // Tính Trung bình bộ phận
-                const deptEmployees = allReportData.filter(e => e.boPhan === rawEmp.boPhan);
-                const deptAvgs = {};
-                
-                activeColumns.forEach(col => {
-                    let sum = 0;
-                    let count = 0;
-                    deptEmployees.forEach(e => {
-                        const comp = e.competitions.find(c => c.tenGoc === col.tenGoc);
-                        if (comp && comp.giaTri > 0) {
-                            sum += comp.giaTri;
-                            count++;
-                        }
-                    });
-                    deptAvgs[col.tenGoc] = count > 0 ? sum / count : 0;
-                });
-
-                // Phân loại chỉ số
-                let datList = [], ganDatList = [], canCoGangList = [];
                 activeColumns.forEach(col => {
                     const compData = employee.competitions.find(c => c.tenGoc === col.tenGoc);
-                    const val = compData ? compData.giaTri : 0;
-                    const avg = deptAvgs[col.tenGoc] || 0;
+                    const val = compData?.giaTri || 0;
+                    const target = categoryTargets[col.tenGoc] || 0;
+                    const projectedVal = (val / currentDay) * daysInMonth;
                     
-                    if (avg > 0 || val > 0) {
-                        const item = {
-                            name: col.label,
-                            value: val,
-                            avg: avg,
-                            diff: val - avg,
-                            percentOfAvg: avg > 0 ? (val / avg) * 100 : 0
-                        };
+                    const item = {
+                        name: col.label, value: val, projected: projectedVal, target,
+                        diff: projectedVal - target,
+                        percentOfAvg: target > 0 ? (projectedVal / target) * 100 : (val > 0 ? 100 : 0)
+                    };
 
-                        if (val >= avg) {
-                            datList.push(item);
-                        } else if (item.percentOfAvg >= 70) {
-                            ganDatList.push(item);
-                        } else {
-                            canCoGangList.push(item);
-                        }
+                    if (val === 0) {
+                        chuaCoSoBanList.push(item);
+                    } else {
+                        if (target > 0 && projectedVal >= target || target === 0) datList.push(item);
+                        else if (item.percentOfAvg >= 70) ganDatList.push(item);
+                        else canCoGangList.push(item);
                     }
                 });
 
+                datList.sort((a,b) => b.percentOfAvg - a.percentOfAvg);
+                ganDatList.sort((a,b) => b.percentOfAvg - a.percentOfAvg);
+                canCoGangList.sort((a,b) => b.percentOfAvg - a.percentOfAvg);
+                
+                let allCompact = [...datList, ...ganDatList, ...canCoGangList].sort((a,b) => b.percentOfAvg - a.percentOfAvg);
+
                 stats = {
-                    dat: datList.sort((a,b) => b.percentOfAvg - a.percentOfAvg),
-                    ganDat: ganDatList.sort((a,b) => b.percentOfAvg - a.percentOfAvg),
-                    canCoGang: canCoGangList.sort((a,b) => a.percentOfAvg - b.percentOfAvg),
-                    summary: {
-                        total: datList.length + ganDatList.length + canCoGangList.length,
-                        dat: datList.length,
-                        ganDat: ganDatList.length,
-                        canCoGang: canCoGangList.length,
-                        rate: 0
-                    }
+                    compactList: allCompact, dat: datList, ganDat: ganDatList, canCoGang: canCoGangList, chuaCoSoBan: chuaCoSoBanList,
+                    summary: { total: activeColumns.length, dat: datList.length, ganDat: ganDatList.length, canCoGang: canCoGangList.length, rate: 0 }
                 };
-                stats.summary.rate = stats.summary.total > 0 
-                    ? (stats.summary.dat / stats.summary.total) * 100 
-                    : 0;
+                stats.summary.rate = stats.summary.total > 0 ? (stats.summary.dat / stats.summary.total) * 100 : 0;
             }
         }
     }
 
-    function goBack() {
-        dispatch('back');
-    }
-
-    // [QUAN TRỌNG] Kích hoạt icon sau khi render
-    afterUpdate(() => {
-        if (typeof feather !== 'undefined') feather.replace();
-    });
+    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<div class="animate-fade-in pb-10 bg-gray-50 min-h-screen p-4 sm:p-6">
+<div class="animate-fade-in pb-10 bg-slate-50 min-h-screen p-4 sm:p-6" data-capture-group="thidua-nhanvien-detail">
   
-    <button on:click={goBack} class="mb-4 flex items-center gap-2 text-gray-500 hover:text-blue-600 transition-colors font-semibold">
-        <i data-feather="arrow-left" class="w-5 h-5"></i> Quay lại bảng tổng hợp
+    <button on:click={() => dispatch('back')} class="mb-4 flex items-center gap-2 text-slate-500 hover:text-blue-600 transition-colors font-bold text-sm capture-hide">
+        <i data-feather="arrow-left" class="w-4 h-4"></i> QUAY LẠI BẢNG TỔNG HỢP
     </button>
 
     {#if employee}
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 flex items-center gap-5">
-            <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 border border-gray-200 shadow-inner">
-                <i data-feather="user" class="w-8 h-8"></i>
+        <div class="bg-blue-50 border border-blue-200 rounded-2xl shadow-sm p-4 sm:p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-4 w-full md:w-auto">
+                <div class="w-14 h-14 rounded-full bg-white flex items-center justify-center text-blue-500 border border-blue-100 shadow-sm shrink-0">
+                    <i data-feather="user" class="w-7 h-7"></i>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-black text-yellow-600 drop-shadow-sm">{displayInfo.name} <span class="text-blue-400 font-bold text-lg ml-1">- {displayInfo.code}</span></h2>
+                </div>
             </div>
-            <div>
-                <h2 class="text-2xl font-bold text-gray-800">{displayInfo.name} <span class="text-gray-400 font-medium text-lg">- {displayInfo.code}</span></h2>
-                
-                {#if displayInfo.dept}
-                    <span class="inline-block mt-1 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100">
-                        {displayInfo.dept}
-                    </span>
-                {/if}
+
+            <div class="bg-white p-1 rounded-xl border border-blue-100 shadow-sm flex items-center w-full md:w-auto shrink-0 capture-hide">
+                <button on:click={() => viewMode = 'rut_gon'} class="flex-1 md:flex-none px-4 py-2 text-sm font-bold rounded-lg transition-colors {viewMode === 'rut_gon' ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}">Rút gọn</button>
+                <button on:click={() => viewMode = 'chi_tiet'} class="flex-1 md:flex-none px-4 py-2 text-sm font-bold rounded-lg transition-colors {viewMode === 'chi_tiet' ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}">Chi tiết</button>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
-                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Ngành hàng Đạt</p>
-                <p class="text-3xl font-extrabold text-gray-800">
-                    <span class="text-blue-600">{stats.summary.dat}</span>
-                    <span class="text-gray-300 text-xl">/ {stats.summary.total}</span>
-                </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 capture-kpi-grid">
+            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full min-h-[110px] flex justify-between items-center">
+                <div class="flex flex-col h-full justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600"><i data-feather="check-circle" class="w-4 h-4"></i></div>
+                        <span class="text-xs font-bold uppercase text-gray-500">Ngành hàng Đạt</span>
+                    </div>
+                    <div class="mt-3 text-[11px] font-semibold text-gray-400">Đã đạt: <strong class="text-gray-700">{stats.summary.dat}</strong> / {stats.summary.total}</div>
+                </div>
+                <span class="text-5xl font-black text-gray-800">{stats.summary.dat}</span>
             </div>
 
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
-                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Tỷ lệ đạt (trên nhóm có TB)</p>
-                <p class="text-3xl font-extrabold text-red-500">
-                    {formatters.formatNumber(stats.summary.rate, 0)}%
-                </p>
+            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full min-h-[110px] flex justify-between items-center">
+                <div class="flex flex-col h-full justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-500"><i data-feather="target" class="w-4 h-4"></i></div>
+                        <span class="text-xs font-bold uppercase text-gray-500">Tỷ lệ Hoàn thành</span>
+                    </div>
+                    <div class="mt-3 text-[11px] font-semibold text-gray-400">Dựa trên tiến độ dự kiến</div>
+                </div>
+                <span class="text-4xl font-black text-rose-500">{formatters.formatNumber(stats.summary.rate, 0)}%</span>
             </div>
 
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
-                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Gần Đạt (>=70%)</p>
-                <p class="text-3xl font-extrabold text-yellow-500">{stats.summary.ganDat}</p>
+            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full min-h-[110px] flex justify-between items-center">
+                <div class="flex flex-col h-full justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-500"><i data-feather="trending-up" class="w-4 h-4"></i></div>
+                        <span class="text-xs font-bold uppercase text-gray-500">Gần Đạt (>=70%)</span>
+                    </div>
+                </div>
+                <span class="text-5xl font-black text-amber-500">{stats.summary.ganDat}</span>
             </div>
 
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
-                <p class="text-xs font-bold text-gray-500 uppercase mb-1">Cần Cố Gắng</p>
-                <p class="text-3xl font-extrabold text-red-600">{stats.summary.canCoGang}</p>
+            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm h-full min-h-[110px] flex justify-between items-center">
+                <div class="flex flex-col h-full justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-600"><i data-feather="alert-circle" class="w-4 h-4"></i></div>
+                        <span class="text-xs font-bold uppercase text-gray-500">Cần Cố Gắng</span>
+                    </div>
+                </div>
+                <span class="text-5xl font-black text-red-600">{stats.summary.canCoGang}</span>
             </div>
         </div>
 
-        <div class="space-y-8">
-            
-            <div class="bg-blue-50/50 rounded-xl border border-blue-100 overflow-hidden">
-                <div class="px-5 py-3 bg-blue-100/50 border-b border-blue-200 flex items-center gap-2">
-                    <i data-feather="check-circle" class="w-5 h-5 text-blue-600"></i>
-                    <h3 class="font-bold text-blue-800 uppercase text-lg">Nhóm Đạt ({stats.dat.length})</h3>
-                </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {#each stats.dat as item}
-                        <div class="bg-white p-4 rounded-lg border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
-                            <h4 class="font-bold text-gray-800 mb-2 truncate" title={item.name}>{item.name}</h4>
-                            <div class="w-full bg-gray-100 rounded-full h-2 mb-3">
-                                <div class="bg-blue-500 h-2 rounded-full" style="width: 100%"></div>
-                            </div>
-                            <div class="text-xs space-y-1">
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">Thực hiện:</span>
-                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.value)}</span>
+        <div class="space-y-8 capture-main-content">
+            {#if viewMode === 'rut_gon'}
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                    <h3 class="font-bold text-gray-700 uppercase text-sm tracking-wide mb-4 flex items-center gap-2">
+                        <i data-feather="grid" class="w-4 h-4"></i> Tổng quan các ngành hàng có số liệu
+                    </h3>
+                    {#if stats.compactList.length > 0}
+                        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 capture-grid-view">
+                            {#each stats.compactList as item}
+                                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2 flex flex-col items-center justify-center text-center">
+                                    <span class="text-[11px] font-bold text-gray-600 line-clamp-1 w-full mb-0.5 capture-text" title={item.name}>{item.name}</span>
+                                    <span class="text-[17px] font-black {getColorClass(item.percentOfAvg)} capture-text">
+                                        {formatters.formatNumber(item.percentOfAvg, 0)}%
+                                    </span>
                                 </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">TB Bộ phận:</span>
-                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.avg)}</span>
-                                </div>
-                                <div class="flex justify-between border-t border-dashed border-gray-200 pt-1 mt-1">
-                                    <span class="text-gray-500">Chênh lệch:</span>
-                                    <span class="font-bold text-green-600">+{formatters.formatNumber(item.diff)}</span>
-                                </div>
-                            </div>
+                            {/each}
                         </div>
-                    {/each}
-                    {#if stats.dat.length === 0}
-                        <p class="text-sm text-gray-400 italic col-span-full text-center py-4">Không có ngành hàng nào đạt.</p>
+                    {:else}
+                        <p class="text-sm text-gray-400 italic">Không có ngành hàng nào phát sinh số liệu.</p>
                     {/if}
                 </div>
-            </div>
-
-            <div class="bg-yellow-50/50 rounded-xl border border-yellow-100 overflow-hidden">
-                <div class="px-5 py-3 bg-yellow-100/50 border-b border-yellow-200 flex items-center gap-2">
-                    <i data-feather="trending-up" class="w-5 h-5 text-yellow-600"></i>
-                    <h3 class="font-bold text-yellow-800 uppercase text-lg">Nhóm Gần Đạt ({stats.ganDat.length})</h3>
-                </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {#each stats.ganDat as item}
-                        <div class="bg-white p-4 rounded-lg border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
-                            <h4 class="font-bold text-gray-800 mb-2 truncate" title={item.name}>{item.name}</h4>
-                            <div class="w-full bg-gray-100 rounded-full h-2 mb-3">
-                                <div class="bg-yellow-400 h-2 rounded-full" style="width: {item.percentOfAvg}%"></div>
+            {:else}
+                <div class="space-y-6">
+                    {#each [
+                        { id: 'dat', title: 'Nhóm Đạt', data: stats.dat, color: 'blue', icon: 'check-circle' },
+                        { id: 'ganDat', title: 'Nhóm Gần Đạt', data: stats.ganDat, color: 'amber', icon: 'trending-up' },
+                        { id: 'canCoGang', title: 'Nhóm Cần Cố Gắng', data: stats.canCoGang, color: 'red', icon: 'alert-triangle' }
+                    ] as group}
+                        {#if group.data.length > 0}
+                            <div class="bg-{group.color}-50/30 rounded-2xl border border-{group.color}-100 overflow-hidden">
+                                <div class="px-5 py-3 bg-{group.color}-50/80 border-b border-{group.color}-100 flex items-center gap-2">
+                                    <i data-feather={group.icon} class="w-5 h-5 text-{group.color}-600"></i>
+                                    <h3 class="font-black text-{group.color}-900 uppercase text-sm tracking-wide">{group.title} ({group.data.length})</h3>
+                                </div>
+                                <div class="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 capture-grid-view">
+                                    {#each group.data as item}
+                                        <div class="bg-white p-3.5 rounded-xl border border-{group.color}-200 shadow-sm relative">
+                                            <div class="flex justify-between items-start gap-2 mb-3">
+                                                <h4 class="font-black text-slate-800 text-[14px] leading-snug line-clamp-2 capture-text" title={item.name}>{item.name}</h4>
+                                                {#if item.target > 0}
+                                                    <span class="font-black {getColorClass(item.percentOfAvg)} text-[16px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100 whitespace-nowrap capture-text">
+                                                        {formatters.formatNumber(item.percentOfAvg, 0)}%
+                                                    </span>
+                                                {/if}
+                                            </div>
+                                            <div class="w-full bg-slate-100 rounded-full h-1.5 mb-3 capture-bar-bg"><div class="bg-{group.color}-500 h-1.5 rounded-full capture-bar" style="width: {Math.min(item.percentOfAvg, 100)}%"></div></div>
+                                            <div class="space-y-1.5 text-[12px]">
+                                                <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Thực / Target:</span><span class="font-bold text-slate-800 capture-text">{formatters.formatNumber(item.value)} <span class="text-slate-300 font-normal mx-0.5">/</span> {item.target > 0 ? formatters.formatNumber(item.target) : '-'}</span></div>
+                                                <div class="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                                                    <span class="text-slate-600 font-medium capture-text">{item.diff >= 0 ? 'Vượt' : 'Thiếu'}: <strong class="{item.diff >= 0 ? 'text-green-600' : 'text-red-500'}">{formatters.formatNumber(Math.abs(item.diff))}</strong></span>
+                                                    <span class="text-slate-300">|</span>
+                                                    <span class="text-slate-600 font-medium capture-text">Dự kiến: <strong class="text-blue-600">{formatters.formatNumber(item.projected)}</strong></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
                             </div>
-                            <div class="text-xs space-y-1">
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">Thực hiện:</span>
-                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.value)}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">TB Bộ phận:</span>
-                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.avg)}</span>
-                                </div>
-                                <div class="flex justify-between border-t border-dashed border-gray-200 pt-1 mt-1">
-                                    <span class="text-gray-500">Chênh lệch:</span>
-                                    <span class="font-bold text-red-500">{formatters.formatNumber(item.diff)}</span>
-                                </div>
-                            </div>
-                        </div>
+                        {/if}
                     {/each}
-                    {#if stats.ganDat.length === 0}
-                        <p class="text-sm text-gray-400 italic col-span-full text-center py-4">Không có ngành hàng nào.</p>
-                    {/if}
                 </div>
-            </div>
+            {/if}
 
-            <div class="bg-red-50/50 rounded-xl border border-red-100 overflow-hidden">
-                <div class="px-5 py-3 bg-red-100/50 border-b border-red-200 flex items-center gap-2">
-                    <i data-feather="alert-circle" class="w-5 h-5 text-red-600"></i>
-                    <h3 class="font-bold text-red-800 uppercase text-lg">Nhóm Cần Cố Gắng ({stats.canCoGang.length})</h3>
+            {#if stats.chuaCoSoBan.length > 0}
+                <div class="pt-6 border-t border-slate-200/60 mt-6">
+                    <h3 class="font-bold text-slate-500 uppercase text-xs mb-3 flex items-center gap-1.5"><i data-feather="inbox" class="w-4 h-4"></i> Chưa có số bán ({stats.chuaCoSoBan.length})</h3>
+                    <div class="flex flex-wrap gap-2 capture-pill-group">
+                        {#each stats.chuaCoSoBan as item}
+                            <span class="bg-red-600 text-yellow-300 px-3.5 py-1.5 rounded-full text-[11px] font-black shadow-sm uppercase tracking-wide capture-pill">
+                                {item.name}
+                            </span>
+                        {/each}
+                    </div>
                 </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {#each stats.canCoGang as item}
-                        <div class="bg-white p-4 rounded-lg border border-red-100 shadow-sm hover:shadow-md transition-shadow">
-                            <h4 class="font-bold text-gray-800 mb-2 truncate" title={item.name}>{item.name}</h4>
-                            <div class="w-full bg-gray-100 rounded-full h-2 mb-3">
-                                <div class="bg-red-400 h-2 rounded-full" style="width: {Math.max(item.percentOfAvg, 5)}%"></div>
-                            </div>
-                            <div class="text-xs space-y-1">
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">Thực hiện:</span>
-                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.value)}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">TB Bộ phận:</span>
-                                    <span class="font-bold text-gray-800">{formatters.formatNumber(item.avg)}</span>
-                                </div>
-                                <div class="flex justify-between border-t border-dashed border-gray-200 pt-1 mt-1">
-                                    <span class="text-gray-500">Chênh lệch:</span>
-                                    <span class="font-bold text-red-600">{formatters.formatNumber(item.diff)}</span>
-                                </div>
-                            </div>
-                        </div>
-                    {/each}
-                    {#if stats.canCoGang.length === 0}
-                        <p class="text-sm text-gray-400 italic col-span-full text-center py-4">Tuyệt vời! Không có ngành hàng yếu kém.</p>
-                    {/if}
-                </div>
-            </div>
-
-        </div>
-
-    {:else}
-        <div class="p-10 text-center">
-            <p class="text-gray-500">Đang tải dữ liệu chi tiết...</p>
+            {/if}
         </div>
     {/if}
 </div>
 
 <style>
-    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+    .animate-fade-in { animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* ==========================================================================
+       OVERRIDE CAPTURE LOGIC (SYNCED FROM MASTER LUYKE)
+       ========================================================================== */
+    :global(.capture-container .capture-hide) { display: none !important; }
+    
+    /* Ép chiều ngang khung hình capture cho cả 2 mode */
+    :global(.capture-container [data-capture-group="thidua-nhanvien-detail"]) { 
+        width: 900px !important; min-width: 900px !important; 
+        background-color: #f8fafc !important; padding: 25px !important; 
+    }
+
+    /* Tắt animation để html2canvas không chụp dở dang */
+    :global(.capture-container *) { transition: none !important; animation: none !important; }
+
+    /* Dàn lại lưới cho 2 chế độ khi chụp ảnh */
+    :global(.capture-container .capture-kpi-grid) { grid-template-columns: repeat(4, 1fr) !important; gap: 15px !important; }
+    
+    /* Mode rút gọn dàn 5 cột, mode chi tiết dàn 3 cột để không bị hẹp */
+    :global(.capture-container .capture-grid-view) { 
+        display: grid !important; 
+        grid-template-columns: repeat(5, 1fr) !important; 
+        gap: 12px !important; 
+    }
+    :global(.capture-container .capture-detail-grid) { grid-template-columns: repeat(3, 1fr) !important; }
+
+    /* Xử lý che chân chữ và rớt dòng */
+    :global(.capture-container .capture-text) { 
+        line-height: 1.5 !important; 
+        padding-bottom: 3px !important; 
+        display: block !important;
+        white-space: normal !important;
+    }
+    :global(.capture-container .line-clamp-1), 
+    :global(.capture-container .line-clamp-2) { 
+        display: block !important; -webkit-line-clamp: unset !important; overflow: visible !important; height: auto !important; 
+    }
+
+    /* ĐẶC TRỊ CHE CHÂN CHỮ NHÓM VIÊN THUỐC */
+    :global(.capture-container .capture-pill-group) { gap: 10px !important; }
+    :global(.capture-container .capture-pill) { 
+        padding: 8px 14px !important; 
+        line-height: 1.2 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 32px !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Bảo toàn màu thanh progress khi chụp */
+    :global(.capture-container .capture-bar-bg),
+    :global(.capture-container .capture-bar) { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; height: 6px !important; }
 </style>
 <<< FILE_END: src/components/health-staff/competition/CompetitionDetailView.svelte
 
@@ -1808,51 +2198,97 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 >>> FILE_START: src/components/health-staff/competition/EmployeeView.svelte
 <script>
   import { createEventDispatcher, afterUpdate } from 'svelte';
-  // Import ycxData để map tên nhân viên chuẩn xác
-  import { pastedThiDuaReportData, competitionNameMappings, ycxData } from '../../../stores.js';
+  import { pastedThiDuaReportData, competitionNameMappings, ycxData, competitionData, danhSachNhanVien, selectedWarehouse, luykeNameMappings } from '../../../stores.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
+  import { datasyncService } from '../../../services/datasync.service.js';
   
   export let reportData = [];
   const dispatch = createEventDispatcher();
 
-  // --- HÀM TÌM MAPPING THÔNG MINH (Bỏ qua lỗi dấu cách) ---
+  // --- HÀM TÌM MAPPING TÊN CỘT THEO ADMIN ---
   function findSmartMapping(tenGoc, mappings) {
       if (!mappings) return tenGoc;
-      // 1. Tìm chính xác 100% (Nhanh nhất)
       if (mappings[tenGoc]) return mappings[tenGoc];
-      // 2. Tìm kiểu "làm sạch" (Xóa khoảng trắng thừa 2 đầu để so sánh)
-      const cleanName = String(tenGoc).trim();
-      // Quét toàn bộ danh sách key trong Admin để tìm cái nào giống
-      const allKeys = Object.keys(mappings);
-      const matchedKey = allKeys.find(k => String(k).trim() === cleanName);
-      
-      if (matchedKey) return mappings[matchedKey];
-      // 3. Không tìm thấy thì trả về tên gốc
       return tenGoc;
+  }
+
+  // --- [ĐÃ PHẪU THUẬT] THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
+  let currentDay = 1;
+  let daysInMonth = 30;
+
+  $: {
+      const today = new Date();
+      const d = today.getDate();
+      
+      if (d === 1) {
+          // Vùng giáp hạt: Ngày mùng 1 đầu tháng -> Tự động dùng số ngày của tháng trước
+          const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+          currentDay = lastMonth.getDate();
+          daysInMonth = lastMonth.getDate();
+      } else {
+          // Ngày thường: Tính tiến độ theo tháng hiện tại
+          currentDay = Math.max(d - 1, 1);
+          daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      }
   }
 
   // --- STATE ---
   let columnSettings = [];
-  // [GENESIS FIX 2] Thay đổi sort mặc định: Theo điểm Đạt (totalScore) từ cao xuống thấp
   let sortKey = 'totalScore';
   let sortDirection = 'desc';
 
-  // Dữ liệu phẳng
   let allEmployees = [];
-  let deptAverages = {};
-  // Palette màu cho header
+  
+  // --- KHỐI LOGIC: TARGET CÁ NHÂN (LINKED MAPPING) ---
+  let targetRatio = 100;
+  let categoryTargets = {};
+  
+  // 1. Lấy tỷ lệ % giao target từ Firebase
+  $: if ($selectedWarehouse) {
+      datasyncService.loadPersonalTargetRatio($selectedWarehouse)
+        .then(ratio => targetRatio = ratio)
+        .catch(() => targetRatio = 100);
+  }
+
+  // 2. Tính tổng nhân viên hiện tại của Siêu Thị
+  $: emps = $danhSachNhanVien || [];
+  $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
+  $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
+
+  // 3. Tra cứu Target qua 'linkedEmpProgram'
+  $: {
+      const stMappedData = {};
+      ($competitionData || []).forEach(item => {
+          const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
+          
+          let linkedEmpProg = '';
+          if (typeof luykeMap === 'object' && luykeMap !== null) {
+              linkedEmpProg = luykeMap.linkedEmpProgram;
+          }
+          
+          if (linkedEmpProg) {
+              const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
+              const isQty = item.type === 'soLuong';
+              const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
+              
+              stMappedData[linkedEmpProg] = pTarget;
+          }
+      });
+
+      const newTargets = {};
+      (columnSettings || []).forEach(col => {
+          newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
+      });
+      categoryTargets = newTargets;
+  }
+
   const headerColors = [
-      'bg-red-100 text-red-900 border-red-200',
-      'bg-orange-100 text-orange-900 border-orange-200',
-      'bg-amber-100 text-amber-900 border-amber-200',
-      'bg-lime-100 text-lime-900 border-lime-200',
-      'bg-teal-100 text-teal-900 border-teal-200',
-      'bg-cyan-100 text-cyan-900 border-cyan-200',
-      'bg-sky-100 text-sky-900 border-sky-200',
-      'bg-indigo-100 text-indigo-900 border-indigo-200',
-      'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200',
-      'bg-rose-100 text-rose-900 border-rose-200'
+      'bg-red-100 text-red-900 border-red-200', 'bg-orange-100 text-orange-900 border-orange-200',
+      'bg-amber-100 text-amber-900 border-amber-200', 'bg-lime-100 text-lime-900 border-lime-200',
+      'bg-teal-100 text-teal-900 border-teal-200', 'bg-cyan-100 text-cyan-900 border-cyan-200',
+      'bg-sky-100 text-sky-900 border-sky-200', 'bg-indigo-100 text-indigo-900 border-indigo-200',
+      'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200', 'bg-rose-100 text-rose-900 border-rose-200'
   ];
   function getHeaderColor(index) {
       return headerColors[index % headerColors.length];
@@ -1861,114 +2297,50 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   // --- REACTIVE PROCESSING ---
   $: {
       if (reportData && reportData.length > 0) {
-          
-          // --- [LOGIC 1] MAP TÊN NHÂN VIÊN TỪ DANH SÁCH GỐC (FIX GENESIS) --- 
-          // Tạo map chứa cả Tên và Bộ phận (Kho)
           const infoMap = {};
           if ($ycxData && $ycxData.length) {
               $ycxData.forEach(nv => {
-                  // Xử lý linh hoạt các trường dữ liệu (ma_nv/maNV, ten_nv/hoTen, ma_kho/boPhan)
                   const code = String(nv.ma_nv || nv.maNV || '').trim();
                   const name = nv.ten_nv || nv.hoTen || '';
                   const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
-
-                  if (code) {
-                      infoMap[code] = { name, dept };
-                  }
-                  
-                  // Fallback: map theo tên người tạo nếu có dạng "Tên - Mã"
+                  if (code) infoMap[code] = { name, dept };
                   if (nv.nguoiTao) {
                       const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
                       if (msnvMatch) {
                           const extractedCode = msnvMatch[1].trim();
-                          if (!infoMap[extractedCode]) {
-                               infoMap[extractedCode] = { 
-                                   name: nv.hoTen || nv.nguoiTao, 
-                                   dept: dept 
-                               };
-                          }
+                          if (!infoMap[extractedCode]) infoMap[extractedCode] = { name: nv.hoTen || nv.nguoiTao, dept: dept };
                       }
                   }
               });
           }
 
           const mappedReportData = reportData.map(item => {
-             // Ưu tiên lấy maNV nếu có, hoặc lấy từ name nếu name là số
              let rawCode = item.maNV;
-             if (!rawCode && item.name && /^\d+$/.test(item.name)) {
-                 rawCode = item.name;
-             }
-             
-             // Chuẩn hóa mã nhân viên để tra cứu
+             if (!rawCode && item.name && /^\d+$/.test(item.name)) rawCode = item.name;
              const lookupCode = String(rawCode || '').trim();
              const info = infoMap[lookupCode];
-
-             // Tra cứu tên thật và bộ phận
+   
              let realName = item.hoTen || item.name;
-             let realDept = item.boPhan; // Giữ bộ phận gốc nếu có
+             let realDept = item.boPhan;
 
              if (info) {
                  if (info.name) realName = info.name;
-                 // Nếu dữ liệu gốc chưa có bộ phận hoặc bộ phận bị rỗng, lấy từ danh sách nhân viên (ma_kho)
-                 if (!realDept || realDept === 'Chưa phân loại' || realDept === lookupCode) {
-                     realDept = info.dept;
-                 }
+                 if (!realDept || realDept === 'Chưa phân loại' || realDept === lookupCode) realDept = info.dept;
              }
-             
-             // Làm sạch tên: Nếu tên là dạng "Tên - Mã", cắt bỏ phần mã
              if (realName && realName.includes('-')) {
                   const parts = realName.split('-');
-                  // Nếu phần sau là số (MSNV), lấy phần đầu
-                  if (parts.length > 1 && /\d/.test(parts[parts.length-1])) {
-                       realName = parts[0].trim();
-                  }
+                  if (parts.length > 1 && /\d/.test(parts[parts.length-1])) realName = parts[0].trim();
              }
+             return { ...item, maNV: rawCode || item.maNV, hoTen: realName, boPhan: realDept || 'Chưa phân loại' };
+          });
 
-             return {
-                 ...item,
-                 maNV: rawCode || item.maNV, 
-                 hoTen: realName,
-                 boPhan: realDept || 'Chưa phân loại'
-             };
-          });
-          // --- [LOGIC 2] CẤU HÌNH CỘT & MAPPING TÊN CỘT ---
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          if (!savedSettings || savedSettings.length === 0) {
-              savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          }
-          columnSettings = savedSettings;
-          // Áp dụng hàm mapping thông minh tại đây
-          columnSettings = columnSettings.map(col => ({
-              ...col,
-              label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
-          }));
-          const groups = {};
-          mappedReportData.forEach(item => {
-              const dept = item.boPhan || 'Chưa phân loại';
-              if (!groups[dept]) groups[dept] = [];
-              groups[dept].push(item);
-          });
-          const avgs = {};
-          Object.keys(groups).forEach(deptName => {
-              const deptData = groups[deptName];
-              const deptAvg = {};
-              columnSettings.forEach(col => {
-                  let total = 0;
-                  let count = 0;
-                  deptData.forEach(emp => {
-                      const compData = emp.competitions.find(c => c.tenGoc === col.tenGoc);
-                      const giaTri = compData?.giaTri || 0;
-                      if (giaTri > 0) { 
-                          total += giaTri;
-                          count++;
-                      }
-                  });
-                  deptAvg[col.tenGoc] = count > 0 ? total / count : 0;
-              });
-              avgs[deptName] = deptAvg;
-          });
-          deptAverages = avgs;
+          if (!savedSettings || savedSettings.length === 0) savedSettings = settingsService.loadPastedCompetitionViewSettings();
           
+          columnSettings = savedSettings.map(col => ({
+              ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
+          }));
+
           allEmployees = [...mappedReportData];
       } else {
           allEmployees = [];
@@ -1976,6 +2348,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   }
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
+
   // --- SORT LOGIC ---
   function handleSort(key) {
       if (sortKey === key) {
@@ -1988,7 +2361,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
   $: sortedEmployees = [...allEmployees].sort((a, b) => {
       let valA, valB;
-      
       if (sortKey.startsWith('comp_')) {
             const sortCol = columnSettings.find(c => c.id === sortKey);
             if (!sortCol) return 0;
@@ -1998,10 +2370,17 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
       } else if (sortKey === 'totalScore') {
             const getScore = (emp) => {
-                const deptAvg = deptAverages[emp.boPhan] || {};
                 let score = 0;
                 emp.competitions.forEach(comp => {
-                    if (deptAvg[comp.tenGoc] > 0 && comp.giaTri >= deptAvg[comp.tenGoc]) score++;
+                    const val = comp.giaTri || 0;
+                    const pTarget = categoryTargets[comp.tenGoc] || 0;
+                    
+                    // --- ÁP DỤNG SỐ DỰ KIẾN VÀO BẢNG CHÂN LÝ ---
+                    const projectedVal = (val / currentDay) * daysInMonth;
+                    
+                    if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) {
+                        score++;
+                    }
                 });
                 return score;
             };
@@ -2014,16 +2393,38 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
   });
-  // --- TOGGLE LOGIC ---
+
+  $: topCount = sortedEmployees.length <= 15 ? 3 : 5;
+  function getRowStyle(index) {
+      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-slate-50/50 hover:bg-gray-100';
+  }
+
+  function getStickyClass(index) {
+      if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100';
+      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
+      if (index === 2) return 'bg-orange-50 group-hover:bg-orange-100';
+      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
+      return index % 2 === 0 ? 'bg-white group-hover:bg-gray-50' : 'bg-slate-50 group-hover:bg-gray-100';
+  }
+
+  function getRankIcon(index) {
+      if (index === 0) return '🏆';
+      if (index === 1) return '🥈';
+      if (index === 2) return '🥉';
+      if (index < topCount) return '⭐';
+      return `#${index + 1}`;
+  }
+
   function toggleColumn(col) {
-      const newSettings = columnSettings.map(c => 
-          c.tenGoc === col.tenGoc ? { ...c, visible: !c.visible } : c
-      );
+      const newSettings = columnSettings.map(c => c.tenGoc === col.tenGoc ? { ...c, visible: !c.visible } : c);
       columnSettings = newSettings;
       settingsService.savePastedCompetitionViewSettings(newSettings);
   }
 
-  // --- FOOTER CALCULATION ---
   function calculateTotal(col) {
       return allEmployees.reduce((sum, emp) => {
           const comp = emp.competitions.find(c => c.tenGoc === col.tenGoc);
@@ -2033,15 +2434,15 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
   function calculateTotalScore() {
       return allEmployees.reduce((total, item) => {
-          const avgScores = deptAverages[item.boPhan] || {};
-          const score = item.competitions.reduce((acc, c) => (avgScores[c.tenGoc] > 0 && c.giaTri >= avgScores[c.tenGoc]) ? acc + 1 : acc, 0);
+          const score = item.competitions.reduce((acc, c) => {
+              const val = c.giaTri || 0;
+              const pTarget = categoryTargets[c.tenGoc] || 0;
+              const projectedVal = (val / currentDay) * daysInMonth;
+              
+              return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
+          }, 0);
           return total + score;
       }, 0);
-  }
-
-  // --- VIEW SWITCHING ---
-  function switchToProgram() {
-      dispatch('viewChange', 'program');
   }
 
   afterUpdate(() => {
@@ -2074,7 +2475,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         </div>
 
         <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden" data-capture-group="pasted-competition">
-            
             <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
                 <div>
                     <h3 class="text-lg font-bold text-purple-800 uppercase flex items-center gap-2">
@@ -2083,20 +2483,15 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     </h3>
                     <p class="text-xs text-gray-500 mt-0.5 ml-7">Theo dõi tiến độ các chương trình thi đua</p>
                 </div>
-                </div>
+            </div>
             
             <div class="overflow-x-auto sknv-pasted-competition-scroller relative" style="max-height: 700px;">
                 <table class="w-full text-sm text-left border-separate border-spacing-0">
                     <thead class="text-xs uppercase font-bold text-gray-700 sticky top-0 z-20 shadow-sm">
                         <tr>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky left-0 z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" on:click={() => handleSort('hoTen')}>
-                                Nhân viên
-                            </th>
-                            
-                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky left-[150px] z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" on:click={() => handleSort('totalScore')}>
-                                Đạt
-                            </th>
-
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[50px] min-w-[50px] sticky left-0 z-30 px-1 py-2 text-center align-middle text-sm">Hạng</th>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky left-[50px] z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" on:click={() => handleSort('hoTen')}>Nhân viên</th>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky left-[200px] z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" on:click={() => handleSort('totalScore')}>Đạt</th>
                             {#each visibleColumns as col, index}
                                 <th 
                                     class="px-1 py-1 w-auto min-w-[60px] max-w-[90px] whitespace-normal break-words border-b border-r border-gray-200 {getHeaderColor(index)} align-middle cursor-pointer hover:opacity-80 transition select-none"
@@ -2112,36 +2507,46 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     </thead>
                     
                     <tbody class="divide-y divide-gray-100">
-                        {#each sortedEmployees as item (item.maNV)}
-                            {@const avgScores = deptAverages[item.boPhan] || {}}
-                            {@const score = item.competitions.reduce((acc, c) => (avgScores[c.tenGoc] > 0 && c.giaTri >= avgScores[c.tenGoc]) ? acc + 1 : acc, 0)}
+                        {#each sortedEmployees as item, index (item.maNV)}
+                            {@const score = item.competitions.reduce((acc, c) => {
+                                const val = c.giaTri || 0;
+                                const pTarget = categoryTargets[c.tenGoc] || 0;
+                                const projectedVal = (val / currentDay) * daysInMonth;
+                                return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
+                            }, 0)}
                             
                             <tr 
-                                class="hover:bg-blue-50 transition-colors group cursor-pointer"
+                                class="transition-colors group cursor-pointer {getRowStyle(index)}"
                                 on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
                             >
-                                <td class="px-2 py-1.5 font-semibold text-blue-700 bg-white group-hover:bg-blue-50 sticky left-0 z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px]" title="{item.hoTen} - {item.maNV}">
+                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky left-0 transition-colors {getStickyClass(index)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}">
+                                    {getRankIcon(index)}
+                                </td>
+                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky left-[50px] z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(index)}" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
-                                
-                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 bg-white group-hover:bg-blue-50 border-r border-gray-200 text-[14px] sticky left-[150px] z-10">
+                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky left-[200px] z-10 transition-colors {getStickyClass(index)}">
                                     {score}
                                 </td>
 
                                 {#each visibleColumns as col}
                                     {@const comp = item.competitions.find(c => c.tenGoc === col.tenGoc)}
                                     {@const val = comp?.giaTri || 0}
-                                    {@const avg = avgScores[col.tenGoc] || 0}
-                                    {@const isBelow = avg > 0 && val < avg}
-                                    {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
-                                    {@const textColorClass = isRevenue ? 'text-blue-700' : 'text-gray-900'}
+                                    {@const pTarget = categoryTargets[col.tenGoc] || 0}
+                                    {@const projectedVal = (val / currentDay) * daysInMonth}
                                     
-                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-50' : ''} {textColorClass} whitespace-nowrap overflow-hidden">
-                                         {#if val === 0}
-                                            <span class="text-gray-300 font-normal">-</span>
-                                         {:else}
+                                    {@const isBelow = pTarget > 0 && projectedVal < pTarget}
+                                    {@const isNoTarget = pTarget === 0 && val === 0}
+                                    {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
+                                    {@const textColorClass = isBelow ? 'text-yellow-900' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
+
+                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
+                                    
+                                        {#if val === 0}
+                                            <span class="text-gray-300 font-normal">{isNoTarget ? '0' : '-'}</span>
+                                        {:else}
                                             {formatters.formatNumber(val)}
-                                         {/if}
+                                        {/if}
                                     </td>
                                 {/each}
                             </tr>
@@ -2149,29 +2554,44 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     </tbody>
                     
                     <tfoot class="text-xs uppercase sticky bottom-0 z-20 shadow-[0_-1px_2px_rgba(0,0,0,0.1)]">
-                        <tr class="bg-yellow-50 text-yellow-800 font-semibold border-t-2 border-gray-300">
-                            <td class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
+                        <tr class="bg-indigo-50 text-indigo-800 font-semibold border-t-2 border-indigo-300">
+                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-indigo-100 border-r border-indigo-200 z-30 text-center text-[13px]">
+                                TARGET CÁ NHÂN
+                            </td>
+                            <td class="px-2 py-2 border-r border-indigo-200 bg-indigo-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-indigo-700">
+                                -
+                            </td>
+                            {#each visibleColumns as col}
+                                {@const pTarget = categoryTargets[col.tenGoc] || 0}
+                                <td class="px-1 py-2 text-right border-r border-indigo-200 text-[13px] bg-indigo-50 text-indigo-700" title={pTarget === 0 ? "Chưa link dữ liệu hoặc Target bằng 0" : ""}>
+                                    {pTarget > 0 ? formatters.formatNumber(pTarget) : '0'}
+                                </td>
+                            {/each}
+                        </tr>
+
+                        <tr class="bg-yellow-50 text-yellow-800 font-semibold border-t border-gray-300">
+                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
                                 TRUNG BÌNH
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[150px] z-30 text-center text-[13px] font-bold text-green-700">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-green-700">
                                 {allEmployees.length > 0 ? formatters.formatNumber(calculateTotalScore() / allEmployees.length, 1) : 0}
                             </td>
                             {#each visibleColumns as col}
-                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px]">
+                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px] bg-yellow-50">
                                     {allEmployees.length > 0 ? formatters.formatNumber(calculateTotal(col) / allEmployees.length, 0) : 0}
                                 </td>
                             {/each}
                         </tr>
 
                         <tr class="bg-gray-200 text-gray-900 font-bold border-t border-gray-300">
-                            <td class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
                                 TỔNG
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[150px] z-30 text-center text-[13px]">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[200px] z-30 text-center text-[13px]">
                                 {calculateTotalScore()}
                             </td>
                             {#each visibleColumns as col}
-                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px]">
+                                <td class="px-1 py-2 text-right border-r border-gray-300 text-[13px] bg-gray-200">
                                     {formatters.formatNumber(calculateTotal(col))}
                                 </td>
                             {/each}
@@ -2193,7 +2613,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
 
     table { border-spacing: 0; }
-    /* CSS cho Line Clamp 2 dòng */
     .line-clamp-2 {
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -2457,7 +2876,11 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 {:else}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
         {#each reportData as result (result.competition.id)}
-            <div class="h-full">
+            <div 
+                class="h-full" 
+                data-capture-group="competition-program"
+                data-capture-filename="ThiDua_{result.competition.name || result.competition.id}"
+            >
                 <FocusCompetitionTable competitionResult={result} />
             </div>
         {/each}
@@ -3737,20 +4160,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     import { formatters } from '../../../utils/formatters.js';
     import { dynamicTableProcessor } from '../../../services/processing/logic/dynamicTable.processor.js';
     import { isAdmin } from '../../../stores.js';
-    
     // Components
     import SortableTh from '../../common/SortableTh.svelte';
 
-    export let config = {};      // Cấu hình bảng (từ Admin/User)
-    export let reportData = [];  // Dữ liệu nhân viên (Master Data)
+    export let config = {};
+    // Cấu hình bảng (từ Admin/User)
+    export let reportData = [];
+    // Dữ liệu nhân viên (Master Data)
     export let colorTheme = 'blue';
 
     const dispatch = createEventDispatcher();
-
     // --- STATE ---
     let sortKey = 'hoTen';
     let sortDirection = 'asc';
-
     // --- PROCESSING ---
     // 1. Biến đổi dữ liệu thô -> Dữ liệu hiển thị (kèm logic tính %)
     $: processedResult = dynamicTableProcessor.processTableData(reportData, config);
@@ -3759,12 +4181,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
     // 2. Sắp xếp
     $: sortedData = dynamicTableProcessor.sortTableData(tableData, sortKey, sortDirection);
-
     // --- HANDLERS ---
     function handleSort(event) {
         const key = event.detail;
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-        else { sortKey = key; sortDirection = 'desc'; }
+        else { sortKey = key;
+        sortDirection = 'desc'; }
     }
 
     // --- STYLING HELPERS ---
@@ -3774,6 +4196,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         orange: { header: 'bg-orange-50 border-orange-200', title: 'text-orange-800' },
         purple: { header: 'bg-purple-50 border-purple-200', title: 'text-purple-800' },
         teal: { header: 'bg-teal-50 border-teal-200', title: 'text-teal-800' },
+   
     };
     $: theme = themeMap[colorTheme] || themeMap.blue;
 
@@ -3782,17 +4205,20 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         if (cell.config.type === 'PERCENT') {
             // Lấy target từ config bảng hoặc goal settings (nếu có logic override)
             // Ở đây ta dùng targetId để map vào object mucTieu của nhân viên
+          
             const targetId = cell.config.targetId;
             const targetVal = targetId && targetObj && targetObj[targetId] 
-                ? parseFloat(targetObj[targetId]) 
+                ?
+                parseFloat(targetObj[targetId]) 
                 : 0;
-
             const currentVal = cell.value * 100; // Đưa về thang 100
             
             if (targetVal > 0) {
-                return currentVal >= targetVal ? 'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
+                return currentVal >= targetVal ?
+                'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
             }
-            return 'text-red-600'; // Mặc định % là màu đỏ (hoặc cam)
+            return 'text-red-600';
+            // Mặc định % là màu đỏ (hoặc cam)
         }
         if (cell.config.type === 'SL') return 'text-gray-800';
         return 'text-blue-700 font-semibold'; // DT, DTQD
@@ -3802,18 +4228,21 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col transition-all hover:shadow-md relative group/card">
     
     <div class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity flex gap-1 z-20 bg-white/90 backdrop-blur rounded-lg p-1 shadow-sm border border-gray-100">
-        {#if !config.isSystem || $isAdmin}
+        {#if !config.isSystem ||
+            $isAdmin}
             <button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Sửa" on:click|stopPropagation={() => dispatch('edit', config)}>
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
             </button>
             <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title="Xóa" on:click|stopPropagation={() => dispatch('delete', config.id)}>
+      
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
         {/if}
     </div>
 
     <div class="px-5 py-3 border-b {theme.header} flex justify-between items-center">
-        <h4 class="text-base font-bold uppercase {theme.title} truncate flex items-center gap-2" title={config.title}>
+        <h4 class="text-base font-bold uppercase {theme.title} flex items-center gap-2" title={config.title}>
+     
             <i data-feather="bar-chart-2" class="w-4 h-4"></i> {config.title}
         </h4>
     </div>
@@ -3824,70 +4253,90 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         </div>
     {:else}
         <div class="overflow-x-auto flex-grow custom-scrollbar relative">
+           
             <table class="min-w-full text-sm border-collapse border-0">
                 <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
                     <tr>
                         <SortableTh 
+                         
                             key="hoTen" 
                             label="Nhân viên" 
                             className="sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 min-w-[150px]" 
                             {sortKey} {sortDirection} 
+
                             on:sort={handleSort} 
                         />
                         
+                       
                         {#each config.columns as col (col.id)}
-                            {@const bgClass = col.color ? `bg-${col.color}-50` : 'bg-gray-50'}
-                            {@const textClass = col.color ? `text-${col.color}-800` : 'text-gray-700'}
+                            {@const bgClass = col.color ?
+                            `bg-${col.color}-50` : 'bg-gray-50'}
+                            {@const textClass = col.color ?
+                            `text-${col.color}-800` : 'text-gray-700'}
                             <SortableTh 
                                 key={col.id} 
                                 label={col.header} 
+   
                                 align="right" 
                                 className="{bgClass} {textClass} border-r border-b border-gray-200 min-w-[100px]" 
+                                
                                 {sortKey} {sortDirection} 
                                 on:sort={handleSort} 
                             />
                         {/each}
+             
                     </tr>
                 </thead>
 
                 <tbody class="divide-y divide-gray-100">
                     {#each sortedData as row (row.maNV)}
                         <tr class="hover:bg-blue-50/50 transition-colors group">
+        
                             <td class="px-3 py-2 font-semibold text-gray-700 border-r border-b border-gray-300 bg-white group-hover:bg-blue-50/50 sticky left-0 z-10 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                <span class="text-blue-700 text-sm block truncate" title="{row.hoTen} - {row.maNV}">
+                                <span class="text-blue-700 text-sm leading-relaxed" title="{row.hoTen} - {row.maNV}">
+                           
                                     {formatters.getShortEmployeeName(row.hoTen, row.maNV)}
                                 </span>
                             </td>
 
-                            {#each config.columns as col (col.id)}
+                            {#each config.columns 
+                                as col (col.id)}
                                 {@const cell = row.cells[col.id]}
                                 <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell, row.mucTieu)}">
-                                    {cell ? cell.display : '-'}
+                       
+                                    {cell ?
+                                    cell.display : '-'}
                                 </td>
                             {/each}
                         </tr>
+              
                     {/each}
                 </tbody>
 
                 <tfoot class="bg-gray-100 font-bold text-gray-800 border-t-2 border-gray-300 sticky bottom-0 z-20">
                     <tr>
                         <td class="px-3 py-2 sticky left-0 bg-gray-200 z-30 border-r border-gray-300">TỔNG</td>
+  
                         {#each config.columns as col (col.id)}
                             <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100">
-                                {totals.cells[col.id]?.display || '-'}
+                                {totals.cells[col.id]?.display ||
+                                '-'}
                             </td>
                         {/each}
                     </tr>
                 </tfoot>
+            
             </table>
         </div>
     {/if}
 </div>
 
 <style>
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px;
+        height: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 3px;
+    }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 </style>
 <<< FILE_END: src/components/health-staff/performance/DynamicPerformanceTable.svelte
@@ -3900,7 +4349,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     import { datasyncService } from '../../../services/datasync.service.js';
     
     import DynamicPerformanceTable from './DynamicPerformanceTable.svelte';
-
     export let reportData = [];
 
     // [FIX 1] Mặc định là đang tải để tránh hiện thông báo lỗi ngay khi mở
@@ -3924,7 +4372,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     }
 
     async function loadData(kho) {
-        isLoading = true; // [FIX] Luôn bật loading khi bắt đầu tải
+        isLoading = true;
+        // [FIX] Luôn bật loading khi bắt đầu tải
         try {
             // 1. Load System Tables (Admin)
             const sysTables = await adminService.loadSystemPerformanceTables();
@@ -3943,7 +4392,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
         } catch (e) {
             console.error("[PerformanceView] Lỗi tải dữ liệu:", e);
         } finally {
-            isLoading = false; // [FIX] Đảm bảo luôn tắt loading khi xong
+            isLoading = false;
+            // [FIX] Đảm bảo luôn tắt loading khi xong
         }
     }
 
@@ -4020,10 +4470,8 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             {#each $customPerformanceTables as table}
                 <button 
                     class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
-                    {table.isVisible ?
-                        'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
-                    {table.isSystem ?
-                        'border-dashed' : ''}"
+                    {table.isVisible ? 'bg-blue-600 text-white border-blue-600 shadow-md transform -translate-y-0.5' : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'}
+                    {table.isSystem ? 'border-dashed' : ''}"
                     on:click={() => toggleTableVisibility(table.id)}
                     title={table.isSystem ? "Bảng hệ thống" : "Bảng cá nhân"}
                 >
@@ -4061,7 +4509,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     {:else}
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">
             {#each visibleTables as table, index (table.id)}
-                <div data-capture-group="performance-table">
+                <div data-capture-group="performance-table" data-capture-filename={table.title}>
                     <DynamicPerformanceTable 
                         config={table} 
                         {reportData} 
@@ -4825,16 +5273,19 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   export let totalCount = 0;
 
   $: percentage = totalCount > 0 ? aboveCount / totalCount : 0;
-  $: colorClass = percentage >= 0.7 ? 'text-green-600' : percentage >= 0.4 ? 'text-yellow-500' : 'text-red-500';
-  $: borderColorClass = percentage >= 0.7 ? 'border-t-green-500' : percentage >= 0.4 ? 'border-t-yellow-500' : 'border-t-red-500';
+  
+  // Đồng bộ màu chữ và màu viền theo màu nền của EmployeeCard
+  $: colorClass = percentage >= 0.7 ? 'text-emerald-700' : percentage >= 0.4 ? 'text-blue-700' : percentage >= 0.2 ? 'text-yellow-700' : 'text-red-700';
+  $: borderColorClass = percentage >= 0.7 ? 'border-emerald-200' : percentage >= 0.4 ? 'border-blue-200' : percentage >= 0.2 ? 'border-yellow-200' : 'border-red-200';
 </script>
 
-<div class="text-center py-2 border-t-4 {borderColorClass} bg-slate-50/50 mt-2">
-  <div class="flex items-baseline justify-center gap-1">
-    <span class="text-3xl font-extrabold {colorClass} leading-none">{aboveCount}</span>
-    <span class="text-sm font-bold text-gray-400">/ {totalCount}</span>
+<div class="flex items-center justify-between px-3 py-2 border-t border-dashed {borderColorClass} bg-white/40 backdrop-blur-sm">
+  <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Chỉ số đạt</span>
+  
+  <div class="flex items-baseline gap-1">
+    <span class="text-2xl font-extrabold {colorClass} leading-none">{aboveCount}</span>
+    <span class="text-sm font-bold text-slate-400">/ {totalCount}</span>
   </div>
-  <span class="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Chỉ số đạt</span>
 </div>
 <<< FILE_END: src/components/health-staff/summary/card/CardMainKpi.svelte
 
@@ -4875,7 +5326,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
 >>> FILE_START: src/components/health-staff/summary/card/EmployeeCard.svelte
 <script>
-  import MedalIcon from '../../shared/MedalIcon.svelte';
   import CardHeader from './CardHeader.svelte';
   import CardMainKpi from './CardMainKpi.svelte';
   import CardSubKpiGrid from './CardSubKpiGrid.svelte';
@@ -4888,45 +5338,44 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   $: summary = employee.summary;
   $: totalAbove = employee.totalAbove;
   $: totalCriteria = employee.totalCriteria;
+  
+  // Tính % để tô màu cho các thẻ hạng 4 trở lên
+  $: percentage = totalCriteria > 0 ? totalAbove / totalCriteria : 0;
 
   function handleClick() {
     dispatch('click', { employeeId: employee.maNV });
   }
+
+  // [MODIFIED] Áp dụng màu sắc phân loại hiệu suất cho các thẻ hạng 4+
+  function getRankStyle(r, pct) {
+      // Top 3 vẫn giữ huy chương lộng lẫy
+      if (r === 1) return { bg: 'bg-gradient-to-br from-yellow-100 to-yellow-50 border-yellow-300', icon: '🏆', rankText: 'text-yellow-600' };
+      if (r === 2) return { bg: 'bg-gradient-to-br from-slate-200 to-slate-100 border-slate-300', icon: '🥈', rankText: 'text-slate-500' };
+      if (r === 3) return { bg: 'bg-gradient-to-br from-orange-100 to-orange-50 border-orange-300', icon: '🥉', rankText: 'text-orange-600' };
+      
+      // Hạng 4 trở đi: Tô màu nền theo hiệu suất giống bảng Thi Đua
+      if (pct >= 0.7) return { bg: 'bg-emerald-50 border-emerald-200', icon: `#${r}`, rankText: 'text-emerald-600' };
+      if (pct >= 0.4) return { bg: 'bg-blue-50 border-blue-200', icon: `#${r}`, rankText: 'text-blue-600' };
+      if (pct >= 0.2) return { bg: 'bg-yellow-50 border-yellow-200', icon: `#${r}`, rankText: 'text-yellow-600' };
+      return { bg: 'bg-red-50 border-red-200', icon: `#${r}`, rankText: 'text-red-600' };
+  }
+
+  $: rankConfig = getRankStyle(rank, percentage);
 </script>
 
-<style>
-    /* 1. Ép wrapper thành Flexbox để căn giữa theo trục dọc/ngang */
-    :global(.capture-container) .rank-wrapper {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        height: 100% !important; /* Chiếm hết chiều cao cha để căn giữa */
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-
-    /* 2. Xuyên thủng vào mọi thứ bên trong MedalIcon (kể cả thẻ span/div/svg) */
-    :global(.capture-container) .rank-wrapper :global(*) {
-        line-height: 1 !important;   /* Reset chiều cao dòng */
-        padding-top: 0 !important;   /* Xóa padding rác */
-        padding-bottom: 0 !important;
-        margin: 0 !important;
-        
-        /* [QUAN TRỌNG]: Kỹ thuật "Nâng visual". 
-           Kéo ngược nội dung lên 2px để bù lại độ lệch do font hệ thống */
-        transform: translateY(-2px) !important; 
-    }
-</style>
-
 <div 
-  class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer overflow-hidden relative group h-full flex flex-col"
+  class="rounded-xl border shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer overflow-hidden relative group h-full flex flex-col {rankConfig.bg}"
   on:click={handleClick}
   role="button"
   tabindex="0"
 >
+  <div class="absolute -right-2 -bottom-4 text-7xl font-black opacity-[0.08] {rankConfig.rankText} select-none pointer-events-none z-0 transition-transform group-hover:scale-110">
+    #{rank}
+  </div>
+
   <div class="p-3 flex items-start relative z-10">
-    <div class="flex-shrink-0 rank-wrapper">
-        <MedalIcon {rank} />
+    <div class="flex-shrink-0 flex items-center justify-center w-8 h-8 font-black {rank <= 3 ? 'text-2xl -mt-1' : 'text-sm text-slate-500 bg-white/60 rounded-lg shadow-sm'}">
+        {rankConfig.icon}
     </div>
 
     <CardHeader 
@@ -4936,14 +5385,16 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
     />
   </div>
 
-  <div class="flex-grow flex flex-col justify-end">
+  <div class="relative z-10">
     <CardMainKpi 
         aboveCount={totalAbove} 
         totalCount={totalCriteria} 
     />
   </div>
   
-  <CardSubKpiGrid summary={summary} />
+  <div class="relative z-10 mt-auto">
+    <CardSubKpiGrid summary={summary} />
+  </div>
 </div>
 <<< FILE_END: src/components/health-staff/summary/card/EmployeeCard.svelte
 
@@ -4967,15 +5418,16 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import { settingsService } from '../services/settings.service.js';
   
   import LuykeSieuThi from './luyke/LuykeSieuThi.svelte';
+  import LuykeCumSieuThi from './luyke/LuykeCumSieuThi.svelte'; // [NEW] Import file xử lý riêng cho Cụm
   import LuykeThiDua from './luyke/LuykeThiDua.svelte';
   import LuykeThiDuaVung from './luyke/LuykeThiDuaVung.svelte';
-  // [NEW] Import component mới
   import LuykeCategoryView from './luyke/sub/LuykeCategoryView.svelte';
+  import LuykeDtCkNam from './luyke/LuykeDtCkNam.svelte';
+  import AddressYtdView from './luyke/address/AddressYtdView.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-luyke-sieu-thi';
-
-  // ... (Giữ nguyên phần logic load data cũ) ...
+  
   let showPlaceholder = true;
   $: showPlaceholder = ($danhSachNhanVien.length === 0);
 
@@ -4983,7 +5435,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   let selectedDates = [];
   let goals = {};
   $: goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
-
+  
+  // [PHẪU THUẬT LOGIC]: Tự động gán ALL (Toàn bộ) nếu chưa chọn gì để tránh màn hình trắng
+  $: if ($warehouseList && $warehouseList.length > 0 && !$selectedWarehouse) {
+      selectedWarehouse.set('ALL');
+  }
+  
   $: if ($selectedWarehouse) {
       settingsService.loadGoalsFromCloud($selectedWarehouse);
   }
@@ -4999,7 +5456,6 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       }
   }
 
-  // ... (Giữ nguyên logic masterReportData) ...
   $: {
       const _mappingTrigger = $categoryNameMapping;
       const _macroTrigger = $macroCategoryConfig;
@@ -5011,29 +5467,45 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
 
   let filteredReport = [];
   $: filteredReport = ($masterReportData.luyke || []).filter(nv => {
-      const whMatch = !$selectedWarehouse || nv.maKho == $selectedWarehouse;
+      const whMatch = !$selectedWarehouse || $selectedWarehouse === 'ALL' || nv.maKho == $selectedWarehouse;
       const deptMatch = !selectedDept || nv.boPhan === selectedDept;
       return whMatch && deptMatch;
   });
+
   let supermarketReport = {};
   $: supermarketReport = reportService.aggregateReport(filteredReport, $selectedWarehouse);
 
   let numDays = 1;
-  $: numDays = selectedDates.length > 0 ? selectedDates.length : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
+  $: numDays = selectedDates.length > 0 ?
+      selectedDates.length : (new Set($ycxData.map(row => row.ngayTao instanceof Date ? new Date(row.ngayTao).toDateString() : null).filter(Boolean)).size || 1);
 
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
   }
   
-  // ... (Giữ nguyên các hàm handle khác) ...
-  function handleWarehouseChange(event) { selectedWarehouse.set(event.target.value); }
-  function handleCompose() { modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' })); }
-  function handleExport() { actionService.handleExport('luyke'); }
-  function handleCapture() { actionService.handleCapture('luyke'); }
+  function handleWarehouseChange(event) { 
+      selectedWarehouse.set(event.target.value);
+  }
+  
+  function handleCompose() { 
+      modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'luyke' })); 
+  }
+  
+  function handleExport() { 
+      actionService.handleExport('luyke');
+  }
+  
+  function handleCapture() { 
+      actionService.handleCapture('luyke'); 
+  }
 
   $: if (activeTab === 'health-section') {
-    Promise.resolve().then(() => { if (typeof window.feather !== 'undefined') { window.feather.replace(); } });
+    Promise.resolve().then(() => { 
+        if (typeof window.feather !== 'undefined') { 
+            window.feather.replace(); 
+        } 
+    });
   }
 </script>
 
@@ -5047,19 +5519,22 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
             <div class="modern-page-header flex flex-wrap justify-between items-center"> 
                 <div class="title-wrapper flex items-center gap-4 flex-wrap">
                     <i data-feather="activity" class="main-icon hidden sm:block"></i>
+             
                     <div class="flex items-center gap-2">
                         <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2> 
                         <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"><i data-feather="help-circle"></i></button>
                     </div>
+       
                     <div class="flex items-center gap-2 pl-4 border-l-2 border-blue-100 ml-2">
                          <label for="luyke-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
+                        <!-- [PHẪU THUẬT LOGIC]: Value rỗng ("") đổi thành "ALL" cho đồng nhất -->
                         <select id="luyke-warehouse-selector" class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" value={$selectedWarehouse} on:change={handleWarehouseChange}>
-                            <option value="">-- Toàn bộ --</option>
+                             <option value="ALL">-- Toàn bộ --</option>
                              {#each $warehouseList as kho}<option value={kho}>{kho}</option>{/each}
                         </select>
                     </div>
                 </div>
-                 <div class="flex items-center gap-2 ml-auto mt-2 sm:mt-0"> 
+                <div class="flex items-center gap-2 ml-auto mt-2 sm:mt-0"> 
                     <button id="compose-luyke-notification-btn" class="action-btn action-btn--composer" title="Nhận xét" on:click={handleCompose}><i data-feather="pen-tool" class="w-4 h-4"></i><span class="hidden lg:inline">Nhận xét</span></button> 
                     <button id="export-luyke-btn" class="action-btn action-btn--export" title="Xuất Excel tab hiện tại" on:click={handleExport}><i data-feather="download" class="w-4 h-4"></i><span class="hidden lg:inline">Xuất Excel</span></button>
                     <button id="capture-luyke-btn" class="action-btn action-btn--capture" title="Chụp ảnh tab hiện tại" on:click={handleCapture}><i data-feather="camera" class="w-4 h-4"></i><span class="hidden lg:inline">Chụp ảnh</span></button> 
@@ -5073,15 +5548,23 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                             <i data-feather="home"></i> <span>Siêu thị Lũy kế</span> 
                         </button>
                         
-
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thi-dua' ? 'active' : ''}" data-target="subtab-luyke-thi-dua" data-title="ThiDuaLuyKe" on:click={handleSubTabClick}> 
                             <i data-feather="award"></i> <span>Thi đua ST Lũy kế</span> 
                         </button>
-                          <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-category' ? 'active' : ''}" data-target="subtab-luyke-category" data-title="ChiTietNganhHang" on:click={handleSubTabClick}> 
+
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-category' ? 'active' : ''}" data-target="subtab-luyke-category" data-title="ChiTietNganhHang" on:click={handleSubTabClick}> 
                             <i data-feather="grid"></i> <span>Chi tiết Ngành hàng</span> 
                         </button>
+
                         <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-thidua-vung' ? 'active' : ''}" data-target="subtab-luyke-thidua-vung" data-title="ThiDuaVung" on:click={handleSubTabClick}> 
-                            <i data-feather="map"></i> <span>Thi Đua Vùng TNB</span> 
+                            <i data-feather="map"></i> <span>Thi Đua Vùng TNB-HCM</span> 
+                        </button>
+
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-dt-ck-nam' ? 'active' : ''}" data-target="subtab-dt-ck-nam" data-title="DTCKNam" on:click={handleSubTabClick}> 
+                            <i data-feather="calendar"></i> <span>SSG</span> 
+                        </button>
+                        <button class="sub-tab-btn {activeSubTabId === 'subtab-luyke-address' ? 'active' : ''}" data-target="subtab-luyke-address" on:click={() => activeSubTabId = 'subtab-luyke-address'}> 
+                            <i data-feather="map-pin"></i> <span>Thống kê địa chỉ</span> 
                         </button>
                     </nav>
                 </div>
@@ -5089,7 +5572,12 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                 <div id="luyke-subtabs-content"> 
                     {#if activeSubTabId === 'subtab-luyke-sieu-thi'}
                         <div id="subtab-luyke-sieu-thi" class="sub-tab-content">
-                            <LuykeSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
+                            <!-- [COMPONENT SWAPPING] Rẽ nhánh dựa vào tùy chọn Kho -->
+                            {#if $selectedWarehouse === 'ALL'}
+                                <LuykeCumSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
+                            {:else}
+                                <LuykeSieuThi supermarketReport={supermarketReport} filteredYCXData={filteredYCXData} goals={goals} numDays={numDays} />
+                            {/if}
                         </div>
                     
                     {:else if activeSubTabId === 'subtab-luyke-category'}
@@ -5109,6 +5597,15 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                         <div id="subtab-luyke-thidua-vung" class="sub-tab-content">
                             <LuykeThiDuaVung />
                         </div>
+
+                    {:else if activeSubTabId === 'subtab-dt-ck-nam'}
+                        <div id="subtab-dt-ck-nam" class="sub-tab-content">
+                            <LuykeDtCkNam selectedWarehouse={$selectedWarehouse} />
+                        </div>
+                       {:else if activeSubTabId === 'subtab-luyke-address'}
+                        <div id="subtab-luyke-address" class="sub-tab-content">
+                            <AddressYtdView />
+                        </div>
                     {/if}
                 </div>
             </div>
@@ -5123,6 +5620,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import { 
     masterReportData, 
     ycxData, 
+    ycxDataThangTruoc,
     danhSachNhanVien, 
     luykeGoalSettings, 
     selectedWarehouse,
@@ -5137,23 +5635,46 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   import SummaryView from './health-staff/summary/SummaryView.svelte';
   import DetailView from './health-staff/detail/DetailView.svelte';
   import RevenueTable from './health-staff/RevenueTable.svelte';
+  import MultiMonthRevenueTable from './health-staff/MultiMonthRevenueTable.svelte';
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
   import IncomeTable from './health-staff/IncomeTable.svelte';
   import PerformanceView from './health-staff/performance/PerformanceView.svelte';
   import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
   import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
-  
-  // [CODEGENESIS] Import Component Trả Góp mới
   import InstallmentView from './health-staff/installment/InstallmentView.svelte';
 
   export let activeTab;
-
   let activeSubTab = 'sknv';
   let viewingDetailId = null;
   let processedReport = [];
+  let isMultiMonthMode = false;
+
+  // [PHẪU THUẬT 2]: Gộp 2 luồng YCX, Lọc đúng Kho, Bỏ qua lọc ngày để bảo toàn các tháng cũ
+  $: combinedMultiMonthData = [...($ycxData || []), ...($ycxDataThangTruoc || [])].filter(item => {
+      if ($selectedWarehouse) {
+          const wh = item.maKhoTao || item.maKho || item['Mã kho tạo'] || item['Kho tạo'] || item.ma_kho;
+          if (wh && String(wh).trim() !== String($selectedWarehouse).trim()) return false;
+      }
+      return true;
+  });
+
+  // [TÍNH TOÁN CẢNH BÁO]: Đếm xem thực sự đang có bao nhiêu tháng
+  $: uniqueMonthsCount = new Set(combinedMultiMonthData.map(d => {
+      let dateVal = null;
+      for (const key of Object.keys(d)) {
+          const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
+          if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) { dateVal = d[key]; break; }
+      }
+      const dt = parseUniversalDate(dateVal); 
+      return dt ? new Date(dt).getMonth() + '-' + new Date(dt).getFullYear() : ''; 
+  }).filter(Boolean)).size;
   
-  // [CODEGENESIS] Cập nhật danh sách Tab
+  // State Bộ lọc ngày
+  let selectedStartDate = '';
+  let selectedEndDate = '';
+  let showDateFilter = false;
+
   const tabs = [
       { id: 'sknv', label: 'SKNV', icon: 'users', title: 'SucKhoeNhanVien' },
       { id: 'doanhthu', label: 'Doanh thu LK', icon: 'dollar-sign', title: 'DoanhThuLuyKe' },
@@ -5161,23 +5682,140 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
       { id: 'hieuqua', label: 'Hiệu quả NV LK', icon: 'bar-chart-2', title: 'HieuQuaKhaiThac' },
       { id: 'nganhhang', label: 'DT ngành hàng', icon: 'layers', title: 'DoanhThuNganhHang' },
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' },
-      { id: 'tragop', label: 'Trả chậm', icon: 'credit-card', title: 'ThongKeTraCham' } // Tab Mới
+      { id: 'tragop', label: 'Trả chậm', icon: 'credit-card', title: 'ThongKeTraCham' }
   ];
 
   let lastDataHash = '';
-  $: {
-      if ($danhSachNhanVien.length > 0 && $ycxData.length > 0) {
-          const currentHash = `${$danhSachNhanVien.length}-${$ycxData.length}-${$selectedWarehouse}`;
-          if (currentHash !== lastDataHash) {
-              lastDataHash = currentHash;
-              const goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
-              const newMasterReport = reportService.generateMasterReportData($ycxData, goals, false);
-              masterReportData.update(current => ({ ...current, sknv: newMasterReport }));
+
+  // [CODEGENESIS] VÁ LỖI: Thuật toán Parser đa năng (Universal Date Parser)
+  function parseUniversalDate(val) {
+      if (val === null || val === undefined || val === '') return null;
+
+      // 1. Nếu XLSX tự convert ra JS Date Object
+      if (val instanceof Date) {
+          return new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
+      }
+
+      // 2. Nếu XLSX convert ra số (Excel Serial Date, vd: 45744.54)
+      if (typeof val === 'number') {
+          // Ép Epoch từ 1/1/1900 của Excel về 1/1/1970 của JavaScript (-25569 ngày)
+          const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
+          const tempDate = new Date(jsEpoch);
+          // Bắt buộc dùng getUTC để tránh bị lùi ngày do múi giờ VN (GMT+7)
+          return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
+      }
+
+      // 3. Nếu nó thực sự là dạng Text (Chuỗi)
+      const str = String(val).trim();
+      const parts = str.split(/[\s,T]+/); 
+      const datePart = parts[0]; 
+
+      if (datePart.includes('/')) {
+          const dParts = datePart.split('/');
+          if (dParts.length >= 3) {
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10);
+              const p3 = parseInt(dParts[2], 10);
+              // Tự nhận diện YYYY/MM/DD hay DD/MM/YYYY dựa vào độ lớn của số
+              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
           }
+      } else if (datePart.includes('-')) {
+          const dParts = datePart.split('-');
+          if (dParts.length >= 3) {
+              const p1 = parseInt(dParts[0], 10);
+              const p2 = parseInt(dParts[1], 10);
+              const p3 = parseInt(dParts[2], 10);
+              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+          }
+      }
+
+      // 4. Đường cùng: Để JS tự lo
+      const fallbackDate = new Date(val);
+      if (!isNaN(fallbackDate.getTime())) {
+          return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
+      }
+
+      return null;
+  }
+
+  function selectQuickDays(days) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - days + 1);
+      
+      const pad = (n) => (n < 10 ? '0' + n : n);
+      selectedEndDate = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
+      selectedStartDate = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+      showDateFilter = false;
+  }
+
+  function clearDateFilter() {
+      selectedStartDate = '';
+      selectedEndDate = '';
+      showDateFilter = false;
+  }
+
+  function formatDisplayDate(dateStr) {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      return `${parts[2]}/${parts[1]}`;
+  }
+
+  function handleGlobalClick(e) {
+      if (showDateFilter && !e.target.closest('.date-filter-container')) {
+          showDateFilter = false;
       }
   }
 
-  // Đây là biến quan trọng nhất: processedReport chứa danh sách nhân viên ĐÃ CÓ orders
+  // [CODEGENESIS] VÁ LỖI: Bộ lọc diệt trùng Key ẩn
+  $: filteredYcxData = $ycxData.filter(item => {
+      if (!selectedStartDate && !selectedEndDate) return true;
+      
+      let dateVal = null;
+      // Quét toàn bộ key trong object, tìm mọi thứ tương đồng với "Ngày tạo"
+      for (const key of Object.keys(item)) {
+          const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
+          if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) {
+              dateVal = item[key];
+              break;
+          }
+      }
+      
+      const itemTime = parseUniversalDate(dateVal);
+      
+      // Cơ chế an toàn (Fail-Safe): Nếu dòng này không giải mã được ngày -> GIỮ LẠI tránh mất oan.
+      if (!itemTime) return true; 
+      
+      let isValid = true;
+      if (selectedStartDate) {
+          const start = new Date(selectedStartDate).setHours(0,0,0,0);
+          if (itemTime < start) isValid = false;
+      }
+      if (selectedEndDate) {
+          const end = new Date(selectedEndDate).setHours(23,59,59,999);
+          if (itemTime > end) isValid = false;
+      }
+      return isValid;
+  });
+
+  // Re-generate report dựa trên Data đã lọc chuẩn
+  $: {
+      if ($danhSachNhanVien.length > 0 && filteredYcxData.length > 0) {
+          const currentHash = `${$danhSachNhanVien.length}-${filteredYcxData.length}-${$selectedWarehouse}-${selectedStartDate}-${selectedEndDate}`;
+          if (currentHash !== lastDataHash) {
+              lastDataHash = currentHash;
+              const goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
+              const newMasterReport = reportService.generateMasterReportData(filteredYcxData, goals, false);
+              masterReportData.update(current => ({ ...current, sknv: newMasterReport }));
+          }
+      } else if (filteredYcxData.length === 0 && lastDataHash !== 'empty') {
+          lastDataHash = 'empty';
+          masterReportData.update(current => ({ ...current, sknv: [] }));
+      }
+  }
+
   $: {
       let rawData = $masterReportData.sknv || [];
       if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
@@ -5187,26 +5825,17 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
   function switchSubTab(tabId) { activeSubTab = tabId; viewingDetailId = null; }
   function handleEmployeeClick(event) { viewingDetailId = event.detail.employeeId; }
   function handleBackToSummary() { viewingDetailId = null; }
-  
-  function handleWarehouseChange(event) {
-      selectedWarehouse.set(event.target.value);
-  }
-
-  function handleCompose() { 
-      modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'sknv' }));
-  }
-  function handleExport() { 
-      actionService.handleExport('sknv');
-  }
-  function handleCapture() { 
-      actionService.handleCapture('sknv');
-  }
+  function handleWarehouseChange(event) { selectedWarehouse.set(event.target.value); }
+  function handleCompose() { modalState.update(s => ({ ...s, activeModal: 'composer-modal', context: 'sknv' })); }
+  function handleExport() { actionService.handleExport('sknv'); }
+  function handleCapture() { actionService.handleCapture('sknv'); }
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
+<svelte:window on:click={handleGlobalClick} />
+
 <section id="health-employee-section" class="page-section {activeTab === 'health-employee-section' ? '' : 'hidden'}">
-    
     <div class="content-card mb-6 !p-0">
         <div class="modern-page-header flex flex-wrap justify-between items-center">
             
@@ -5224,7 +5853,7 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                     <label for="sknv-warehouse-selector" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
                     <select 
                         id="sknv-warehouse-selector" 
-                        class="p-2 border rounded-lg text-sm shadow-sm min-w-[120px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" 
+                        class="p-2 border rounded-lg text-sm shadow-sm min-w-[100px] font-bold text-blue-700 bg-white border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition" 
                         value={$selectedWarehouse}
                         on:change={handleWarehouseChange}
                     >
@@ -5233,6 +5862,49 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                             <option value={kho}>{kho}</option>
                         {/each}
                     </select>
+                </div>
+
+                <div class="date-filter-container relative flex items-center gap-2 pl-2 md:pl-4 border-l-2 border-blue-100 ml-1 md:ml-2">
+                    <button 
+                        class="p-2 border rounded-lg text-sm shadow-sm font-semibold text-gray-700 bg-white border-gray-200 hover:bg-gray-50 flex items-center gap-2 transition"
+                        on:click={() => showDateFilter = !showDateFilter}
+                        title="Lọc theo ngày"
+                    >
+                        <i data-feather="calendar" class="w-4 h-4"></i>
+                        {#if selectedStartDate && selectedEndDate}
+                            <span class="text-xs text-blue-600 font-bold">{formatDisplayDate(selectedStartDate)} - {formatDisplayDate(selectedEndDate)}</span>
+                        {:else if selectedStartDate}
+                            <span class="text-xs text-blue-600 font-bold">Từ {formatDisplayDate(selectedStartDate)}</span>
+                        {:else if selectedEndDate}
+                            <span class="text-xs text-blue-600 font-bold">Đến {formatDisplayDate(selectedEndDate)}</span>
+                        {:else}
+                            <span class="hidden xl:inline text-xs">Lọc ngày</span>
+                        {/if}
+                    </button>
+
+                    {#if showDateFilter}
+                        <div class="absolute top-full left-0 mt-2 bg-white border border-gray-200 shadow-xl rounded-lg p-4 z-50 w-64 md:w-72">
+                            <div class="flex flex-col gap-3">
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-xs text-gray-500 font-semibold">Từ ngày</label>
+                                    <input type="date" bind:value={selectedStartDate} class="border p-1.5 rounded text-sm w-full outline-none focus:ring-1 focus:ring-blue-500">
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-xs text-gray-500 font-semibold">Đến ngày</label>
+                                    <input type="date" bind:value={selectedEndDate} class="border p-1.5 rounded text-sm w-full outline-none focus:ring-1 focus:ring-blue-500">
+                                </div>
+                                <div class="flex flex-wrap gap-1 mt-2">
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(3)}>3 Ngày</button>
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(5)}>5 Ngày</button>
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(7)}>7 Ngày</button>
+                                    <button class="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-xs font-semibold transition" on:click={() => selectQuickDays(10)}>10 Ngày</button>
+                                </div>
+                                <div class="border-t mt-1 pt-2 flex justify-end">
+                                    <button class="px-3 py-1.5 bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600 rounded text-xs font-semibold transition" on:click={clearDateFilter}>Xóa lọc</button>
+                                </div>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             </div>
 
@@ -5286,9 +5958,23 @@ class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu. 
                 {:else if activeSubTab === 'doanhthu'}
                     <div id="subtab-doanhthu" class="sub-tab-content">
                         {#if !viewingDetailId}
-                            <div id="revenue-report-container-lk">
-                                <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} />
-                            </div>
+                            
+                            {#if !isMultiMonthMode}
+                                <div id="revenue-report-container-lk">
+                                    <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} on:toggleMode={() => isMultiMonthMode = true} />
+                                </div>
+                            {:else}
+                                {#if combinedMultiMonthData.length > 0 && uniqueMonthsCount <= 1}
+                                     <div class="mb-4 mt-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700 flex items-center gap-2">
+                                        <i data-feather="alert-triangle" class="w-4 h-4"></i>
+                                        <b>Lưu ý:</b> Dữ liệu hiện tại chỉ có 1 tháng. Hãy vào tab <b class="text-indigo-600">Cập nhật dữ liệu</b> tải lên dạng "Gộp file" ở ô <b>YCX Lũy kế tháng trước</b> để biểu đồ này phát huy tác dụng.
+                                     </div>
+                                {/if}
+
+                                <div id="revenue-multi-month-container-lk">
+                                    <MultiMonthRevenueTable rawData={combinedMultiMonthData} on:viewDetail={handleEmployeeClick} on:toggleMode={() => isMultiMonthMode = false} />
+                                </div>
+                            {/if}
                         {:else}
                             <div id="dtnv-lk-capture-area">
                                 <RevenueDetailView employeeId={viewingDetailId} on:back={handleBackToSummary} />

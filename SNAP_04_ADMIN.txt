@@ -1,149 +1,249 @@
 CONTEXT GROUP: SNAP_04_ADMIN.txt
-GENERATED AT: 2/22/2026, 4:12:10 PM
+GENERATED AT: 5/13/2026, 7:07:23 PM
 
 
 >>> FILE_START: src/components/admin/AdminCalculation.svelte
 <script>
-    import { onMount, afterUpdate } from 'svelte';
+    import { onMount } from 'svelte';
     import { declarations } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
-    import { config } from '../../config.js';
 
-    // Biến lưu trạng thái form
     let ycxValue = '';
     let ycxGopValue = '';
-    let heSoValue = '';
     let isSaving = false;
 
-    // --- LOGIC 1: TẢI DỮ LIỆU CHỦ ĐỘNG (FIX LỖI F5 MẤT) ---
+    // --- LOGIC QUẢN LÝ HỆ SỐ QUY ĐỔI DẠNG BẢNG ---
+    let heSoItems = []; 
+    let filteredItems = [];
+    let searchTerm = '';
+    let sortKey = null; 
+    let sortDirection = 'asc';
+
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+
     onMount(async () => {
-        console.log("🚀 [AdminCalculation] Component Mounted via CodeGenesis");
         try {
-            // Gọi trực tiếp service để lấy dữ liệu mới nhất từ Cloud, không chờ Store
             const data = await adminService.loadDeclarationsFromFirestore();
-            console.log("📥 [Load] Dữ liệu tải về từ Firestore:", data);
-            
             if (data) {
-                // Ép dữ liệu vào Store để cập nhật UI
                 declarations.set(data);
+                ycxValue = data.hinhThucXuat || data.ycx || '';
+                ycxGopValue = data.hinhThucXuatGop || data.ycxGop || '';
+                parseHeSoToItems(data.heSoQuyDoi || data.heSo || '');
             }
         } catch (error) {
-            console.error("❌ [Load Error] Không thể tải dữ liệu:", error);
+            console.error("Lỗi tải dữ liệu:", error);
         }
     });
 
-    // --- LOGIC 2: ĐỒNG BỘ UI VỚI STORE ---
-    $: if ($declarations) {
-        console.log("🔄 [Sync] Store đã cập nhật:", $declarations);
+    function parseHeSoToItems(rawString) {
+        if (!rawString) {
+            heSoItems = [];
+            applyFilterAndSort();
+            return;
+        }
+        heSoItems = rawString.split('\n')
+            .filter(line => line.trim())
+            .map(line => {
+                const lastComma = line.lastIndexOf(',');
+                if (lastComma > -1) {
+                    const valNum = parseFloat(line.substring(lastComma + 1).trim()) || 1;
+                    return { 
+                        id: generateId(), 
+                        name: line.substring(0, lastComma).trim(), 
+                        valueDisplay: valNum.toString().replace('.', ',') 
+                    };
+                }
+                return { id: generateId(), name: line.trim(), valueDisplay: '1' };
+            });
+        applyFilterAndSort();
+    }
+
+    function applyFilterAndSort() {
+        let temp = [...heSoItems];
         
-        // Logic ưu tiên: Key Mới -> Key Cũ -> Mặc định
-        ycxValue = $declarations.hinhThucXuat || $declarations.ycx || config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU.join('\n');
-        ycxGopValue = $declarations.hinhThucXuatGop || $declarations.ycxGop || config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP.join('\n');
+        if (searchTerm) {
+            temp = temp.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        }
         
-        // Xử lý hệ số (Object hoặc String)
-        if ($declarations.heSoQuyDoi) {
-            heSoValue = $declarations.heSoQuyDoi;
-        } else if ($declarations.heSo) {
-             heSoValue = $declarations.heSo;
+        if (sortKey) {
+            temp.sort((a, b) => {
+                if (!a.name && b.name) return -1;
+                if (a.name && !b.name) return 1;
+
+                if (sortKey === 'valueDisplay') {
+                    let valA = parseFloat((a.valueDisplay || '0').toString().replace(',', '.')) || 0;
+                    let valB = parseFloat((b.valueDisplay || '0').toString().replace(',', '.')) || 0;
+                    return sortDirection === 'asc' ? valA - valB : valB - valA;
+                } else {
+                    return sortDirection === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+                }
+            });
+        }
+        filteredItems = temp;
+    }
+
+    $: {
+        searchTerm; sortKey; sortDirection; heSoItems;
+        applyFilterAndSort();
+    }
+
+    function addItem() {
+        heSoItems = [{ id: generateId(), name: '', valueDisplay: '1' }, ...heSoItems];
+        searchTerm = ''; 
+        sortKey = null; 
+    }
+
+    function removeItem(id) {
+        heSoItems = heSoItems.filter(item => item.id !== id);
+    }
+
+    function handleSort(key) {
+        if (sortKey === key) {
+            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
         } else {
-            heSoValue = Object.entries(config.DEFAULT_DATA.HE_SO_QUY_DOI)
-                .map(([k, v]) => `${k},${v}`)
-                .join('\n');
+            sortKey = key;
+            sortDirection = 'asc';
         }
     }
 
-    // --- LOGIC 3: LƯU DỮ LIỆU (FIX LỖI LƯU ẢO) ---
+    function handleValueInput(item, event) {
+        let val = event.target.value;
+        if (val.includes('.')) {
+            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.\nVí dụ: 4,18");
+            val = val.replace(/\./g, ',');
+            event.target.value = val; 
+        }
+        item.valueDisplay = val; 
+    }
+
     async function saveDeclarations() {
-        if (isSaving) return;
         isSaving = true;
-
-        // Chuẩn bị dữ liệu: Gửi cả key cũ và mới để đảm bảo tương thích
-        const dataToSave = {
-            // Key cho logic hiển thị mới
-            hinhThucXuat: ycxValue || '',
-            hinhThucXuatGop: ycxGopValue || '',
-            heSoQuyDoi: heSoValue || '',
-            
-            // Key cho logic cũ (Service/Legacy)
-            ycx: ycxValue || '',
-            ycxGop: ycxGopValue || '',
-            heSo: heSoValue || ''
-        };
-
-        console.log("📤 [Save] Đang gửi dữ liệu đi:", dataToSave);
-
         try {
-            await adminService.saveDeclarationsToFirestore(dataToSave);
-            console.log("✅ [Save] Service báo thành công!");
+            const heSoString = heSoItems
+                .filter(item => item.name.trim())
+                .map(item => {
+                    let numStr = (item.valueDisplay || '1').toString().replace(',', '.');
+                    if (isNaN(parseFloat(numStr))) numStr = '1';
+                    return `${item.name.trim()},${numStr}`;
+                })
+                .join('\n');
+
+            // [FIX CRITICAL] Đóng gói cả Key cũ và Key mới để vỗ về Firebase
+            const payload = {
+                // Key cũ cho admin.service.js không bị lỗi undefined
+                ycx: ycxValue || '',
+                ycxGop: ycxGopValue || '',
+                heSo: heSoString || '',
+                // Key mới cho các file Helpers hoạt động bình thường
+                hinhThucXuat: ycxValue || '',
+                hinhThucXuatGop: ycxGopValue || '',
+                heSoQuyDoi: heSoString || ''
+            };
+
+            // Đẩy lên Firebase (Sẽ gọi hàm notify nội bộ của file admin.service.js)
+            await adminService.saveDeclarationsToFirestore(payload);
             
-            // Cập nhật lại Store ngay lập tức
-            declarations.set(dataToSave);
-            
-            alert("✅ Đã lưu cấu hình thành công!"); 
+            // Cập nhật cục bộ cho UI
+            declarations.set(payload);
         } catch (error) {
-            console.error("❌ [Save Error] Lỗi chi tiết:", error);
-            alert("❌ Lỗi hệ thống: " + (error.message || "Không thể lưu"));
+            console.error("Lưu thất bại:", error);
         } finally {
             isSaving = false;
         }
     }
-
-    afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
-    <details class="group">
-        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
-            <div class="flex items-center gap-3">
-                <div class="p-2 bg-indigo-50 rounded-lg text-indigo-600">
-                    <i data-feather="sliders"></i>
-                </div>
-                <div>
-                    <h3 class="font-bold text-slate-700 text-lg">Dữ liệu tính toán & Logic</h3>
-                    <p class="text-xs text-slate-500">Cấu hình Hình thức xuất, Hệ số quy đổi...</p>
-                </div>
-            </div>
-            <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
-                <i data-feather="chevron-down"></i>
-            </span>
-        </summary>
-        
-        <div class="p-6 border-t border-slate-100 bg-slate-50/50">
-            <div class="grid md:grid-cols-2 gap-6"> 
-                <div>
-                    <label for="decl-ycx" class="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        Hình thức xuất (Tính doanh thu)
-                        <span class="text-xs font-normal text-slate-400 bg-white border px-2 py-0.5 rounded-full">Mỗi loại 1 dòng</span>
-                    </label> 
-                    <textarea id="decl-ycx" rows="8" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs bg-white text-slate-600 leading-relaxed shadow-sm" placeholder="Nhập dữ liệu..." bind:value={ycxValue}></textarea> 
-                </div>
-                <div> 
-                    <label for="decl-ycx-gop" class="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        Hình thức xuất (Trả góp)
-                         <span class="text-xs font-normal text-slate-400 bg-white border px-2 py-0.5 rounded-full">Mỗi loại 1 dòng</span>
-                    </label> 
-                    <textarea id="decl-ycx-gop" rows="8" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs bg-white text-slate-600 leading-relaxed shadow-sm" placeholder="Nhập dữ liệu..." bind:value={ycxGopValue}></textarea> 
-                </div>
-                <div class="md:col-span-2"> 
-                    <label for="decl-heso" class="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                        Hệ số quy đổi
-                        <span class="text-xs font-normal text-slate-400 bg-white border px-2 py-0.5 rounded-full">Format: Tên nhóm hàng, Hệ số</span>
-                    </label> 
-                    <textarea id="decl-heso" rows="8" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs bg-white text-slate-600 leading-relaxed shadow-sm" placeholder="VD: Điện thoại, 1" bind:value={heSoValue}></textarea> 
-                </div>
-            </div> 
-            
-            <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
-                <button on:click={saveDeclarations} disabled={isSaving} class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
-                    {#if isSaving}
-                        <span class="animate-spin">⏳</span> Đang lưu...
-                    {:else}
-                        <i data-feather="save" class="w-4 h-4"></i> Lưu Cấu Hình
-                    {/if}
-                </button> 
-            </div> 
+<div class="space-y-6 max-w-6xl mx-auto p-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <label class="block text-sm font-bold text-slate-700 mb-2">Hình thức xuất tính DT</label>
+            <textarea bind:value={ycxValue} rows="4" class="w-full p-3 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Cửa hàng bán, Xuất khuyến mãi..."></textarea>
         </div>
-    </details>
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <label class="block text-sm font-bold text-slate-700 mb-2">Hình thức xuất Trả góp</label>
+            <textarea bind:value={ycxGopValue} rows="4" class="w-full p-3 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Xuất bán trả góp..."></textarea>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h3 class="font-bold text-slate-800">Hệ số quy đổi ngành hàng</h3>
+                <p class="text-xs text-slate-500">Quản lý hệ số nhân cho từng nhóm sản phẩm</p>
+            </div>
+            
+            <div class="flex flex-wrap items-center gap-2 md:gap-3">
+                <div class="relative flex-grow md:flex-grow-0">
+                    <span class="absolute left-3 top-2.5 text-slate-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </span>
+                    <input 
+                        type="text" 
+                        bind:value={searchTerm} 
+                        placeholder="Tìm nhóm hàng..." 
+                        class="pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full md:w-56"
+                    />
+                </div>
+                
+                <button on:click={addItem} class="bg-slate-200 text-slate-700 px-3 md:px-4 py-2 rounded-lg hover:bg-slate-300 flex items-center gap-2 font-bold transition shadow-sm whitespace-nowrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
+                    <span class="hidden sm:inline">Thêm dòng</span>
+                </button>
+                
+                <button on:click={saveDeclarations} disabled={isSaving} class="bg-green-600 text-white px-4 md:px-6 py-2 rounded-lg hover:bg-green-700 font-bold transition shadow-sm flex items-center gap-2 disabled:opacity-50 whitespace-nowrap">
+                    {#if isSaving} 
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        Đang lưu... 
+                    {:else} 
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> 
+                        LƯU
+                    {/if}
+                </button>
+            </div>
+        </div>
+
+        <div class="max-h-[500px] overflow-y-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                    <tr>
+                        <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase cursor-pointer hover:text-blue-600 transition" on:click={() => handleSort('name')}>
+                            Nhóm Hàng {sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase cursor-pointer hover:text-blue-600 transition w-40" on:click={() => handleSort('valueDisplay')}>
+                            Hệ số {sortKey === 'valueDisplay' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th class="px-6 py-3 w-20"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {#each filteredItems as item (item.id)}
+                        <tr class="hover:bg-blue-50/50 transition-colors">
+                            <td class="px-6 py-2">
+                                <input type="text" value={item.name} on:input={(e) => { item.name = e.target.value; }} class="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700" placeholder="Nhập tên nhóm hàng..." />
+                            </td>
+                            <td class="px-6 py-2">
+                                <input type="text" value={item.valueDisplay} on:input={(e) => handleValueInput(item, e)} class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-bold text-blue-700 text-center" />
+                            </td>
+                            <td class="px-6 py-2 text-right">
+                                <button on:click={() => removeItem(item.id)} class="text-slate-300 hover:text-red-500 p-1 transition">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                </button>
+                            </td>
+                        </tr>
+                    {/each}
+                    {#if filteredItems.length === 0}
+                        <tr>
+                            <td colspan="3" class="px-6 py-10 text-center text-slate-400 italic">Không tìm thấy nhóm hàng nào</td>
+                        </tr>
+                    {/if}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+            <span class="text-sm text-slate-500 font-medium">Tổng cộng: <b>{heSoItems.length}</b> nhóm hàng</span>
+        </div>
+    </div>
 </div>
 <<< FILE_END: src/components/admin/AdminCalculation.svelte
 
@@ -839,20 +939,21 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     let localConfig = {
         videoUrl: '',
         timeline: [],
-        sliderImages: [], // { url, title, fileName, fileRaw }
+        sliderImages: [], // Bây giờ chỉ lưu { url, title }
         changelogs: []
     };
-
-    let activeTab = 'video'; 
+    let activeTab = 'video';
     let isSaving = false;
-    let isUploading = false;
-    let fileInput; 
 
     // --- BIẾN CHO TRÌNH SOẠN THẢO MỚI ---
     let mainTitle = ''; // Tiêu đề chính (VD: Cập nhật tháng 12)
     let editorSections = []; // Danh sách các mục nhỏ
 
-    $: if ($homeConfig) {
+    // [CODEGENESIS] 1. CỜ KHÓA (DRAFT PROTECTION)
+    let isEditing = false;
+    
+    // [CODEGENESIS] 2. Chỉ ghi đè localConfig khi KHÔNG ở trạng thái đang soạn thảo
+    $: if ($homeConfig && !isEditing) {
         localConfig = JSON.parse(JSON.stringify($homeConfig));
     }
 
@@ -860,34 +961,21 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
     function addTimelineItem() { localConfig.timeline = [...localConfig.timeline, { time: '00:00', label: 'Mốc mới' }]; }
     function removeTimelineItem(index) { localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index); }
 
-    // --- LOGIC UPLOAD ẢNH CLOUD ---
-    function triggerUpload() { fileInput.click(); }
-    
-    async function handleFilesSelect(event) {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        isUploading = true;
-        const newImages = [];
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            newImages.push({ url: URL.createObjectURL(file), fileName: file.name, title: '', fileRaw: file });
-        }
-        localConfig.sliderImages = [...localConfig.sliderImages, ...newImages];
-        event.target.value = '';
-        isUploading = false;
+    // --- LOGIC SLIDE ẢNH BẰNG URL (ĐÃ FIX: CHÈN LÊN ĐẦU) ---
+    function addSlide() {
+        localConfig.sliderImages = [{ url: '', title: '' }, ...localConfig.sliderImages];
     }
+
     function removeSlide(index) {
         if(!confirm("Xóa ảnh này?")) return;
         localConfig.sliderImages = localConfig.sliderImages.filter((_, i) => i !== index);
     }
 
-    // --- LOGIC CHANGELOG (NÂNG CẤP - KHÔNG CẦN HTML) ---
+    // --- LOGIC CHANGELOG ---
     function addChangelogItem() {
+        isEditing = true;
         const today = new Date().toLocaleDateString('vi-VN');
-        // Tạo bản ghi mới
         localConfig.changelogs = [{ version: '', date: today, content: '' }, ...localConfig.changelogs];
-        
-        // Mở trình soạn thảo ngay
         mainTitle = 'Cập nhật tính năng mới';
         editorSections = [{ title: 'Thay đổi chính', content: '' }];
     }
@@ -896,8 +984,8 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         localConfig.changelogs = localConfig.changelogs.filter((_, i) => i !== index);
     }
     
-    // Thêm một mục soạn thảo
     function addEditorSection() {
+        isEditing = true;
         editorSections = [...editorSections, { title: '', content: '' }];
     }
 
@@ -905,43 +993,36 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         editorSections = editorSections.filter((_, i) => i !== idx);
     }
 
-    // [QUAN TRỌNG] Chuyển đổi từ Form nhập liệu -> HTML để lưu
-    function applyEditorContent(logIndex) {
+    function applyEditorContent(logIndex, silent = false) {
         let html = '';
-        
-        // 1. Tiêu đề chính (Màu xanh đậm, in hoa)
         if (mainTitle) {
             html += `<h3 style="color:#1d4ed8; font-size:1.1em; font-weight:800; margin-bottom:10px; text-transform:uppercase;">${mainTitle}</h3>`;
         }
 
-        // 2. Các mục con
         editorSections.forEach(sec => {
             if (sec.title) {
-                // Tiêu đề phụ (Màu xám đậm)
                 html += `<h4 style="color:#334155; font-weight:700; margin-top:8px; margin-bottom:4px;">${sec.title}:</h4>`;
             }
             if (sec.content) {
                 html += '<ul style="margin-bottom:12px;">';
-                // Tách dòng
                 const lines = sec.content.split('\n').map(l => l.trim()).filter(l => l);
-                lines.forEach(line => {
-                    html += `<li>${line}</li>`;
-                });
+                lines.forEach(line => { html += `<li>${line}</li>`; });
                 html += '</ul>';
             }
         });
         
         localConfig.changelogs[logIndex].content = html;
-        
-        // Xóa editor sau khi apply (để tránh nhầm lẫn)
         mainTitle = '';
         editorSections = [];
-        
-        alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
+        if (!silent) alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
     }
 
     // --- HÀM LƯU CHUNG ---
     async function saveAllConfig() {
+        if (isEditing && (editorSections.length > 0 || mainTitle !== '')) {
+            applyEditorContent(0, true);
+        }
+
         console.log("Đang lưu...", localConfig);
         isSaving = true;
         try {
@@ -958,25 +1039,17 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                 localConfig.videoUrl = url;
             }
 
-            // 2. Upload ảnh mới lên Cloud
-            const uploadPromises = localConfig.sliderImages.map(async (img) => {
-                if (img.fileRaw) {
-                    try {
-                        const cloudUrl = await adminService.uploadImage(img.fileRaw, 'slides');
-                        return { ...img, url: cloudUrl, fileRaw: null };
-                    } catch (err) {
-                        console.error("Lỗi upload:", err);
-                        return img; 
-                    }
-                }
-                return img;
-            });
-            localConfig.sliderImages = await Promise.all(uploadPromises);
+            // 2. Dọn dẹp Slide ảnh (Loại bỏ các item rỗng)
+            localConfig.sliderImages = localConfig.sliderImages.filter(img => img.url && img.url.trim() !== '');
 
             // 3. Lưu Firestore
             await adminService.saveHomeConfig(localConfig);
-            alert("Đã lưu thành công! Dữ liệu đã được đồng bộ.");
             
+            // 4. Mở khóa đồng bộ Svelte sau khi lưu thành công
+            isEditing = false;
+            localConfig = localConfig; 
+
+            alert("Đã lưu thành công! Dữ liệu đã được đồng bộ Realtime lập tức.");
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
@@ -1009,7 +1082,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
             
             <div class="flex space-x-2 mb-6 border-b border-gray-200 pb-1">
                 <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'video' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'video'}>Video & Timeline</button>
-                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'slider' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'slider'}>Slide Ảnh (Cloud)</button>
+                <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'slider' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'slider'}>Slide Ảnh (URL)</button>
                 <button class="px-4 py-2 font-medium text-sm rounded-t-lg transition-colors {activeTab === 'changelog' ? 'bg-white text-pink-600 border-x border-t border-gray-200' : 'text-gray-500 hover:text-gray-700'}" on:click={() => activeTab = 'changelog'}>Lịch sử cập nhật</button>
             </div>
 
@@ -1036,14 +1109,11 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
             {/if}
 
             {#if activeTab === 'slider'}
-                <div class="space-y-6 animate-fade-in">
-                    <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50/50 hover:bg-blue-50 transition-colors">
-                        <input type="file" multiple accept="image/*" class="hidden" bind:this={fileInput} on:change={handleFilesSelect} />
-                        <button on:click={triggerUpload} class="flex flex-col items-center gap-2 group/btn" disabled={isUploading}>
-                            <div class="p-3 bg-white rounded-full shadow-md text-blue-600 group-hover/btn:scale-110 transition-transform"><i data-feather="cloud-upload" class="w-8 h-8"></i></div>
-                            <span class="text-blue-700 font-bold text-sm">{isUploading ? 'Đang xử lý...' : 'Nhấn để chọn ảnh từ máy tính'}</span>
-                        </button>
-                    </div>
+                <div class="space-y-4 animate-fade-in">
+                    <button on:click={addSlide} class="w-full py-4 border-2 border-dashed border-blue-300 text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition flex justify-center items-center gap-2 shadow-sm">
+                        <i data-feather="plus-circle" class="w-5 h-5"></i> Thêm ảnh slide mới bằng Link (URL)
+                    </button>
+
                     {#if localConfig.sliderImages.length > 0}
                         <div class="border rounded-xl overflow-hidden shadow-sm bg-white">
                             <div class="bg-slate-100 px-4 py-3 border-b flex justify-between items-center">
@@ -1053,13 +1123,24 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                             <div class="divide-y divide-slate-100">
                                 {#each localConfig.sliderImages as img, index}
                                     <div class="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors">
-                                        <div class="w-24 h-16 bg-slate-200 rounded-lg border overflow-hidden flex-shrink-0 relative flex items-center justify-center">
-                                            <img src={img.url} alt="Thumbnail" class="w-full h-full object-contain" />
+                                        <div class="w-32 h-20 bg-slate-200 rounded-lg border overflow-hidden flex-shrink-0 relative flex items-center justify-center">
+                                            {#if img.url}
+                                                <img src={img.url} alt="Thumbnail" class="w-full h-full object-cover" on:error={(e) => e.target.src = 'https://placehold.co/128x80?text=Lỗi+Ảnh'} />
+                                            {:else}
+                                                <i data-feather="image" class="text-slate-400 w-8 h-8"></i>
+                                            {/if}
                                         </div>
-                                        <div class="flex-grow flex flex-col gap-2">
-                                            <input type="text" bind:value={img.title} class="w-full p-2 border border-slate-200 rounded text-sm outline-none" placeholder="Ghi chú...">
+                                        <div class="flex-grow flex flex-col gap-3">
+                                            <div>
+                                                <label class="block text-xs font-bold text-slate-500 mb-1">Đường dẫn ảnh (URL)</label>
+                                                <input type="text" bind:value={img.url} class="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="https://...">
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-bold text-slate-500 mb-1">Tiêu đề (Tùy chọn)</label>
+                                                <input type="text" bind:value={img.title} class="w-full p-2 border border-slate-200 rounded text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="VD: Sức khỏe siêu thị">
+                                            </div>
                                         </div>
-                                        <button on:click={() => removeSlide(index)} class="p-2 text-slate-300 hover:text-red-500 rounded-lg"><i data-feather="trash-2" class="w-5 h-5"></i></button>
+                                        <button on:click={() => removeSlide(index)} class="p-2 mt-4 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><i data-feather="trash-2" class="w-5 h-5"></i></button>
                                     </div>
                                 {/each}
                             </div>
@@ -1102,7 +1183,6 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                                             {#each editorSections as sec, secIdx}
                                                 <div class="bg-white p-3 rounded border border-slate-200 relative shadow-sm">
                                                     <button on:click={() => removeEditorSection(secIdx)} class="absolute -top-2 -right-2 bg-white text-red-400 hover:text-red-600 rounded-full border border-gray-200 p-1 shadow-sm"><i data-feather="x" class="w-3 h-3"></i></button>
-                                                    
                                                     <input type="text" bind:value={sec.title} class="w-full p-1.5 border-b border-gray-100 text-sm font-bold text-slate-700 outline-none placeholder-slate-400 mb-2" placeholder="Tiêu đề phụ (VD: Tính năng mới)">
                                                     <textarea bind:value={sec.content} rows="3" class="w-full p-1.5 text-sm text-slate-600 outline-none resize-none placeholder-slate-300" placeholder="- Gạch đầu dòng 1&#10;- Gạch đầu dòng 2..."></textarea>
                                                 </div>
@@ -1116,12 +1196,12 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                                             </button>
                                         </div>
                                     </div>
-                                {:else}
+                                 {:else}
                                     <div class="flex flex-col gap-1">
                                         <div class="flex justify-between items-end">
                                             <label class="text-xs font-bold text-gray-400 italic">Nội dung (HTML đã đóng gói)</label>
                                             {#if index === 0}
-                                                <button class="text-xs text-blue-500 hover:underline" on:click={() => { mainTitle='Sửa đổi'; editorSections=[{title:'',content:''}] }}>Sửa lại bằng bộ soạn thảo</button>
+                                                <button class="text-xs text-blue-500 hover:underline" on:click={() => { isEditing = true; mainTitle='Sửa đổi'; editorSections=[{title:'',content:''}] }}>Sửa lại bằng bộ soạn thảo</button>
                                             {/if}
                                         </div>
                                         <textarea bind:value={log.content} rows="4" class="w-full p-3 border rounded text-xs font-mono bg-slate-50 text-slate-500 leading-relaxed outline-none"></textarea>
@@ -1137,7 +1217,7 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
                 <button on:click={saveAllConfig} disabled={isSaving} class="bg-pink-600 text-white px-5 py-2.5 rounded-lg hover:bg-pink-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50">
                     {#if isSaving}
                         <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        Đang lưu & Upload...
+                        Đang lưu...
                     {:else}
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                         Lưu Cấu Hình
@@ -1157,43 +1237,73 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
 >>> FILE_START: src/components/admin/AdminMappings.svelte
 <script>
     import { afterUpdate } from 'svelte';
-    import { competitionNameMappings } from '../../stores.js';
+    import { competitionNameMappings, luykeNameMappings } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
 
     let mappingSearch = '';
     let isSaving = false;
-    let debounceTimer;
-    
-    // Subscribe store
-    $: mappings = $competitionNameMappings || {};
+    let activeTab = 'nhanvien';
 
-    // Chuyển object mappings thành array để render bảng
-    $: mappingList = Object.entries(mappings).map(([original, short], index) => ({
-        originalName: original,
-        shortName: short || original, // Mặc định hiển thị tên gốc nếu chưa có tên rút gọn
-        index: index + 1
-    }));
+    // [MODIFIED] Quét các chương trình đã được liên kết để loại trừ
+    $: selectedPrograms = Object.values($luykeNameMappings || {})
+        .map(v => (typeof v === 'object' && v !== null) ? v.linkedEmpProgram : null)
+        .filter(Boolean);
 
-    // Lọc danh sách
+    $: mappings = activeTab === 'nhanvien' ? ($competitionNameMappings || {}) : ($luykeNameMappings || {});
+    // Tương thích ngược: Cho phép đọc cả String (chuỗi cũ) và Object (chuỗi mới có liên kết)
+    $: mappingList = Object.entries(mappings).map(([original, val], index) => {
+        if (activeTab === 'nhanvien') {
+            return { originalName: original, shortName: val || original, index: index + 1 };
+        } else {
+            let shortName = original;
+            let linkedEmpProgram = '';
+            if (typeof val === 'string') {
+                shortName = val;
+            } else if (val && typeof val === 'object') {
+                shortName = val.shortName || original;
+                linkedEmpProgram = val.linkedEmpProgram || '';
+            }
+            return { originalName: original, shortName, linkedEmpProgram, index: index + 1 };
+        }
+    });
+
     $: filteredList = mappingList.filter(item => {
         const term = mappingSearch.toLowerCase();
         return item.originalName.toLowerCase().includes(term) || 
                item.shortName.toLowerCase().includes(term);
     });
 
+    // Cập nhật Tên rút gọn
     function handleMappingInput(originalName, event) {
         const newShortName = event.target.value;
-        
-        // Cập nhật store local ngay lập tức để UI phản hồi nhanh
-        competitionNameMappings.update(current => {
-            return { ...current, [originalName]: newShortName };
+        if (activeTab === 'nhanvien') {
+            competitionNameMappings.update(current => ({ ...current, [originalName]: newShortName }));
+        } else {
+            luykeNameMappings.update(current => {
+                const existing = current[originalName];
+                const newObj = (typeof existing === 'object' && existing !== null) ? { ...existing } : { shortName: existing || originalName, linkedEmpProgram: '' };
+                newObj.shortName = newShortName;
+                return { ...current, [originalName]: newObj };
+            });
+        }
+    }
+
+    // Cập nhật Cột Liên kết
+    function handleLinkChange(originalName, event) {
+        const newLink = event.target.value;
+        luykeNameMappings.update(current => {
+            const existing = current[originalName];
+            const newObj = (typeof existing === 'object' && existing !== null) ? { ...existing } : { shortName: existing || originalName, linkedEmpProgram: '' };
+            newObj.linkedEmpProgram = newLink;
+            return { ...current, [originalName]: newObj };
         });
     }
 
     async function saveAllMappings() {
         isSaving = true;
         try {
-            await adminService.saveCompetitionNameMappings($competitionNameMappings);
+            if (activeTab === 'nhanvien') await adminService.saveCompetitionNameMappings($competitionNameMappings);
+            else await adminService.saveLuykeNameMappings($luykeNameMappings);
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu mapping.");
@@ -1202,19 +1312,40 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
         }
     }
 
+    async function clearAllMappings() {
+        const tabName = activeTab === 'nhanvien' ? 'NHÂN VIÊN' : 'SIÊU THỊ';
+        if (confirm(`⚠️ BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ TÊN RÚT GỌN THI ĐUA [${tabName}]?\n\nHành động này dùng để dọn rác khi sang tháng mới. Sau khi xóa, bạn cần dán lại dữ liệu để hệ thống tạo danh sách mới.`)) {
+            isSaving = true;
+            try {
+                if (activeTab === 'nhanvien') {
+                    competitionNameMappings.set({});
+                    await adminService.saveCompetitionNameMappings({});
+                } else {
+                    luykeNameMappings.set({});
+                    await adminService.saveLuykeNameMappings({});
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Có lỗi xảy ra khi xóa dữ liệu trên Cloud.");
+            } finally {
+                isSaving = false;
+            }
+        }
+    }
+
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
     <details class="group" open> 
-        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
+        <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none border-b border-slate-100">
             <div class="flex items-center gap-3">
                 <div class="p-2 bg-teal-50 rounded-lg text-teal-600">
                     <i data-feather="git-merge"></i>
                 </div>
                 <div>
                     <h3 class="font-bold text-slate-700 text-lg">Tên Rút Gọn Thi Đua</h3>
-                    <p class="text-xs text-slate-500">Đặt tên ngắn gọn cho các cột thi đua trên bảng báo cáo</p>
+                    <p class="text-xs text-slate-500">Quản lý tên hiển thị ngắn gọn cho các bảng báo cáo</p>
                 </div>
             </div>
             <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
@@ -1222,78 +1353,88 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
             </span>
         </summary> 
         
-        <div class="p-6 border-t border-slate-100 bg-slate-50/50"> 
-            
-            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-                <div class="relative flex-grow w-full sm:w-auto">
-                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                        <i data-feather="search" class="w-4 h-4"></i>
-                    </span>
-                    <input 
-                        type="text" 
-                        class="w-full pl-10 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none bg-white" 
-                        placeholder="Tìm kiếm tên thi đua..." 
-                        bind:value={mappingSearch}
-                    >
-                </div>
-                <button 
-                    class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50"
-                    on:click={saveAllMappings}
-                    disabled={isSaving}
-                >
-                    {#if isSaving}
-                        <span class="animate-spin">↻</span> Đang lưu...
-                    {:else}
-                        <i data-feather="save" class="w-4 h-4"></i> Lưu Thay Đổi
-                    {/if}
+        <div class="bg-slate-50/50"> 
+            <div class="flex border-b border-slate-200 px-6 pt-4 gap-6">
+                <button class="pb-3 text-sm font-bold transition-colors {activeTab === 'nhanvien' ? 'text-teal-700 border-b-2 border-teal-600' : 'text-slate-500 hover:text-slate-700'}"
+                    on:click={() => { activeTab = 'nhanvien'; mappingSearch = ''; }}>
+                    <i data-feather="users" class="w-4 h-4 inline-block mr-1"></i> Thi Đua Nhân Viên
+                </button>
+                <button class="pb-3 text-sm font-bold transition-colors {activeTab === 'sieuthi' ? 'text-teal-700 border-b-2 border-teal-600' : 'text-slate-500 hover:text-slate-700'}"
+                    on:click={() => { activeTab = 'sieuthi'; mappingSearch = ''; }}>
+                    <i data-feather="home" class="w-4 h-4 inline-block mr-1"></i> Thi Đua Siêu Thị
                 </button>
             </div>
 
-            <div class="border border-slate-200 rounded-lg bg-white shadow-inner overflow-hidden">
-                <div class="max-h-[500px] overflow-y-auto custom-scrollbar"> 
-                    {#if filteredList.length === 0}
-                        <div class="flex flex-col items-center justify-center p-12 text-slate-400">
-                            <i data-feather="inbox" class="w-10 h-10 mb-3 opacity-50"></i>
-                            <p class="text-sm font-medium">Chưa có dữ liệu thi đua.</p>
-                            <p class="text-xs mt-1">Vui lòng dán dữ liệu "Thi đua nhân viên" ở tab Cập nhật dữ liệu để hệ thống tự động trích xuất tên.</p>
-                        </div>
-                    {:else}
-                        <table class="min-w-full text-sm border-collapse">
-                            <thead class="text-xs text-slate-600 uppercase bg-slate-100 font-bold sticky top-0 z-10 shadow-sm">
-                                <tr>
-                                    <th class="px-4 py-3 border-b text-center w-16">STT</th>
-                                    <th class="px-4 py-3 border-b text-left w-1/2">Tên Gốc (Từ dữ liệu dán)</th>
-                                    <th class="px-4 py-3 border-b text-left w-1/2 text-teal-700">Tên Rút Gọn (Hiển thị)</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                {#each filteredList as item}
-                                    <tr class="hover:bg-slate-50 transition-colors group">
-                                        <td class="px-4 py-3 text-center text-slate-400 text-xs font-mono">{item.index}</td>
-                                        <td class="px-4 py-3 text-slate-700 text-xs leading-relaxed font-medium break-words select-all">
-                                            {item.originalName}
-                                        </td>
-                                        <td class="px-4 py-2">
-                                            <input 
-                                                type="text" 
-                                                class="w-full p-2 border border-slate-200 rounded-md text-sm font-semibold text-teal-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 focus:bg-white transition-all placeholder-slate-300" 
-                                                value={item.shortName} 
-                                                on:input={(e) => handleMappingInput(item.originalName, e)}
-                                                placeholder={item.originalName}
-                                            >
-                                        </td>
+            <div class="p-6">
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                    <div class="relative flex-grow w-full sm:w-auto">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><i data-feather="search" class="w-4 h-4"></i></span>
+                        <input type="text" class="w-full pl-10 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none bg-white" placeholder="Tìm kiếm tên thi đua..." bind:value={mappingSearch}>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <button class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors" on:click={clearAllMappings} disabled={isSaving} title="Dọn dẹp danh sách">
+                            <span><i data-feather="trash-2" class="w-4 h-4"></i></span> Dọn Tháng Cũ
+                        </button>
+                        <button class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-bold text-sm shadow-sm flex items-center gap-2 disabled:opacity-50" on:click={saveAllMappings} disabled={isSaving}>
+                            {#if isSaving} <span class="animate-spin">↻</span> Đang lưu... {:else} <span><i data-feather="save" class="w-4 h-4"></i></span> Lưu Thay Đổi {/if}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-lg bg-white shadow-inner overflow-hidden">
+                    <div class="max-h-[500px] overflow-y-auto custom-scrollbar"> 
+                        {#if filteredList.length === 0}
+                            <div class="flex flex-col items-center justify-center p-12 text-slate-400">
+                                <i data-feather="inbox" class="w-10 h-10 mb-3 opacity-50"></i>
+                                <p class="text-sm font-medium">Chưa có dữ liệu thi đua.</p>
+                            </div>
+                        {:else}
+                            <table class="min-w-full text-sm border-collapse">
+                                <thead class="text-xs text-slate-600 uppercase bg-slate-100 font-bold sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th class="px-4 py-3 border-b text-center w-16">STT</th>
+                                        <th class="px-4 py-3 border-b text-left {activeTab === 'sieuthi' ? 'w-1/3' : 'w-1/2'}">Tên Gốc (Từ dữ liệu dán)</th>
+                                        <th class="px-4 py-3 border-b text-left {activeTab === 'sieuthi' ? 'w-1/3' : 'w-1/2'} text-teal-700">Tên Rút Gọn (Hiển thị)</th>
+                                        {#if activeTab === 'sieuthi'}
+                                            <th class="px-4 py-3 border-b text-left w-1/3 text-blue-700"><i data-feather="link" class="w-3 h-3 inline"></i> Link Data Nhân Viên</th>
+                                        {/if}
                                     </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    {/if}
-                </div> 
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    {#each filteredList as item}
+                                        <tr class="hover:bg-slate-50 transition-colors group">
+                                            <td class="px-4 py-3 text-center text-slate-400 text-xs font-mono">{item.index}</td>
+                                            <td class="px-4 py-3 text-slate-700 text-xs leading-relaxed font-medium break-words select-all">{item.originalName}</td>
+                                            <td class="px-4 py-2">
+                                                <input type="text" class="w-full p-2 border border-slate-200 rounded-md text-sm font-semibold text-teal-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 focus:bg-white transition-all placeholder-slate-300" 
+                                                    value={item.shortName} on:input={(e) => handleMappingInput(item.originalName, e)} placeholder={item.originalName}>
+                                            </td>
+                                            {#if activeTab === 'sieuthi'}
+                                                <td class="px-4 py-2">
+                                                    <input list="link-list-{item.index}" 
+                                                           class="w-full p-2 border border-slate-200 rounded-md text-sm text-gray-700 outline-none focus:ring-1 focus:ring-blue-500 bg-white placeholder-slate-400" 
+                                                           value={item.linkedEmpProgram} 
+                                                           on:input={(e) => handleLinkChange(item.originalName, e)} 
+                                                           placeholder="Tìm kiếm liên kết...">
+                                                    
+                                                    <datalist id="link-list-{item.index}">
+                                                        {#each Object.keys($competitionNameMappings || {}) as empProg}
+                                                            {#if item.linkedEmpProgram === empProg || !selectedPrograms.includes(empProg)}
+                                                                <option value={empProg}>{($competitionNameMappings[empProg] || empProg)}</option>
+                                                            {/if}
+                                                        {/each}
+                                                    </datalist>
+                                                </td>
+                                            {/if}
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        {/if}
+                    </div> 
+                </div>
             </div>
-            
-            <p class="text-xs text-slate-500 mt-3 italic flex items-center gap-1">
-                <i data-feather="info" class="w-3 h-3"></i>
-                Mẹo: Tên rút gọn mặc định sẽ giống tên gốc. Bạn hãy sửa lại cho ngắn gọn để bảng hiển thị đẹp hơn.
-            </p>
         </div>
     </details>
 </div>
@@ -2666,36 +2807,50 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   /* global feather */
   import { onMount, onDestroy } from 'svelte';
   
-  // Import các component con
-  import FileInput from './common/FileInput.svelte';
-  import PasteInput from './common/PasteInput.svelte';
-  
-  // Import Stores
   import { 
       warehouseList,
       selectedWarehouse,
       notificationStore,
       danhSachNhanVien,
-      homeConfig
+      homeConfig,
+      fileSyncState,        
+      clusterSummaryData,
+      currentUser
   } from '../stores.js';
   
-  // Import Services
   import { dataService } from '../services/dataService.js';
-  // [CODE MỚI] Import Service xử lý cụm
-  import { clusterService } from '../services/cluster.service.js'; 
-  
-  // Import để mở Popup chi tiết phiên bản
-  import { showVersionDetails } from './common/VersionManager.svelte';
+  import { clusterService } from '../services/cluster.service.js';
+  import { datasyncService } from '../services/datasync.service.js'; 
+  import { storageService } from '../services/storage.service.js'; 
+  import { luykeParser } from '../services/processing/parsers/luyke.parser.js'; 
 
+  import TourGuide from './common/TourGuide.svelte';
+  import DataHeader from './data-section/DataHeader.svelte';
+  import DailyDataBlock from './data-section/DailyDataBlock.svelte';
+  import ProductivityDataBlock from './data-section/ProductivityDataBlock.svelte';
+  import MonthlyDataBlock from './data-section/MonthlyDataBlock.svelte';
+  
   export let activeTab;
   let isSyncing = false;
   let dsnvUnsubscribe; 
 
-  // --- [LOGIC MỚI] CLUSTER MODE (CHẾ ĐỘ CỤM) ---
   let isClusterMode = false;
   let currentClusterCode = '';
 
-  // Reactive: Tự động check chế độ Cụm khi store nhân viên thay đổi
+  let isTourActive = false;
+  const dataTourSteps = [
+        { id: 'danh-sach-nv', title: 'Bước 1: Danh sách nhân viên', content: 'Việc đầu tiên cần làm mỗi tháng!\nBạn hãy tải file mẫu về, điền danh sách nhân sự của kho và upload lên đây để hệ thống nhận diện.', openDetails: 'block-yellow' },
+        { id: 'general-overview', title: 'Tổng quan Dữ liệu', content: 'Dữ liệu tại trang này được chia làm 3 khối chính tương ứng với tần suất bạn phải thao tác: Mỗi ngày, Khi cần thiết, và Mỗi tháng.' },
+        { id: 'block-blue', title: 'Khối 1: Sử dụng nhanh mỗi ngày', content: 'Chứa 90% dữ liệu bạn sẽ cần thao tác.\nMỗi ngày bạn chỉ cần đổ 1 file Excel (YCX) và dán 2 bảng dữ liệu từ BI vào đây là xong.' },
+        { id: 'input-ycx', title: 'Yêu cầu xuất lũy kế (File Excel)', content: 'Dùng để xem Doanh thu thực tế, chi tiết từng ngành hàng, địa chỉ khách hàng và theo dõi sức bán (Velocity).' },
+        { id: 'input-data-lk', title: 'Data lũy kế (Copy từ BI)', content: 'Dùng để xem xếp hạng Thi đua siêu thị, Doanh thu hệ thống ghi nhận từ BI và tỷ lệ hoàn thành Target.' },
+        { id: 'input-thidua-nv', title: 'Thi đua nhân viên (Copy từ BI)', content: 'Để theo dõi điểm thi đua và thứ hạng cá nhân của từng nhân viên theo ghi nhận của hệ thống.' },
+        { id: 'block-green', title: 'Khối 2: Chi tiết Năng suất', content: 'Khu vực này dùng để xem giờ công, thưởng nóng, thưởng ERP.\nHệ thống sẽ tự động tổng hợp để ước tính thu nhập dự kiến.', openDetails: 'block-green' },
+        { id: 'block-yellow', title: 'Khối 3: Cập nhật 1 tháng 1 lần', content: 'Chứa các file cũ dùng để đối chiếu dữ liệu.', openDetails: 'block-yellow' },
+        { id: 'input-ycx-thang-truoc', title: 'YCX Lũy kế tháng trước', content: 'Dùng để so sánh sự tăng giảm với cùng kỳ tháng trước.\nBạn có thể tải lên nhiều file để xem dữ liệu nhiều tháng.', openDetails: 'block-yellow' },
+        { id: 'input-ycx-nam-truoc', title: 'YCX Lũy kế năm trước', content: 'Dùng để so sánh tăng trưởng SSG 1 tháng hoặc đối chiếu lũy kế nguyên năm.', openDetails: 'block-yellow' }
+  ];
+
   $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
       checkClusterStatus($danhSachNhanVien);
   } else {
@@ -2704,95 +2859,115 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   }
 
   function checkClusterStatus(employees) {
-      // 1. Lấy danh sách các mã cụm duy nhất (từ parser mới)
-      // Lưu ý: Parser cũ trả về field 'maCum' hoặc 'clusterId' tùy mapping
-      // Ta check an toàn cả 2 trường hợp
       const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
-      
-      // 2. Lấy danh sách kho duy nhất
       const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
-
-      // Điều kiện kích hoạt: Có cột Mã Cụm VÀ (Có >= 2 kho HOẶC user đang chọn xem Cụm)
       if (clusters.length > 0 && (warehouses.length > 1 || clusters.includes($selectedWarehouse))) {
           isClusterMode = true;
-          currentClusterCode = clusters[0]; // Mặc định lấy cụm đầu tiên
+          currentClusterCode = clusters[0]; 
           
-          // Cập nhật Select box: Thêm mã cụm vào danh sách chọn nếu chưa có
           warehouseList.update(list => {
-               // Nếu chưa có mã cụm trong list, thêm nó vào đầu
-               if (!list.includes(currentClusterCode)) {
-                   return [currentClusterCode, ...list];
-               }
+               if (!list.includes(currentClusterCode)) return [currentClusterCode, ...list];
                return list;
           });
-          
-          // Tự động switch sang mã cụm nếu đang chưa chọn gì
           if (!$selectedWarehouse || $selectedWarehouse !== currentClusterCode) {
-               // Logic tùy chọn: Có thể tự động chọn hoặc để user chọn
-               // Ở đây tôi để log check thôi, tránh force user quá gắt
                console.log(`[Cluster] Detected cluster: ${currentClusterCode}`);
           }
-          
-          // Load dữ liệu đã lưu của cụm này (để hiển thị biểu đồ nếu F5)
           clusterService.loadSavedData(currentClusterCode);
       } else {
           isClusterMode = false;
           currentClusterCode = '';
-          // Reset service nếu về chế độ thường
           clusterService.reset();
       }
   }
 
-  // --- [LOGIC MỚI] XỬ LÝ PASTE DỮ LIỆU ---
-  
-  // 1. Handler cho ô "Thi đua siêu thị lũy kế" (Chỉ hiện khi Cluster Mode)
+  async function handlePasteClusterSummary(event) {
+      const text = event.detail;
+      if (!text) return;
+
+      fileSyncState.update(s => ({
+          ...s,
+          'cluster_summary_data': { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
+      }));
+
+      try {
+          const parsedData = luykeParser.parseClusterSummaryData(text);
+          clusterSummaryData.set(parsedData);
+          localStorage.setItem('cluster_summary_data', text);
+          const count = Object.keys(parsedData).length;
+          const now = Date.now();
+
+          // [PHẪU THUẬT LOGIC]: Tự động sinh ID cụm theo quyền quản lý hiện tại
+          const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
+
+          const blob = new Blob([text], { type: 'text/plain' });
+          const path = `warehouse_data/${targetClusterId}/cluster_summary_data_${now}.txt`;
+          const downloadUrl = await storageService.uploadFileToStorage(blob, path);
+
+          const metaToSave = {
+              downloadURL: downloadUrl,
+              fileName: 'du_lieu_dan_cum.txt',
+              fileType: 'text',
+              rowCount: count,
+              updatedAt: new Date(now),
+              timestamp: now,
+              updatedBy: $currentUser?.email || 'Tôi'
+          };
+
+          // [PHẪU THUẬT LOGIC]: Lưu chính xác vào Document của Cụm này, không đè lên ALL
+          await datasyncService.saveWarehouseMetadata(targetClusterId, 'cluster_summary_data', metaToSave);
+          localStorage.setItem(`_meta_${targetClusterId}_cluster_summary_data`, JSON.stringify(metaToSave));
+
+          fileSyncState.update(s => ({
+              ...s,
+              'cluster_summary_data': { 
+                  status: 'synced', 
+                  message: `✓ Đã đồng bộ (${count} dòng)`, 
+                  metadata: metaToSave 
+              }
+          }));
+          notificationStore.set({ message: '✅ Đã trích xuất và đồng bộ Báo cáo Cụm!', type: 'success' });
+          
+      } catch (error) {
+          console.error(error);
+          fileSyncState.update(s => ({
+              ...s,
+              'cluster_summary_data': { status: 'error', message: `Lỗi: ${error.message}` }
+          }));
+          notificationStore.set({ message: error.message || 'Lỗi xử lý dữ liệu cụm!', type: 'error' });
+      }
+  }
+
   function handlePasteCompetition(event) {
       const text = event.detail;
       if (isClusterMode && currentClusterCode) {
           try {
               clusterService.processCompetitionInput(text, currentClusterCode);
-              notificationStore.set({ 
-                  message: `✅ Đã cập nhật thi đua cho Cụm ${currentClusterCode}!`, 
-                  type: 'success' 
-              });
+              notificationStore.set({ message: `✅ Đã cập nhật thi đua cho Cụm ${currentClusterCode}!`, type: 'success' });
           } catch (e) {
               console.error(e);
-              notificationStore.set({ 
-                  message: 'Lỗi xử lý dữ liệu thi đua! Kiểm tra format.', 
-                  type: 'error' 
-              });
+              notificationStore.set({ message: 'Lỗi xử lý dữ liệu thi đua! Kiểm tra format.', type: 'error' });
           }
       }
   }
 
-  // 2. Handler cho ô "Data lũy kế" (Rẽ nhánh thông minh)
   function handlePasteCumulative(event) {
-      const text = event.detail;
-      
-      if (isClusterMode && currentClusterCode) {
-          // A. CHẾ ĐỘ CỤM: Xử lý bằng Cluster Service (Logic 16 cột tổng hợp)
+      const payload = event.detail;
+      const text = payload.text || payload; 
+      const kho = payload.kho || currentClusterCode;
+
+      if (kho) {
           try {
-              clusterService.processCumulativeInput(text, currentClusterCode);
-              notificationStore.set({ 
-                  message: `✅ Đã cập nhật Lũy kế cho Cụm ${currentClusterCode}!`, 
-                  type: 'success' 
-              });
+              clusterService.processCumulativeInput(text, kho);
+              notificationStore.set({ message: `✅ Đã cập nhật Lũy kế kho ${kho}!`, type: 'success' });
           } catch (e) {
               console.error(e);
-              notificationStore.set({ message: 'Lỗi xử lý Data Lũy kế Cụm!', type: 'error' });
+              notificationStore.set({ message: `Lỗi xử lý Data Lũy kế kho ${kho}!`, type: 'error' });
           }
-      } else {
-          // B. CHẾ ĐỘ KHO ĐƠN (CŨ):
-          // Không làm gì cả -> Để mặc định cho PasteInput tự save vào localStorage
-          // và dataService sẽ tự detect qua key 'daily_paste_luyke' như cũ.
-          console.log('[DataSection] Mode Kho đơn: Dữ liệu đã được lưu vào Storage.');
       }
   }
 
-  // --- LOGIC PHIÊN BẢN (GIỮ NGUYÊN) ---
   let latestVersion = '';
   let tickerStatus = 'none';
-
   $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
       const serverVer = $homeConfig.changelogs[0].version;
       const clientVer = localStorage.getItem('app_client_version') || '';
@@ -2800,27 +2975,47 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       tickerStatus = (serverVer && serverVer !== clientVer) ? 'new' : 'current';
   }
 
-  // --- LOGIC ĐỒNG BỘ CŨ (GIỮ NGUYÊN) ---
   onMount(async () => {
     if (typeof feather !== 'undefined') feather.replace();
 
+    const savedClusterText = localStorage.getItem('cluster_summary_data');
+    if (savedClusterText) {
+        try {
+            const parsedData = luykeParser.parseClusterSummaryData(savedClusterText);
+            clusterSummaryData.set(parsedData);
+            const count = Object.keys(parsedData).length;
+            
+            // [PHẪU THUẬT LOGIC]: Tự động dò tìm Meta của cụm trên LocalStorage (vì ID cụm có thể là bất kỳ)
+            let restoreMeta = null;
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('_meta_CLUSTER_') && k.endsWith('_cluster_summary_data')) {
+                    try { restoreMeta = JSON.parse(localStorage.getItem(k)); break; } catch(e){}
+                }
+            }
+            
+            fileSyncState.update(s => ({
+                ...s,
+                'cluster_summary_data': { 
+                    status: 'synced', 
+                    message: `✓ Đã đồng bộ (${count} dòng)`,
+                    metadata: restoreMeta
+                }
+            }));
+        } catch(e) {
+            console.error("Lỗi phục hồi Báo cáo cụm từ LocalStorage:", e);
+        }
+    }
+
     const savedWh = localStorage.getItem('selectedWarehouse');
     if (savedWh) {
-        console.log(`[DataSection] Phát hiện kho đã lưu: ${savedWh}.`);
         selectedWarehouse.set(savedWh);
         await dataService.loadWarehouseSettings(savedWh); 
 
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
             if (data && data.length > 0) {
-                // Check cluster status ngay khi load data
                 checkClusterStatus(data);
-                
-                // Chỉ sync từ cloud nếu KHÔNG PHẢI là cụm (vì cụm ko có cloud sync)
-                if (!isClusterMode) {
-                    console.log(`[DataSection] Đồng bộ kho đơn: ${savedWh}`);
-                    await triggerSync(savedWh);
-                }
-                
+                if (!isClusterMode) await triggerSync(savedWh);
                 if (dsnvUnsubscribe) {
                     dsnvUnsubscribe();
                     dsnvUnsubscribe = null;
@@ -2835,34 +3030,56 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
   });
 
   async function triggerSync(warehouse) {
-      if (!warehouse) return;
+      if (!warehouse) return; 
       isSyncing = true;
       try {
-          await Promise.all([
-              dataService.syncDownFromCloud(warehouse),
-              dataService.loadWarehouseSettings(warehouse)
-          ]);
+          if (warehouse === 'ALL') {
+              const validWarehouses = $warehouseList.filter(k => k && k !== 'ALL');
+              
+              if (validWarehouses.length > 0) {
+                  const syncPromises = [];
+                  
+                  syncPromises.push(dataService.syncDownFromCloud('ALL'));
+                  
+                  // [PHẪU THUẬT LOGIC]: Gọi chính xác ID Cụm để đồng bộ (nếu người dùng thuộc về 1 Cụm)
+                  if (isClusterMode && currentClusterCode) {
+                      syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${currentClusterCode}`));
+                  }
+                  
+                  validWarehouses.forEach(kho => {
+                      syncPromises.push(dataService.syncDownFromCloud(kho));
+                      syncPromises.push(dataService.loadWarehouseSettings(kho));
+                  });
+                  
+                  await Promise.all(syncPromises);
+              }
+          } else {
+              await Promise.all([
+                  dataService.syncDownFromCloud(warehouse),
+                  dataService.loadWarehouseSettings(warehouse)
+              ]);
+          }
           notificationStore.set({ message: 'Đồng bộ thành công!', type: 'success' });
       } catch (error) {
             console.error("SYNC ERROR:", error);
+            notificationStore.set({ message: 'Đồng bộ bị lỗi!', type: 'error' });
       } finally {
             isSyncing = false;
       }
   }
 
   async function handleWarehouseChange(event) {
-      const newWarehouse = event.target.value;
+      const newWarehouse = event.detail; 
       selectedWarehouse.set(newWarehouse);
-      
       if (newWarehouse) {
           localStorage.setItem('selectedWarehouse', newWarehouse);
-          
-          if (isClusterMode && newWarehouse === currentClusterCode) {
-               // Nếu chọn vào Mã Cụm -> Load data cụm
+          if (newWarehouse === 'ALL') {
+               notificationStore.set({ message: `Đang đồng bộ dữ liệu tất cả các kho...`, type: 'info' });
+               await triggerSync(newWarehouse);
+          } else if (isClusterMode && newWarehouse === currentClusterCode) {
                notificationStore.set({ message: `Chế độ Cụm: ${newWarehouse}`, type: 'info' });
                clusterService.loadSavedData(newWarehouse);
           } else {
-               // Nếu chọn vào Mã Kho lẻ -> Sync bình thường
                notificationStore.set({ message: `Đang đồng bộ ${newWarehouse}...`, type: 'info' });
                await triggerSync(newWarehouse);
           }
@@ -2871,235 +3088,56 @@ GENERATED AT: 2/22/2026, 4:12:10 PM
       }
   }
 
+  let hasSeenTour = true;
+  function handleManualTourStart() {
+      isTourActive = true;
+      localStorage.setItem('has_seen_tour_data_section', 'true');
+  }
+
   $: if (activeTab === 'data-section') {
-    Promise.resolve().then(() => {
-      if (typeof window.feather !== 'undefined') window.feather.replace();
-    });
+      Promise.resolve().then(() => {
+          if (typeof window.feather !== 'undefined') window.feather.replace();
+      });
+      if (typeof localStorage !== 'undefined') {
+          const seen = localStorage.getItem('has_seen_tour_data_section');
+          if (!seen) {
+              setTimeout(() => {
+                  if (!isTourActive && activeTab === 'data-section') {
+                      isTourActive = true;
+                      localStorage.setItem('has_seen_tour_data_section', 'true');
+                  }
+              }, 1000);
+          }
+      }
   }
 </script>
 
 <section id="data-section" class="page-section {activeTab === 'data-section' ? '' : 'hidden'}"> 
-    <div class="page-header">
-         <div class="flex flex-wrap items-center gap-4 w-full">
-            <div class="flex items-center gap-x-3">
-                <h2 class="page-header__title">Cập nhật dữ liệu</h2>
-                <button class="page-header__help-btn" data-help-id="data" title="Xem hướng dẫn">
-                     <i data-feather="help-circle" class="feather"></i>
-                </button>
-            </div>
-            
-            <div id="data-warehouse-selector-container" class="flex-shrink-0 flex items-center gap-2">
-                  <label for="data-warehouse-selector" class="text-sm font-semibold text-gray-700">
-                      {isClusterMode ? 'Cụm/Kho:' : 'Kho:'}
-                  </label>
-              
-                  <div class="relative">
-                    <select 
-                      id="data-warehouse-selector" 
-                      class="p-2 border rounded-lg text-sm shadow-sm min-w-[200px] 
-                            font-semibold text-indigo-800 bg-indigo-50 border-indigo-200 
-                            focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-50" 
-                      disabled={$warehouseList.length === 0 || isSyncing}
-                      value={$selectedWarehouse}
-                      on:change={handleWarehouseChange}
-                    >
-                        {#if $warehouseList.length === 0}
-                              <option>Vui lòng tải file DSNV...</option>
-                        {:else}
-                            <option value="">-- Chọn --</option>
-                             {#each $warehouseList as kho}
-                                 <option value={kho}>{kho}</option>
-                            {/each}
-                        {/if}
-                    </select>
-                    {#if isSyncing}
-                        <div class="absolute right-8 top-1/2 -translate-y-1/2">
-                             <svg class="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                             </svg>
-                         </div>
-                    {/if}
-                </div>
-            </div>
-
-            {#if tickerStatus !== 'none'}
-                <div 
-                    id="version-marquee-container" 
-                    class="flex-grow min-w-[200px] rounded-lg px-4 py-2 cursor-pointer shadow-sm border transition-all flex items-center overflow-hidden relative group
-                    {tickerStatus === 'new' 
-                        ? 'bg-red-50 border-red-200 hover:bg-red-100' 
-                        : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}"
-                    on:click={() => showVersionDetails.set(true)}
-                    role="button"
-                    tabindex="0"
-                >
-                    <div class="marquee-content whitespace-nowrap text-sm flex items-center gap-4">
-                        {#if tickerStatus === 'new'}
-                            <span class="flex items-center gap-1 bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-extrabold uppercase tracking-wider animate-pulse border border-red-200">
-                                <i data-feather="zap" class="w-3 h-3"></i> Mới
-                            </span>
-                            <span class="text-red-900 font-bold">
-                               Đã có phiên bản <span class="bg-red-200 text-red-800 px-1.5 rounded font-bold mx-1">{latestVersion}</span> - Bấm cập nhật ngay!
-                            </span>
-                        {:else}
-                             <span class="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider border border-green-200">
-                                <i data-feather="check-circle" class="w-3 h-3"></i> Đã cập nhật
-                             </span>
-                            <span class="text-indigo-900 font-bold flex items-center gap-1">
-                                Hệ thống đang chạy phiên bản 
-                                <span class="text-base font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-100 shadow-sm">
-                                    {latestVersion}
-                                </span>
-                             </span>
-                        {/if}
-                    </div>
-                </div>
-            {/if}
-        </div>
-    </div>
+    
+    <DataHeader 
+        {isClusterMode}
+        {isSyncing}
+        {tickerStatus}
+        {latestVersion}
+        {hasSeenTour}
+        on:warehouseChange={handleWarehouseChange}
+        on:startTour={handleManualTourStart}
+    />
    
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6"> 
-        <div class="content-card data-card--blue flex flex-col gap-4"> 
-             <h3 class="content-card__header data-header--blue flex items-center">
-                <i data-feather="zap" class="h-5 w-5 feather mr-2"></i>
-                <span>SỬ DỤNG NHANH MỖI NGÀY</span>
-                <span class="ml-2 text-sm font-normal italic opacity-100 pt-0">
-                    (Đủ 90% dữ liệu cần thiết)
-                </span>
-            </h3>
-            
-            <FileInput 
-                label="Yêu cầu xuất lũy kế"
-                icon="file-text"
-                link="https://report.mwgroup.vn/home/dashboard/077"
-                saveKey="saved_ycx"
-            />
-            
-            <PasteInput
-                label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : "Data lũy kế"}
-                icon="clipboard"
-                link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1"
-                saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : "daily_paste_luyke"}
-                on:paste={handlePasteCumulative}
-            />
-            
-            {#if isClusterMode}
-                <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative">
-                     <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
-                     <PasteInput
-                        label="Thi đua siêu thị lũy kế"
-                        icon="layers"
-                        link="#"
-                        placeholder="Paste dữ liệu thi đua cụm..."
-                        saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`}
-                        on:paste={handlePasteCompetition}
-                    />
-                    <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1">
-                        <i data-feather="info" class="w-3 h-3"></i>
-                        Dành cho quản lý Cụm {currentClusterCode}
-                    </p>
-                </div>
-            {/if}
-            
-            <PasteInput
-                label="Thi đua nhân viên"
-                icon="clipboard"
-                link="https://bi.thegioididong.com/sieu-thi-con?id=16758&tab=bcdtnv&rt=2&dm=1"
-                saveKeyPaste="daily_paste_thiduanv"
-                saveKeyRaw="raw_paste_thiduanv"
-                saveKeyProcessed="daily_paste_thiduanv"
-            />
-        </div>
+    <div class="flex flex-col gap-1 mb-1"> 
+        <DailyDataBlock 
+            {isClusterMode}
+            {currentClusterCode}
+            on:pasteClusterSummary={handlePasteClusterSummary}
+            on:pasteCumulative={handlePasteCumulative}
+            on:pasteCompetition={handlePasteCompetition}
+        />
         
-         <div class="content-card data-card--green flex flex-col gap-4"> 
-            <h3 class="content-card__header data-header--green">
-                  <i data-feather="users" class="h-5 w-5 feather"></i>CHI TIẾT NĂNG SUẤT NHÂN VIÊN
-            </h3>
-           
-            <FileInput
-                label="Giờ công"
-                icon="clock"
-                link="https://reports.thegioididong.com/#/viewreport/168754"
-                saveKey="saved_giocong"
-             />
-             
-            <FileInput
-                 label="Thưởng nóng"
-                icon="gift"
-                link="https://report.mwgroup.vn/home/dashboard/105"
-                saveKey="saved_thuongnong"
-            />
-             
-            <PasteInput
-                label="Thưởng ERP"
-                icon="clipboard"
-                link="https://bi.thegioididong.com/reward?id=-1&tab=1"
-                saveKeyPaste="daily_paste_thuongerp"
-             />
-        </div>
+        <ProductivityDataBlock />
     </div>
     
-    <div class="content-card data-card--yellow"> 
-         <h3 class="content-card__header data-header--yellow">
-            <i data-feather="calendar" class="h-5 w-5 feather"></i>DỮ LIỆU CẬP NHẬT 1 THÁNG 1 LẦN
-         </h3>
-        <p class="text-sm text-yellow-800 bg-yellow-100 p-3 rounded-lg mb-4">Lưu ý: Dữ liệu trong phần này sẽ được lưu vào trình duyệt của bạn. Dữ liệu sẽ tồn tại cho đến khi bạn cập nhật lại.</p> 
-        
-        <div class="grid md:grid-cols-3 gap-4"> 
-             <div class="space-y-4"> 
-                 <FileInput
-                    label="Danh sách nhân viên"
-                    icon="users"
-                    saveKey="saved_danhsachnv"
-                />
-                <FileInput
-                    label="YCX Lũy Kế tháng trước"
-                    icon="file-text"
-                    link="https://report.mwgroup.vn/home/dashboard/077"
-                    saveKey="saved_ycx_thangtruoc"
-                />
-            </div> 
-             <div class="space-y-4"> 
-                  <FileInput
-                    label="Thưởng nóng tháng trước"
-                    icon="gift"
-                     link="https://report.mwgroup.vn/home/dashboard/105"
-                     saveKey="saved_thuongnong_thangtruoc"
-                />
-             </div> 
-             <div class="space-y-4"> 
-                 <PasteInput
-                    label="Thưởng ERP tháng trước"
-                    icon="clipboard"
-                    link="https://bi.thegioididong.com/reward?id=-1&tab=1"
-                     saveKeyPaste="saved_thuongerp_thangtruoc"
-                 />
-            </div> 
-        </div> 
-    </div> 
-</section>
+    <MonthlyDataBlock />
 
-<style>
-    /* Animation cho dòng chữ chạy */
-    .marquee-content {
-        animation: marquee 12s linear infinite;
-    }
-    .group:hover .marquee-content {
-        animation-play-state: paused;
-    }
-    @keyframes marquee {
-        0% { transform: translateX(100%); }
-        100% { transform: translateX(-100%); }
-    }
-    
-    /* Animation cho ô nhập liệu Cụm mới xuất hiện */
-    .animate-fade-in {
-        animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-</style>
+    <TourGuide bind:isActive={isTourActive} steps={dataTourSteps} />
+</section>
 <<< FILE_END: src/components/DataSection.svelte
