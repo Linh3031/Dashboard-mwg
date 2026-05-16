@@ -61,7 +61,9 @@
 
     function copyTags() {
         if (collectedTags.length === 0) return;
-        const textToCopy = collectedTags.join(' ');
+        
+        // [PHẪU THUẬT]: Thay đổi khoảng trắng thành '\n' để danh sách tự xuống dòng theo hàng dọc
+        const textToCopy = collectedTags.join('\n');
         
         navigator.clipboard.writeText(textToCopy).then(() => {
             // Kích hoạt hiệu ứng Tooltip nổi lên
@@ -159,14 +161,12 @@
 </div>
 
 <style>
-    /* Animation cho khối giỏ hàng */
     @keyframes fadeInUp {
         from { opacity: 0; transform: translateY(15px); }
         to { opacity: 1; transform: translateY(0); }
     }
     .animate-fade-in-up { animation: fadeInUp 0.25s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards; }
     
-    /* Animation cho chữ "Đã copy!" bay lên */
     @keyframes floatUp {
         0% { opacity: 0; transform: translate(-50%, 10px) scale(0.8); }
         40% { opacity: 1; transform: translate(-50%, -2px) scale(1.1); }
