@@ -36,6 +36,7 @@
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
   import VersionManager from './components/common/VersionManager.svelte';
+  import FastTagPicker from './components/common/FastTagPicker.svelte';
 
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
@@ -271,6 +272,7 @@
 
 <GlobalNotification />
 <VersionManager />
+<FastTagPicker />
 
 <InterfaceDrawer />
 <GoalDrawer />
