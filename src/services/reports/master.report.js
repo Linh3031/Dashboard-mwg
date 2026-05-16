@@ -1,5 +1,5 @@
 // src/services/reports/master.report.js
-// Version 6.2 - Surgical Logic: Warehouse Filtering for both Employee & Transactions
+// Version 6.3 - Surgical Logic: Fix Warehouse Filtering for Multi-Warehouse (Array Support)
 import { get } from 'svelte/store';
 import { danhSachNhanVien, selectedWarehouse } from '../../stores.js';
 
@@ -22,24 +22,29 @@ export const masterReportLogic = {
 
         // --- PHẪU THUẬT LOGIC: LỌC DỮ LIỆU ĐÚNG THEO KHO (WAREHOUSE ISOLATION) ---
         
-        // Bước 1: Lọc nhân sự theo Kho đang chọn
         let filteredEmployees = $rawDanhSachNhanVien;
         let filteredSourceData = sourceData;
 
         if (currentSelectedWh && currentSelectedWh !== 'ALL') {
+             // [SỬA LỖI]: Hàm helper kiểm tra xem mã kho có nằm trong danh sách đang chọn không (Hỗ trợ cả Mảng và Chuỗi)
+             const isMatchWh = (code, selected) => {
+                 if (Array.isArray(selected)) return selected.includes(code);
+                 return code === selected;
+             };
+
              // 1.1 Lọc Nhân viên
              filteredEmployees = $rawDanhSachNhanVien.filter(emp => {
                  const whCode = String(emp.maKho || emp.storeId || emp['Mã kho tạo'] || emp['Kho tạo'] || '').trim();
-                 return whCode === currentSelectedWh;
+                 return isMatchWh(whCode, currentSelectedWh);
              });
 
              // 1.2 Lọc Dữ liệu Giao dịch (YCX) chỉ thuộc về kho đang chọn
              if (filteredSourceData && filteredSourceData.length > 0) {
                  filteredSourceData = sourceData.filter(tx => {
                      const txWhCode = String(tx.maKho || tx.maKhoTao || tx['Mã kho tạo'] || tx['Kho tạo'] || '').trim();
-                     // Nếu giao dịch không có mã kho rõ ràng, ta tạm cho qua để khỏi mất số (hoặc bạn có thể strict hơn)
+                     // Nếu giao dịch không có mã kho rõ ràng, ta tạm cho qua để khỏi mất số
                      if (!txWhCode) return true; 
-                     return txWhCode === currentSelectedWh;
+                     return isMatchWh(txWhCode, currentSelectedWh);
                  });
              }
         }

@@ -44,7 +44,7 @@
               { id: 'subtab-realtime-hang-ban', label: 'Chi tiết YCX Real' },
               { id: 'subtab-realtime-thi-dua', label: 'Thi đua NV Real' },
               { id: 'subtab-realtime-tragop', label: 'Trả chậm Real' }
-          ]
+           ]
       }
   };
 
@@ -60,7 +60,6 @@
   let rankingReportData = [];
   let compData = [];
   let currentGoals = {};
-
   let editorComponent;
 
   // --- LOGIC ANTI-FREEZE ---
@@ -111,7 +110,16 @@
       }
 
       const masterReport = reportService.generateMasterReportData(sourceData, currentGoals, isRealtime);
-      rankingReportData = warehouse ? masterReport.filter(nv => nv.maKho == warehouse) : masterReport;
+      
+      // [PHẪU THUẬT LOGIC]: Đồng bộ bộ lọc Đa kho chuẩn xác cho danh sách nhân sự (Dùng cho Ranking)
+      if (!warehouse || warehouse === 'ALL') {
+          rankingReportData = masterReport;
+      } else if (Array.isArray(warehouse)) {
+          rankingReportData = masterReport.filter(nv => warehouse.map(w => String(w).trim()).includes(String(nv.maKho || '').trim()));
+      } else {
+          rankingReportData = masterReport.filter(nv => String(nv.maKho || '').trim() === String(warehouse).trim());
+      }
+
       supermarketReport = reportService.aggregateReport(rankingReportData, warehouse);
       compData = (context === 'luyke' || context === 'sknv') ? $competitionData : [];
   }
@@ -178,7 +186,6 @@
             </div>
 
             <div class="flex-grow flex flex-col md:flex-row overflow-hidden relative">
-                
                 {#if isLoading}
                     <div class="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                         <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-3"></div>

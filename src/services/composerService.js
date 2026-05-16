@@ -2,7 +2,7 @@
 // MỤC ĐÍCH: Logic Trình tạo Nhận xét (Update: Thêm % Trả chậm & Ranking Top 5)
 
 import { get } from 'svelte/store';
-import { masterReportData } from '../stores.js';
+import { masterReportData, selectedWarehouse } from '../stores.js';
 import { dataProcessing } from './dataProcessing.js';
 import * as utils from '../utils.js'; 
 import { formatters } from '../utils/formatters.js';
@@ -60,7 +60,6 @@ const composerServices = {
             return "Lỗi: Dữ liệu không đủ để tạo nhận xét.";
         }
 
-        // [UPDATE] Thêm TLTC (Tỷ lệ trả chậm) vào mapping ranking
         const tagMapping = {
             'DTQD': { key: 'doanhThuQuyDoi', format: 'currency' },
             'THUNHAP': { key: 'tongThuNhap', format: 'currency' },
@@ -79,98 +78,126 @@ const composerServices = {
             'BH': { dataKey: 'pctBaoHiem', goalKey: 'phanTramBaoHiem', format: 'percent' },
         };
 
-        // --- BƯỚC 1: CHUẨN BỊ SỐ LIỆU ---
+        // --- BƯỚC 1: KHỞI TẠO BIẾN CHỨA SỐ LIỆU MẶC ĐỊNH TỪ KHỐI TỰ TÍNH (YCX / REALTIME) ---
         let dtThuc = supermarketReport.doanhThu || 0;
         let dtQd = supermarketReport.doanhThuQuyDoi || 0;
         let tlQd = supermarketReport.hieuQuaQuyDoi || 0; 
-        let tlTraCham = supermarketReport.tyLeTraCham || 0; // [NEW] Biến trả chậm
-        let comparisonPercentage = 'N/A';
+        let tlTraCham = supermarketReport.tyLeTraCham || 0;
+        let comparisonPercentage = supermarketReport.comparisonData?.percentage || 'N/A';
         
         let dtThucDuKienFromPaste = 0; 
         let phanTramTargetQdFromPaste = null;
+        let phanTramTargetThucFromPaste = null;
+        
+        let hasValidPasteData = false;
+        const warehouseContext = get(selectedWarehouse);
 
-        // Ưu tiên lấy dữ liệu Paste
+        // --- BƯỚC 2: CHỈ ĐÈ DỮ LIỆU DÁN ĐỐI VỚI NGỮ CẢNH LUY KẾ ---
         if (sectionId === 'luyke' && typeof localStorage !== 'undefined') {
-            const pastedText = localStorage.getItem('daily_paste_luyke');
+            let pastedText = null;
+            const isClusterMode = !warehouseContext || warehouseContext === 'ALL' || Array.isArray(warehouseContext);
+            
+            if (isClusterMode) {
+                pastedText = localStorage.getItem('daily_paste_luyke_tonghop') || 
+                             localStorage.getItem('daily_paste_luyke_all') || 
+                             localStorage.getItem('daily_paste_luyke');
+            } else {
+                pastedText = localStorage.getItem(`daily_paste_luyke_${warehouseContext}`) || 
+                             localStorage.getItem('daily_paste_luyke');
+            }
+
             if (pastedText) {
                 const pastedData = dataProcessing.parseLuyKePastedData(pastedText);
-                const { mainKpis, comparisonData, dtDuKien, tyLeTraCham } = pastedData;
-
-                // Xử lý DT & TLQĐ
-                if (mainKpis && mainKpis['Thực hiện DT thực']) {
+                if (pastedData && pastedData.mainKpis) {
+                    const { mainKpis, comparisonData, dtDuKien, tyLeTraCham: pastedTyLeTraCham } = pastedData;
                     const clean = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
                     
-                    const dtThucPaste = clean(mainKpis['Thực hiện DT thực']) * 1000000;
-                    const dtQdPaste = clean(mainKpis['Thực hiện DTQĐ']) * 1000000;
+                    if (mainKpis['Thực hiện DT thực']) {
+                        const dtThucPaste = clean(mainKpis['Thực hiện DT thực']) * 1000000;
+                        const dtQdPaste = clean(mainKpis['Thực hiện DTQĐ']) * 1000000;
 
-                    if (dtThucPaste > 0) {
-                        dtThuc = dtThucPaste;
-                        dtQd = dtQdPaste;
-                        tlQd = (dtQd / dtThuc) - 1;
+                        if (dtThucPaste > 0) {
+                            dtThuc = dtThucPaste;
+                            dtQd = dtQdPaste;
+                            tlQd = (dtQd / dtThuc) - 1;
+                            hasValidPasteData = true;
+                        }
                     }
 
                     if (mainKpis['% HT Target Dự Kiến (QĐ)']) {
                          const rawPct = String(mainKpis['% HT Target Dự Kiến (QĐ)']).replace(/%|,/g, '');
                          phanTramTargetQdFromPaste = parseFloat(rawPct) / 100;
+                         hasValidPasteData = true;
                     }
-                }
 
-                // [NEW] Xử lý Tỷ lệ trả chậm từ paste (Dữ liệu paste thường là số 10.5 -> cần chia 100)
-                if (tyLeTraCham !== undefined) {
-                    tlTraCham = parseFloat(tyLeTraCham) / 100;
-                }
+                    if (mainKpis['% HT Target Thực'] || mainKpis['% HT Target DT thực']) {
+                        const rawPctThuc = String(mainKpis['% HT Target Thực'] || mainKpis['% HT Target DT thực']).replace(/%|,/g, '');
+                        phanTramTargetThucFromPaste = parseFloat(rawPctThuc) / 100;
+                        hasValidPasteData = true;
+                    }
 
-                // DT Dự kiến
-                if (dtDuKien) {
-                    dtThucDuKienFromPaste = parseFloat(String(dtDuKien).replace(/,/g, '')) * 1000000;
-                }
+                    if (pastedTyLeTraCham !== undefined) {
+                        tlTraCham = parseFloat(pastedTyLeTraCham) / 100;
+                        hasValidPasteData = true;
+                    }
 
-                // So sánh cùng kỳ
-                if (comparisonData && comparisonData.percentage) {
-                    comparisonPercentage = comparisonData.percentage;
+                    if (dtDuKien) {
+                        dtThucDuKienFromPaste = parseFloat(String(dtDuKien).replace(/,/g, '')) * 1000000;
+                        hasValidPasteData = true;
+                    }
+
+                    if (comparisonData && comparisonData.percentage) {
+                        comparisonPercentage = comparisonData.percentage;
+                        hasValidPasteData = true;
+                    }
                 }
             }
         }
 
-        // --- BƯỚC 2: TÍNH TOÁN DỰ KIẾN FALLBACK ---
         const now = new Date();
         const currentDay = now.getDate() || 1;
-        const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-        // --- BƯỚC 3: THAY THẾ TAG ---
+        // --- BƯỚC 3: DỊCH CÁC THÈ TAGS ---
         return template.replace(/\[(.*?)\]/g, (match, tag) => {
             
             if (tag === 'NGAY') return now.toLocaleDateString('vi-VN');
             if (tag === 'GIO') return now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
+            // Chỉ kích hoạt cơ chế Fail-Fast chặn lỗi khi và chỉ khi đang ở tab luyke
+            const kpiTags = ['DT_THUC', 'DTQD', 'TLQD', 'TLTC', '%HT_DTQD', '%HT_DTT', 'SS_CUNGKY'];
+            if (sectionId === 'luyke' && kpiTags.includes(tag)) {
+                if (!hasValidPasteData) {
+                    return "⚠️ CHƯA DÁN DỮ LIỆU CHẾ ĐỘ NÀY";
+                }
+            }
+
             if (tag === 'DT_THUC') return formatters.formatNumber(dtThuc / 1000000, 0) + " tr";
             if (tag === 'DTQD') return formatters.formatNumber(dtQd / 1000000, 0) + " tr";
             if (tag === 'TLQD') return formatters.formatPercentage(tlQd);
-            if (tag === 'TLTC') return formatters.formatPercentage(tlTraCham); // [NEW] Tag TLTC
+            if (tag === 'TLTC') return formatters.formatPercentage(tlTraCham);
             
+            // [PHẪU THUẬT]: Sửa thẻ %HT_DTQD - Bỏ nhân dự kiến cuối tháng, lấy số thực tế / mục tiêu
             if (tag === '%HT_DTQD') {
                 if (phanTramTargetQdFromPaste !== null) {
                     return formatters.formatPercentage(phanTramTargetQdFromPaste);
                 }
-                const target = parseFloat(goals.doanhThuQD) || 0;
-                if (target > 0) {
-                    const currentRev = dtQd / 1000000;
-                    const projectedRev = (currentRev / currentDay) * totalDaysInMonth;
-                    return formatters.formatPercentage(projectedRev / target);
+                const targetMillions = parseFloat(goals.doanhThuQD) || 0;
+                if (targetMillions > 0) {
+                    const currentRevMillions = dtQd / 1000000;
+                    return formatters.formatPercentage(currentRevMillions / targetMillions);
                 }
                 return '0%';
             }
 
+            // [PHẪU THUẬT]: Sửa thẻ %HT_DTT - Bỏ nhân dự kiến cuối tháng, lấy số thực tế / mục tiêu
             if (tag === '%HT_DTT') {
+                if (phanTramTargetThucFromPaste !== null) {
+                    return formatters.formatPercentage(phanTramTargetThucFromPaste);
+                }
                 const targetMillions = parseFloat(goals.doanhThuThuc) || 0;
-                const targetFull = targetMillions * 1000000; 
-
-                if (targetFull > 0) {
-                    if (dtThucDuKienFromPaste > 0) {
-                        return formatters.formatPercentage(dtThucDuKienFromPaste / targetFull);
-                    }
-                    const projectedRev = (dtThuc / currentDay) * totalDaysInMonth;
-                    return formatters.formatPercentage(projectedRev / targetFull);
+                if (targetMillions > 0) {
+                    const currentRevMillions = dtThuc / 1000000;
+                    return formatters.formatPercentage(currentRevMillions / targetMillions);
                 }
                 return '0%';
             }

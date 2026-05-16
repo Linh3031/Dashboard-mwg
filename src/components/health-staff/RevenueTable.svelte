@@ -12,7 +12,7 @@
   }
 
   const dispatch = createEventDispatcher();
-  let sortKey = 'doanhThu';
+  let sortKey = 'doanhThuQuyDoi';
   let sortDirection = 'desc';
 
   const columns = [
