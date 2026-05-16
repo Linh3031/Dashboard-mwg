@@ -1,5 +1,5 @@
 // File: src/services/composerService.js
-// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Update: Thêm % Trả chậm & Ranking Top 5)
+// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Update: Lọc nhân viên có số bán cho BOT_TARGET)
 
 import { get } from 'svelte/store';
 import { masterReportData, selectedWarehouse } from '../stores.js';
@@ -17,11 +17,12 @@ const composerServices = {
         }
 
         return [...filteredData]
-            .filter(e => e[key] > 0 || (key === 'tyLeTraCham' && e[key] >= 0)) // Trả chậm có thể = 0 vẫn xếp hạng
+            .filter(e => e[key] > 0 || (key === 'tyLeTraCham' && e[key] >= 0)) 
             .sort((a, b) => direction === 'desc' ? (b[key] || 0) - (a[key] || 0) : (a[key] || 0) - (b[key] || 0))
             .slice(0, count);
     },
 
+    // [PHẪU THUẬT LOGIC]: Sửa lỗi gom nhân viên chưa vào ca (Doanh thu = 0) vào danh sách dưới target
     getEmployeesBelowTarget(reportData, dataKey, goalKey, department = 'ALL') {
         if (!reportData || reportData.length === 0) return [];
         let filteredData = reportData;
@@ -30,8 +31,14 @@ const composerServices = {
         }
 
         return filteredData.filter(employee => {
+            // Kiểm tra điều kiện tiên quyết: Nhân viên phải có đi làm và phát sinh số bán tổng trước đã
+            const hasSales = (employee.doanhThu > 0) || (employee.doanhThuQuyDoi > 0);
+            if (!hasSales) return false; // Không có số bán tổng -> Loại ngay lập tức (Chưa vào ca / Nghỉ làm)
+
             const value = employee[dataKey] || 0;
             const target = (employee.mucTieu?.[goalKey] || 0) / 100;
+            
+            // Nếu có số bán tổng và tỷ lệ thấp hơn chỉ tiêu thì giữ lại (Kể cả tỷ lệ ngành hàng đó = 0)
             return target > 0 && value < target;
         }).sort((a, b) => (b[dataKey] || 0) - (a[dataKey] || 0));
     },
@@ -176,7 +183,6 @@ const composerServices = {
             if (tag === 'TLQD') return formatters.formatPercentage(tlQd);
             if (tag === 'TLTC') return formatters.formatPercentage(tlTraCham);
             
-            // [PHẪU THUẬT]: Sửa thẻ %HT_DTQD - Bỏ nhân dự kiến cuối tháng, lấy số thực tế / mục tiêu
             if (tag === '%HT_DTQD') {
                 if (phanTramTargetQdFromPaste !== null) {
                     return formatters.formatPercentage(phanTramTargetQdFromPaste);
@@ -189,7 +195,6 @@ const composerServices = {
                 return '0%';
             }
 
-            // [PHẪU THUẬT]: Sửa thẻ %HT_DTT - Bỏ nhân dự kiến cuối tháng, lấy số thực tế / mục tiêu
             if (tag === '%HT_DTT') {
                 if (phanTramTargetThucFromPaste !== null) {
                     return formatters.formatPercentage(phanTramTargetThucFromPaste);
