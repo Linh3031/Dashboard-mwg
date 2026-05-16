@@ -145,6 +145,7 @@ src/components/health-staff/ProgramGoalTables.svelte
 src/components/common
 src/components/common/PasteInput.svelte
 src/components/common/FileInput.svelte
+src/components/common/FastTagPicker.svelte
 src/components/common/VersionManager.svelte
 src/components/common/GlobalNotification.svelte
 src/components/common/TourGuide.svelte

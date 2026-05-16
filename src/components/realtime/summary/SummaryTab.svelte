@@ -3,7 +3,10 @@
     realtimeYCXData, 
     selectedWarehouse, 
     efficiencyConfig, 
-    warehouseCustomMetrics 
+    warehouseCustomMetrics,
+    modalState,
+    // [SỬA LỖI ĐIỂM CHẾT]: Import trực tiếp Store để Svelte kích hoạt cơ chế Reactivity lắng nghe thay đổi mục tiêu
+    realtimeGoalSettings 
   } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
@@ -24,7 +27,6 @@
   let rawSourceData = [];
 
   let combinedEfficiencyItems = [];
-
   onMount(async () => {
       const globalConfig = await adminService.loadEfficiencyConfig();
       efficiencyConfig.set(globalConfig);
@@ -61,8 +63,11 @@
   }
 
   $: {
-    const currentWarehouse = $selectedWarehouse;
-    const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
+    // Nếu $selectedWarehouse rỗng (Toàn bộ) thì chuyển về key 'ALL' để đồng bộ đích danh dữ liệu cụm
+    const currentWarehouse = $selectedWarehouse ? $selectedWarehouse : 'ALL';
+    
+    // [SỬA LỖI ĐIỂM CHẾT]: Thay vì gọi hàm ẩn qua service, ta dùng tiền tố $ đọc trực tiếp từ Store để kích hoạt lắng nghe thay đổi tự động
+    const settings = $realtimeGoalSettings[currentWarehouse] || { goals: {}, timing: {} };
     goals = settings.goals || {};
 
     const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
@@ -70,7 +75,7 @@
     let filteredReport = masterReport;
     let filteredRawData = $realtimeYCXData;
 
-    if (currentWarehouse) {
+    if ($selectedWarehouse) {
       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
       const visibleEmployees = new Set(filteredReport.map(nv => String(nv.maNV)));
       filteredRawData = $realtimeYCXData.filter(row => {
@@ -81,9 +86,10 @@
     
     rawSourceData = filteredRawData;
 
-    supermarketReport = reportService.aggregateReport(filteredReport, currentWarehouse);
+    supermarketReport = reportService.aggregateReport(filteredReport, $selectedWarehouse);
     qdcItems = supermarketReport.nhomHangChiTiet 
-        ? Object.entries(supermarketReport.nhomHangChiTiet)
+        ?
+        Object.entries(supermarketReport.nhomHangChiTiet)
             .map(([name, values]) => ({
                 id: name,
                 name,
@@ -95,13 +101,25 @@
             .filter(i => i.sl > 0 || i.dt > 0) 
         : [];
     categoryItems = supermarketReport.nganhHangChiTiet 
-        ? Object.values(supermarketReport.nganhHangChiTiet).filter(i => i.revenue > 0 || i.quantity > 0)
+        ?
+        Object.values(supermarketReport.nganhHangChiTiet).filter(i => i.revenue > 0 || i.quantity > 0)
         : [];
     unexportedItems = reportService.generateRealtimeChuaXuatReport(filteredRawData);
   }
 
-  $: pctDTT = (parseFloat(goals?.doanhThuThuc) || 0) > 0 ? (supermarketReport.doanhThu / 1000000) / parseFloat(goals.doanhThuThuc) : 0;
-  $: pctDTQD = (parseFloat(goals?.doanhThuQD) || 0) > 0 ? (supermarketReport.doanhThuQuyDoi / 1000000) / parseFloat(goals.doanhThuQD) : 0;
+  $: pctDTT = (parseFloat(goals?.doanhThuThuc) || 0) > 0 ?
+    (supermarketReport.doanhThu / 1000000) / parseFloat(goals.doanhThuThuc) : 0;
+  $: pctDTQD = (parseFloat(goals?.doanhThuQD) || 0) > 0 ?
+    (supermarketReport.doanhThuQuyDoi / 1000000) / parseFloat(goals.doanhThuQD) : 0;
+
+  // Hàm gọi Modal Quick Goal cho Realtime
+  function openQuickGoal(fieldId, title, currentValue) {
+      modalState.update(s => ({
+          ...s,
+          activeModal: 'quick-goal-modal',
+          payload: { fieldId, title, currentValue: currentValue || 0, type: 'realtime' }
+      }));
+  }
 </script>
 
 <div class="luyke-dashboard-container pb-10">
@@ -115,40 +133,58 @@
   </h2>
 
   <div id="realtime-kpi-cards-container" class="kpi-grid-fixed">
-      <div class="kpi-card-solid card-1">
+      
+      <div 
+          class="kpi-card-solid card-1 cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-transform relative group"
+          on:click={() => openQuickGoal('doanhThuThuc', 'Target DT Thực Realtime', goals?.doanhThuThuc)}
+          role="button" tabindex="0" title="Click để sửa mục tiêu"
+      >
           <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
           <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThu || 0) / 1000000, 1)}</div>
           <div class="kpi-solid-sub">
               <span>% HT: {formatters.formatPercentage(pctDTT)}</span>
-              <span>MT: {formatters.formatNumber(goals?.doanhThuThuc || 0)}</span>
+              <span class="group-hover:text-yellow-300 transition-colors">MT: {formatters.formatNumber(goals?.doanhThuThuc || 0)} <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
           </div>
           <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
       </div>
 
-      <div class="kpi-card-solid card-2">
+      <div 
+          class="kpi-card-solid card-2 cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-transform relative group"
+          on:click={() => openQuickGoal('doanhThuQD', 'Target DT Quy Đổi Realtime', goals?.doanhThuQD)}
+          role="button" tabindex="0" title="Click để sửa mục tiêu"
+      >
           <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
           <div class="kpi-solid-value">{formatters.formatNumber((supermarketReport.doanhThuQuyDoi || 0) / 1000000, 1)}</div>
           <div class="kpi-solid-sub">
               <span>% HT: {formatters.formatPercentage(pctDTQD)}</span>
-              <span>MT: {formatters.formatNumber(goals?.doanhThuQD || 0)}</span>
+              <span class="group-hover:text-yellow-300 transition-colors">MT: {formatters.formatNumber(goals?.doanhThuQD || 0)} <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
           </div>
           <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
       </div>
 
-      <div class="kpi-card-solid card-3">
+      <div 
+          class="kpi-card-solid card-3 cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-transform relative group"
+          on:click={() => openQuickGoal('phanTramQD', 'Mục tiêu % Quy Đổi Realtime', goals?.phanTramQD)}
+          role="button" tabindex="0" title="Click để sửa mục tiêu"
+      >
           <div class="kpi-solid-header">Tỷ lệ Quy Đổi <i data-feather="trending-up"></i></div>
           <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.hieuQuaQuyDoi || 0)}</div>
           <div class="kpi-solid-sub">
-              <span>Mục tiêu: {formatters.formatNumber(goals?.phanTramQD || 0)}%</span>
+              <span class="group-hover:text-yellow-300 transition-colors">Mục tiêu: {formatters.formatNumber(goals?.phanTramQD || 0)}% <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
           </div>
           <div class="kpi-bg-icon"><i data-feather="trending-up"></i></div>
       </div>
 
-      <div class="kpi-card-solid card-4">
+      <div 
+          class="kpi-card-solid card-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-transform relative group"
+          on:click={() => openQuickGoal('phanTramTC', 'Mục tiêu % Trả chậm Realtime', goals?.phanTramTC)}
+          role="button" tabindex="0" title="Click để sửa mục tiêu"
+      >
           <div class="kpi-solid-header">Trả Chậm <i data-feather="credit-card"></i></div>
           <div class="kpi-solid-value">{formatters.formatPercentage(supermarketReport.tyLeTraCham || 0)}</div>
           <div class="kpi-solid-sub">
               <span>Doanh số: {formatters.formatNumber((supermarketReport.doanhThuTraGop || 0) / 1000000, 1)}</span>
+              <span class="group-hover:text-yellow-300 transition-colors">MT: {formatters.formatNumber(goals?.phanTramTC || 0)}% <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
           </div>
           <div class="kpi-bg-icon"><i data-feather="credit-card"></i></div>
       </div>
@@ -174,6 +210,7 @@
   </div>
 
 </div>
+
 <style>
     /* --- [FIX GENESIS] XỬ LÝ DỨT ĐIỂM LỖI CẮT XÉN ẢNH VÀ ĐỒNG BỘ 900PX --- */
     
@@ -181,7 +218,7 @@
     :global(.capture-container:has(.realtime-override)) {
         width: max-content !important;
         min-width: 932px !important; /* 900px nội dung + 32px lề 2 bên */
-        padding: 16px !important; 
+        padding: 16px !important;
         margin: 0 auto !important;
         background-color: #f8fafc !important;
         box-sizing: border-box !important;
@@ -214,12 +251,12 @@
         display: grid !important;
         grid-template-columns: repeat(2, 1fr) !important;
         width: 100% !important;
-        min-width: 100% !important; /* Đánh bại min-width: 480px cũ từ capture.service.js */
-        max-width: 100% !important; /* Đánh bại max-width: 480px cũ từ capture.service.js */
+        min-width: 100% !important;
+        max-width: 100% !important;
         gap: 16px !important;
         margin: 0 auto 16px auto !important;
         box-sizing: border-box !important;
-        flex-direction: row !important; 
+        flex-direction: row !important;
     }
 
     /* 5. Khóa chặt bảng Ngành hàng bên dưới, bắt buộc ôm sát 100% (900px), không được phình to */

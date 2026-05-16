@@ -43,6 +43,7 @@
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
 
   // --- MODALS ---
+  import QuickGoalModal from './components/modals/QuickGoalModal.svelte';
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
@@ -279,6 +280,7 @@
 
 <AdminModal />
 <LoginModal />
+<QuickGoalModal />
 <UserCompetitionModal />
 <UserSpecialProgramModal />
 <ComposerModal /> 
