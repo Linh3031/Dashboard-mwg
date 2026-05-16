@@ -138,18 +138,7 @@
                 >
                     <i data-feather="settings"></i>
                     <span class="menu-text">Cài đặt giao diện</span>
-                </button>
-            </li>
-
-            <li>
-                 <button 
-                  id="goal-settings-btn" 
-                  class="w-full flex items-center p-3 text-gray-700 rounded-lg hover:bg-gray-200 font-semibold"
-                  on:click={() => openDrawer('goal-drawer')}
-                >
-                    <i data-feather="target"></i>
-                    <span class="menu-text">Thiết lập mục tiêu</span>
-                </button>
+                 </button>
             </li>
 
             <li>
