@@ -154,12 +154,15 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
         metrics.convertedRev += revQD;
         if (isTraGop) metrics.traChamRev += rev;
 
-        if (!dayMap.has(dateStr)) dayMap.set(dateStr, { date: dateStr, rev: 0, dateObj });
+        // [Surgical Change]: Tích hợp cộng dồn revQD vào dòng thời gian để vẽ biểu đồ
+        if (!dayMap.has(dateStr)) dayMap.set(dateStr, { date: dateStr, rev: 0, revQD: 0, dateObj });
         dayMap.get(dateStr).rev += rev;
+        dayMap.get(dateStr).revQD += revQD;
 
         const weekLabel = getWeekRangeLabel(dateObj);
-        if (!weekMap.has(weekLabel)) weekMap.set(weekLabel, { week: weekLabel, rev: 0, sortDate: dateObj });
+        if (!weekMap.has(weekLabel)) weekMap.set(weekLabel, { week: weekLabel, rev: 0, revQD: 0, sortDate: dateObj });
         weekMap.get(weekLabel).rev += rev;
+        weekMap.get(weekLabel).revQD += revQD;
 
         let skip = false;
         if (Object.keys(currentFilters).length > 0) {
