@@ -2,12 +2,11 @@
 
 <script>
     import { dataProcessing } from '../../../services/dataProcessing.js';
-  
     export let data2025 = [];
     export let data2026 = [];
     export let ssgMonths = [];
   
-    let sortKey = 'revenue'; 
+    let sortKey = 'revenue';
     let sortDirection = 'desc';
     let expandedRows = new Set();
     let showCategoryFilter = false;
@@ -18,8 +17,10 @@
     let isProcessing = true; 
     let processedData = [];
     let kpiTotals = { dt25: 0, dtqd25: 0, sl25: 0, dt26: 0, dtqd26: 0, sl26: 0, growthQtyPct: 0, growthRevPct: 0 };
+    
+    // [PHẪU THUẬT 1]: Chốt chặn an toàn cho Cache để không bao giờ bị lưu mảng rỗng []
+    let isCacheLoaded = false;
 
-    // [FIX UI]: Reactive block tự động cập nhật danh mục và thiết lập tick TẤT CẢ khi có dữ liệu mới
     $: if (data2025 || data2026) {
         const cSet = new Set();
         [...(data2025 || []), ...(data2026 || [])].forEach(r => {
@@ -30,33 +31,47 @@
 
         if (JSON.stringify(newCats) !== JSON.stringify(allCategories)) {
             allCategories = newCats;
-            try {
-                const saved = localStorage.getItem('dtck_ssg_cats_v6');
-                selectedCategories = saved ? JSON.parse(saved) : [...allCategories];
-                // Nếu không có cache hoặc cache bị rỗng ban đầu, mặc định chọn TẤT CẢ
-                if (selectedCategories.length === 0 && !saved) selectedCategories = [...allCategories];
-            } catch(e) { 
-                selectedCategories = [...allCategories]; 
+            
+            if (!isCacheLoaded) {
+                try {
+                    // Đổi tên key thành v8 để bỏ qua hoàn toàn cache rỗng đang kẹt trong máy bạn
+                    const saved = localStorage.getItem('dtck_ssg_cats_v8');
+                    const parsed = saved ? JSON.parse(saved) : null;
+                    if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+                        selectedCategories = parsed;
+                    } else {
+                        selectedCategories = [...allCategories];
+                    }
+                } catch(e) { 
+                    selectedCategories = [...allCategories];
+                }
+                isCacheLoaded = true;
             }
         }
     }
 
-    $: { localStorage.setItem('dtck_ssg_cats_v6', JSON.stringify(selectedCategories)); }
+    $: if (isCacheLoaded) { 
+        localStorage.setItem('dtck_ssg_cats_v8', JSON.stringify(selectedCategories)); 
+    }
 
     $: displayCategories = allCategories.filter(c => c.toLowerCase().includes(filterSearchQuery.toLowerCase()));
 
+    // [PHẪU THUẬT 2]: Bọc try-finally để chống kẹt icon Loading mãi mãi nếu có lỗi
     $: triggerDeps = [data2025, data2026, ssgMonths, selectedCategories];
-
     $: if (triggerDeps) {
         isProcessing = true;
         setTimeout(() => {
-            runHeavyCalculation();
-            isProcessing = false;
+            try {
+                runHeavyCalculation();
+            } catch (error) {
+                console.error("Lỗi tính toán SSG:", error);
+            } finally {
+                isProcessing = false;
+            }
         }, 50);
     }
 
     const cleanStr = (s) => (s || '').toString().trim();
-
     const parseSafeDate = (dateVal) => {
         if (!dateVal) return null;
         if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
@@ -76,7 +91,6 @@
         const normalizedKeys = rowKeys.map(original => ({ original, norm: normalize(original) }));
 
         cache.hasStatusCols = normalizedKeys.some(k => ['hinhthucxuat', 'trangthaithutien', 'tinhtrangtra', 'trangthaixuat'].includes(k.norm));
-
         const findRealKey = (possibleKeys) => {
             for (let pk of possibleKeys) {
                 const normPk = normalize(pk);
@@ -85,7 +99,6 @@
             }
             return null;
         };
-
         cache.mapping = {
             htx: findRealKey(['hinhThucXuat', 'Hình thức xuất']),
             thuTien: findRealKey(['trangThaiThuTien', 'Trạng thái thu tiền']),
@@ -107,16 +120,13 @@
         const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const map = new Map();
         kpiTotals = { dt25: 0, dtqd25: 0, sl25: 0, dt26: 0, dtqd26: 0, sl26: 0 };
-
         const cache25 = buildColumnCache(data2025 && data2025.length > 0 ? data2025[0] : null);
         const cache26 = buildColumnCache(data2026 && data2026.length > 0 ? data2026[0] : null);
-
         const parseMoney = (val) => {
             if (typeof val === 'number') return val;
             return parseFloat(String(val).replace(/,/g, '')) || 0;
         };
 
-        // [FEATURE]: Xác định Tháng Tạm Tính và Hệ số Dự kiến (Projection Factor)
         let maxTs = 0;
         (data2026 || []).forEach(r => {
             const dateRaw = r[cache26.mapping.ngayTao];
@@ -125,7 +135,6 @@
                 if (d && d.getTime() > maxTs) maxTs = d.getTime();
             }
         });
-        
         let partialMonth = -1;
         let projFactor = 1;
         if (maxTs > 0) {
@@ -135,10 +144,9 @@
             const mYear = maxD.getFullYear();
             const totalDays = new Date(mYear, mMonth, 0).getDate();
             
-            // Nếu ngày lớn nhất trong data nhỏ hơn tổng số ngày của tháng -> Đây là tháng tạm tính
             if (mDay < totalDays) {
                 partialMonth = mMonth;
-                projFactor = totalDays / mDay; // Hệ số nội suy
+                projFactor = totalDays / mDay;
             }
         }
 
@@ -152,7 +160,6 @@
                 const huy = row[mapping.huy] ? String(row[mapping.huy]).trim() : '';
                 const tra = row[mapping.tra] ? String(row[mapping.tra]).trim() : '';
                 const xuat = row[mapping.xuat] ? String(row[mapping.xuat]).trim() : '';
-
                 const isValidState = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && xuat === 'Đã xuất';
                 const isValidHtx = validHTX.size === 0 || validHTX.has(htx);
 
@@ -164,29 +171,30 @@
             if (!d) return;
             const monthNum = d.getMonth() + 1;
             if (!ssgMonths.includes(monthNum)) return;
-
+            
             const nganhHang = row[mapping.nganhHang] !== undefined ? String(row[mapping.nganhHang]).trim() : 'Khác';
             const nhomHang = row[mapping.nhomHang] !== undefined ? String(row[mapping.nhomHang]).trim() : 'Khác';
             const nhaSanXuat = row[mapping.nhaSanXuat] !== undefined ? String(row[mapping.nhaSanXuat]).trim() : 'Khác';
-
-            // [FIX LOGIC]: Lọc cứng rắn: Nếu không nằm trong mảng selectedCategories -> Bỏ qua
-            if (!selectedCategories.includes(nganhHang)) return;
-
+            
+            if (!selectedCategories || !selectedCategories.includes(nganhHang)) return;
+            
             let soLuong = parseMoney(row[mapping.soLuong]);
             let thanhTien = parseMoney(row[mapping.thanhTien]);
             
             const rawQd = row[mapping.revenueQuyDoi];
             let revenueQuyDoi = (rawQd !== undefined && rawQd !== '') ? parseMoney(rawQd) : thanhTien;
             
-            // [APPLY PROJECTION]: Nếu là dòng của tháng 2026 đang tạm tính, nhân với hệ số
             if (!is2025 && monthNum === partialMonth) {
                 soLuong *= projFactor;
                 thanhTien *= projFactor;
                 revenueQuyDoi *= projFactor;
             }
 
+            // [PHẪU THUẬT 3]: Bức tường chặn số thập phân tuyệt đối cho cột Số Lượng
+            soLuong = Math.round(soLuong);
+
             if (is2025) { 
-                kpiTotals.sl25 += soLuong; 
+                kpiTotals.sl25 += soLuong;
                 kpiTotals.dt25 += thanhTien;
                 kpiTotals.dtqd25 += revenueQuyDoi; 
             } else { 
@@ -198,24 +206,21 @@
             if (!map.has(nganhHang)) map.set(nganhHang, { id: nganhHang, name: nganhHang, level: 0, children: new Map(), sl25: 0, dt25: 0, sl26: 0, dt26: 0 });
             const nganhGroup = map.get(nganhHang);
             nganhGroup[is2025 ? 'sl25' : 'sl26'] += soLuong; nganhGroup[is2025 ? 'dt25' : 'dt26'] += thanhTien;
-
             const nhomId = nganhHang + '-' + nhomHang;
             if (!nganhGroup.children.has(nhomHang)) nganhGroup.children.set(nhomHang, { id: nhomId, name: nhomHang, level: 1, children: new Map(), sl25: 0, dt25: 0, sl26: 0, dt26: 0 });
             const nhomGroup = nganhGroup.children.get(nhomHang);
             nhomGroup[is2025 ? 'sl25' : 'sl26'] += soLuong; nhomGroup[is2025 ? 'dt25' : 'dt26'] += thanhTien;
-
             const hangId = nhomId + '-' + nhaSanXuat;
             if (!nhomGroup.children.has(nhaSanXuat)) nhomGroup.children.set(nhaSanXuat, { id: hangId, name: nhaSanXuat, level: 2, isLeaf: true, sl25: 0, dt25: 0, sl26: 0, dt26: 0 });
             const hangGroup = nhomGroup.children.get(nhaSanXuat);
             hangGroup[is2025 ? 'sl25' : 'sl26'] += soLuong; hangGroup[is2025 ? 'dt25' : 'dt26'] += thanhTien;
         };
-
         (data2025 || []).forEach(r => processRow(r, true));
         (data2026 || []).forEach(r => processRow(r, false));
   
         kpiTotals.growthQtyPct = kpiTotals.sl25 > 0 ? (kpiTotals.sl26 - kpiTotals.sl25) / kpiTotals.sl25 : (kpiTotals.sl26 > 0 ? Infinity : 0);
         kpiTotals.growthRevPct = kpiTotals.dt25 > 0 ? (kpiTotals.dt26 - kpiTotals.dt25) / kpiTotals.dt25 : (kpiTotals.dt26 > 0 ? Infinity : 0);
-
+        
         const calcGrowth = (item) => {
             item.growthQtyVal = item.sl26 - item.sl25;
             item.growthRevVal = item.dt26 - item.dt25;
@@ -224,7 +229,6 @@
             item.revenue = item.dt26;
             if (item.children) item.childrenArr = Array.from(item.children.values()).map(c => { calcGrowth(c); return c; });
         };
-
         processedData = Array.from(map.values()).map(g => { calcGrowth(g); return g; });
     }
   
@@ -234,12 +238,11 @@
         if (sortDirection === 'asc') return valA > valB ? 1 : -1;
         return valA < valB ? 1 : -1;
     });
-
     const sortChildren = (arr) => [...arr].sort((a,b) => {
         let vA=a[sortKey]||0; let vB=b[sortKey]||0; 
         return sortDirection==='asc'? (vA>vB?1:-1) : (vA<vB?1:-1);
     });
-
+    
     function toggleSort(key) {
         if (sortKey === key) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
         else { sortKey = key; sortDirection = 'desc'; }
@@ -251,7 +254,8 @@
         expandedRows = expandedRows;
     }
 
-    const fmtQty = (n) => new Intl.NumberFormat('vi-VN').format(n || 0);
+    // Đã bọc thêm Math.round tại UI để bảo đảm 200% an toàn hiển thị
+    const fmtQty = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
     const fmtRev = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format((n || 0) / 1000000);
     const fmtPct = (n) => { if (n === null || n === undefined || isNaN(n) || !isFinite(n)) return '-';
         return (n > 0 ? '+' : '') + (n * 100).toFixed(1) + '%'; };
@@ -260,7 +264,6 @@
     const fmtGrowthQty = (n) => (n > 0 ? '+' : '') + fmtQty(n);
     const fmtGrowthRev = (n) => (n > 0 ? '+' : '') + fmtRev(n);
     const getGrowthColor = (val) => val > 0 ? 'text-emerald-600 font-bold' : (val < 0 ? 'text-red-500 font-bold' : 'text-gray-500');
-
 </script>
   
 <div class="space-y-4">

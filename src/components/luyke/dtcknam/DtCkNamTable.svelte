@@ -18,9 +18,8 @@
 
   const fmtQty = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n || 0);
   const fmtRev = (n) => new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 1 }).format((n || 0) / 1000000);
-  
   const LEVEL_COLORS = ['text-red-700 font-bold', 'text-blue-700 font-semibold', 'text-purple-700 font-medium', 'text-emerald-700', 'text-orange-700'];
-
+  
   function toggleRow(id) {
       if (expandedRows.has(id)) expandedRows.delete(id);
       else expandedRows.add(id);
@@ -144,7 +143,7 @@
                     </div>
                 </th>
                 <th class="py-3 px-4 text-right border-r w-28 cursor-pointer bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors" on:click={() => handleSort('quantity')}>
-                    <div class="flex items-center justify-end">SL {@html SortIcon({ active: sortConfig.key === 'quantity', direction: sortConfig.direction })}</div>
+                     <div class="flex items-center justify-end">SL {@html SortIcon({ active: sortConfig.key === 'quantity', direction: sortConfig.direction })}</div>
                 </th>
                 <th class="py-3 px-4 text-right border-r w-36 cursor-pointer bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-colors" on:click={() => handleSort('revenue')}>
                     <div class="flex items-center justify-end">DT Thực {@html SortIcon({ active: sortConfig.key === 'revenue', direction: sortConfig.direction })}</div>
@@ -155,8 +154,8 @@
                 <th class="py-3 px-4 text-right border-r w-32 cursor-pointer bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors" on:click={() => handleSort('avgQty')}>
                     <div class="flex items-center justify-end">TB SL/Ngày {@html SortIcon({ active: sortConfig.key === 'avgQty', direction: sortConfig.direction })}</div>
                 </th>
-                <th class="py-3 px-4 text-right border-r w-36 cursor-pointer bg-teal-100 text-teal-900 hover:bg-teal-200 transition-colors" on:click={() => handleSort('avgRev')}>
-                    <div class="flex items-center justify-end">TB DT/Ngày {@html SortIcon({ active: sortConfig.key === 'avgRev', direction: sortConfig.direction })}</div>
+                <th class="px-3 py-3 text-right border-r w-36 cursor-pointer bg-teal-100 text-teal-900 hover:bg-teal-200 transition-colors" on:click={() => handleSort('avgRev')}>
+                   <div class="flex items-center justify-end">TB DT/Ngày {@html SortIcon({ active: sortConfig.key === 'avgRev', direction: sortConfig.direction })}</div>
                 </th>
                 <th class="py-3 px-4 text-right w-36 cursor-pointer bg-rose-100 text-rose-900 hover:bg-rose-200 transition-colors" on:click={() => handleSort('avgRevQD')}>
                     <div class="flex items-center justify-end">TB DTQĐ/Ngày {@html SortIcon({ active: sortConfig.key === 'avgRevQD', direction: sortConfig.direction })}</div>
@@ -186,13 +185,11 @@
 </div>
 
 <style>
-    /* [PHẪU THUẬT]: Đồng bộ Style trị bệnh cắt chữ từ tab LuykeCategoryTreeTable */
     :global(.capture-container .dtcknam-table-wrapper) {
         width: 1050px !important; min-width: 1050px !important; max-width: 1050px !important;
         margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
     }
     :global(.capture-container .dtcknam-table-wrapper) { overflow: visible !important; }
-    
     :global(.capture-container .dtcknam-table-wrapper table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
     :global(.capture-container .dtcknam-table-wrapper th),
     :global(.capture-container .dtcknam-table-wrapper td) {
@@ -200,12 +197,8 @@
         white-space: normal !important; overflow: visible !important;
         height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
     }
-
-    /* Mở khóa giới hạn của class 'truncate' có trong file DtCkNamRow */
     :global(.capture-container .dtcknam-table-wrapper .truncate) {
-        white-space: normal !important;
-        overflow: visible !important;
-        text-overflow: clip !important;
-        max-width: none !important;
+        white-space: normal !important; overflow: visible !important;
+        text-overflow: clip !important; max-width: none !important;
     }
 </style>
