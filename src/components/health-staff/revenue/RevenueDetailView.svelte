@@ -10,11 +10,14 @@
   import RevenueTopGroups from './RevenueTopGroups.svelte';
 
   export let employeeId;
+  export let isGhostMode = false; // [TÍNH NĂNG MỚI]: Bật khi chạy Background Rendering
+
   const dispatch = createEventDispatcher();
 
   let detailData = null;
   let employeeData = null;
   let goals = {};
+  
   $: if (employeeId && $ycxData.length > 0) {
       employeeData = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeId));
       if (employeeData) {
@@ -29,6 +32,7 @@
   }
 
   function openUnexportedModal() {
+      if (isGhostMode) return; // Khóa modal nếu đang chụp ẩn
       if (detailData) {
           modalState.update(s => ({ 
               ...s, 
@@ -39,6 +43,7 @@
   }
 
   function openOrdersModal() {
+      if (isGhostMode) return; // Khóa modal nếu đang chụp ẩn
       if (detailData) {
           modalState.update(s => ({ 
               ...s, 
@@ -53,15 +58,17 @@
 </script>
 
 <div 
-    class="animate-fade-in pb-10 max-w-7xl mx-auto"
+    class="animate-fade-in pb-10 max-w-7xl mx-auto {isGhostMode ? 'p-6 bg-white w-[1000px]' : ''}"
     data-capture-group="revenue-detail-mobile"
     data-capture-filename={employeeData ? `DTLK_ChiTiet_${employeeData.hoTen}_${employeeData.maNV}` : 'ChiTietNhanVien'}
 >
+    {#if !isGhostMode}
     <div class="mb-4 flex justify-between items-center">
         <button on:click={goBack} class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
             <i data-feather="chevron-left" class="w-4 h-4"></i> Quay lại bảng tổng hợp
         </button>
     </div>
+    {/if}
 
     {#if employeeData && detailData}
         <DetailHeader employee={employeeData} showStats={false} />

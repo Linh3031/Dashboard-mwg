@@ -4,8 +4,11 @@
   import { kpiStore } from '../../stores.js';
   import { getCompletionColor } from '../../utils/kpi.utils.js';
   
+  // Import dịch vụ và Component Chi tiết để phục vụ cho chụp hàng loạt ngầm
+  import { batchCaptureService } from '../../services/batchCapture.service.js';
+  import RevenueDetailView from './revenue/RevenueDetailView.svelte';
+  
   export let reportData = [];
-
   $: {
       console.log(`[RevenueTable ${new Date().toLocaleTimeString()}] Store Value:`, $kpiStore);
       console.log(`[RevenueTable] Report Data Length:`, reportData.length);
@@ -14,7 +17,6 @@
   const dispatch = createEventDispatcher();
   let sortKey = 'doanhThuQuyDoi';
   let sortDirection = 'desc';
-
   const columns = [
       { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'bg-gray-100 text-gray-700 w-14' },
       { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
@@ -25,11 +27,11 @@
       { key: 'tyLeTraCham', label: '% Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800' },
       { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', align: 'right', headerClass: 'bg-yellow-50 text-yellow-800 border-l border-yellow-200' }
   ];
-
   function handleSort(key) {
       if (key === 'rank') return;
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-      else { sortKey = key; sortDirection = 'desc'; }
+      else { sortKey = key;
+      sortDirection = 'desc'; }
   }
 
   $: sortedData = [...reportData].sort((a, b) => {
@@ -38,9 +40,7 @@
       if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
       return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
   });
-
   $: topCount = sortedData.length <= 15 ? 3 : 5;
-
   function getRowStyle(index) {
       if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
       if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
@@ -64,17 +64,14 @@
       acc.doanhThuQuyDoiChuaXuat += item.doanhThuQuyDoiChuaXuat || 0;
       return acc;
   }, { doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuQuyDoiChuaXuat: 0 });
-
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
-
   function getCellClass(item, colKey) {
       const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuQuyDoiChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
       let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
 
       const userTarget = $kpiStore.targets[item.maNV];
       const targetSettings = userTarget || $kpiStore.globalSettings;
-
       if (!targetSettings || Object.keys(targetSettings).length === 0) {
           return baseClass;
       }
@@ -99,6 +96,23 @@
   function handleRowClick(employeeId) {
       dispatch('viewDetail', { employeeId });
   }
+
+  // LOGIC XỬ LÝ CHỤP HÀNG LOẠT DOANH THU
+  function handleBatchCapture(event) {
+      const mode = event.target.value;
+      if (!mode) return;
+
+      let targetData = [];
+      if (mode === 'top5') targetData = sortedData.slice(0, 5);
+      else if (mode === 'bot5') targetData = sortedData.slice(-5);
+      else if (mode === 'all') targetData = sortedData;
+
+      const ids = targetData.map(item => item.maNV);
+      
+      batchCaptureService.captureBatch(RevenueDetailView, ids, "DTLK_ChiTiet", (id) => ({ employeeId: id }));
+
+      event.target.value = ""; // Reset dropdown
+  }
 </script>
 
 <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in" data-capture-group="revenue-table">
@@ -118,6 +132,19 @@
                 <button class="bg-gray-300 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
                     <span class="translate-x-0 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                 </button>
+            </div>
+
+            <div class="relative flex items-center border-l border-gray-300 pl-4 ml-1">
+                <div class="absolute left-6 text-blue-600 pointer-events-none flex items-center justify-center">
+                    <i data-feather="camera" class="w-4 h-4"></i>
+                </div>
+                <select class="text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm py-1.5 pl-8 pr-6 focus:outline-none focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                        on:change={handleBatchCapture}>
+                    <option value="" disabled selected>Chụp Hàng Loạt</option>
+                    <option value="top5">Chụp Top 5 NV</option>
+                    <option value="bot5">Chụp Bot 5 NV</option>
+                    <option value="all">Chụp Tất Cả</option>
+                </select>
             </div>
         </div>
     </div>
@@ -143,7 +170,7 @@
                     {#each sortedData as item, index (item.maNV)}
                         <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
                             
-                            <td class="px-2 py-3 text-center border-r border-gray-200 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
+                                    <td class="px-2 py-3 text-center border-r border-gray-200 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
                                 {getRankIcon(index)}
                             </td>
 

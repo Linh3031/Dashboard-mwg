@@ -11,18 +11,16 @@
   import CompetitionModeSelector from './competition/CompetitionModeSelector.svelte';
   import ProgramView from './competition/ProgramView.svelte';
   import EmployeeView from './competition/EmployeeView.svelte';
-  // [NEW] Import view chi tiết mới
   import CompetitionDetailView from './competition/CompetitionDetailView.svelte';
 
-  // [YÊU CẦU] Mặc định vào là xem theo nhân viên
+  // Import dịch vụ Quản lý Hàng đợi Chụp ngầm vật lý
+  import { batchCaptureService } from '../../services/batchCapture.service.js';
+
   let activeView = 'employee'; 
   let programReportData = [];
-  
-  // [NEW] State cho view chi tiết
   let isDetailView = false;
   let selectedEmployeeId = null;
 
-  // Logic tính toán cho Program View (Tự động khi YCX hoặc Config thay đổi)
   $: {
       if ($ycxData.length > 0) {
           const allConfigs = [...$globalCompetitionConfigs, ...$localCompetitionConfigs];
@@ -34,21 +32,45 @@
 
   function handleViewChange(event) {
       activeView = event.detail;
-      // Reset về list khi đổi tab con
       isDetailView = false;
       selectedEmployeeId = null;
   }
 
-  // [NEW] Xử lý khi click vào nhân viên
   function handleViewDetail(event) {
       selectedEmployeeId = event.detail.employeeId;
       isDetailView = true;
   }
 
-  // [NEW] Xử lý quay lại
   function handleBackToList() {
       isDetailView = false;
       selectedEmployeeId = null;
+  }
+
+  // LOGIC XỬ LÝ CHỤP HÀNG LOẠT THI ĐUA (Đã tiêm allReportData chống trắng trang)
+  function handleBatchCapture(event) {
+      const mode = event.target.value;
+      if (!mode) return;
+
+      const baseData = $pastedThiDuaReportData || [];
+      let targetData = [];
+
+      if (mode === 'top5') targetData = baseData.slice(0, 5);
+      else if (mode === 'bot5') targetData = baseData.slice(-5);
+      else if (mode === 'all') targetData = baseData;
+
+      const ids = targetData.map(item => item.maNV || item.employeeCode || item.id);
+      
+      batchCaptureService.captureBatch(
+          CompetitionDetailView, 
+          ids, 
+          "ThiDua_ChiTiet", 
+          (id) => ({ 
+              employeeId: id,
+              allReportData: baseData
+          })
+      );
+
+      event.target.value = ""; // Reset dropdown
   }
 </script>
 
@@ -59,23 +81,40 @@
                 <i data-feather="award" class="w-5 h-5"></i>
             </div>
             <div>
-                <h3 class="text-lg font-bold text-gray-800 uppercase leading-tight">Thi Đua Lũy Kế</h3>
+                 <h3 class="text-lg font-bold text-gray-800 uppercase leading-tight">Thi Đua Lũy Kế</h3>
                 <p class="text-xs text-gray-500">Theo dõi tiến độ các chương trình thi đua</p>
             </div>
         </div>
         
-        <CompetitionModeSelector {activeView} on:change={handleViewChange} />
+        <div class="flex items-center gap-4">
+            {#if activeView === 'employee'}
+                <div class="relative flex items-center">
+                    <div class="absolute left-3 text-purple-600 pointer-events-none flex items-center justify-center">
+                        <i data-feather="camera" class="w-4 h-4"></i>
+                    </div>
+                    <select class="text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm py-2 pl-9 pr-8 focus:outline-none focus:ring-purple-500 focus:border-purple-500 cursor-pointer"
+                            on:change={handleBatchCapture}>
+                        <option value="" disabled selected>Chụp Hàng Loạt</option>
+                        <option value="top5">Chụp Top 5 NV</option>
+                        <option value="bot5">Chụp Bot 5 NV</option>
+                        <option value="all">Chụp Tất Cả</option>
+                    </select>
+                </div>
+            {/if}
+
+            <CompetitionModeSelector {activeView} on:change={handleViewChange} />
+        </div>
     </div>
 
     <div class="min-h-[400px]">
         {#if activeView === 'program'}
-            <ProgramView reportData={programReportData} />
+             <ProgramView reportData={programReportData} />
         {:else}
             {#if isDetailView && selectedEmployeeId}
                 <CompetitionDetailView 
                     employeeId={selectedEmployeeId}
                     allReportData={$pastedThiDuaReportData}
-                    on:back={handleBackToList}
+                     on:back={handleBackToList}
                 />
             {:else}
                 <EmployeeView 

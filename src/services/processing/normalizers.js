@@ -81,7 +81,6 @@ export const normalizers = {
     normalizeData(rawData, fileType) {
         const mapping = config.COLUMN_MAPPINGS[fileType];
         if (!mapping) {
-            console.error(`No column mapping found for fileType: ${fileType}`);
             return { normalizedData: [], success: false, missingColumns: ['Unknown mapping'] };
         }
 
@@ -177,19 +176,6 @@ export const normalizers = {
                 // 4. Tính toán
                 newRow.heSoQuyDoi = baseRate + bonusRate; 
                 newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
-                
-                // [DEBUG LOG]
-                if (index === 0) {
-                    console.group(`%c🔍 DEBUG LOGIC QUY ĐỔI (Dòng 1)`, "color: white; background: red; font-weight: bold; padding: 2px 5px");
-                    console.log(`- Sản phẩm: ${productKey}`);
-                    console.log(`- Hệ số gốc (Base): ${baseRate}`);
-                    console.log(`- Hình thức xuất: "${exportModeRaw}"`);
-                    console.log(`- Có phải trả góp không?: ${isInstallment ? '✅ CÓ (+30%)' : '❌ KHÔNG'}`);
-                    console.log(`- Tổng hệ số: ${baseRate} + ${bonusRate} = ${newRow.heSoQuyDoi}`);
-                    console.log(`- Doanh thu gốc: ${revenue.toLocaleString()}`);
-                    console.log(`- Doanh thu quy đổi: ${newRow.revenueQuyDoi.toLocaleString()}`);
-                    console.groupEnd();
-                }
             }
             // ------------------------------------------------------------------
 

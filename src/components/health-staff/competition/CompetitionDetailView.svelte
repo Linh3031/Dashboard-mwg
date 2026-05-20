@@ -7,6 +7,7 @@
 
     export let employeeId;
     export let allReportData = []; 
+    export let isGhostMode = false; // [TÍNH NĂNG MỚI]: Bật khi chạy Background Rendering
 
     const dispatch = createEventDispatcher();
     
@@ -24,7 +25,10 @@
         summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
     };
 
-    // --- [ĐÃ PHẪU THUẬT] LOGIC TIẾN ĐỘ DỰ KIẾN ---
+    // --- [ĐÃ PHẪU THUẬT] TÊN FILE ĐỘNG CHO CHỤP NGẦM AN TOÀN ---
+    $: captureFileName = displayInfo.name ? `ThiDua_ChiTiet_${displayInfo.name}_${displayInfo.code}` : `ThiDua_ChiTiet_${employeeId}`;
+
+    // --- LOGIC TIẾN ĐỘ DỰ KIẾN ---
     let currentDay = 1;
     let daysInMonth = 30;
 
@@ -147,11 +151,15 @@
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<div class="animate-fade-in pb-10 bg-slate-50 min-h-screen p-4 sm:p-6" data-capture-group="thidua-nhanvien-detail">
+<div class="animate-fade-in pb-10 {isGhostMode ? 'bg-white p-6' : 'bg-slate-50 min-h-screen p-4 sm:p-6'}" 
+     data-capture-group="thidua-nhanvien-detail"
+     data-capture-filename={captureFileName}>
   
+    {#if !isGhostMode}
     <button on:click={() => dispatch('back')} class="mb-4 flex items-center gap-2 text-slate-500 hover:text-blue-600 transition-colors font-bold text-sm capture-hide">
         <i data-feather="arrow-left" class="w-4 h-4"></i> QUAY LẠI BẢNG TỔNG HỢP
     </button>
+    {/if}
 
     {#if employee}
         <div class="bg-blue-50 border border-blue-200 rounded-2xl shadow-sm p-4 sm:p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -164,10 +172,12 @@
                 </div>
             </div>
 
+            {#if !isGhostMode}
             <div class="bg-white p-1 rounded-xl border border-blue-100 shadow-sm flex items-center w-full md:w-auto shrink-0 capture-hide">
                 <button on:click={() => viewMode = 'rut_gon'} class="flex-1 md:flex-none px-4 py-2 text-sm font-bold rounded-lg transition-colors {viewMode === 'rut_gon' ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}">Rút gọn</button>
                 <button on:click={() => viewMode = 'chi_tiet'} class="flex-1 md:flex-none px-4 py-2 text-sm font-bold rounded-lg transition-colors {viewMode === 'chi_tiet' ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}">Chi tiết</button>
             </div>
+            {/if}
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 capture-kpi-grid">
