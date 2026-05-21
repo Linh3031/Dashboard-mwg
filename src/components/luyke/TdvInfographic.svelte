@@ -42,7 +42,7 @@
     });
 </script>
 
-<div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition">
+<div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition" data-capture-filename="Thi_Dua_Luy_Ke_Vung">
     
     <div class="bg-blue-900 text-white p-6 relative overflow-hidden">
         <div class="absolute inset-0 opacity-10">
