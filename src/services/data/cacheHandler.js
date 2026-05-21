@@ -50,7 +50,6 @@ export const cacheHandler = {
 
         console.log("[DataService] Bắt đầu xử lý dữ liệu Paste (Absolute Isolation)...");
         try {
-            // [PHẪU THUẬT LOGIC]: Tự động quét theo list kho cho phép
             let aggregatedLuykeComps = [];
             let aggregatedErp = [];
             let aggregatedThidua = [];
@@ -60,13 +59,16 @@ export const cacheHandler = {
                 allowedWarehouses.forEach(kho => {
                     const luykeText = localStorage.getItem(`daily_paste_luyke_${kho}`);
                     if (luykeText) {
-                        dataProcessing.parseLuyKePastedData(luykeText); // Sẽ ghi đè store luykePastedStore ở dạng cuối cùng
+                        dataProcessing.parseLuyKePastedData(luykeText); 
                         const comps = dataProcessing.parseCompetitionDataFromLuyKe(luykeText);
-                        aggregatedLuykeComps = [...aggregatedLuykeComps, ...comps];
+                        
+                        // [VÁ LỖI PHÂN RÃ DATA]: Đóng dấu định danh mã kho cho danh sách chương trình thi đua
+                        const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: kho })) : [];
+                        aggregatedLuykeComps = [...aggregatedLuykeComps, ...labeledComps];
                         updateSyncState(`daily_paste_luyke_${kho}`, 'cached', `(Local)`, null);
                     }
 
-                    const erpText = localStorage.getItem(`daily_paste_thuongerp_${kho}`) || localStorage.getItem(`daily_paste_thuongerp`); // Hỗ trợ fallback nhẹ nếu lỡ lưu kiểu cũ
+                    const erpText = localStorage.getItem(`daily_paste_thuongerp_${kho}`) || localStorage.getItem(`daily_paste_thuongerp`); 
                     if (erpText) {
                         const data = dataProcessing.processThuongERP(erpText);
                         aggregatedErp = [...aggregatedErp, ...data];
@@ -78,13 +80,7 @@ export const cacheHandler = {
                         if (parsedData.success) {
                             const $competitionData = get(competitionData);
                             const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                            
-                            // Đóng dấu mã kho cho dữ liệu nạp từ cache để không bị mất khi coi ALL
-                            const labeledData = processedData.map(item => ({ 
-                                ...item, 
-                                maKho: item.maKho || kho 
-                            }));
-                            aggregatedThidua = [...aggregatedThidua, ...labeledData];
+                            aggregatedThidua = [...aggregatedThidua, ...processedData];
                             updateSyncState(`daily_paste_thiduanv_${kho}`, 'cached', `(Local)`, null);
                         }
                     }
@@ -96,7 +92,6 @@ export const cacheHandler = {
                     }
                 });
 
-                // Cập nhật lên Store một lần duy nhất
                 if (aggregatedLuykeComps.length > 0) competitionData.set(aggregatedLuykeComps);
                 if (aggregatedErp.length > 0) thuongERPData.set(aggregatedErp);
                 if (aggregatedThidua.length > 0) pastedThiDuaReportData.set(aggregatedThidua);

@@ -15,13 +15,12 @@ export const pasteHandler = {
         let baseKey = primaryKey;
         let targetWarehouse = null;
 
-        // --- 🚨 [GENESIS PREFIX ROUTING ENGINE] 🚨 ---
         if (!mapping) {
             for (const key of Object.keys(PASTE_MAPPING)) {
                 if (primaryKey.startsWith(key + '_')) {
                     mapping = PASTE_MAPPING[key];
-                    baseKey = key; // Lấy tiền tố
-                    targetWarehouse = primaryKey.replace(key + '_', ''); // Lấy mã kho ở đuôi
+                    baseKey = key; 
+                    targetWarehouse = primaryKey.replace(key + '_', ''); 
                     break;
                 }
             }
@@ -29,7 +28,6 @@ export const pasteHandler = {
 
         if (!mapping) return { success: false, message: `Lỗi mapping paste` };
 
-        // [BYPASS] Dành cho Báo cáo Cụm
         if (mapping.bypassHandler) {
              return { success: true, message: `Bypassed to component logic` };
         }
@@ -39,7 +37,6 @@ export const pasteHandler = {
             let processedData;
             let processedCount = 0;
             
-            // [SMART ROUTING]
             const warehouse = targetWarehouse || get(selectedWarehouse);
             
             if (mapping.isThiDuaNV) {
@@ -48,17 +45,11 @@ export const pasteHandler = {
                 dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
                 const $competitionData = get(competitionData);
                 processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                
-                // Đóng dấu mã kho ngay khi paste tránh lệch danh tính dữ liệu chung
-                const labeledData = processedData.map(item => ({ 
-                    ...item, 
-                    maKho: item.maKho || warehouse 
-                }));
-                mapping.store.set(labeledData);
+                mapping.store.set(processedData);
                 
                 if(saveKeyRaw) localStorage.setItem(saveKeyRaw, pastedText);
-                if(saveKeyProcessed) localStorage.setItem(saveKeyProcessed, JSON.stringify(labeledData));
-                processedCount = labeledData.length;
+                if(saveKeyProcessed) localStorage.setItem(saveKeyProcessed, JSON.stringify(processedData));
+                processedCount = processedData.length;
             } else if (mapping.processFunc) {
                 processedData = mapping.processFunc(pastedText);
                 mapping.store.set(processedData);
@@ -66,14 +57,26 @@ export const pasteHandler = {
                 localStorage.setItem(saveKeyPaste, pastedText);
                 processedCount = processedData?.length || 0;
                 
+                // [VÁ LỖI CÔ LẬP DATA KHI LIVE PASTE]: Đóng dấu maKho cho chương trình thi đua
                 if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
                      const comps = dataProcessing.parseCompetitionDataFromLuyKe(pastedText);
                      dataProcessing.parseLuyKePastedData(pastedText);
+                     
+                     const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: warehouse })) : [];
+                     const globalWh = get(selectedWarehouse);
+                     
+                     if (globalWh === 'ALL') {
+                          competitionData.update(current => {
+                              const cleanCurrent = Array.isArray(current) ? current : [];
+                              return [...cleanCurrent.filter(item => item.maKho !== warehouse), ...labeledComps];
+                          });
+                     } else {
+                          competitionData.set(labeledComps);
+                     }
                      processedCount = comps.length;
                 }
             }
             
-            // Chặn không cho lưu vào thư mục ảo 'ALL' trên Cloud
             if (warehouse && warehouse !== 'ALL') {
                 try {
                     updateSyncState(saveKeyPaste, 'uploading', 'Đang lưu Cloud...');

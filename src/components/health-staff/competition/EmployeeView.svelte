@@ -15,7 +15,7 @@
       return tenGoc;
   }
 
-  // --- [ĐÃ PHẪU THUẬT] THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
+  // --- THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
   let currentDay = 1;
   let daysInMonth = 30;
 
@@ -23,12 +23,10 @@
       const today = new Date();
       const d = today.getDate();
       if (d === 1) {
-          // Vùng giáp hạt: Ngày mùng 1 đầu tháng -> Tự động dùng số ngày của tháng trước
           const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
           currentDay = lastMonth.getDate();
           daysInMonth = lastMonth.getDate();
       } else {
-          // Ngày thường: Tính tiến độ theo tháng hiện tại
           currentDay = Math.max(d - 1, 1);
           daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
       }
@@ -38,50 +36,39 @@
   let columnSettings = [];
   let sortKey = 'totalScore';
   let sortDirection = 'desc';
-
   let allEmployees = [];
-
-  // --- KHỐI LOGIC: TARGET CÁ NHÂN (LINKED MAPPING) ---
   let targetRatio = 100;
   let categoryTargets = {};
   
-  // 1. Lấy tỷ lệ % giao target từ Firebase
   $: if ($selectedWarehouse) {
       datasyncService.loadPersonalTargetRatio($selectedWarehouse)
         .then(ratio => targetRatio = ratio)
         .catch(() => targetRatio = 100);
   }
 
-  // 2. Tính tổng nhân viên hiện tại của Siêu Thị
   $: emps = $danhSachNhanVien || [];
-  $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
+  $: filteredEmps = $selectedWarehouse && $selectedWarehouse !== 'ALL' 
+        ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) 
+        : emps;
   $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
   
-  // 3. Tra cứu Target qua 'linkedEmpProgram'
   $: {
       const stMappedData = {};
       ($competitionData || []).forEach(item => {
           const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
-          
           let linkedEmpProg = '';
-          if (typeof luykeMap === 'object' && luykeMap !== null) {
-              linkedEmpProg = luykeMap.linkedEmpProgram;
-          }
-          
+          if (typeof luykeMap === 'object' && luykeMap !== null) linkedEmpProg = luykeMap.linkedEmpProgram;
           if (linkedEmpProg) {
               const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
               const isQty = item.type === 'soLuong';
               const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
-              
               stMappedData[linkedEmpProg] = pTarget;
           }
       });
-      
       const newTargets = {};
       (columnSettings || []).forEach(col => {
           newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
       });
-      
       categoryTargets = newTargets;
   }
 
@@ -93,11 +80,9 @@
       'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200', 'bg-rose-100 text-rose-900 border-rose-200'
   ];
   
-  function getHeaderColor(index) {
-      return headerColors[index % headerColors.length];
-  }
+  function getHeaderColor(index) { return headerColors[index % headerColors.length]; }
 
-  // --- REACTIVE PROCESSING ---
+  // --- REACTIVE PROCESSING: LEFT JOIN TỪ DSNV ---
   $: {
       if (reportData && reportData.length > 0) {
           const infoMap = {};
@@ -106,7 +91,6 @@
                   const code = String(nv.ma_nv || nv.maNV || '').trim();
                   const name = nv.ten_nv || nv.hoTen || '';
                   const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
-   
                   if (code) infoMap[code] = { name, dept };
                   if (nv.nguoiTao) {
                       const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
@@ -118,24 +102,66 @@
               });
           }
 
-          const mappedReportData = reportData.map(item => {
-             let rawCode = item.maNV;
-             if (!rawCode && item.name && /^\d+$/.test(item.name)) rawCode = item.name;
-             const lookupCode = String(rawCode || '').trim();
-             const info = infoMap[lookupCode];
-   
-             let realName = item.hoTen || item.name;
-             let realDept = item.boPhan;
+          let targetEmps = $danhSachNhanVien || [];
+          if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
+              targetEmps = targetEmps.filter(e => String(e.ma_kho || e.maKho) === $selectedWarehouse);
+          }
 
-             if (info) {
-                 if (info.name) realName = info.name;
-                 if (!realDept || realDept === 'Chưa phân loại' || realDept === lookupCode) realDept = info.dept;
-             }
-             if (realName && realName.includes('-')) {
-                  const parts = realName.split('-');
-                  if (parts.length > 1 && /\d/.test(parts[parts.length-1])) realName = parts[0].trim();
-             }
-             return { ...item, maNV: rawCode || item.maNV, hoTen: realName, boPhan: realDept || 'Chưa phân loại' };
+          let finalEmployees = [];
+
+          targetEmps.forEach(emp => {
+              const empCode = String(emp.ma_nv || emp.maNV || '').trim();
+              const empKho = String(emp.ma_kho || emp.maKho || '').trim();
+              
+              const matchingReports = (reportData || []).filter(r => String(r.maNV).trim() === empCode);
+              let matchedReport = null;
+              if (matchingReports.length > 0) {
+                  matchedReport = matchingReports.find(r => String(r.maKho).trim() === empKho);
+                  if (!matchedReport) matchedReport = matchingReports[0]; 
+              }
+
+              if (matchedReport) {
+                  finalEmployees.push({
+                      ...matchedReport,
+                      maNV: empCode,
+                      maKho: empKho || matchedReport.maKho || 'N/A',
+                      hoTen: emp.ten_nv || emp.hoTen || matchedReport.hoTen,
+                      boPhan: emp.vi_tri || emp.boPhan || matchedReport.boPhan
+                  });
+              } else {
+                  finalEmployees.push({
+                      maNV: empCode,
+                      maKho: empKho || 'N/A',
+                      hoTen: emp.ten_nv || emp.hoTen,
+                      boPhan: emp.vi_tri || emp.boPhan || 'Chưa phân loại',
+                      competitions: [],
+                      completedCount: 0
+                  });
+              }
+          });
+
+          (reportData || []).forEach(r => {
+              const rCode = String(r.maNV).trim();
+              const rKho = String(r.maKho).trim();
+              const exists = finalEmployees.find(e => String(e.maNV) === rCode && (String(e.maKho) === rKho || $selectedWarehouse === 'ALL'));
+              
+              if (!exists && (!$selectedWarehouse || $selectedWarehouse === 'ALL' || rKho === $selectedWarehouse)) {
+                  let realName = r.hoTen || r.name;
+                  let realDept = r.boPhan;
+                  const info = infoMap[rCode];
+                  if (info) {
+                      if (info.name) realName = info.name;
+                      if (!realDept || realDept === 'Chưa phân loại' || realDept === rCode) realDept = info.dept;
+                  }
+                  if (realName && realName.includes('-')) {
+                       const parts = realName.split('-');
+                       if (parts.length > 1 && /\d/.test(parts[parts.length-1])) realName = parts[0].trim();
+                  }
+
+                  finalEmployees.push({
+                      ...r, maNV: rCode, maKho: rKho || 'N/A', hoTen: realName, boPhan: realDept || 'Chưa phân loại'
+                  });
+              }
           });
           
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
@@ -144,8 +170,7 @@
           columnSettings = savedSettings.map(col => ({
               ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
-          
-          allEmployees = [...mappedReportData];
+          allEmployees = finalEmployees;
       } else {
           allEmployees = [];
       }
@@ -153,7 +178,6 @@
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
   
-  // --- SORT LOGIC ---
   function handleSort(key) {
       if (sortKey === key) {
           sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -165,63 +189,83 @@
 
   $: sortedEmployees = [...allEmployees].sort((a, b) => {
       let valA, valB;
+      const getScore = (emp) => {
+          let score = 0;
+          (emp.competitions || []).forEach(comp => {
+              const val = comp.giaTri || 0;
+              const pTarget = categoryTargets[comp.tenGoc] || 0;
+              const projectedVal = (val / currentDay) * daysInMonth;
+              if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) score++;
+          });
+          return score;
+      };
+
       if (sortKey.startsWith('comp_')) {
             const sortCol = columnSettings.find(c => c.id === sortKey);
             if (!sortCol) return 0;
-            valA = a.competitions.find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
-            valB = b.competitions.find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
-            return sortDirection === 'asc' ? valA - valB : valB - valA;
-
+            valA = (a.competitions || []).find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
+            valB = (b.competitions || []).find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
       } else if (sortKey === 'totalScore') {
-            const getScore = (emp) => {
-                let score = 0;
-                emp.competitions.forEach(comp => {
-                    const val = comp.giaTri || 0;
-                    const pTarget = categoryTargets[comp.tenGoc] || 0;
-                    
-                    // --- ÁP DỤNG SỐ DỰ KIẾN VÀO BẢNG CHÂN LÝ ---
-                    const projectedVal = (val / currentDay) * daysInMonth;
-                    
-                    if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) {
-                        score++;
-                    }
-                });
-                return score;
-            };
-            valA = getScore(a);
-            valB = getScore(b);
-            return sortDirection === 'asc' ? valA - valB : valB - valA;
+            valA = getScore(a); valB = getScore(b);
       } else {
-            valA = a[sortKey] || '';
-            valB = b[sortKey] || '';
-            return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            valA = a[sortKey] || ''; valB = b[sortKey] || '';
+      }
+
+      if ($selectedWarehouse === 'ALL') {
+          const khoA = String(a.maKho || '').toUpperCase();
+          const khoB = String(b.maKho || '').toUpperCase();
+          if (khoA !== khoB) return khoA.localeCompare(khoB);
+      }
+
+      if (sortKey.startsWith('comp_') || sortKey === 'totalScore') {
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+      } else {
+          return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
       }
   });
+
+  $: processedEmployees = (() => {
+      if ($selectedWarehouse === 'ALL') {
+          let currentKho = null;
+          let currentRank = 0;
+          return sortedEmployees.map(emp => {
+              if (emp.maKho !== currentKho) {
+                  currentKho = emp.maKho;
+                  currentRank = 0;
+              }
+              const result = { ...emp, _displayRank: currentRank };
+              currentRank++;
+              return result;
+          });
+      } else {
+          return sortedEmployees.map((emp, i) => ({ ...emp, _displayRank: i }));
+      }
+  })();
   
-  $: topCount = sortedEmployees.length <= 15 ? 3 : 5;
+  $: topCount = processedEmployees.length <= 15 ? 3 : 5;
   
-  function getRowStyle(index) {
-      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
-      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
-      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
-      return index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-slate-50/50 hover:bg-gray-100';
+  function getRowStyle(rank) {
+      if (rank === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
+      if (rank === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (rank === 2) return 'bg-orange-50/60 hover:bg-orange-100';
+      if (rank < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return rank % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-slate-50/50 hover:bg-gray-100';
   }
 
-  function getStickyClass(index) {
-      if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100';
-      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50 group-hover:bg-orange-100';
-      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
-      return index % 2 === 0 ? 'bg-white group-hover:bg-gray-50' : 'bg-slate-50 group-hover:bg-gray-100';
+  function getStickyClass(rank) {
+      if (rank === 0) return 'bg-yellow-50 group-hover:bg-yellow-100';
+      if (rank === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
+      if (rank === 2) return 'bg-orange-50 group-hover:bg-orange-100';
+      if (rank < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
+      return rank % 2 === 0 ? 'bg-white group-hover:bg-gray-50' : 'bg-slate-50 group-hover:bg-gray-100';
   }
 
-  function getRankIcon(index) {
-      if (index === 0) return '🏆';
-      if (index === 1) return '🥈';
-      if (index === 2) return '🥉';
-      if (index < topCount) return '⭐';
-      return `#${index + 1}`;
+  function getRankIcon(rank) {
+      if (rank === 0) return '🏆';
+      if (rank === 1) return '🥈';
+      if (rank === 2) return '🥉';
+      if (rank < topCount) return '⭐';
+      return `#${rank + 1}`;
   }
 
   function toggleColumn(col) {
@@ -232,14 +276,14 @@
 
   function calculateTotal(col) {
       return allEmployees.reduce((sum, emp) => {
-          const comp = emp.competitions.find(c => c.tenGoc === col.tenGoc);
+          const comp = (emp.competitions || []).find(c => c.tenGoc === col.tenGoc);
           return sum + (comp?.giaTri || 0);
       }, 0);
   }
 
   function calculateTotalScore() {
       return allEmployees.reduce((total, item) => {
-          const score = item.competitions.reduce((acc, c) => {
+          const score = (item.competitions || []).reduce((acc, c) => {
               const val = c.giaTri || 0;
               const pTarget = categoryTargets[c.tenGoc] || 0;
               const projectedVal = (val / currentDay) * daysInMonth;
@@ -249,9 +293,7 @@
       }, 0);
   }
 
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') feather.replace();
-  });
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <div class="space-y-4 animate-fade-in">
@@ -260,15 +302,13 @@
             <p class="text-gray-500">Vui lòng dán dữ liệu "Thi đua nhân viên" ở tab "Cập nhật dữ liệu".</p>
         </div>
     {:else}
-        
         <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
             <p class="text-xs font-bold text-gray-500 uppercase mb-2">Hiển thị cột:</p>
             <div class="flex flex-wrap gap-2">
                 {#each columnSettings as col}
                     <button 
                         type="button"
-                        class="px-3 py-1 rounded-full text-xs font-medium border transition-all select-none
-                                {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
+                        class="px-3 py-1 rounded-full text-xs font-medium border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
                         on:click={() => toggleColumn(col)}
                         title={col.loaiSoLieu}
                     >
@@ -282,8 +322,7 @@
             <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
                 <div>
                     <h3 class="text-lg font-bold text-purple-800 uppercase flex items-center gap-2">
-                        <i data-feather="award" class="w-5 h-5"></i>
-                        Thi Đua Lũy Kế
+                        <i data-feather="award" class="w-5 h-5"></i> Thi Đua Lũy Kế
                     </h3>
                     <p class="text-xs text-gray-500 mt-0.5 ml-7">Theo dõi tiến độ các chương trình thi đua</p>
                 </div>
@@ -303,11 +342,7 @@
                             <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};" on:click={() => handleSort('totalScore')}>Đạt</th>
                             
                             {#each visibleColumns as col, index}
-                                <th 
-                                    class="px-1 py-1 w-auto min-w-[60px] max-w-[90px] whitespace-normal break-words border-b border-r border-gray-200 {getHeaderColor(index)} align-middle cursor-pointer hover:opacity-80 transition select-none"
-                                    on:click={() => handleSort(col.id)}
-                                    title="{col.label} (Bấm để sắp xếp)"
-                                >
+                                <th class="px-1 py-1 w-auto min-w-[60px] max-w-[90px] whitespace-normal break-words border-b border-r border-gray-200 {getHeaderColor(index)} align-middle cursor-pointer hover:opacity-80 transition select-none" on:click={() => handleSort(col.id)} title="{col.label} (Bấm để sắp xếp)">
                                     <div class="text-[10px] font-bold leading-3 text-center whitespace-normal break-words min-h-[32px] flex items-center justify-center">
                                         {col.label}
                                     </div>
@@ -317,48 +352,43 @@
                     </thead>
                     
                     <tbody class="divide-y divide-gray-100">
-                        {#each sortedEmployees as item, index (item.maNV + '_' + (item.maKho || '') + '_' + index)}
-                            {@const score = item.competitions.reduce((acc, c) => {
+                        {#each processedEmployees as item, loopIndex (item.maNV + '_' + (item.maKho || '') + '_' + loopIndex)}
+                            {@const score = (item.competitions || []).reduce((acc, c) => {
                                 const val = c.giaTri || 0;
                                 const pTarget = categoryTargets[c.tenGoc] || 0;
                                 const projectedVal = (val / currentDay) * daysInMonth;
                                 return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
                             }, 0)}
                             
-                            <tr 
-                                class="transition-colors group cursor-pointer {getRowStyle(index)}"
-                                on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
-                            >
-                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky transition-colors {getStickyClass(index)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}" style="left: 0px;">
-                                    {getRankIcon(index)}
+                            <tr class="transition-colors group cursor-pointer {getRowStyle(item._displayRank)}" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
+                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky transition-colors {getStickyClass(item._displayRank)} {item._displayRank <= 2 ? 'text-lg' : 'text-sm text-slate-400'}" style="left: 0px;">
+                                    {getRankIcon(item._displayRank)}
                                 </td>
                                 
                                 {#if $selectedWarehouse === 'ALL'}
-                                    <td class="px-1 py-1.5 text-center font-bold border-r border-purple-200 text-purple-700 z-10 sticky text-[12px] uppercase transition-colors {getStickyClass(index)}" style="left: 50px;">
-                                        {item.maKho || 'N/A'}
+                                    <td class="px-1 py-1.5 text-center font-bold border-r border-purple-200 text-purple-700 z-10 sticky text-[12px] uppercase transition-colors {getStickyClass(item._displayRank)}" style="left: 50px;">
+                                        {item.maKho}
                                     </td>
                                 {/if}
                                 
-                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(index)}" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" title="{item.hoTen} - {item.maNV}">
+                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
-                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky z-10 transition-colors {getStickyClass(index)}" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
+                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky z-10 transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                     {score}
                                 </td>
 
                                 {#each visibleColumns as col}
-                                    {@const comp = item.competitions.find(c => c.tenGoc === col.tenGoc)}
+                                    {@const comp = (item.competitions || []).find(c => c.tenGoc === col.tenGoc)}
                                     {@const val = comp?.giaTri || 0}
                                     {@const pTarget = categoryTargets[col.tenGoc] || 0}
                                     {@const projectedVal = (val / currentDay) * daysInMonth}
-                                    
                                     {@const isBelow = pTarget > 0 && projectedVal < pTarget}
                                     {@const isNoTarget = pTarget === 0 && val === 0}
                                     {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
                                     {@const textColorClass = isBelow ? 'text-yellow-900' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
 
                                     <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
-                                    
                                         {#if val === 0}
                                             <span class="text-gray-300 font-normal">{isNoTarget ? '0' : '-'}</span>
                                         {:else}
@@ -424,16 +454,8 @@
     .animate-fade-in { animation: fadeIn 0.4s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     .sticky { position: sticky; }
-    
     .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
-
     table { border-spacing: 0; }
-    .line-clamp-2 {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
 </style>
