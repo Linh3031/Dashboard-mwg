@@ -78,7 +78,13 @@ export const cacheHandler = {
                         if (parsedData.success) {
                             const $competitionData = get(competitionData);
                             const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                            aggregatedThidua = [...aggregatedThidua, ...processedData];
+                            
+                            // Đóng dấu mã kho cho dữ liệu nạp từ cache để không bị mất khi coi ALL
+                            const labeledData = processedData.map(item => ({ 
+                                ...item, 
+                                maKho: item.maKho || kho 
+                            }));
+                            aggregatedThidua = [...aggregatedThidua, ...labeledData];
                             updateSyncState(`daily_paste_thiduanv_${kho}`, 'cached', `(Local)`, null);
                         }
                     }

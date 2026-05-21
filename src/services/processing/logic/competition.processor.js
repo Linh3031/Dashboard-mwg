@@ -95,13 +95,14 @@ export const competitionProcessor = {
             }
 
             if (!employee) {
-                employee = { hoTen: row.name, maNV: msnv || 'N/A', boPhan: 'Nhân viên không tìm thấy' };
+                employee = { hoTen: row.name, maNV: msnv || 'N/A', boPhan: 'Nhân viên không tìm thấy', maKho: '' };
             }
 
             const employeeResult = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
                 boPhan: employee.boPhan,
+                maKho: employee.maKho || employee.ma_kho || '',
                 completedCount: 0,
                 totalCompetitions: mainHeaders.length,
                 competitions: []

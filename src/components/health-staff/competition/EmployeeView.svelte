@@ -22,7 +22,6 @@
   $: {
       const today = new Date();
       const d = today.getDate();
-      
       if (d === 1) {
           // Vùng giáp hạt: Ngày mùng 1 đầu tháng -> Tự động dùng số ngày của tháng trước
           const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
@@ -41,7 +40,7 @@
   let sortDirection = 'desc';
 
   let allEmployees = [];
-  
+
   // --- KHỐI LOGIC: TARGET CÁ NHÂN (LINKED MAPPING) ---
   let targetRatio = 100;
   let categoryTargets = {};
@@ -57,7 +56,7 @@
   $: emps = $danhSachNhanVien || [];
   $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
   $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
-
+  
   // 3. Tra cứu Target qua 'linkedEmpProgram'
   $: {
       const stMappedData = {};
@@ -77,11 +76,12 @@
               stMappedData[linkedEmpProg] = pTarget;
           }
       });
-
+      
       const newTargets = {};
       (columnSettings || []).forEach(col => {
           newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
       });
+      
       categoryTargets = newTargets;
   }
 
@@ -92,6 +92,7 @@
       'bg-sky-100 text-sky-900 border-sky-200', 'bg-indigo-100 text-indigo-900 border-indigo-200',
       'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200', 'bg-rose-100 text-rose-900 border-rose-200'
   ];
+  
   function getHeaderColor(index) {
       return headerColors[index % headerColors.length];
   }
@@ -105,6 +106,7 @@
                   const code = String(nv.ma_nv || nv.maNV || '').trim();
                   const name = nv.ten_nv || nv.hoTen || '';
                   const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
+   
                   if (code) infoMap[code] = { name, dept };
                   if (nv.nguoiTao) {
                       const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
@@ -135,14 +137,14 @@
              }
              return { ...item, maNV: rawCode || item.maNV, hoTen: realName, boPhan: realDept || 'Chưa phân loại' };
           });
-
+          
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
           if (!savedSettings || savedSettings.length === 0) savedSettings = settingsService.loadPastedCompetitionViewSettings();
           
           columnSettings = savedSettings.map(col => ({
               ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
-
+          
           allEmployees = [...mappedReportData];
       } else {
           allEmployees = [];
@@ -150,7 +152,7 @@
   }
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
-
+  
   // --- SORT LOGIC ---
   function handleSort(key) {
       if (sortKey === key) {
@@ -195,8 +197,9 @@
             return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
       }
   });
-
+  
   $: topCount = sortedEmployees.length <= 15 ? 3 : 5;
+  
   function getRowStyle(index) {
       if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
       if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
@@ -240,7 +243,6 @@
               const val = c.giaTri || 0;
               const pTarget = categoryTargets[c.tenGoc] || 0;
               const projectedVal = (val / currentDay) * daysInMonth;
-              
               return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
           }, 0);
           return total + score;
@@ -291,9 +293,15 @@
                 <table class="w-full text-sm text-left border-separate border-spacing-0">
                     <thead class="text-xs uppercase font-bold text-gray-700 sticky top-0 z-20 shadow-sm">
                         <tr>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[50px] min-w-[50px] sticky left-0 z-30 px-1 py-2 text-center align-middle text-sm">Hạng</th>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky left-[50px] z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" on:click={() => handleSort('hoTen')}>Nhân viên</th>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky left-[200px] z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" on:click={() => handleSort('totalScore')}>Đạt</th>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[50px] min-w-[50px] sticky px-1 py-2 text-center align-middle text-sm z-30" style="left: 0px;">Hạng</th>
+                            
+                            {#if $selectedWarehouse === 'ALL'}
+                                <th class="bg-gray-100 border-b border-r border-gray-200 w-[60px] min-w-[60px] sticky px-1 py-2 text-center align-middle text-sm z-30 font-bold text-purple-700" style="left: 50px;">Kho</th>
+                            {/if}
+                            
+                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" on:click={() => handleSort('hoTen')}>Nhân viên</th>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};" on:click={() => handleSort('totalScore')}>Đạt</th>
+                            
                             {#each visibleColumns as col, index}
                                 <th 
                                     class="px-1 py-1 w-auto min-w-[60px] max-w-[90px] whitespace-normal break-words border-b border-r border-gray-200 {getHeaderColor(index)} align-middle cursor-pointer hover:opacity-80 transition select-none"
@@ -309,7 +317,7 @@
                     </thead>
                     
                     <tbody class="divide-y divide-gray-100">
-                        {#each sortedEmployees as item, index (item.maNV)}
+                        {#each sortedEmployees as item, index (item.maNV + '_' + (item.maKho || '') + '_' + index)}
                             {@const score = item.competitions.reduce((acc, c) => {
                                 const val = c.giaTri || 0;
                                 const pTarget = categoryTargets[c.tenGoc] || 0;
@@ -321,13 +329,20 @@
                                 class="transition-colors group cursor-pointer {getRowStyle(index)}"
                                 on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
                             >
-                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky left-0 transition-colors {getStickyClass(index)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}">
+                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky transition-colors {getStickyClass(index)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}" style="left: 0px;">
                                     {getRankIcon(index)}
                                 </td>
-                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky left-[50px] z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(index)}" title="{item.hoTen} - {item.maNV}">
+                                
+                                {#if $selectedWarehouse === 'ALL'}
+                                    <td class="px-1 py-1.5 text-center font-bold border-r border-purple-200 text-purple-700 z-10 sticky text-[12px] uppercase transition-colors {getStickyClass(index)}" style="left: 50px;">
+                                        {item.maKho || 'N/A'}
+                                    </td>
+                                {/if}
+                                
+                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(index)}" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
-                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky left-[200px] z-10 transition-colors {getStickyClass(index)}">
+                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky z-10 transition-colors {getStickyClass(index)}" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                     {score}
                                 </td>
 
@@ -357,10 +372,10 @@
                     
                     <tfoot class="text-xs uppercase sticky bottom-0 z-20 shadow-[0_-1px_2px_rgba(0,0,0,0.1)]">
                         <tr class="bg-indigo-50 text-indigo-800 font-semibold border-t-2 border-indigo-300">
-                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-indigo-100 border-r border-indigo-200 z-30 text-center text-[13px]">
+                            <td colspan={$selectedWarehouse === 'ALL' ? 3 : 2} class="px-2 py-2 sticky bg-indigo-100 border-r border-indigo-200 z-30 text-center text-[13px]" style="left: 0px;">
                                 TARGET CÁ NHÂN
                             </td>
-                            <td class="px-2 py-2 border-r border-indigo-200 bg-indigo-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-indigo-700">
+                            <td class="px-2 py-2 border-r border-indigo-200 bg-indigo-100 sticky z-30 text-center text-[13px] font-bold text-indigo-700" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                 -
                             </td>
                             {#each visibleColumns as col}
@@ -372,10 +387,10 @@
                         </tr>
 
                         <tr class="bg-yellow-50 text-yellow-800 font-semibold border-t border-gray-300">
-                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan={$selectedWarehouse === 'ALL' ? 3 : 2} class="px-2 py-2 sticky bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]" style="left: 0px;">
                                 TRUNG BÌNH
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-green-700">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky z-30 text-center text-[13px] font-bold text-green-700" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                 {allEmployees.length > 0 ? formatters.formatNumber(calculateTotalScore() / allEmployees.length, 1) : 0}
                             </td>
                             {#each visibleColumns as col}
@@ -386,10 +401,10 @@
                         </tr>
 
                         <tr class="bg-gray-200 text-gray-900 font-bold border-t border-gray-300">
-                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan={$selectedWarehouse === 'ALL' ? 3 : 2} class="px-2 py-2 sticky bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]" style="left: 0px;">
                                 TỔNG
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[200px] z-30 text-center text-[13px]">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky z-30 text-center text-[13px]" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                 {calculateTotalScore()}
                             </td>
                             {#each visibleColumns as col}

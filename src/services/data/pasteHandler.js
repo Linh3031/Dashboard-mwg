@@ -38,23 +38,31 @@ export const pasteHandler = {
         try {
             let processedData;
             let processedCount = 0;
+            
+            // [SMART ROUTING]
+            const warehouse = targetWarehouse || get(selectedWarehouse);
+            
             if (mapping.isThiDuaNV) {
                 const parsedData = dataProcessing.parsePastedThiDuaTableData(pastedText);
                 if (!parsedData.success) throw new Error(parsedData.error);
                 dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
                 const $competitionData = get(competitionData);
                 processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                mapping.store.set(processedData);
                 
-                // [PHẪU THUẬT LOGIC]: Ghi đúng vào Key Đích Danh (Có nối kho)
+                // Đóng dấu mã kho ngay khi paste tránh lệch danh tính dữ liệu chung
+                const labeledData = processedData.map(item => ({ 
+                    ...item, 
+                    maKho: item.maKho || warehouse 
+                }));
+                mapping.store.set(labeledData);
+                
                 if(saveKeyRaw) localStorage.setItem(saveKeyRaw, pastedText);
-                if(saveKeyProcessed) localStorage.setItem(saveKeyProcessed, JSON.stringify(processedData));
-                processedCount = processedData.length;
+                if(saveKeyProcessed) localStorage.setItem(saveKeyProcessed, JSON.stringify(labeledData));
+                processedCount = labeledData.length;
             } else if (mapping.processFunc) {
                 processedData = mapping.processFunc(pastedText);
                 mapping.store.set(processedData);
                 
-                // [PHẪU THUẬT LOGIC]: Ghi đúng vào Key Đích Danh
                 localStorage.setItem(saveKeyPaste, pastedText);
                 processedCount = processedData?.length || 0;
                 
@@ -64,9 +72,6 @@ export const pasteHandler = {
                      processedCount = comps.length;
                 }
             }
-            
-            // [SMART ROUTING]
-            const warehouse = targetWarehouse || get(selectedWarehouse);
             
             // Chặn không cho lưu vào thư mục ảo 'ALL' trên Cloud
             if (warehouse && warehouse !== 'ALL') {

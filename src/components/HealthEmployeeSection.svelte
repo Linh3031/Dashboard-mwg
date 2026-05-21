@@ -35,7 +35,8 @@
 
   // [PHẪU THUẬT 2]: Gộp 2 luồng YCX, Lọc đúng Kho, Bỏ qua lọc ngày để bảo toàn các tháng cũ
   $: combinedMultiMonthData = [...($ycxData || []), ...($ycxDataThangTruoc || [])].filter(item => {
-      if ($selectedWarehouse) {
+      // [FIX] Nếu chọn ALL thì không lọc
+      if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
           const wh = item.maKhoTao || item.maKho || item['Mã kho tạo'] || item['Kho tạo'] || item.ma_kho;
           if (wh && String(wh).trim() !== String($selectedWarehouse).trim()) return false;
       }
@@ -52,7 +53,7 @@
       const dt = parseUniversalDate(dateVal); 
       return dt ? new Date(dt).getMonth() + '-' + new Date(dt).getFullYear() : ''; 
   }).filter(Boolean)).size;
-  
+
   // State Bộ lọc ngày
   let selectedStartDate = '';
   let selectedEndDate = '';
@@ -127,7 +128,6 @@
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - days + 1);
-      
       const pad = (n) => (n < 10 ? '0' + n : n);
       selectedEndDate = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
       selectedStartDate = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
@@ -160,6 +160,7 @@
       // Quét toàn bộ key trong object, tìm mọi thứ tương đồng với "Ngày tạo"
       for (const key of Object.keys(item)) {
           const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
+        
           if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) {
               dateVal = item[key];
               break;
@@ -201,7 +202,10 @@
 
   $: {
       let rawData = $masterReportData.sknv || [];
-      if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
+      // [FIX] Bỏ qua thao tác lọc theo mã kho nếu lựa chọn là ALL
+      if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
+          rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
+      }
       processedReport = sknvService.processReportData(rawData);
   }
 
@@ -240,7 +244,7 @@
                         value={$selectedWarehouse}
                         on:change={handleWarehouseChange}
                     >
-                        <option value="">-- Toàn bộ --</option>
+                        <option value="ALL">-- Toàn bộ --</option>
                         {#each $warehouseList as kho}
                             <option value={kho}>{kho}</option>
                         {/each}
@@ -348,10 +352,11 @@
                                 </div>
                             {:else}
                                 {#if combinedMultiMonthData.length > 0 && uniqueMonthsCount <= 1}
-                                     <div class="mb-4 mt-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700 flex items-center gap-2">
+                                    <div class="mb-4 mt-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700 flex items-center gap-2">
                                         <i data-feather="alert-triangle" class="w-4 h-4"></i>
-                                        <b>Lưu ý:</b> Dữ liệu hiện tại chỉ có 1 tháng. Hãy vào tab <b class="text-indigo-600">Cập nhật dữ liệu</b> tải lên dạng "Gộp file" ở ô <b>YCX Lũy kế tháng trước</b> để biểu đồ này phát huy tác dụng.
-                                     </div>
+                                        <b>Lưu ý:</b> Dữ liệu hiện tại chỉ có 1 tháng.
+                                        Hãy vào tab <b class="text-indigo-600">Cập nhật dữ liệu</b> tải lên dạng "Gộp file" ở ô <b>YCX Lũy kế tháng trước</b> để biểu đồ này phát huy tác dụng.
+                                    </div>
                                 {/if}
 
                                 <div id="revenue-multi-month-container-lk">
