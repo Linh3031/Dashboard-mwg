@@ -9,28 +9,29 @@
     thuongERPData,
     thuongERPDataThangTruoc,
     fileSyncState,
-    selectedWarehouse
+    selectedWarehouse,
+    clusterSummaryData
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
   export let icon = "clipboard";
-  export let link = "#"; 
+  export let link = "#";
   export let saveKeyPaste = ""; 
   export let saveKeyRaw = ""; 
   export let saveKeyProcessed = ""; 
 
   const dispatch = createEventDispatcher();
-
   let textareaEl;
   let pastedText = "";
   let localError = "";
-
+  
   const storeMap = {
     'daily_paste_luyke': competitionData,
     'cluster_paste_luyke': competitionData,
     'daily_paste_thiduanv': pastedThiDuaReportData,
     'daily_paste_thuongerp': thuongERPData,
-    'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc
+    'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc,
+    'cluster_summary_data': clusterSummaryData
   };
   
   const unitMap = {
@@ -91,7 +92,6 @@
               statusClass = "text-orange-600 font-semibold";
               const timeAgo = syncState.metadata ? formatTimeAgo(syncState.metadata.timestamp || syncState.metadata.updatedAt) : '';
               const sender = syncState.metadata?.updatedBy || 'người khác';
-              
               statusHTML = `
                   <span class="mr-2">Có cập nhật mới từ ${sender} ${timeAgo}</span>
                   <button class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 border border-blue-300 font-bold btn-download-cloud pointer-events-auto shadow-sm">
@@ -113,7 +113,6 @@
                   const prefix = syncState.status === 'synced' ? '✓ Đã đồng bộ' : '✓ Đã tải (Local)';
                   const timeAgo = syncState.metadata ? formatTimeAgo(syncState.metadata.timestamp || syncState.metadata.updatedAt) : '';
                   const timeDisplay = timeAgo ? ` ${timeAgo}` : '';
-
                   if (pastedText.trim().length === 0 && syncState.status === 'synced') {
                        statusHTML = `
                           <span class="mr-2 text-gray-500">✓ Có dữ liệu mới trên Cloud.</span>
@@ -138,15 +137,12 @@
       }
   }
 
-  // [PHẪU THUẬT LOGIC]: Chuyển logic nạp LocalStorage sang khối Phản ứng
-  // Đảm bảo cứ khi saveKeyPaste có giá trị chuẩn (VD: daily_paste_luyke_908) là text tự hiện ra.
   let currentSaveKey = "";
   $: if (saveKeyPaste && saveKeyPaste !== currentSaveKey) {
       currentSaveKey = saveKeyPaste;
       const textLoadKey = saveKeyRaw || saveKeyPaste;
       pastedText = localStorage.getItem(textLoadKey) || "";
       
-      // Đồng thời cập nhật lại cái khiên Meta Sync
       if (!$fileSyncState[saveKeyPaste]) {
           let targetWh = null;
           let baseKeyForMeta = saveKeyPaste; 

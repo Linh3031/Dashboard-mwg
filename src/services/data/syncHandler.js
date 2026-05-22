@@ -72,7 +72,6 @@ function applyDataShield(rawData, normalizedData, baseKey) {
     });
 }
 
-// --- 🚨 [PHẪU THUẬT LOGIC]: BỘ ĐỊNH TUYẾN KEY KẾT NỐI UI 🚨 ---
 function getStateKey(key, wh) {
     if (['daily_paste_luyke', 'daily_paste_thiduanv'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
         return `${key}_${wh}`;
@@ -80,6 +79,9 @@ function getStateKey(key, wh) {
     if (['cluster_paste_luyke', 'cluster_paste_comp'].includes(key) && wh.startsWith('CLUSTER_')) {
         const clusterCode = wh.replace('CLUSTER_', '');
         return `${key}_${clusterCode}`;
+    }
+    if (key === 'cluster_summary_data' && wh.startsWith('CLUSTER_')) {
+        return `cluster_summary_data_${wh}`; 
     }
     return key;
 }
@@ -109,7 +111,6 @@ export const syncHandler = {
             return map && !map.localOnly;
         });
 
-        // [SỬA LỖI MẤT SÓNG]: Phát tín hiệu Checking đúng kênh
         targetKeys.forEach(key => {
             let stateKey = getStateKey(key, warehouse);
             updateSyncState(stateKey, 'checking', 'Đang so sánh dữ liệu...', null);
@@ -131,7 +132,6 @@ export const syncHandler = {
             const processKey = async (key) => {
                 const mapping = FILE_MAPPING[key] || PASTE_MAPPING[key];
                 
-                // [SỬA LỖI MẤT SÓNG]: Xác định luồng kênh
                 let stateKey = getStateKey(key, warehouse);
                 let baseKey = key;
 
@@ -315,7 +315,11 @@ export const syncHandler = {
                 let processedCount = 0;
                 
                 if (mapping.isThiDuaNV) {
-                    localStorage.setItem(stateKey + '_raw', textContent);
+                    // [PHẪU THUẬT LOGIC]: Sửa lỗi mất dữ liệu Thi đua Nhân Viên sau khi F5
+                    // Đổi stateKey + '_raw' (sai định dạng) thành dạng chuẩn raw_paste_thiduanv_xxx
+                    const rawKey = stateKey.replace('daily_paste_thiduanv', 'raw_paste_thiduanv');
+                    localStorage.setItem(rawKey, textContent);
+                    
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {
                         dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);

@@ -20,28 +20,28 @@
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-    
+
     // --- STATE ---
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
-    
     let currentFilters = {};
     let filterOptions = {};
     let warnings = [];
     let expandedRows = new Set();
     let isConfigLoaded = false;
     
-    // [GENESIS FIX]: Đổi Key để vô hiệu hóa cache bộ lọc cũ gây lỗi trắng trang
-    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V2'; 
-    
+    // Key cấu hình bộ lọc cũ
+    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V2';
+    // Key lưu trữ cấu hình ẩn hiện cột
+    const COLUMNS_STORAGE_KEY = 'LUYKE_CATEGORY_COLUMNS_V1';
+
     // --- VELOCITY, DATE & COMPARE STATE ---
     let isVelocityMode = false;
     let velocityDays = 1;
     let dateFilter = { from: '', to: '' }; 
     let isCompareMode = false;
-    let compareSortType = 'diff'; 
-
+    let compareSortType = 'diff';
     let sortKey = 'revenue';
     let sortDirection = 'desc';
 
@@ -51,7 +51,16 @@
     let hasInventoryData = false;
 
     const PRESET_DAYS = [3, 5, 7, 10];
-    
+
+    // Cấu hình ẩn hiện cột mặc định
+    let columnSettings = [
+        { id: 'quantity', label: 'Số lượng (SL)', visible: true },
+        { id: 'revenue', label: 'Doanh thu thực', visible: true },
+        { id: 'donGia', label: 'Đơn giá', visible: true },
+        { id: 'revenueQD', label: 'Doanh thu Quy đổi', visible: true },
+        { id: 'revenueTraCham', label: 'Doanh thu Trả chậm', visible: true }
+    ];
+
     $: displayedDimensions = AVAILABLE_DIMENSIONS.filter(d => {
         if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
         return true;
@@ -73,6 +82,13 @@
             } 
             catch (e) { console.error('Error loading config', e); }
         }
+
+        // Tải cấu hình ẩn hiện cột đã lưu
+        const savedCols = localStorage.getItem(COLUMNS_STORAGE_KEY);
+        if (savedCols) {
+            try { columnSettings = JSON.parse(savedCols); } catch (e) {}
+        }
+
         isConfigLoaded = true;
     });
 
@@ -86,11 +102,19 @@
         }
     }
 
+    // Tự động lưu cấu hình cột khi có thay đổi
+    $: {
+        if (isConfigLoaded && typeof localStorage !== 'undefined') {
+            localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(columnSettings));
+        }
+    }
+
     const parseMoney = (val) => {
         if (typeof val === 'number') return val;
         if (!val) return 0;
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
+
     const isValidRow = (row) => {
         const isThuTien = (row.trangThaiThuTien || "").trim() === 'Đã thu';
         const isChuaHuy = (row.trangThaiHuy || "").trim() === 'Chưa hủy';
@@ -98,6 +122,7 @@
         const isDaXuat = (row.trangThaiXuat || "").trim() === 'Đã xuất';
         return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
     };
+
     const getDimensionValue = (row, dimId) => {
         let val = '';
         if (dimId === 'nganhHang') val = row.nganhHang;
@@ -135,7 +160,6 @@
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return;
             if (!isValidRow(row)) return;
             
-            // [GENESIS FIX]: Ép kiểu undefined rõ ràng
             if (Object.keys(currentFilters).length > 0) {
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
                     if (selectedValues !== undefined) {
@@ -161,7 +185,6 @@
             const htx = (row.hinhThucXuat || '').toLowerCase();
             const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
             if (isTraGop) heSo += 0.3;
-            
             const revenueQD = revenue * heSo;
 
             if (!isCK) {
@@ -192,11 +215,11 @@
 
                     if (dimId === 'tenSanPham') nodeData.productCode = row.maSanPham || ''; 
                     else if (dimId === 'nhomHang') {
-                        const m = rawValue.toString().match(/^(\d+)/);
-                        if (m) nodeData.groupId = m[1];
+                         const m = rawValue.toString().match(/^(\d+)/);
+                         if (m) nodeData.groupId = m[1];
                     } else if (dimId === 'nganhHang') {
-                        const m = rawValue.toString().match(/^(\d+)/);
-                        if (m) nodeData.categoryId = m[1];
+                         const m = rawValue.toString().match(/^(\d+)/);
+                         if (m) nodeData.categoryId = m[1];
                     }
                     currentLevel.set(key, nodeData);
                 }
@@ -237,7 +260,6 @@
         };
         
         let finalTree = convertMapToArray(rootMap);
-        
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
             const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
@@ -257,7 +279,6 @@
 
         treeData = finalTree;
         totalMetrics = { ...totalMetrics };
-        
         updateFilterOptions(processedData);
     }
 
@@ -276,7 +297,6 @@
 
                 if (Object.keys(otherFilters).length > 0) {
                     for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
-                        // [GENESIS FIX]: Ép kiểu undefined
                         if (filterValues !== undefined) {
                             const valToCheck = getDimensionValue(row, filterKey);
                             if (!filterValues.includes(valToCheck)) {
@@ -309,7 +329,10 @@
                 calculateData(); 
                 alert(`Cập nhật tồn kho thành công!`);
             }
-        } catch (e) { console.error(e); alert("Lỗi đọc file tồn kho: " + e.message); }
+        } catch (e) { 
+            console.error(e);
+            alert("Lỗi đọc file tồn kho: " + e.message); 
+        }
     }
 
     function handleInventorySettings(event) {
@@ -329,7 +352,7 @@
         const { key, selected } = event.detail;
         if (selected === undefined) {
             const newFilters = { ...currentFilters };
-            delete newFilters[key]; // Xóa hẳn key để reset
+            delete newFilters[key]; 
             currentFilters = newFilters;
         } else {
             currentFilters = { ...currentFilters, [key]: selected };
@@ -360,11 +383,6 @@
     }
 
     function setToCurrentDays() { velocityDays = getCurrentMinusOne(); }
-
-    function handleSortPriorityChange(type) {
-        compareSortType = type;
-        sortDirection = 'desc'; 
-    }
 </script>
 
 <div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
@@ -404,29 +422,12 @@
             </button>
         </div>
 
-        {#if isCompareMode}
-            <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-1">
-                <span class="text-xs font-bold text-blue-800 uppercase mr-1">Ưu tiên Sort:</span>
-                <div class="flex bg-gray-100 rounded-md p-1 border border-gray-200">
-                    <button class="{compareSortType === 'current' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700'} px-2 py-1 text-[11px] rounded transition-all" on:click={() => handleSortPriorityChange('current')}>
-                        Số hiện tại
-                    </button>
-                    <button class="{compareSortType === 'diff' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700'} px-2 py-1 text-[11px] rounded transition-all" on:click={() => handleSortPriorityChange('diff')}>
-                        +/- Chênh lệch
-                    </button>
-                    <button class="{compareSortType === 'percent' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700'} px-2 py-1 text-[11px] rounded transition-all" on:click={() => handleSortPriorityChange('percent')}>
-                        % Tỷ lệ
-                    </button>
-                </div>
-            </div>
-        {/if}
-
         {#if isVelocityMode}
             <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
                 <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
                 <button on:click={setToCurrentDays} class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100">Hiện tại ({getCurrentMinusOne()})</button>
                 {#each PRESET_DAYS as d}
-                    <button on:click={() => velocityDays = d} class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}">{d} ngày</button>
+                   <button on:click={() => velocityDays = d} class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}">{d} ngày</button>
                 {/each}
                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
@@ -438,6 +439,29 @@
         {/if}
     </div>
 
+    <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
+        <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            Cấu hình ẩn / hiện cột dữ liệu báo cáo
+        </summary>
+        <div class="flex flex-wrap gap-2 mt-2.5" on:click|stopPropagation>
+            {#each columnSettings as col}
+                <button 
+                    type="button" 
+                    class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
+                    on:click={() => {
+                        col.visible = !col.visible;
+                        columnSettings = [...columnSettings];
+                    }}
+                >
+                    {col.visible ? '✓ ' : '+ '} {col.label}
+                </button>
+            {/each}
+        </div>
+    </details>
+
     <LuykeCategoryTreeTable 
         data={treeData} 
         {totalMetrics}
@@ -446,8 +470,8 @@
         {filterOptions}
         {currentFilters}
         {isVelocityMode} 
-        {isCompareMode} 
-        {compareSortType}
+        {isCompareMode}
+        {columnSettings}
         bind:sortKey
         bind:sortDirection
         bind:expandedRows={expandedRows}

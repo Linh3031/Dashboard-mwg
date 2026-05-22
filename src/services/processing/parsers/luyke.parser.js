@@ -223,11 +223,16 @@ export const luykeParser = {
                 hasChanges = true;
             }
         });
+        
         if (hasChanges) {
             luykeNameMappings.set(currentMappings);
         }
 
-        competitionData.set(results);
+        // [SURGICAL FIX - RACE CONDITION VACCINE]
+        // Đã tước quyền tự ý đẩy vào Store của Parser. 
+        // Store sẽ được cập nhật nguyên khối 1 lần bên pasteHandler/cacheHandler.
+        // competitionData.set(results); 
+
         return results;
     }
 };

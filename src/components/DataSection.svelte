@@ -1,7 +1,6 @@
 <script>
   /* global feather */
   import { onMount, onDestroy } from 'svelte';
-  
   import { 
       warehouseList,
       selectedWarehouse,
@@ -12,10 +11,9 @@
       clusterSummaryData,
       currentUser
   } from '../stores.js';
-  
   import { dataService } from '../services/dataService.js';
   import { clusterService } from '../services/cluster.service.js';
-  import { datasyncService } from '../services/datasync.service.js'; 
+  import { datasyncService } from '../services/datasync.service.js';
   import { storageService } from '../services/storage.service.js'; 
   import { luykeParser } from '../services/processing/parsers/luyke.parser.js'; 
 
@@ -56,6 +54,7 @@
   function checkClusterStatus(employees) {
       const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
       const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
+
       if (clusters.length > 0 && (warehouses.length > 1 || clusters.includes($selectedWarehouse))) {
           isClusterMode = true;
           currentClusterCode = clusters[0]; 
@@ -64,6 +63,7 @@
                if (!list.includes(currentClusterCode)) return [currentClusterCode, ...list];
                return list;
           });
+
           if (!$selectedWarehouse || $selectedWarehouse !== currentClusterCode) {
                console.log(`[Cluster] Detected cluster: ${currentClusterCode}`);
           }
@@ -79,20 +79,21 @@
       const text = event.detail;
       if (!text) return;
 
+      const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
+      const isolatedKey = `cluster_summary_data_${targetClusterId}`;
+
       fileSyncState.update(s => ({
           ...s,
-          'cluster_summary_data': { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
+          [isolatedKey]: { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
       }));
 
       try {
           const parsedData = luykeParser.parseClusterSummaryData(text);
           clusterSummaryData.set(parsedData);
-          localStorage.setItem('cluster_summary_data', text);
+          localStorage.setItem(isolatedKey, text); 
+
           const count = Object.keys(parsedData).length;
           const now = Date.now();
-
-          // [PHẪU THUẬT LOGIC]: Tự động sinh ID cụm theo quyền quản lý hiện tại
-          const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
 
           const blob = new Blob([text], { type: 'text/plain' });
           const path = `warehouse_data/${targetClusterId}/cluster_summary_data_${now}.txt`;
@@ -108,25 +109,24 @@
               updatedBy: $currentUser?.email || 'Tôi'
           };
 
-          // [PHẪU THUẬT LOGIC]: Lưu chính xác vào Document của Cụm này, không đè lên ALL
           await datasyncService.saveWarehouseMetadata(targetClusterId, 'cluster_summary_data', metaToSave);
           localStorage.setItem(`_meta_${targetClusterId}_cluster_summary_data`, JSON.stringify(metaToSave));
 
           fileSyncState.update(s => ({
               ...s,
-              'cluster_summary_data': { 
+              [isolatedKey]: { 
                   status: 'synced', 
                   message: `✓ Đã đồng bộ (${count} dòng)`, 
                   metadata: metaToSave 
               }
           }));
+
           notificationStore.set({ message: '✅ Đã trích xuất và đồng bộ Báo cáo Cụm!', type: 'success' });
-          
       } catch (error) {
           console.error(error);
           fileSyncState.update(s => ({
               ...s,
-              'cluster_summary_data': { status: 'error', message: `Lỗi: ${error.message}` }
+              [isolatedKey]: { status: 'error', message: `Lỗi: ${error.message}` }
           }));
           notificationStore.set({ message: error.message || 'Lỗi xử lý dữ liệu cụm!', type: 'error' });
       }
@@ -149,7 +149,6 @@
       const payload = event.detail;
       const text = payload.text || payload; 
       const kho = payload.kho || currentClusterCode;
-
       if (kho) {
           try {
               clusterService.processCumulativeInput(text, kho);
@@ -173,25 +172,46 @@
   onMount(async () => {
     if (typeof feather !== 'undefined') feather.replace();
 
-    const savedClusterText = localStorage.getItem('cluster_summary_data');
-    if (savedClusterText) {
+    // [SURGICAL FIX]: MIGRATION & DYNAMIC LOAD DỮ LIỆU CỤM
+    let savedClusterText = null;
+    let restoreMeta = null;
+    let isolatedKeyToLoad = null;
+
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('cluster_summary_data_CLUSTER_')) {
+            isolatedKeyToLoad = k;
+            savedClusterText = localStorage.getItem(k);
+        } else if (k && k.startsWith('_meta_CLUSTER_') && k.endsWith('_cluster_summary_data')) {
+            try { 
+                restoreMeta = JSON.parse(localStorage.getItem(k)); 
+                if (!isolatedKeyToLoad && !savedClusterText) {
+                     const match = k.match(/_meta_(CLUSTER_\w+)_/);
+                     if (match) isolatedKeyToLoad = `cluster_summary_data_${match[1]}`;
+                }
+            } catch(e){}
+        }
+    }
+
+    // Nếu không có key cô lập, kiểm tra key cũ để Migrate
+    if (!savedClusterText) {
+        savedClusterText = localStorage.getItem('cluster_summary_data');
+        if (savedClusterText) {
+             isolatedKeyToLoad = isolatedKeyToLoad || 'cluster_summary_data_CLUSTER_UNKNOWN'; 
+             localStorage.setItem(isolatedKeyToLoad, savedClusterText);
+             localStorage.removeItem('cluster_summary_data'); 
+        }
+    }
+
+    if (savedClusterText && isolatedKeyToLoad) {
         try {
             const parsedData = luykeParser.parseClusterSummaryData(savedClusterText);
             clusterSummaryData.set(parsedData);
             const count = Object.keys(parsedData).length;
             
-            // [PHẪU THUẬT LOGIC]: Tự động dò tìm Meta của cụm trên LocalStorage (vì ID cụm có thể là bất kỳ)
-            let restoreMeta = null;
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
-                if (k && k.startsWith('_meta_CLUSTER_') && k.endsWith('_cluster_summary_data')) {
-                    try { restoreMeta = JSON.parse(localStorage.getItem(k)); break; } catch(e){}
-                }
-            }
-            
             fileSyncState.update(s => ({
                 ...s,
-                'cluster_summary_data': { 
+                [isolatedKeyToLoad]: { 
                     status: 'synced', 
                     message: `✓ Đã đồng bộ (${count} dòng)`,
                     metadata: restoreMeta
@@ -205,8 +225,7 @@
     const savedWh = localStorage.getItem('selectedWarehouse');
     if (savedWh) {
         selectedWarehouse.set(savedWh);
-        await dataService.loadWarehouseSettings(savedWh); 
-
+        await dataService.loadWarehouseSettings(savedWh);
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
             if (data && data.length > 0) {
                 checkClusterStatus(data);
@@ -230,13 +249,10 @@
       try {
           if (warehouse === 'ALL') {
               const validWarehouses = $warehouseList.filter(k => k && k !== 'ALL');
-              
               if (validWarehouses.length > 0) {
                   const syncPromises = [];
-                  
                   syncPromises.push(dataService.syncDownFromCloud('ALL'));
                   
-                  // [PHẪU THUẬT LOGIC]: Gọi chính xác ID Cụm để đồng bộ (nếu người dùng thuộc về 1 Cụm)
                   if (isClusterMode && currentClusterCode) {
                       syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${currentClusterCode}`));
                   }
@@ -330,7 +346,7 @@
         
         <ProductivityDataBlock />
     </div>
-    
+   
     <MonthlyDataBlock />
 
     <TourGuide bind:isActive={isTourActive} steps={dataTourSteps} />

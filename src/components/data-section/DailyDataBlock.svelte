@@ -6,7 +6,6 @@
 
     export let isClusterMode = false;
     export let currentClusterCode = '';
-
     const dispatch = createEventDispatcher();
 </script>
 
@@ -40,7 +39,7 @@
                             label="Dán Báo cáo Cụm" 
                             icon="clipboard" 
                             link="#" 
-                            saveKeyPaste="cluster_summary_data" 
+                            saveKeyPaste={isClusterMode && currentClusterCode ? `cluster_summary_data_CLUSTER_${currentClusterCode}` : "cluster_summary_data_CLUSTER_UNKNOWN"}
                             on:paste={(e) => dispatch('pasteClusterSummary', e.detail)} 
                         />
                     </div>
@@ -63,7 +62,6 @@
                 {/each}
             {:else}
                 <div class="h-fit w-full overflow-hidden">
-                    <!-- [PHẪU THUẬT LOGIC]: ÉP NỐI MÃ KHO VÀO KEY (ABSOLUTE ISOLATION) -->
                     <PasteInput 
                         label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : `Data lũy kế (${$selectedWarehouse})`} 
                         icon="clipboard" 
@@ -108,7 +106,6 @@
                 {/if}
 
                 <div class="h-fit w-full overflow-hidden">
-                    <!-- [PHẪU THUẬT LOGIC]: ÉP NỐI MÃ KHO VÀO KEY (ABSOLUTE ISOLATION) -->
                     <PasteInput 
                         label={`Thi đua nhân viên (${$selectedWarehouse})`} 
                         icon="clipboard" 

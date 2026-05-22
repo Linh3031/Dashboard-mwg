@@ -10,6 +10,7 @@
     export let isVelocityMode = false;
     export let hasInventoryData = false;
     export let isCompareMode = false;
+    export let columnSettings = [];
 
     $: isExpanded = expandedRows.has(group.id);
     $: levelColor = LEVEL_COLORS[group.level] || 'text-gray-700';
@@ -18,26 +19,36 @@
     $: traChamPercent = group.revenue > 0 ? (group.revenueTraCham / group.revenue) * 100 : 0;
     $: qdPercent = group.revenue > 0 ? ((group.revenueQD / group.revenue) * 100) - 100 : 0;
 
+    $: isColVisible = (id) => {
+        const found = columnSettings.find(c => c.id === id);
+        return found ? found.visible : true;
+    };
+
+    // --- LOGIC GÓI DỮ LIỆU ĐỒNG BỘ MẪU TĂNG XANH DƯƠNG - GIẢM ĐỎ ---
+    $: getDiffVal = (curr, prev) => (curr || 0) - (prev || 0);
+    $: getPctVal = (curr, prev) => {
+        if (!prev) return curr > 0 ? 100 : 0;
+        return ((curr - prev) / prev) * 100;
+    };
+    $: fmtDiffText = (diff, formatter) => {
+        if (diff === 0) return '0';
+        return (diff > 0 ? '+' : '') + formatter(diff);
+    };
+    $: fmtPctText = (pct) => {
+        if (pct === 0) return '0.0%';
+        return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+    };
+    $: getColorClass = (val) => val >= 0 ? 'text-blue-600 font-semibold' : 'text-red-500 font-semibold';
+
     const getAlertClass = (status) => {
         if (status === 'alert') return 'text-red-600 font-bold bg-red-50';
         if (status === 'ok') return 'text-emerald-600 font-bold';
         return 'text-gray-400';
     };
-
     const fmtInt = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
-    
-    const getDiff = (current, prev) => (current || 0) - (prev || 0);
-    const getPct = (current, prev) => {
-        if (!prev) return current > 0 ? '+100%' : '0%';
-        const diff = current - prev;
-        const pct = (diff / prev) * 100;
-        return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
-    };
-    const getDiffColor = (diff) => diff >= 0 ? 'text-blue-600' : 'text-red-500';
-    const getDiffIcon = (diff) => diff >= 0 ? '▲' : '▼';
 </script>
 
-<tr class="hover:bg-gray-50 transition-colors border-b last:border-0 group-row">
+<tr class="hover:bg-gray-50 transition-colors border-b last:border-0 group-row text-xs">
     <td class="py-2 pr-4 border-r relative" style="padding-left: {paddingLeft}">
         <div class="flex items-center">
             {#if !group.isLeaf}
@@ -60,90 +71,71 @@
         {/if}
     </td>
 
-    <td class="py-2 px-4 text-right group relative">
-        <div class="flex items-center justify-end gap-1.5 font-medium text-gray-700">
-            <span>{fmtQty(group.quantity)}</span>
-            {#if isCompareMode && !isVelocityMode}
-                {@const diff = getDiff(group.quantity, group.quantityCK)}
-                <span class="text-gray-300 font-light">|</span>
-                <span class="text-xs {getDiffColor(diff)}">
-                    {diff > 0 ? '+' : ''}{fmtQty(diff)}
-                </span>
-            {/if}
-        </div>
+    {#if isColVisible('quantity')}
         {#if isCompareMode && !isVelocityMode}
-            {@const diff = getDiff(group.quantity, group.quantityCK)}
-            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">
-                {getDiffIcon(diff)} {getPct(group.quantity, group.quantityCK)}
-            </div>
-            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap">
-                Cùng kỳ: <b>{fmtQty(group.quantityCK)}</b> <br/>
-                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtQty(diff)} ({getPct(group.quantity, group.quantityCK)})</b>
-            </div>
+            {@const prev = group.quantityCK || 0} {@const curr = group.quantity || 0}
+            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+            <td class="py-2 px-1 text-right bg-sky-50/10 border-r">{fmtQty(prev)}</td>
+            <td class="py-2 px-1 text-right bg-sky-50/10 border-r font-medium text-gray-800">{fmtQty(curr)}</td>
+            <td class="py-2 px-1 text-right bg-sky-50/10 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtQty)}</td>
+            <td class="py-2 px-1 text-center bg-sky-50/10 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+        {:else}
+            <td class="py-2 px-4 text-right border-r font-medium text-gray-700">{fmtQty(group.quantity)}</td>
         {/if}
-    </td>
-    
-    <td class="py-2 px-4 text-right group relative">
-        <div class="flex items-center justify-end gap-1.5 font-medium text-gray-800">
-            <span>{fmtRev(group.revenue)}</span>
-            {#if isCompareMode && !isVelocityMode}
-                {@const diff = getDiff(group.revenue, group.revenueCK)}
-                <span class="text-gray-300 font-light">|</span>
-                <span class="text-xs {getDiffColor(diff)}">
-                    {diff > 0 ? '+' : ''}{fmtRev(diff)}
-                </span>
-            {/if}
-        </div>
-        {#if isCompareMode && !isVelocityMode}
-            {@const diff = getDiff(group.revenue, group.revenueCK)}
-            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">
-                {getDiffIcon(diff)} {getPct(group.revenue, group.revenueCK)}
-            </div>
-            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap">
-                Cùng kỳ: <b>{fmtRev(group.revenueCK)}</b> <br/>
-                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(group.revenue, group.revenueCK)})</b>
-            </div>
-        {/if}
-    </td>
+    {/if}
 
-    <td class="py-2 px-4 text-right font-medium text-amber-700 bg-amber-50/30">
-        {group.quantity > 0 ? fmtRev(group.revenue / group.quantity) : '-'}
-    </td>
-    
-    <td class="py-2 px-4 text-right group relative">
-        <div class="flex items-center justify-end gap-1.5 text-gray-600">
-            <span>{fmtRev(group.revenueQD)}</span>
-            {#if isCompareMode && !isVelocityMode}
-                {@const diff = getDiff(group.revenueQD, group.revenueQDCK)}
-                <span class="text-gray-300 font-light">|</span>
-                <span class="text-xs {getDiffColor(diff)} font-medium">
-                    {diff > 0 ? '+' : ''}{fmtRev(diff)}
-                </span>
-            {/if}
-        </div>
+    {#if isColVisible('revenue')}
         {#if isCompareMode && !isVelocityMode}
-            {@const diff = getDiff(group.revenueQD, group.revenueQDCK)}
-            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">
-                {getDiffIcon(diff)} {getPct(group.revenueQD, group.revenueQDCK)}
-            </div>
-            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap">
-                Cùng kỳ: <b>{fmtRev(group.revenueQDCK)}</b> <br/>
-                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(group.revenueQD, group.revenueQDCK)})</b>
-            </div>
+            {@const prev = group.revenueCK || 0} {@const curr = group.revenue || 0}
+            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+            <td class="py-2 px-1 text-right bg-blue-50/10 border-r">{fmtRev(prev)}</td>
+            <td class="py-2 px-1 text-right bg-blue-50/10 border-r font-medium text-gray-900">{fmtRev(curr)}</td>
+            <td class="py-2 px-1 text-right bg-blue-50/10 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+            <td class="py-2 px-1 text-center bg-blue-50/10 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+        {:else}
+            <td class="py-2 px-4 text-right border-r font-medium text-gray-800">{fmtRev(group.revenue)}</td>
         {/if}
-    </td>
+    {/if}
 
-    {#if !isVelocityMode}
-        <td class="py-2 px-4 text-center font-bold {qdPercent >= 0 ? 'text-green-700' : 'text-orange-600'}">
-            {fmtPct(qdPercent)}
-        </td>
+    {#if isColVisible('donGia')}
+        {#if isCompareMode && !isVelocityMode}
+            {@const prev = group.quantityCK > 0 ? group.revenueCK / group.quantityCK : 0}
+            {@const curr = group.quantity > 0 ? group.revenue / group.quantity : 0}
+            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+            <td class="py-2 px-1 text-right bg-amber-50/10 border-r">{fmtRev(prev)}</td>
+            <td class="py-2 px-1 text-right bg-amber-50/10 border-r font-medium text-amber-900">{fmtRev(curr)}</td>
+            <td class="py-2 px-1 text-right bg-amber-50/10 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+            <td class="py-2 px-1 text-center bg-amber-50/10 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+        {:else}
+            <td class="py-2 px-4 text-right border-r font-medium text-amber-700 bg-amber-50/10">
+                {group.quantity > 0 ? fmtRev(group.revenue / group.quantity) : '-'}
+            </td>
+        {/if}
+    {/if}
+
+    {#if isColVisible('revenueQD')}
+        {#if isCompareMode && !isVelocityMode}
+            {@const prev = group.revenueQDCK || 0} {@const curr = group.revenueQD || 0}
+            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+            <td class="py-2 px-1 text-right bg-indigo-50/10 border-r">{fmtRev(prev)}</td>
+            <td class="py-2 px-1 text-right bg-indigo-50/10 border-r font-medium text-gray-800">{fmtRev(curr)}</td>
+            <td class="py-2 px-1 text-right bg-indigo-50/10 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+            <td class="py-2 px-1 text-center bg-indigo-50/10 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+        {:else}
+            <td class="py-2 px-4 text-right border-r text-gray-600">{fmtRev(group.revenueQD)}</td>
+            {#if !isVelocityMode}
+                <td class="py-2 px-4 text-center font-bold border-r {qdPercent >= 0 ? 'text-green-700' : 'text-orange-600'}">
+                    {fmtPct(qdPercent)}
+                </td>
+            {/if}
+        {/if}
     {/if}
 
     {#if hasInventoryData}
-        <td class="py-2 px-4 text-right font-bold text-emerald-700 bg-emerald-50/30">
+        <td class="py-2 px-4 text-right font-bold text-emerald-700 bg-emerald-50/30 border-r">
              {group.inventoryQty !== undefined ? fmtInt(group.inventoryQty) : '-'}
         </td>
-        <td class="py-2 px-4 text-center text-xs {getAlertClass(group.inventoryStatus)}">
+        <td class="py-2 px-4 text-center text-xs {getAlertClass(group.inventoryStatus)} border-r">
             {#if group.inventoryStatus === 'alert'}
                 <div class="flex items-center justify-center gap-1">⚠️ {group.inventoryMessage}</div>
             {:else if group.inventoryStatus === 'ok'}
@@ -154,32 +146,20 @@
         </td>
     {/if}
 
-    {#if !isVelocityMode}
-        <td class="py-2 px-4 text-right bg-yellow-50/50 group relative">
-            <div class="flex items-center justify-end gap-1.5 text-yellow-700">
-                <span>{fmtRev(group.revenueTraCham)}</span>
-                {#if isCompareMode}
-                     {@const diff = getDiff(group.revenueTraCham, group.revenueTraChamCK)}
-                    <span class="text-yellow-200 font-light">|</span>
-                    <span class="text-xs {getDiffColor(diff)} font-medium">
-                        {diff > 0 ? '+' : ''}{fmtRev(diff)}
-                    </span>
-                {/if}
-            </div>
-            {#if isCompareMode}
-                {@const diff = getDiff(group.revenueTraCham, group.revenueTraChamCK)}
-                <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">
-                    {getDiffIcon(diff)} {getPct(group.revenueTraCham, group.revenueTraChamCK)}
-                </div>
-                <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap">
-                    Cùng kỳ: <b>{fmtRev(group.revenueTraChamCK)}</b> <br/>
-                    Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(group.revenueTraCham, group.revenueTraChamCK)})</b>
-                </div>
-            {/if}
-        </td>
-        <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold">
-            {fmtPct(traChamPercent)}
-        </td>
+    {#if isColVisible('revenueTraCham')}
+        {#if isCompareMode && !isVelocityMode}
+            {@const prev = group.revenueTraChamCK || 0} {@const curr = group.revenueTraCham || 0}
+            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+            <td class="py-2 px-1 text-right bg-yellow-50/10 border-r">{fmtRev(prev)}</td>
+            <td class="py-2 px-1 text-right bg-yellow-50/10 border-r font-medium text-yellow-900">{fmtRev(curr)}</td>
+            <td class="py-2 px-1 text-right bg-yellow-50/10 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+            <td class="py-2 px-1 text-center bg-yellow-50/10 {getColorClass(diff)}">{fmtPctText(pct)}</td>
+        {:else}
+            <td class="py-2 px-4 text-right bg-yellow-50/50 text-yellow-700 border-r">{fmtRev(group.revenueTraCham)}</td>
+            <td class="py-2 px-4 text-center text-yellow-700 bg-yellow-50/50 font-bold">
+                {fmtPct(traChamPercent)}
+            </td>
+        {/if}
     {/if}
 </tr>
 
@@ -194,6 +174,7 @@
             {isVelocityMode}
             {hasInventoryData} 
             {isCompareMode}
+            {columnSettings}
          />
     {/each}
 {/if}

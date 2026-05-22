@@ -11,60 +11,104 @@
     export let isVelocityMode = false;
     export let expandedRows = new Set();
     export let hasInventoryData = false;
-
     export let isCompareMode = false;
-    export let compareSortType = 'diff';
 
     export let sortKey = 'revenue'; 
     export let sortDirection = 'desc';
+    export let columnSettings = [];
 
     const dispatch = createEventDispatcher();
     let openFilterId = null;
     let filterSearchQuery = '';
+
+    $: isColVisible = (id) => {
+        const found = columnSettings.find(c => c.id === id);
+        return found ? found.visible : true;
+    };
 
     $: fmtQty = (n) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: isVelocityMode ? 1 : 0, minimumFractionDigits: isVelocityMode ? 1 : 0 }).format(n || 0);
     $: fmtRev = (n) => {
         if (!n) return '0';
         return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: isVelocityMode ? 1 : 0, minimumFractionDigits: isVelocityMode ? 1 : 0 }).format(n / 1000000);
     };
-    const fmtPct = (n) => (n || 0).toFixed(1) + '%';
+    $: fmtPct = (n) => (n || 0).toFixed(1) + '%';
     const LEVEL_COLORS = ['text-red-700 font-bold', 'text-blue-700 font-semibold', 'text-purple-700 font-medium', 'text-emerald-700', 'text-orange-700'];
-    
+
+    // --- LOGIC TÍNH TOÁN CHO KHỐI MATRIX TỔNG CỘNG ---
+    $: getDiffVal = (curr, prev) => (curr || 0) - (prev || 0);
+    $: getPctVal = (curr, prev) => {
+        if (!prev) return curr > 0 ? 100 : 0;
+        return ((curr - prev) / prev) * 100;
+    };
+    $: fmtDiffText = (diff, formatter) => {
+        if (diff === 0) return '0';
+        return (diff > 0 ? '+' : '') + formatter(diff);
+    };
+    $: fmtPctText = (pct) => {
+        if (pct === 0) return '0.0%';
+        return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+    };
+    $: getColorClass = (val) => val >= 0 ? 'text-blue-600 font-bold' : 'text-red-500 font-bold';
+
     function handleSort(key) {
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
         else { sortKey = key; sortDirection = 'desc'; }
     }
 
-    function sortTree(nodes, key, dir, sortType) {
+    function sortTree(nodes, key, dir) {
         if (!nodes || nodes.length === 0) return [];
         const sorted = [...nodes].sort((a, b) => {
             let valA, valB;
             if (key === 'percentQD') {
                 valA = a.revenue ? (a.revenueQD / a.revenue) : 0;
                 valB = b.revenue ? (b.revenueQD / b.revenue) : 0;
-            } else if (key === 'donGia') { // [GENESIS ADD]
+            } else if (key === 'donGia') {
                 valA = a.quantity ? (a.revenue / a.quantity) : 0;
                 valB = b.quantity ? (b.revenue / b.quantity) : 0;
+            } else if (key === 'donGia_prev') {
+                valA = a.quantityCK ? (a.revenueCK / a.quantityCK) : 0;
+                valB = b.quantityCK ? (b.revenueCK / b.quantityCK) : 0;
+            } else if (key === 'donGia_diff') {
+                const dgA = a.quantity ? (a.revenue / a.quantity) : 0;
+                const dgB = b.quantity ? (b.revenue / b.quantity) : 0;
+                const dgC_A = a.quantityCK ? (a.revenueCK / a.quantityCK) : 0;
+                const dgC_B = b.quantityCK ? (b.revenueCK / b.quantityCK) : 0;
+                valA = dgA - dgC_A;
+                valB = dgB - dgC_B;
+            } else if (key === 'donGia_pct') {
+                const dgA = a.quantity ? (a.revenue / a.quantity) : 0;
+                const dgB = b.quantity ? (b.revenue / b.quantity) : 0;
+                const dgC_A = a.quantityCK ? (a.revenueCK / a.quantityCK) : 0;
+                const dgC_B = b.quantityCK ? (b.revenueCK / b.quantityCK) : 0;
+                valA = dgC_A ? (dgA - dgC_A) / dgC_A : (dgA > 0 ? 999999 : 0);
+                valB = dgC_B ? (dgB - dgC_B) / dgC_B : (dgB > 0 ? 999999 : 0);
+            } else if (key.endsWith('_prev')) {
+                const baseKey = key.replace('_prev', '');
+                valA = a[`${baseKey}CK`] || 0;
+                valB = b[`${baseKey}CK`] || 0;
+            } else if (key.endsWith('_diff')) {
+                const baseKey = key.replace('_diff', '');
+                valA = (a[baseKey] || 0) - (a[`${baseKey}CK`] || 0);
+                valB = (b[baseKey] || 0) - (b[`${baseKey}CK`] || 0);
+            } else if (key.endsWith('_pct')) {
+                const baseKey = key.replace('_pct', '');
+                const currA = a[baseKey] || 0; const prevA = a[`${baseKey}CK`] || 0;
+                const currB = b[baseKey] || 0; const prevB = b[`${baseKey}CK`] || 0;
+                valA = prevA ? (currA - prevA) / prevA : (currA > 0 ? 999999 : 0);
+                valB = prevB ? (currB - prevB) / prevB : (currB > 0 ? 999999 : 0);
             } else {
-                if (isCompareMode && !isVelocityMode) {
-                    const currA = a[key] || 0; const prevA = a[`${key}CK`] || 0;
-                    const currB = b[key] || 0; const prevB = b[`${key}CK`] || 0;
-                    
-                    if (sortType === 'current') { valA = currA; valB = currB; } 
-                    else if (sortType === 'diff') { valA = currA - prevA; valB = currB - prevB; } 
-                    else if (sortType === 'percent') { valA = prevA ? (currA - prevA) / prevA : (currA > 0 ? 999999 : 0); valB = prevB ? (currB - prevB) / prevB : (currB > 0 ? 999999 : 0); }
-                } else { valA = a[key] || 0; valB = b[key] || 0; }
+                valA = a[key] || 0;
+                valB = b[key] || 0;
             }
             return dir === 'asc' ? valA - valB : valB - valA;
         });
         return sorted.map(node => {
-            if (node.children && node.children.length > 0) return { ...node, children: sortTree(node.children, key, dir, sortType) };
+            if (node.children && node.children.length > 0) return { ...node, children: sortTree(node.children, key, dir) };
             return node;
         });
     }
 
-    $: sortedData = sortTree(data, sortKey, sortDirection, compareSortType);
-    
+    $: sortedData = sortTree(data, sortKey, sortDirection);
     function toggleRow(id) {
         if (expandedRows.has(id)) expandedRows.delete(id); else expandedRows.add(id);
         expandedRows = expandedRows;
@@ -96,9 +140,7 @@
         }
     }
     
-    function clearFilter(dimId) { 
-        dispatch('filterChange', { key: dimId, selected: undefined });
-    }
+    function clearFilter(dimId) { dispatch('filterChange', { key: dimId, selected: undefined }); }
     
     $: getDisplayOptions = (dimId) => {
         const options = filterOptions[dimId] || [];
@@ -112,23 +154,13 @@
             return a.localeCompare(b);
         });
     };
-    
     function handleDimensionToggle(dimId) {
         let newIds = [...activeIds];
         if (newIds.includes(dimId)) newIds = newIds.filter(id => id !== dimId); else newIds.push(dimId);
         dispatch('configChange', newIds);
     }
 
-    $: iconClass = (key) => sortKey === key ? 'text-blue-600' : 'text-gray-300 group-hover:text-gray-500';
-    const getDiff = (current, prev) => (current || 0) - (prev || 0);
-    const getPct = (current, prev) => {
-        if (!prev) return current > 0 ? '+100%' : '0%';
-        const diff = current - prev; const pct = (diff / prev) * 100;
-        return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
-    };
-    const getDiffColor = (diff) => diff >= 0 ? 'text-blue-600' : 'text-red-500';
-    const getDiffIcon = (diff) => diff >= 0 ? '▲' : '▼';
-    $: sortLabel = compareSortType === 'current' ? 'Số hiện tại' : (compareSortType === 'diff' ? 'Chênh lệch' : 'Tỷ lệ %');
+    $: getArrow = (key) => sortKey === key ? (sortDirection === 'desc' ? ' ↓' : ' ↑') : '';
 </script>
 
 <div class="bg-white p-4 rounded-lg shadow-sm mb-4 border border-gray-200 luyke-filter-section">
@@ -138,6 +170,7 @@
             {@const activeIndex = activeIds.indexOf(dim.id)}
             {@const isActive = activeIndex > -1}
             {@const hasFilter = currentFilters[dim.id] !== undefined}
+        
             <div class="relative group">
                 <div class="flex items-center rounded-md border {isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'} hover:shadow-md transition-all">
                     <button class="px-3 py-1.5 text-sm flex items-center gap-2 {isActive ? 'text-blue-700 font-medium' : 'text-gray-600'}" on:click={() => handleDimensionToggle(dim.id)}>
@@ -145,6 +178,7 @@
                         {:else}<span class="w-4 h-4 rounded border border-gray-400"></span>{/if}
                         {dim.label}
                     </button>
+                   
                     <button class="px-2 py-1.5 border-l border-gray-200 hover:bg-gray-100 {hasFilter ? 'text-blue-600' : 'text-gray-400'}" on:click|stopPropagation={() => toggleFilterDropdown(dim.id)}>
                          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                     </button>
@@ -160,6 +194,7 @@
                                  {/if}
                              </div>
                          </div>
+                        
                          <input type="text" bind:value={filterSearchQuery} placeholder="Tìm kiếm..." class="w-full text-sm border border-gray-300 rounded px-2 py-1.5 mb-2 focus:outline-none focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors"/>
                          <div class="max-h-56 overflow-y-auto space-y-1 custom-scrollbar">
                             {#each getDisplayOptions(dim.id) as option (option)}
@@ -180,183 +215,204 @@
                     <div class="fixed inset-0 z-40" on:click={() => openFilterId = null}></div>
                 {/if}
             </div>
-         {/each}
+          {/each}
     </div>
 </div>
 
-<div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200 luyke-table-wrapper">
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm text-left">
-            <thead class="bg-gray-100 text-gray-700 uppercase font-bold sticky top-0 z-10">
-                <tr>
-                    <th class="py-3 px-4 border-b border-r {isVelocityMode ? 'w-[300px] max-w-[300px]' : 'w-auto min-w-[200px]'}">
+<div class="bg-white rounded-lg shadow border border-gray-200 luyke-table-wrapper">
+    <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-xs text-left border-collapse">
+            <thead class="text-gray-700 uppercase font-bold sticky top-0 z-20 shadow-sm">
+                <tr class="bg-gray-100 text-[11px]">
+                    <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-3 px-4 border-b border-r bg-gray-100 text-gray-700 align-middle text-left {isVelocityMode ? 'w-[250px] max-w-[250px]' : 'w-auto min-w-[180px]'}">
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
-                             <div class="flex gap-1 ml-auto">
-                                 <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
+                             <div class="flex gap-1 ml-auto capture-hide">
+                               <button on:click={() => expandAll(data)} class="p-1 hover:bg-gray-200 rounded" title="Mở rộng"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg></button>
                                 <button on:click={collapseAll} class="p-1 hover:bg-gray-200 rounded" title="Thu gọn"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg></button>
                             </div>
                         </div>
                     </th>
-                 
-                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('quantity')} title="Sắp xếp theo Số lượng">
-                        <div class="flex items-center justify-end gap-1">
-                            {isVelocityMode ? 'SL TB/Ngày' : 'SL'}
-                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('quantity')}">▲▼</div>
-                        </div>
-                        {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
-                    </th>
-                    
-                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenue')} title="Sắp xếp theo Doanh thu thực">
-                        <div class="flex items-center justify-end gap-1">
-                            {isVelocityMode ? 'DT TB/Ngày' : 'DT thực'} 
-                            <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenue')}">▲▼</div>
-                        </div>
-                        {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
-                    </th>
 
-                    <th class="py-3 px-4 text-right border-b w-32 cursor-pointer hover:bg-amber-100 bg-amber-50/50 transition-colors select-none group relative" on:click={() => handleSort('donGia')} title="Sắp xếp theo Đơn giá">
-                         <div class="flex items-center justify-end gap-1 text-amber-800">
-                             Đơn giá
-                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('donGia')}">▲▼</div>
-                        </div>
-                    </th>
-
-                    <th class="py-3 px-4 text-right border-b w-40 cursor-pointer hover:bg-gray-200 transition-colors select-none group relative" on:click={() => handleSort('revenueQD')} title="Sắp xếp theo DT Quy đổi">
-                         <div class="flex items-center justify-end gap-1">
-                             {isVelocityMode ? 'DT QĐ/Ngày' : 'DT Quy đổi'} 
-                             <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueQD')}">▲▼</div>
-                        </div>
-                        {#if isCompareMode && !isVelocityMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
-                    </th>
-
-                    {#if !isVelocityMode}
-                        <th class="py-3 px-4 text-center border-b w-24 cursor-pointer hover:bg-gray-200 transition-colors select-none group" on:click={() => handleSort('percentQD')} title="Sắp xếp theo % Quy đổi">
-                             <div class="flex items-center justify-center gap-1">
-                                % QĐ
-                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('percentQD')}">▲▼</div>
-                             </div>
+                    {#if isColVisible('quantity')}
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-sky-100 text-sky-900 border-sky-200 align-middle cursor-pointer select-none" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('quantity'); }}>
+                            {isVelocityMode ? 'SL TB / Ngày' : 'Số lượng (SL)'}{getArrow('quantity')}
                         </th>
+                    {/if}
+                    
+                    {#if isColVisible('revenue')}
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-blue-100 text-blue-900 border-blue-200 align-middle cursor-pointer select-none" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenue'); }}>
+                            {isVelocityMode ? 'DT TB / Ngày' : 'Doanh thu thực'}{getArrow('revenue')}
+                        </th>
+                    {/if}
+
+                    {#if isColVisible('donGia')}
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-amber-100 text-amber-900 border-amber-200 align-middle cursor-pointer select-none" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('donGia'); }}>
+                            Đơn giá (Tr){getArrow('donGia')}
+                        </th>
+                    {/if}
+
+                    {#if isColVisible('revenueQD')}
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-indigo-100 text-indigo-900 border-indigo-200 align-middle cursor-pointer select-none" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenueQD'); }}>
+                            {isVelocityMode ? 'DT QĐ / Ngày' : 'Doanh thu Quy đổi'}{getArrow('revenueQD')}
+                        </th>
+                        {#if !isVelocityMode && !isCompareMode}
+                            <th class="py-2.5 px-2 text-center border-b border-r bg-indigo-50 text-indigo-900 align-middle cursor-pointer select-none" on:click={() => handleSort('percentQD')}>
+                                % QĐ{getArrow('percentQD')}
+                            </th>
+                        {/if}
                     {/if}
                     
                     {#if hasInventoryData}
-                        <th class="py-3 px-4 text-right border-b w-32 bg-emerald-50 text-emerald-800">SL Tồn kho</th>
-                        <th class="py-3 px-4 text-center border-b w-32 bg-red-50 text-red-800">Cảnh báo</th>
+                        <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-2.5 px-2 text-right border-b border-r bg-emerald-50 text-emerald-800 align-middle">SL Tồn</th>
+                        <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-2.5 px-2 text-center border-b border-r bg-red-50 text-red-800 align-middle">Cảnh báo</th>
                     {/if}
-                
-                    {#if !isVelocityMode}
-                        <th class="py-3 px-4 text-right border-b w-40 bg-yellow-50 cursor-pointer hover:bg-yellow-100 transition-colors select-none group relative" on:click={() => handleSort('revenueTraCham')} title="Sắp xếp theo Trả chậm">
-                            <div class="flex items-center justify-end gap-1">
-                                 DT Trả chậm 
-                                <div class="flex flex-col text-[10px] leading-[8px] {iconClass('revenueTraCham')}">▲▼</div>
-                            </div>
-                            {#if isCompareMode}<div class="text-[9px] text-green-600 font-normal absolute bottom-1 right-4 tracking-tight">(Sort: {sortLabel})</div>{/if}
+                    
+                    {#if isColVisible('revenueTraCham')}
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-yellow-100 text-yellow-900 border-yellow-200 align-middle cursor-pointer select-none" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenueTraCham'); }}>
+                            DT Trả chậm{getArrow('revenueTraCham')}
                         </th>
-                        <th class="py-3 px-4 text-center border-b w-24 bg-yellow-50">% Trả chậm</th>
+                        {#if !isVelocityMode && !isCompareMode}
+                            <th class="py-2.5 px-2 text-center border-b bg-yellow-50 text-yellow-900 align-middle">% Trả chậm</th>
+                        {/if}
                     {/if}
                 </tr>
                 
-                <tr class="bg-blue-50 font-bold text-blue-800 border-b-2 border-blue-200">
-                    <td class="py-3 px-4 border-r">TỔNG CỘNG</td>
-                    <td class="py-3 px-4 text-right group relative">
-                        <div class="flex items-center justify-end gap-1.5">
-                            <span>{fmtQty(totalMetrics.quantity)}</span>
-                            {#if isCompareMode && !isVelocityMode}
-                                {@const diff = getDiff(totalMetrics.quantity, totalMetrics.quantityCK)}
-                                <span class="text-blue-300 font-light">|</span>
-                                <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtQty(diff)}</span>
-                            {/if}
-                        </div>
-                        {#if isCompareMode && !isVelocityMode}
-                            {@const diff = getDiff(totalMetrics.quantity, totalMetrics.quantityCK)}
-                            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.quantity, totalMetrics.quantityCK)}</div>
-                            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                Tổng Cùng kỳ: <b>{fmtQty(totalMetrics.quantityCK)}</b> <br/>
-                                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtQty(diff)} ({getPct(totalMetrics.quantity, totalMetrics.quantityCK)})</b>
-                            </div>
+                {#if isCompareMode && !isVelocityMode}
+                    <tr class="bg-gray-50 text-[10px] text-center">
+                        {#if isColVisible('quantity')}
+                            <th class="py-1 px-1 text-right bg-sky-50/60 border-b border-r cursor-pointer hover:bg-sky-100" on:click={() => handleSort('quantity_prev')}>Năm trước{getArrow('quantity_prev')}</th>
+                            <th class="py-1 px-1 text-right bg-sky-50/60 border-b border-r cursor-pointer hover:bg-sky-100" on:click={() => handleSort('quantity')}>Năm nay{getArrow('quantity')}</th>
+                            <th class="py-1 px-1 text-right bg-sky-50/60 border-b border-r cursor-pointer hover:bg-sky-100" on:click={() => handleSort('quantity_diff')}>+/- Tăng giảm{getArrow('quantity_diff')}</th>
+                            <th class="py-1 px-1 text-center bg-sky-50/60 border-b border-r cursor-pointer hover:bg-sky-100" on:click={() => handleSort('quantity_pct')}>% Tỷ lệ{getArrow('quantity_pct')}</th>
                         {/if}
-                    </td>
+                        {#if isColVisible('revenue')}
+                            <th class="py-1 px-1 text-right bg-blue-50/60 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_prev')}>Năm trước{getArrow('revenue_prev')}</th>
+                            <th class="py-1 px-1 text-right bg-blue-50/60 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue')}>Năm nay{getArrow('revenue')}</th>
+                            <th class="py-1 px-1 text-right bg-blue-50/60 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_diff')}>+/- Tăng giảm{getArrow('revenue_diff')}</th>
+                            <th class="py-1 px-1 text-center bg-blue-50/60 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_pct')}>% Tỷ lệ{getArrow('revenue_pct')}</th>
+                        {/if}
+                        {#if isColVisible('donGia')}
+                            <th class="py-1 px-1 text-right bg-amber-50/60 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_prev')}>Năm trước{getArrow('donGia_prev')}</th>
+                            <th class="py-1 px-1 text-right bg-amber-50/60 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia')}>Năm nay{getArrow('donGia')}</th>
+                            <th class="py-1 px-1 text-right bg-amber-50/60 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_diff')}>+/- Tăng giảm{getArrow('donGia_diff')}</th>
+                            <th class="py-1 px-1 text-center bg-amber-50/60 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_pct')}>% Tỷ lệ{getArrow('donGia_pct')}</th>
+                        {/if}
+                        {#if isColVisible('revenueQD')}
+                            <th class="py-1 px-1 text-right bg-indigo-50/60 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_prev')}>Năm trước{getArrow('revenueQD_prev')}</th>
+                            <th class="py-1 px-1 text-right bg-indigo-50/60 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD')}>Năm nay{getArrow('revenueQD')}</th>
+                            <th class="py-1 px-1 text-right bg-indigo-50/60 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_diff')}>+/- Tăng giảm{getArrow('revenueQD_diff')}</th>
+                            <th class="py-1 px-1 text-center bg-indigo-50/60 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_pct')}>% Tỷ lệ{getArrow('revenueQD_pct')}</th>
+                        {/if}
+                        {#if isColVisible('revenueTraCham')}
+                            <th class="py-1 px-1 text-right bg-yellow-50/60 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_prev')}>Năm trước{getArrow('revenueTraCham_prev')}</th>
+                            <th class="py-1 px-1 text-right bg-yellow-50/60 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham')}>Năm nay{getArrow('revenueTraCham')}</th>
+                            <th class="py-1 px-1 text-right bg-yellow-50/60 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_diff')}>+/- Tăng giảm{getArrow('revenueTraCham_diff')}</th>
+                            <th class="py-1 px-1 text-center bg-yellow-50/60 border-b cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_pct')}>% Tỷ lệ{getArrow('revenueTraCham_pct')}</th>
+                        {/if}
+                    </tr>
+                {/if}
+                
+                <tr class="bg-blue-50 text-blue-800 font-bold border-b-2 border-blue-200">
+                    <td class="py-3 px-4 border-r font-black">TỔNG CỘNG</td>
                     
-                    <td class="py-3 px-4 text-right group relative">
-                        <div class="flex items-center justify-end gap-1.5">
-                            <span>{fmtRev(totalMetrics.revenue)}</span>
-                            {#if isCompareMode && !isVelocityMode}
-                                {@const diff = getDiff(totalMetrics.revenue, totalMetrics.revenueCK)}
-                                <span class="text-blue-300 font-light">|</span>
-                                <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtRev(diff)}</span>
-                            {/if}
-                        </div>
+                    {#if isColVisible('quantity')}
                         {#if isCompareMode && !isVelocityMode}
-                            {@const diff = getDiff(totalMetrics.revenue, totalMetrics.revenueCK)}
-                            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenue, totalMetrics.revenueCK)}</div>
-                            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                 Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueCK)}</b> <br/>
-                                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenue, totalMetrics.revenueCK)})</b>
-                            </div>
+                            {@const prev = totalMetrics.quantityCK || 0} {@const curr = totalMetrics.quantity || 0}
+                            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+                            <td class="py-2 px-1 text-right bg-sky-50/30 border-r">{fmtQty(prev)}</td>
+                            <td class="py-2 px-1 text-right bg-sky-50/30 border-r">{fmtQty(curr)}</td>
+                            <td class="py-2 px-1 text-right bg-sky-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtQty)}</td>
+                            <td class="py-2 px-1 text-center bg-sky-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+                        {:else}
+                            <td class="py-3 px-4 text-right border-r font-black">{fmtQty(totalMetrics.quantity)}</td>
                         {/if}
-                    </td>
+                    {/if}
 
-                    <td class="py-3 px-4 text-right bg-amber-50/50 text-amber-800">
-                        {totalMetrics.quantity > 0 ? fmtRev(totalMetrics.revenue / totalMetrics.quantity) : '-'}
-                    </td>
-
-                    <td class="py-3 px-4 text-right group relative">
-                        <div class="flex items-center justify-end gap-1.5">
-                            <span>{fmtRev(totalMetrics.revenueQD)}</span>
-                            {#if isCompareMode && !isVelocityMode}
-                                {@const diff = getDiff(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}
-                                <span class="text-blue-300 font-light">|</span>
-                                <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtRev(diff)}</span>
-                            {/if}
-                        </div>
+                    {#if isColVisible('revenue')}
                         {#if isCompareMode && !isVelocityMode}
-                            {@const diff = getDiff(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}
-                            <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)}</div>
-                            <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                 Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueQDCK)}</b> <br/>
-                                Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenueQD, totalMetrics.revenueQDCK)})</b>
-                            </div>
+                            {@const prev = totalMetrics.revenueCK || 0} {@const curr = totalMetrics.revenue || 0}
+                            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+                            <td class="py-2 px-1 text-right bg-blue-50/30 border-r">{fmtRev(prev)}</td>
+                            <td class="py-2 px-1 text-right bg-blue-50/30 border-r">{fmtRev(curr)}</td>
+                            <td class="py-2 px-1 text-right bg-blue-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+                            <td class="py-2 px-1 text-center bg-blue-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+                        {:else}
+                            <td class="py-3 px-4 text-right border-r font-black text-blue-700">{fmtRev(totalMetrics.revenue)}</td>
                         {/if}
-                    </td>
-                    
-                    {#if !isVelocityMode}
-                        <td class="py-3 px-4 text-center">{totalMetrics.revenue > 0 ? fmtPct(((totalMetrics.revenueQD / totalMetrics.revenue) * 100) - 100) : '0%'}</td>
+                    {/if}
+
+                    {#if isColVisible('donGia')}
+                        {#if isCompareMode && !isVelocityMode}
+                            {@const prev = totalMetrics.quantityCK > 0 ? totalMetrics.revenueCK / totalMetrics.quantityCK : 0}
+                            {@const curr = totalMetrics.quantity > 0 ? totalMetrics.revenue / totalMetrics.quantity : 0}
+                            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+                            <td class="py-2 px-1 text-right bg-amber-50/30 border-r">{fmtRev(prev)}</td>
+                            <td class="py-2 px-1 text-right bg-amber-50/30 border-r">{fmtRev(curr)}</td>
+                            <td class="py-2 px-1 text-right bg-amber-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+                            <td class="py-2 px-1 text-center bg-amber-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+                        {:else}
+                            <td class="py-3 px-4 text-right border-r bg-amber-50/50 text-amber-800">
+                                {totalMetrics.quantity > 0 ? fmtRev(totalMetrics.revenue / totalMetrics.quantity) : '-'}
+                            </td>
+                        {/if}
+                    {/if}
+
+                    {#if isColVisible('revenueQD')}
+                        {#if isCompareMode && !isVelocityMode}
+                            {@const prev = totalMetrics.revenueQDCK || 0} {@const curr = totalMetrics.revenueQD || 0}
+                            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+                            <td class="py-2 px-1 text-right bg-indigo-50/30 border-r">{fmtRev(prev)}</td>
+                            <td class="py-2 px-1 text-right bg-indigo-50/30 border-r">{fmtRev(curr)}</td>
+                            <td class="py-2 px-1 text-right bg-indigo-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+                            <td class="py-2 px-1 text-center bg-indigo-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+                        {:else}
+                            <td class="py-3 px-4 text-right border-r font-black">{fmtRev(totalMetrics.revenueQD)}</td>
+                            {#if !isVelocityMode}
+                                <td class="py-3 px-4 text-center border-r">{totalMetrics.revenue > 0 ? fmtPct(((totalMetrics.revenueQD / totalMetrics.revenue) * 100) - 100) : '0%'}</td>
+                            {/if}
+                        {/if}
                     {/if}
 
                     {#if hasInventoryData}
                         <td class="py-3 px-4 bg-emerald-100 border-r border-white"></td>
-                        <td class="py-3 px-4 bg-red-100"></td>
+                        <td class="py-3 px-4 bg-red-100 border-r"></td>
                     {/if}
 
-                    {#if !isVelocityMode}
-                        <td class="py-3 px-4 text-right bg-yellow-100 group relative">
-                            <div class="flex items-center justify-end gap-1.5">
-                                <span>{fmtRev(totalMetrics.revenueTraCham)}</span>
-                                {#if isCompareMode}
-                                    {@const diff = getDiff(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)}
-                                    <span class="text-yellow-400 font-light">|</span>
-                                    <span class="text-xs {getDiffColor(diff)} bg-white/60 px-1 rounded">{diff > 0 ? '+' : ''}{fmtRev(diff)}</span>
-                                {/if}
-                            </div>
-                            {#if isCompareMode}
-                                {@const diff = getDiff(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)}
-                                <div class="text-[10px] font-bold mt-0.5 {getDiffColor(diff)}">{getDiffIcon(diff)} {getPct(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)}</div>
-                                <div class="hidden group-hover:block absolute bottom-full right-0 mb-1 w-max px-3 py-2 bg-gray-800 text-white text-xs rounded shadow-lg z-50 pointer-events-none whitespace-nowrap font-normal">
-                                    Tổng Cùng kỳ: <b>{fmtRev(totalMetrics.revenueTraChamCK)}</b> <br/>
-                                    Chênh lệch: <b class="{diff >= 0 ? 'text-blue-300' : 'text-red-300'}">{diff > 0 ? '+' : ''}{fmtRev(diff)} ({getPct(totalMetrics.revenueTraCham, totalMetrics.revenueTraChamCK)})</b>
-                                </div>
-                            {/if}
-                        </td>
-                        <td class="py-3 px-4 text-center bg-yellow-100">{totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}</td>
+                    {#if isColVisible('revenueTraCham')}
+                        {#if isCompareMode && !isVelocityMode}
+                            {@const prev = totalMetrics.revenueTraChamCK || 0} {@const curr = totalMetrics.revenueTraCham || 0}
+                            {@const diff = getDiffVal(curr, prev)} {@const pct = getPctVal(curr, prev)}
+                            <td class="py-2 px-1 text-right bg-yellow-50/30 border-r">{fmtRev(prev)}</td>
+                            <td class="py-2 px-1 text-right bg-yellow-50/30 border-r">{fmtRev(curr)}</td>
+                            <td class="py-2 px-1 text-right bg-yellow-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
+                            <td class="py-2 px-1 text-center bg-yellow-50/30 {getColorClass(diff)}">{fmtPctText(pct)}</td>
+                        {:else}
+                            <td class="py-3 px-4 text-right bg-yellow-100 border-r">{fmtRev(totalMetrics.revenueTraCham)}</td>
+                            <td class="py-3 px-4 text-center bg-yellow-100">{totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}</td>
+                        {/if}
                     {/if}
                 </tr>
             </thead>
+            
             <tbody>
                 {#if sortedData.length === 0}
-                    <tr><td colspan="{isVelocityMode ? (hasInventoryData ? 7 : 5) : (hasInventoryData ? 10 : 8)}" class="text-center py-10 text-gray-500">Chưa có dữ liệu</td></tr>
+                    <tr><td colspan="30" class="text-center py-10 text-gray-500 font-medium">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as group (group.id)}
-                        <TableRowRecursive {group} {expandedRows} {toggleRow} {LEVEL_COLORS} {fmtQty} {fmtRev} {fmtPct} {isVelocityMode} {hasInventoryData} {isCompareMode} />
+                        <TableRowRecursive 
+                            {group} 
+                            {expandedRows} 
+                            {toggleRow} 
+                            {LEVEL_COLORS} 
+                            {fmtQty} 
+                            {fmtRev} 
+                            {fmtPct} 
+                            {isVelocityMode} 
+                            {hasInventoryData} 
+                            {isCompareMode} 
+                            {columnSettings}
+                        />
                     {/each}
                 {/if}
             </tbody>
@@ -367,26 +423,47 @@
 <style>
     .animate-fade-in-down { animation: fadeInDown 0.2s ease-out; }
     @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    
     :global(.cell-alert) { color: #c02424; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px; }
     :global(.cell-ok) { color: #059669; font-weight: bold; text-align: center; }
 
-    /* [CAPTURE STYLE FIX] - Tăng kích thước bao ngoài để chứa đủ cột dữ liệu và xóa tràn overflow */
+    /* ==========================================================================
+       BẢO TOÀN CAPTURE: BẢO VỆ CHIỀU RỘNG MA TRẬN PHẲNG, KHÔNG BỊ XÉN DỮ LIỆU
+       ========================================================================== */
     :global(.capture-container .luyke-filter-section) { display: none !important; }
     :global(.capture-container .velocity-toolbar) { display: none !important; }
+    
     :global(.capture-container .luyke-table-wrapper) {
-        width: 1150px !important; /* Nới rộng ra 100px để chứa cột đơn giá */
-        min-width: 1150px !important; 
-        max-width: 1150px !important;
-        margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
+        width: max-content !important;
+        min-width: 100% !important;
+        max-width: none !important;
+        margin: 0 auto !important; 
+        border-radius: 0 !important; 
+        border: none !important; 
+        box-shadow: none !important;
     }
-    :global(.capture-container .overflow-x-auto) { overflow: visible !important; }
-    :global(.capture-container .overflow-y-auto) { overflow: visible !important; }
-
-    :global(.capture-container .luyke-table-wrapper table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
-    :global(.capture-container .luyke-table-wrapper th),
-    :global(.capture-container .luyke-table-wrapper td) {
-        padding: 8px 6px !important; white-space: normal !important; overflow: visible !important;
-        height: auto !important; line-height: 1.5 !important; font-size: 14px !important;
+    :global(.capture-container .overflow-x-auto) { 
+        overflow: visible !important; 
+        width: auto !important;
+        max-width: none !important;
     }
-    :global(.capture-container .luyke-table-wrapper th:first-child) { min-width: 150px !important; width: auto !important; }
+    :global(.capture-container table) { 
+        width: 100% !important; 
+        font-family: 'Segoe UI', sans-serif !important; 
+    }
+    :global(.capture-container th), :global(.capture-container td) {
+        padding: 7px 5px !important;
+        white-space: nowrap !important; 
+        overflow: visible !important;
+        height: auto !important; 
+        line-height: 1.4 !important; 
+        font-size: 13px !important;
+    }
+    :global(.capture-container th[colspan]) {
+        white-space: normal !important;
+    }
+    :global(.capture-container th:first-child), :global(.capture-container td:first-child) { 
+        min-width: 160px !important; 
+        white-space: normal !important;
+    }
 </style>

@@ -55,6 +55,7 @@ src/components/modals
 src/components/modals/AddMetricModal.svelte
 src/components/modals/CustomerDetailModal.svelte
 src/components/modals/StEmpCompetitionModal.svelte
+src/components/modals/QuickGoalModal.svelte
 src/components/modals/AddPerformanceTableModal.svelte
 src/components/modals/CapturePreviewModal.svelte
 src/components/modals/AddEfficiencyColumnModal.svelte
@@ -166,6 +167,7 @@ src/components/luyke/dtcknam/DtCkNamLogic.js
 src/components/luyke/dtcknam/KpiBoard.svelte
 src/components/luyke/dtcknam/DtCkNamRow.svelte
 src/components/luyke/dtcknam/SsgNamTable.svelte
+src/components/luyke/LuykeThiDuaAllKho.svelte
 src/components/luyke/LuykeUnexportedTable.svelte
 src/components/luyke/TdvTop20Modal.svelte
 src/components/luyke/ThiDuaVungTNB.svelte
@@ -222,6 +224,7 @@ src/services/capture/processors/competition-grid.js
 src/services/capture/processors/default.js
 src/services/capture/processors/kpi-grid.js
 src/services/capture/engine.js
+src/services/batchCapture.service.js
 src/services/datasync.service.js
 src/services/processing
 src/services/processing/parsers
