@@ -1,9 +1,13 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import { get } from 'svelte/store'; // [PHẪU THUẬT] Import get để hút dữ liệu
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
-  import { kpiStore } from '../../../stores.js';
+  import { kpiStore, realtimeYCXData } from '../../../stores.js'; // [PHẪU THUẬT] Bổ sung realtimeYCXData
   import { getCompletionColor } from '../../../utils/kpi.utils.js';
+
+  import { batchCaptureService } from '../../../services/batchCapture.service.js';
+  import EmployeeDetail from './EmployeeDetail.svelte';
 
   export let reportData = [];
   const dispatch = createEventDispatcher();
@@ -13,7 +17,8 @@
   let groupedData = {};
   let departmentOrder = [];
   
-  // Reactive statement để nhóm dữ liệu
+  $: flatSortedData = [...reportData].sort((a, b) => (Number(b.doanhThuQuyDoi) || 0) - (Number(a.doanhThuQuyDoi) || 0));
+
   $: {
       groupedData = {};
       if (reportData && reportData.length > 0) {
@@ -28,7 +33,6 @@
       }
   }
 
-  // Logic tính tổng toàn bộ
   $: totalStats = reportData.reduce((acc, item) => {
       acc.doanhThu += Number(item.doanhThu) || 0;
       acc.doanhThuQuyDoi += Number(item.doanhThuQuyDoi) || 0;
@@ -37,10 +41,9 @@
       return acc;
   }, { doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuQuyDoiChuaXuat: 0 });
   
-  // Công thức tính % tổng
   $: totalPctQD = totalStats.doanhThu > 0 ? (totalStats.doanhThuQuyDoi / totalStats.doanhThu) - 1 : 0;
   $: totalPctTC = totalStats.doanhThu > 0 ? (totalStats.doanhThuTraGop / totalStats.doanhThu) : 0;
-  
+
   function handleSort(key) {
     if (sortKey === key) {
       sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -59,7 +62,6 @@
       }
       let valA = Number(a[key]) || 0;
       let valB = Number(b[key]) || 0;
-     
       return dir === 'asc' ? valA - valB : valB - valA;
     });
   }
@@ -71,22 +73,21 @@
     return 'bg-gray-100 text-gray-800 border-gray-200';
   }
 
-  // --- LOGIC GAMIFICATION TÍNH THEO TỪNG BỘ PHẬN ---
   function getRowStyle(index, totalCount) {
       const topCount = totalCount <= 15 ? 3 : 5;
       if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100'; 
-      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (index === 1) return 'bg-slate-100 hover:bg-slate-200';
       if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100'; 
-      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100';
       return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
   }
 
   function getStickyClass(index, totalCount) {
       const topCount = totalCount <= 15 ? 3 : 5;
       if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100'; 
-      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
+      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200';
       if (index === 2) return 'bg-orange-50 group-hover:bg-orange-100'; 
-      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
+      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100';
       return index % 2 === 0 ? 'bg-white group-hover:bg-blue-50' : 'bg-slate-50 group-hover:bg-blue-50';
   }
 
@@ -98,11 +99,55 @@
       if (index < topCount) return '⭐';
       return `#${index + 1}`;
   }
+
+  // [LOGIC MỚI] XỬ LÝ CHỤP HÀNG LOẠT (Truyền thẳng Object + Dữ liệu YCX)
+  function handleBatchCapture(event) {
+      const mode = event.target.value;
+      if (!mode) return;
+
+      let targetData = [];
+      if (mode === 'top5') targetData = flatSortedData.slice(0, 5);
+      else if (mode === 'bot5') targetData = flatSortedData.slice(-5);
+      else if (mode === 'all') targetData = flatSortedData;
+
+      // Hút thẳng dữ liệu từ Store để đề phòng Svelte cắt đứt kết nối khi render ngầm
+      const currentYcx = get(realtimeYCXData);
+
+      batchCaptureService.captureBatch(
+          EmployeeDetail, 
+          targetData, 
+          "DT_Realtime", 
+          (empObj) => ({ employee: empObj, injectedYcxData: currentYcx }) // Bơm thẳng vào dạ dày Component
+      );
+
+      event.target.value = ""; // Reset dropdown
+  }
 </script>
 
-<div class="space-y-8" data-capture-group="revenue-detail-mobile">
+<div class="space-y-6" data-capture-group="revenue-detail-mobile">
+
+  <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+      <div class="text-sm font-bold text-gray-700 flex items-center gap-2">
+          <i data-feather="list" class="w-4 h-4"></i> Danh sách theo bộ phận
+      </div>
+      <div class="relative flex items-center">
+          <div class="absolute left-3 text-blue-600 pointer-events-none flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+          </div>
+          <select class="text-sm font-bold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg shadow-sm py-2 pl-9 pr-8 focus:outline-none focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  on:change={handleBatchCapture}>
+              <option value="" disabled selected>Chụp Hàng Loạt</option>
+              <option value="top5">Chụp Top 5 NV (DTQĐ)</option>
+              <option value="bot5">Chụp Bot 5 NV (DTQĐ)</option>
+              <option value="all">Chụp Tất Cả</option>
+          </select>
+      </div>
+  </div>
+
   <div class="flex flex-col gap-8">
-    
     {#each departmentOrder as deptName}
       {#if groupedData[deptName]}
         {@const deptTotal = groupedData[deptName].length}
@@ -186,7 +231,6 @@
           <tfoot class="bg-gray-100 font-bold text-gray-900 text-xs uppercase">
             <tr>
               <td class="px-4 py-3 border-r border-gray-300 text-center tracking-wider min-w-[210px] whitespace-nowrap" colspan="2">TỔNG CỘNG</td>
-              
               <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThu)}</td>
               <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
               <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctQD)}</td>

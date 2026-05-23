@@ -1,31 +1,30 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { realtimeYCXData } from '../../../stores.js'; // Bỏ employeeMaNVMap vì không cần nữa
+  import { realtimeYCXData } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   
-  // [GENESIS UPDATE] Nhận object employee trực tiếp
   export let employee; 
+  export let isGhostMode = false; // Bật khi chạy Background Rendering
+  export let injectedYcxData = null; // [PHẪU THUẬT]: Chốt chặn an toàn nhận data trực tiếp
 
   const dispatch = createEventDispatcher();
   let detailData = null;
   let employeeName = 'N/A';
   let goals = {};
 
-  // Reactive: Tính toán dữ liệu chi tiết
+  // Reactive: Tính toán dữ liệu chi tiết an toàn
   $: {
-    // Kiểm tra employee object thay vì ID
-    if (employee && $realtimeYCXData.length > 0) {
-      // [GENESIS FIX] Lấy tên trực tiếp, không lookup ngược
+    // Ưu tiên dùng gói máu được truyền thẳng, nếu không có mới hỏi xin Store
+    const sourceYcxData = injectedYcxData || $realtimeYCXData;
+
+    if (employee && sourceYcxData && sourceYcxData.length > 0) {
       employeeName = formatters.getShortEmployeeName(employee.hoTen, employee.maNV);
-      
       const warehouse = employee.maKho || '';
       const settings = settingsService.getRealtimeGoalSettings(warehouse);
       goals = settings.goals || {};
-      
-      // Vẫn dùng ID để generate report data
-      detailData = reportService.generateRealtimeEmployeeDetailReport(employee.maNV, $realtimeYCXData);
+      detailData = reportService.generateRealtimeEmployeeDetailReport(employee.maNV, sourceYcxData);
     }
   }
 
@@ -35,15 +34,17 @@
 </script>
 
 <div 
-    class="max-w-4xl mx-auto animate-fade-in pb-10"
+    class="{isGhostMode ? 'bg-white p-6 w-[1000px]' : 'max-w-4xl mx-auto'} animate-fade-in pb-10"
     data-capture-group="revenue-detail-mobile"
     data-capture-filename={employee ? `DT_Realtime_${employee.hoTen}_${employee.maNV}` : 'ChiTietNhanVien'}
 >
+    {#if !isGhostMode}
     <div class="mb-4 flex justify-between items-center">
         <button class="text-blue-600 hover:underline font-semibold flex items-center gap-1" on:click={goBack}>
-            ‹ Quay lại bảng tổng hợp
+            <i data-feather="chevron-left" class="w-4 h-4 mr-1"></i> Quay lại bảng tổng hợp
         </button>
     </div>
+    {/if}
 
     {#if detailData}
         {@const summary = detailData.summary}
@@ -72,12 +73,12 @@
              </div>
              <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                 <div class="text-sm text-gray-500 font-medium uppercase">DT Chưa Xuất</div>
-                 <div class="text-2xl font-bold text-yellow-600 mt-1">{formatters.formatRevenue(summary.unexportedRevenue, 1)}</div>
+                <div class="text-2xl font-bold text-yellow-600 mt-1">{formatters.formatRevenue(summary.unexportedRevenue, 1)}</div>
             </div>
              <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                 <div class="text-sm text-gray-500 font-medium uppercase">Tổng Đơn</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.totalOrders}</div>
-             </div>
+            </div>
             <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
                  <div class="text-sm text-gray-500 font-medium uppercase">Đơn Bán Kèm</div>
                 <div class="text-2xl font-bold text-gray-800 mt-1">{summary.bundledOrderCount}</div>
@@ -99,17 +100,17 @@
                                 <div class="bg-blue-600 h-2.5 rounded-full" style="width: {percent}%"></div>
                             </div>
                         </div>
-                   {/each}
+                    {/each}
                 </div>
             </div>
 
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-5">
                 <h4 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Chi tiết Khách hàng ({detailData.byCustomer.length})</h4>
                 <div class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                      {#each detailData.byCustomer as customer, index}
+                    {#each detailData.byCustomer as customer, index}
                         <details class="group border border-gray-200 rounded-lg bg-gray-50 open:bg-white open:shadow-sm transition-all">
                             <summary class="flex justify-between items-center p-3 cursor-pointer list-none select-none">
-                                 <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-2">
                                     <span class="font-bold text-gray-500 text-sm">{index + 1}.</span>
                                     <span class="font-semibold text-gray-800 text-sm">{customer.name}</span>
                                     <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{customer.totalQuantity} SP</span>
@@ -142,4 +143,7 @@
 <style>
   .animate-fade-in { animation: fadeIn 0.3s ease-out; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  
+  /* OVERRIDE CHO CAPTURE NGẦM GIỮ NGUYÊN CSS */
+  :global(.capture-container *) { transition: none !important; animation: none !important; }
 </style>
