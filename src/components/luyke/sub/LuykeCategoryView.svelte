@@ -6,7 +6,6 @@
     import { formatters } from '../../../utils/formatters.js';
     import { ycxDataThangTruoc } from '../../../stores.js';
     
-    // Components
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
     import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
     import { inventoryHelper } from '../inventory/InventoryLogic.js';
@@ -21,7 +20,6 @@
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
 
-    // --- STATE ---
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
@@ -31,28 +29,22 @@
     let expandedRows = new Set();
     let isConfigLoaded = false;
     
-    // Key cấu hình bộ lọc cũ
-    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V2';
-    // Key lưu trữ cấu hình ẩn hiện cột
+    const STORAGE_KEY = 'LUYKE_CATEGORY_CONFIG_V3';
     const COLUMNS_STORAGE_KEY = 'LUYKE_CATEGORY_COLUMNS_V1';
 
-    // --- VELOCITY, DATE & COMPARE STATE ---
     let isVelocityMode = false;
     let velocityDays = 1;
     let dateFilter = { from: '', to: '' }; 
     let isCompareMode = false;
-    let compareSortType = 'diff';
     let sortKey = 'revenue';
     let sortDirection = 'desc';
 
-    // --- INVENTORY STATE ---
     let inventoryIndex = null;
     let alertDays = 3;
     let hasInventoryData = false;
 
     const PRESET_DAYS = [3, 5, 7, 10];
 
-    // Cấu hình ẩn hiện cột mặc định
     let columnSettings = [
         { id: 'quantity', label: 'Số lượng (SL)', visible: true },
         { id: 'revenue', label: 'Doanh thu thực', visible: true },
@@ -75,36 +67,22 @@
                 if (config.currentFilters) currentFilters = config.currentFilters;
                 if (config.isVelocityMode !== undefined) isVelocityMode = config.isVelocityMode;
                 if (config.isCompareMode !== undefined) isCompareMode = config.isCompareMode; 
-                if (config.compareSortType !== undefined) compareSortType = config.compareSortType; 
                 if (config.velocityDays) velocityDays = config.velocityDays;
                 if (config.dateFilter) dateFilter = config.dateFilter;
                 if (config.expandedRows) expandedRows = new Set(config.expandedRows);
             } 
-            catch (e) { console.error('Error loading config', e); }
+            catch (e) {}
         }
-
-        // Tải cấu hình ẩn hiện cột đã lưu
         const savedCols = localStorage.getItem(COLUMNS_STORAGE_KEY);
         if (savedCols) {
             try { columnSettings = JSON.parse(savedCols); } catch (e) {}
         }
-
         isConfigLoaded = true;
     });
 
     $: {
         if (isConfigLoaded && typeof sessionStorage !== 'undefined') {
-            const configToSave = {
-                activeDimensionIds, currentFilters, isVelocityMode, isCompareMode, compareSortType, velocityDays, dateFilter,
-                expandedRows: Array.from(expandedRows)
-            };
-            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(configToSave));
-        }
-    }
-
-    // Tự động lưu cấu hình cột khi có thay đổi
-    $: {
-        if (isConfigLoaded && typeof localStorage !== 'undefined') {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ activeDimensionIds, currentFilters, isVelocityMode, isCompareMode, velocityDays, dateFilter, expandedRows: Array.from(expandedRows) }));
             localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(columnSettings));
         }
     }
@@ -116,27 +94,20 @@
     };
 
     const isValidRow = (row) => {
-        const isThuTien = (row.trangThaiThuTien || "").trim() === 'Đã thu';
-        const isChuaHuy = (row.trangThaiHuy || "").trim() === 'Chưa hủy';
-        const isChuaTra = (row.tinhTrangTra || "").trim() === 'Chưa trả';
-        const isDaXuat = (row.trangThaiXuat || "").trim() === 'Đã xuất';
-        return isThuTien && isChuaHuy && isChuaTra && isDaXuat;
+        return (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
+               (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
+               (row.tinhTrangTra || "").trim() === 'Chưa trả' && 
+               (row.trangThaiXuat || "").trim() === 'Đã xuất';
     };
 
     const getDimensionValue = (row, dimId) => {
-        let val = '';
-        if (dimId === 'nganhHang') val = row.nganhHang;
-        else if (dimId === 'nhomHang') val = row.nhomHang;
-        else if (dimId === 'nhaSanXuat') val = row.nhaSanXuat;
-        else if (dimId === 'nhanVienTao') val = row.nguoiTao;
-        else if (dimId === 'tenSanPham') val = row.tenSanPham;
-
-        if (!val) return '(Trống)';
+        let val = row[dimId] || '';
         if (dimId === 'nhanVienTao') {
+             val = row.nguoiTao || '';
              const maNVMatch = val.match(/(\d+)/);
              return formatters.getShortEmployeeName(val, maNVMatch ? maNVMatch[1] : '');
         }
-
+        if (!val) return '(Trống)';
         if (dimId === 'tenSanPham' || dimId === 'nhaSanXuat') return val.toString().trim();
         return cleanCategoryName(val);
     };
@@ -147,93 +118,51 @@
         warnings = [];
         if (!data || data.length === 0) return;
 
-        let processedData = data;
-        if (dateFilter.from || dateFilter.to) {
-            processedData = filterDataByDate(data, dateFilter.from, dateFilter.to);
-        }
-
+        let processedData = dateFilter.from || dateFilter.to ? filterDataByDate(data, dateFilter.from, dateFilter.to) : data;
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
         let rootMap = new Map();
 
         const processRowIntoTree = (row, isCK = false) => {
-            if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return;
-            if (!isValidRow(row)) return;
+            if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) || !isValidRow(row)) return;
             
             if (Object.keys(currentFilters).length > 0) {
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
-                    if (selectedValues !== undefined) {
-                        const cellVal = getDimensionValue(row, key);
-                        if (!selectedValues.includes(cellVal)) return; 
-                    }
+                    if (selectedValues !== undefined && !selectedValues.includes(getDimensionValue(row, key))) return; 
                 }
             }
 
             const quantity = parseInt(row.soLuong || 0);
             const revenue = parseMoney(row.thanhTien);
             
-            let heSo = heSoQuyDoiMap[row.nhomHang];
-            if (heSo === undefined && row.nhomHang) {
-                const matchId = String(row.nhomHang).match(/^(\d+)/);
-                if (matchId) {
-                    const foundKey = Object.keys(heSoQuyDoiMap).find(k => k.startsWith(matchId[1] + ' -'));
-                    if (foundKey) heSo = heSoQuyDoiMap[foundKey];
-                }
-            }
-            heSo = heSo || 1;
-
-            const htx = (row.hinhThucXuat || '').toLowerCase();
-            const isTraGop = htx.includes('trả góp') || htx.includes('trả chậm');
+            let heSo = heSoQuyDoiMap[row.nhomHang] || 1;
+            const isTraGop = (row.hinhThucXuat || '').toLowerCase().includes('trả');
             if (isTraGop) heSo += 0.3;
             const revenueQD = revenue * heSo;
 
             if (!isCK) {
-                totalMetrics.quantity += quantity;
-                totalMetrics.revenue += revenue;
-                totalMetrics.revenueQD += revenueQD;
+                totalMetrics.quantity += quantity; totalMetrics.revenue += revenue; totalMetrics.revenueQD += revenueQD;
                 if (isTraGop) totalMetrics.revenueTraCham += revenue;
             } else {
-                totalMetrics.quantityCK += quantity;
-                totalMetrics.revenueCK += revenue;
-                totalMetrics.revenueQDCK += revenueQD;
+                totalMetrics.quantityCK += quantity; totalMetrics.revenueCK += revenue; totalMetrics.revenueQDCK += revenueQD;
                 if (isTraGop) totalMetrics.revenueTraChamCK += revenue;
             }
 
             let currentLevel = rootMap;
             activeDimensionIds.forEach((dimId, index) => {
-                const rawValue = row[dimId] || ''; 
                 const key = getDimensionValue(row, dimId);
                 const stableId = `${index}_${key}`;
 
                 if (!currentLevel.has(key)) {
-                    let nodeData = {
-                        id: stableId, name: key,
-                        quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0,
-                        quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0, 
-                        children: new Map(), level: index
-                    };
-
-                    if (dimId === 'tenSanPham') nodeData.productCode = row.maSanPham || ''; 
-                    else if (dimId === 'nhomHang') {
-                         const m = rawValue.toString().match(/^(\d+)/);
-                         if (m) nodeData.groupId = m[1];
-                    } else if (dimId === 'nganhHang') {
-                         const m = rawValue.toString().match(/^(\d+)/);
-                         if (m) nodeData.categoryId = m[1];
-                    }
-                    currentLevel.set(key, nodeData);
+                    currentLevel.set(key, { id: stableId, name: key, quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0, children: new Map(), level: index });
                 }
                 
                 const groupObj = currentLevel.get(key);
                 if (!isCK) {
-                    groupObj.quantity += quantity;
-                    groupObj.revenue += revenue;
-                    groupObj.revenueQD += revenueQD;
+                    groupObj.quantity += quantity; groupObj.revenue += revenue; groupObj.revenueQD += revenueQD;
                     if (isTraGop) groupObj.revenueTraCham += revenue;
                 } else {
-                    groupObj.quantityCK += quantity;
-                    groupObj.revenueCK += revenue;
-                    groupObj.revenueQDCK += revenueQD;
+                    groupObj.quantityCK += quantity; groupObj.revenueCK += revenue; groupObj.revenueQDCK += revenueQD;
                     if (isTraGop) groupObj.revenueTraChamCK += revenue;
                 }
                 currentLevel = groupObj.children;
@@ -241,41 +170,30 @@
         };
 
         processedData.forEach(row => processRowIntoTree(row, false));
+        if (isCompareMode && $ycxDataThangTruoc?.length > 0) $ycxDataThangTruoc.forEach(row => processRowIntoTree(row, true));
 
-        if (isCompareMode && $ycxDataThangTruoc && $ycxDataThangTruoc.length > 0) {
-            $ycxDataThangTruoc.forEach(row => processRowIntoTree(row, true));
-        }
-
-        const convertMapToArray = (map) => {
-            return Array.from(map.values()).map(item => {
-                const newItem = { ...item };
-                if (newItem.children && newItem.children.size > 0) {
-                    newItem.children = convertMapToArray(newItem.children);
-                    newItem.children.sort((a, b) => b.revenue - a.revenue);
-                } else {
-                    delete newItem.children;
-                }
-                return newItem;
-            }).sort((a, b) => b.revenue - a.revenue);
-        };
+        const convertMapToArray = (map) => Array.from(map.values()).map(item => {
+            const newItem = { ...item };
+            if (newItem.children?.size > 0) {
+                newItem.children = convertMapToArray(newItem.children);
+                newItem.children.sort((a, b) => b.revenue - a.revenue);
+            } else delete newItem.children;
+            return newItem;
+        }).sort((a, b) => b.revenue - a.revenue);
         
         let finalTree = convertMapToArray(rootMap);
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
             const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
-            totalMetrics.quantity = div(totalMetrics.quantity);
-            totalMetrics.revenue = div(totalMetrics.revenue);
-            totalMetrics.revenueQD = div(totalMetrics.revenueQD);
-            totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
+            totalMetrics.quantity = div(totalMetrics.quantity); totalMetrics.revenue = div(totalMetrics.revenue);
+            totalMetrics.revenueQD = div(totalMetrics.revenueQD); totalMetrics.revenueTraCham = div(totalMetrics.revenueTraCham);
         }
 
         if (isVelocityMode && inventoryIndex) {
             inventoryHelper.enrichTreeWithInventory(finalTree, inventoryIndex, velocityDays, alertDays);
             hasInventoryData = true;
             finalTree = [...finalTree]; 
-        } else {
-            hasInventoryData = false;
-        }
+        } else hasInventoryData = false;
 
         treeData = finalTree;
         totalMetrics = { ...totalMetrics };
@@ -290,28 +208,14 @@
             delete otherFilters[targetDim.id]; 
 
             sourceData.forEach(row => {
+                if (!dataProcessing.getHinhThucXuatTinhDoanhThu().has(row.hinhThucXuat) || !isValidRow(row)) return;
                 let isValid = true;
-                const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-                if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat)) return; 
-                if (!isValidRow(row)) return;
-
-                if (Object.keys(otherFilters).length > 0) {
-                    for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
-                        if (filterValues !== undefined) {
-                            const valToCheck = getDimensionValue(row, filterKey);
-                            if (!filterValues.includes(valToCheck)) {
-                                isValid = false;
-                                break;
-                            }
-                        }
-                    }
+                for (const [filterKey, filterValues] of Object.entries(otherFilters)) {
+                    if (filterValues !== undefined && !filterValues.includes(getDimensionValue(row, filterKey))) { isValid = false; break; }
                 }
-
                 if (isValid) {
                     const val = getDimensionValue(row, targetDim.id);
-                    if (val && val !== '(Trống)') {
-                        uniqueValues.add(val);
-                    }
+                    if (val && val !== '(Trống)') uniqueValues.add(val);
                 }
             });
             options[targetDim.id] = Array.from(uniqueValues).sort();
@@ -320,55 +224,24 @@
     }
 
     async function handleInventoryUpload(event) {
-        const file = event.detail;
         try {
-            const index = await inventoryHelper.processFile(file);
+            const index = await inventoryHelper.processFile(event.detail);
             if (index) {
                 inventoryIndex = index;
                 activeDimensionIds = activeDimensionIds.filter(id => id !== 'nhaSanXuat' && id !== 'nhanVienTao');
                 calculateData(); 
                 alert(`Cập nhật tồn kho thành công!`);
             }
-        } catch (e) { 
-            console.error(e);
-            alert("Lỗi đọc file tồn kho: " + e.message); 
-        }
+        } catch (e) { alert("Lỗi đọc file tồn kho: " + e.message); }
     }
 
-    function handleInventorySettings(event) {
-        alertDays = event.detail.alertDays;
-        if (inventoryIndex) calculateData();
-    }
+    $: { if (data || $ycxDataThangTruoc || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || isCompareMode || velocityDays || dateFilter) calculateData(); }
 
-    $: {
-        if (data || $ycxDataThangTruoc || selectedWarehouse || currentFilters || activeDimensionIds || isVelocityMode || isCompareMode || velocityDays || dateFilter) {
-            calculateData();
-        }
-    }
-
-    function handleConfigChange(event) { activeDimensionIds = event.detail; }
-
-    function handleFilterChange(event) {
-        const { key, selected } = event.detail;
-        if (selected === undefined) {
-            const newFilters = { ...currentFilters };
-            delete newFilters[key]; 
-            currentFilters = newFilters;
-        } else {
-            currentFilters = { ...currentFilters, [key]: selected };
-        }
-    }
-    
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
-        if (isVelocityMode) {
-            velocityDays = getCurrentMinusOne();
-            isCompareMode = false;
-        } else {
-            velocityDays = 1;
-            hasInventoryData = false;
-        }
+        if (isVelocityMode) { velocityDays = getCurrentMinusOne(); isCompareMode = false; } 
+        else { velocityDays = 1; hasInventoryData = false; }
     }
 
     function toggleCompareMode() {
@@ -376,25 +249,14 @@
         if (isCompareMode) {
             isVelocityMode = false;
             if (!$ycxDataThangTruoc || $ycxDataThangTruoc.length === 0) {
-                alert("Bạn chưa Upload dữ liệu Yêu cầu xuất tháng trước. Vui lòng sang tab Cập Nhật Dữ Liệu để tải file lên.");
+                alert("Bạn chưa Upload dữ liệu Yêu cầu xuất tháng trước. Vui lòng tải file lên.");
                 isCompareMode = false;
             }
         }
     }
-
-    function setToCurrentDays() { velocityDays = getCurrentMinusOne(); }
 </script>
 
 <div class="animate-fade-in pb-10" data-capture-filename="ChiTietNganhHang">
-    {#if warnings.length > 0}
-        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-            <strong>⚠️ Cảnh báo cấu trúc:</strong>
-            <ul class="list-disc pl-5 mt-1">
-                {#each warnings as w}<li>{w}</li>{/each}
-            </ul>
-        </div>
-    {/if}
-
     <div class="velocity-toolbar flex flex-wrap items-center gap-4 mb-4 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
         <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
@@ -423,39 +285,37 @@
         </div>
 
         {#if isVelocityMode}
-            <div class="flex items-center gap-2 h-full pb-1 animate-fade-in-down border-l border-gray-200 pl-4 ml-2">
-                <span class="text-xs font-bold text-orange-800 uppercase mr-1">Chia TB:</span>
-                <button on:click={setToCurrentDays} class="px-3 py-1 text-xs font-bold rounded border transition-all bg-green-50 text-green-700 border-green-200 hover:bg-green-100">Hiện tại ({getCurrentMinusOne()})</button>
-                {#each PRESET_DAYS as d}
-                   <button on:click={() => velocityDays = d} class="px-3 py-1 text-xs font-medium rounded border transition-all {velocityDays === d ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-orange-50 hover:border-orange-300'}">{d} ngày</button>
-                {/each}
+            <div class="flex items-center gap-2 h-full pb-1 animate-fade-in border-l border-gray-200 pl-4 ml-2">
+                <button on:click={() => velocityDays = getCurrentMinusOne()} class="px-3 py-1 text-xs font-bold rounded border bg-green-50 text-green-700 border-green-200 hover:bg-green-100">Hiện tại ({getCurrentMinusOne()})</button>
                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
                     <input type="number" min="1" class="w-10 text-sm font-bold text-center outline-none text-orange-700" bind:value={velocityDays} />
                 </div>
             </div>
-            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={handleInventorySettings} />
-            {#if !hasInventoryData}<span class="text-xs italic text-red-500 ml-2 animate-fade-in">* Thêm file tồn kho để xem cảnh báo tồn kho</span>{/if}
+            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={(e) => { alertDays = e.detail.alertDays; if(inventoryIndex) calculateData(); }} />
         {/if}
     </div>
 
+    {#if isCompareMode && !isVelocityMode}
+        <div class="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800 flex items-start gap-2 animate-fade-in shadow-sm capture-hide">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+                <strong>* Ghi chú về Tỷ lệ Tăng trưởng Cùng kỳ:</strong> Vì dữ liệu hệ thống chỉ đổ đến ngày hôm qua, các chỉ số của <b>"Dự kiến tháng này"</b> trong bảng dưới đây đã được nội suy (Run-rate) để đảm bảo phép so sánh Tăng/Giảm với tháng trước là công bằng nhất. <br/>
+                <span class="text-xs text-blue-600 font-medium">Công thức: Dự kiến = (Số thực tế / Số ngày đã qua) × Tổng số ngày trong tháng.</span>
+            </div>
+        </div>
+    {/if}
+
     <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
         <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
             Cấu hình ẩn / hiện cột dữ liệu báo cáo
         </summary>
         <div class="flex flex-wrap gap-2 mt-2.5" on:click|stopPropagation>
             {#each columnSettings as col}
-                <button 
-                    type="button" 
-                    class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
-                    on:click={() => {
-                        col.visible = !col.visible;
-                        columnSettings = [...columnSettings];
-                    }}
-                >
+                <button type="button" class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}" on:click={() => { col.visible = !col.visible; columnSettings = [...columnSettings]; }}>
                     {col.visible ? '✓ ' : '+ '} {col.label}
                 </button>
             {/each}
@@ -475,15 +335,17 @@
         bind:sortKey
         bind:sortDirection
         bind:expandedRows={expandedRows}
-        on:configChange={handleConfigChange}
-        on:filterChange={handleFilterChange}
+        on:configChange={(e) => activeDimensionIds = e.detail}
+        on:filterChange={(e) => { 
+            const { key, selected } = e.detail; 
+            if (selected === undefined) { const nf = {...currentFilters}; delete nf[key]; currentFilters = nf; } 
+            else currentFilters = {...currentFilters, [key]: selected}; 
+        }}
         hasInventoryData={hasInventoryData}
     />
 </div>
 
 <style>
   .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-  .animate-fade-in-down { animation: fadeInDown 0.3s ease-out; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
