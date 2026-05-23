@@ -297,15 +297,6 @@
     </div>
 
     {#if isCompareMode && !isVelocityMode}
-        <div class="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800 flex items-start gap-2 animate-fade-in shadow-sm capture-hide">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mt-0.5 flex-shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div>
-                <strong>* Ghi chú về Tỷ lệ Tăng trưởng Cùng kỳ:</strong> Vì dữ liệu hệ thống chỉ đổ đến ngày hôm qua, các chỉ số của <b>"Dự kiến tháng này"</b> trong bảng dưới đây đã được nội suy (Run-rate) để đảm bảo phép so sánh Tăng/Giảm với tháng trước là công bằng nhất. <br/>
-                <span class="text-xs text-blue-600 font-medium">Công thức: Dự kiến = (Số thực tế / Số ngày đã qua) × Tổng số ngày trong tháng.</span>
-            </div>
-        </div>
     {/if}
 
     <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
