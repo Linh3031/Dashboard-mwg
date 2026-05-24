@@ -39,7 +39,7 @@
   let allEmployees = [];
   let targetRatio = 100;
   let categoryTargets = {};
-  
+
   $: if ($selectedWarehouse) {
       datasyncService.loadPersonalTargetRatio($selectedWarehouse)
         .then(ratio => targetRatio = ratio)
@@ -51,7 +51,7 @@
         ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) 
         : emps;
   $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
-  
+
   $: {
       const stMappedData = {};
       ($competitionData || []).forEach(item => {
@@ -65,6 +65,7 @@
               stMappedData[linkedEmpProg] = pTarget;
           }
       });
+
       const newTargets = {};
       (columnSettings || []).forEach(col => {
           newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
@@ -79,7 +80,6 @@
       'bg-sky-100 text-sky-900 border-sky-200', 'bg-indigo-100 text-indigo-900 border-indigo-200',
       'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200', 'bg-rose-100 text-rose-900 border-rose-200'
   ];
-  
   function getHeaderColor(index) { return headerColors[index % headerColors.length]; }
 
   // --- REACTIVE PROCESSING: LEFT JOIN TỪ DSNV ---
@@ -108,7 +108,6 @@
           }
 
           let finalEmployees = [];
-
           targetEmps.forEach(emp => {
               const empCode = String(emp.ma_nv || emp.maNV || '').trim();
               const empKho = String(emp.ma_kho || emp.maKho || '').trim();
@@ -170,6 +169,7 @@
           columnSettings = savedSettings.map(col => ({
               ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
+
           allEmployees = finalEmployees;
       } else {
           allEmployees = [];
@@ -177,7 +177,7 @@
   }
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
-  
+
   function handleSort(key) {
       if (sortKey === key) {
           sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -241,9 +241,9 @@
           return sortedEmployees.map((emp, i) => ({ ...emp, _displayRank: i }));
       }
   })();
-  
+
   $: topCount = processedEmployees.length <= 15 ? 3 : 5;
-  
+
   function getRowStyle(rank) {
       if (rank === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
       if (rank === 1) return 'bg-slate-100 hover:bg-slate-200'; 
@@ -302,21 +302,25 @@
             <p class="text-gray-500">Vui lòng dán dữ liệu "Thi đua nhân viên" ở tab "Cập nhật dữ liệu".</p>
         </div>
     {:else}
-        <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <p class="text-xs font-bold text-gray-500 uppercase mb-2">Hiển thị cột:</p>
-            <div class="flex flex-wrap gap-2">
+        
+        <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
+            <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                Cấu hình ẩn / hiện cột dữ liệu báo cáo
+            </summary>
+            <div class="flex flex-wrap gap-2 mt-2.5" on:click|stopPropagation>
                 {#each columnSettings as col}
                     <button 
                         type="button"
-                        class="px-3 py-1 rounded-full text-xs font-medium border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
+                        class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
                         on:click={() => toggleColumn(col)}
                         title={col.loaiSoLieu}
                     >
-                        {col.label}
+                        {col.visible ? '✓ ' : '+ '} {col.label}
                     </button>
                 {/each}
             </div>
-        </div>
+        </details>
 
         <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden" data-capture-group="pasted-competition">
             <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
@@ -374,6 +378,7 @@
                                 <td class="px-2 py-1.5 font-semibold text-blue-700 sticky z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
+                                
                                 <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky z-10 transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                     {score}
                                 </td>
@@ -458,4 +463,7 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
     table { border-spacing: 0; }
+    
+    /* [SỬA ĐỔI] Thêm style ẩn icon mũi tên mặc định của thẻ details */
+    details > summary::-webkit-details-marker { display: none; }
 </style>
