@@ -136,8 +136,7 @@
 
             const quantity = parseInt(row.soLuong || 0);
             const revenue = parseMoney(row.thanhTien);
-            
-            let heSo = heSoQuyDoiMap[row.nhomHang] || 1;
+            let heSo = dataProcessing.getHeSoForCategory(row.nhomHang, heSoQuyDoiMap);
             const isTraGop = (row.hinhThucXuat || '').toLowerCase().includes('trả');
             if (isTraGop) heSo += 0.3;
             const revenueQD = revenue * heSo;

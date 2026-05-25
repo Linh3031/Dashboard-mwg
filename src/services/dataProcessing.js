@@ -17,6 +17,7 @@ export const dataProcessing = {
     _cleanCompetitionName: helpers.cleanCompetitionName,
     classifyInsurance: helpers.classifyInsurance,
     _findHeaderAndProcess: helpers.findHeaderAndProcess, // Public alias cho processors dùng
+    getHeSoForCategory: helpers.getHeSoForCategory,
 
     // --- Normalizers ---
     normalizeData: normalizers.normalizeData,

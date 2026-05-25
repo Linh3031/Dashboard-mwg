@@ -1,7 +1,6 @@
 /* global XLSX */
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
-// [FIX] Import thêm efficiencyConfig
 import { declarations, efficiencyConfig } from '../../stores.js';
 
 // [CODEGENESIS] Hàm vũ khí: Chuẩn hóa chuỗi (Xóa dấu tiếng Việt, viết thường, xóa khoảng trắng)
@@ -13,11 +12,23 @@ const normalizeStr = (str) => {
         .trim();
 };
 
+// [PHẪU THUẬT LOGIC]: Bóc tách ID - Dùng ID làm chìa khóa tuyệt đối an toàn
+const extractKey = (str) => {
+    if (!str) return 'unknown';
+    const rawStr = str.toString().trim();
+    // Quét tìm cụm số đứng trước dấu gạch ngang (VD: "1273 - Máy tính" -> bóc ra "1273")
+    const match = rawStr.match(/^(\d+)\s*[-–]/);
+    if (match) {
+        return match[1]; 
+    }
+    // Fallback: Nếu không có mã số (VD: "Phụ kiện"), trả về chuỗi chuẩn hóa
+    return normalizeStr(rawStr);
+};
+
 export const helpers = {
     findColumnName(header, aliases) {
         for (const colName of header) {
             const processedColName = normalizeStr(colName);
-            // Chuẩn hóa luôn cả aliases để so sánh an toàn
             if (aliases.map(a => normalizeStr(a)).includes(processedColName)) {
                 return colName;
             }
@@ -28,7 +39,6 @@ export const helpers = {
     getHinhThucXuatTinhDoanhThu: () => {
         const declarationData = get(declarations).hinhThucXuat;
         if (declarationData) {
-            // [HOTFIX] Chỉ cắt bằng phẩy/xuống dòng và trim(). Tuyệt đối không dùng normalizeStr ở đây để giữ nguyên Hoa/Thường.
             return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
         }
         return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || []);
@@ -37,7 +47,6 @@ export const helpers = {
     getHinhThucXuatTraGop: () => {
         const declarationData = get(declarations).hinhThucXuatGop;
         if (declarationData) {
-            // [HOTFIX] Chỉ cắt bằng phẩy/xuống dòng và trim()
             return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
         }
         return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || []);
@@ -45,35 +54,34 @@ export const helpers = {
 
     getHeSoQuyDoi: () => {
         const heSoMap = {};
-        let sourceUsed = 'DEFAULT'; 
-
+        
         // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
         const dynamicConfig = get(efficiencyConfig);
         if (dynamicConfig && dynamicConfig.length > 0) {
-            sourceUsed = 'ADMIN_CONFIG_STORE';
             dynamicConfig.forEach(item => {
                 if (item.id && item.heSo !== undefined && item.heSo !== null) {
-                    heSoMap[normalizeStr(item.id)] = parseFloat(item.heSo);
+                    heSoMap[extractKey(item.id)] = parseFloat(item.heSo);
                 }
             });
         }
 
-        // ƯU TIÊN 2: Lấy từ Khai báo Text (Cũ - nếu Priority 1 không đủ hoặc rỗng)
+        // ƯU TIÊN 2: Lấy từ Khai báo Text
         const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
-                // [VÁ LỖI] Dùng lastIndexOf để tránh lỗi khi tên Ngành Hàng có chứa dấu phẩy
                 const lastCommaIndex = line.lastIndexOf(',');
                 if (lastCommaIndex > -1) {
                     const rawKey = line.substring(0, lastCommaIndex);
                     const rawVal = line.substring(lastCommaIndex + 1);
                     
-                    const cleanKey = normalizeStr(rawKey);
-                    const value = parseFloat(rawVal.trim());
+                    // SỬ DỤNG ID LÀM CHÌA KHÓA LƯU TRỮ
+                    const safeKey = extractKey(rawKey);
+                    // Đề phòng trường hợp gõ nhầm dấu phẩy thập phân
+                    const value = parseFloat(rawVal.trim().replace(',', '.')); 
                     
-                    if (cleanKey && !isNaN(value)) {
-                         if (heSoMap[cleanKey] === undefined) {
-                             heSoMap[cleanKey] = value;
+                    if (safeKey && !isNaN(value)) {
+                         if (heSoMap[safeKey] === undefined) {
+                             heSoMap[safeKey] = value;
                          }
                     }
                 }
@@ -83,25 +91,19 @@ export const helpers = {
         // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
         const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI || {};
         Object.entries(defaultData).forEach(([key, value]) => {
-             const cleanKey = normalizeStr(key);
-             if (heSoMap[cleanKey] === undefined) {
-                 heSoMap[cleanKey] = value;
+             const safeKey = extractKey(key);
+             if (heSoMap[safeKey] === undefined) {
+                 heSoMap[safeKey] = value;
              }
         });
-
-        // --- [DEBUG LOG THEO YÊU CẦU] ---
-        if (Object.keys(heSoMap).length > 0) {
-            // console.log(`[Helpers] Đã nạp ${Object.keys(heSoMap).length} hệ số quy đổi. Nguồn chính: ${sourceUsed}`);
-        }
-        // -------------------------------
 
         return heSoMap;
     },
 
-    // [CODEGENESIS] Thêm hàm trung gian giúp file báo cáo gọi an toàn (áp dụng Fuzzy Match)
+    // [CODEGENESIS] Cổng giao tiếp an toàn cho các báo cáo Lũy kế, Realtime
     getHeSoForCategory: (nhomHangRaw, mapHeSo) => {
-        const cleanNhomHang = normalizeStr(nhomHangRaw);
-        return mapHeSo[cleanNhomHang] !== undefined ? mapHeSo[cleanNhomHang] : 1;
+        const safeKey = extractKey(nhomHangRaw);
+        return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;
     },
 
     cleanCompetitionName(name) {
