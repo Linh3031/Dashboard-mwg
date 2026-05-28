@@ -4,52 +4,66 @@ import { normalize } from './utils.js';
 import { dataProcessing } from '../../dataProcessing.js';
 import { parseIdentity } from '../../../utils.js';
 
-// [FIX] Hàm xử lý số an toàn
 const parseMoney = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
     return parseFloat(String(value).replace(/,/g, '')) || 0;
 };
 
-// [HELPER] Hàm chuẩn hóa chuỗi
 const normalizeStr = (val) => (val || "").trim();
 
 export const salesProcessor = {
-    // --- KHỞI TẠO DỮ LIỆU RỖNG ---
+    // [SURGICAL OPTIMIZATION]: Nhận context để tránh gọi config lại hàng nghìn lần
+    evaluateTransaction(row, context = null) {
+        const hinhThucXuatTinhDoanhThu = context?.hinhThucXuatTinhDoanhThu || dataProcessing.getHinhThucXuatTinhDoanhThu();
+        const hinhThucXuatTraGop = context?.hinhThucXuatTraGop || dataProcessing.getHinhThucXuatTraGop();
+        const heSoQuyDoi = context?.heSoQuyDoi || dataProcessing.getHeSoQuyDoi();
+
+        const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || "").trim();
+        const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || "").trim();
+        const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || "").trim();
+        const htx = row.hinhThucXuat || row.HINH_THUC_XUAT || "";
+        const trangThaiXuat = normalizeStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
+
+        const isBaseValid = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả';
+        const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(htx);
+
+        if (!isBaseValid || !isDoanhThuHTX) {
+            return { isValid: false };
+        }
+
+        const nguoiTaoRaw = row.nguoiTao || row['Người tạo'] || "";
+        const msnvMatch = String(nguoiTaoRaw).match(/(\d+)/);
+        const empId = msnvMatch ? msnvMatch[1].trim() : null;
+
+        const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
+        const isChuaXuat = trangThaiXuat === 'Chưa xuất';
+
+        if (!isDaXuat && !isChuaXuat) {
+            return { isValid: false };
+        }
+
+        const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
+        const soLuong = parseInt(String(row.soLuong || row.SO_LUONG || "0"), 10) || 0;
+        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? parseMoney(row.revenueQuyDoi) : (thanhTien * heSo);
+        const isTraGop = hinhThucXuatTraGop.has(htx);
+
+        return { isValid: true, empId, isDaXuat, isChuaXuat, isTraGop, thanhTien, soLuong, revenueQuyDoi };
+    },
+
     createEmptySalesData() {
         const PG = config.PRODUCT_GROUPS;
         let data = {
-            // Tổng hợp chung
-            doanhThu: 0, 
-            doanhThuQuyDoi: 0, 
-            doanhThuTraGop: 0,
-            doanhThuChuaXuat: 0, 
-            doanhThuQuyDoiChuaXuat: 0,
-            doanhThuGiaoXa: 0, 
-            doanhThuQuyDoiGiaoXa: 0,
-            
-            // Map chi tiết
-            doanhThuTheoNganhHang: {}, 
-            doanhThuTheoNhomHang: {}, 
-            tongSoLuong: 0, 
-            
-            // Quy đổi chuẩn (QDC)
-            qdc: {},
-
-            // [HARDCODED METRICS]
-            dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, 
-            dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
-            
-            // Chi tiết sản phẩm
-            dtTivi: 0, slTivi: 0, 
-            dtTuLanh: 0, slTuLanh: 0,
-            dtMayGiat: 0, slMayGiat: 0, 
-            dtMayLanh: 0, slMayLanh: 0,
-            dtDienThoai: 0, slDienThoai: 0, 
-            dtLaptop: 0, slLaptop: 0
+            doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
+            doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
+            doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
+            doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, tongSoLuong: 0, qdc: {},
+            dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
+            dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0, dtMayGiat: 0, slMayGiat: 0, 
+            dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
         };
 
-        // Init QDC Groups
         if (PG && PG.QDC_GROUPS) {
             for (const key in PG.QDC_GROUPS) {
                 data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
@@ -58,58 +72,35 @@ export const salesProcessor = {
         return data;
     },
 
-    // --- XỬ LÝ DOANH THU NHÂN VIÊN ---
     processEmployeeSales(employee, sourceData, uiKeywords) {
         const data = this.createEmptySalesData();
         const PG = config.PRODUCT_GROUPS;
-        
-        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
-        const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
+
+        // [XÂY DỰNG NGỮ CẢNH] 1 lần duy nhất
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
 
         if (sourceData && Array.isArray(sourceData)) {
             sourceData.forEach(row => {
-                const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
-                if (msnvMatch && msnvMatch[1].trim() === String(employee.maNV)) {
-                    
-                    const hinhThucXuat = row.hinhThucXuat;
-                    const trangThaiXuat = normalizeStr(row.trangThaiXuat);
-                    
-                    // [PHẪU THUẬT GENESIS]: Đồng bộ điều kiện hợp lệ với detail.report.js [cite: 4]
-                    // Chỉ tính những đơn: Đã thu tiền + Chưa hủy + Chưa trả
-                    const isBaseValid = normalizeStr(row.trangThaiThuTien) === 'Đã thu' &&
-                                        normalizeStr(row.trangThaiHuy) === 'Chưa hủy' &&
-                                        normalizeStr(row.tinhTrangTra) === 'Chưa trả';
+                const evalResult = this.evaluateTransaction(row, context); // Truyền context vào
 
-                    const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
-                    
-                    // --- LOGIC ĐÃ XUẤT ---
-                    const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
-
-                    // Thêm isBaseValid vào điều kiện tính doanh thu thực 
-                    if (isDoanhThuHTX && isDaXuat && isBaseValid) {
-                        const thanhTien = parseMoney(row.thanhTien);
-                        const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
-                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                if (evalResult.isValid && evalResult.empId === String(employee.maNV)) {
+                    if (evalResult.isDaXuat) {
+                        const thanhTien = evalResult.thanhTien;
+                        const soLuong = evalResult.soLuong;
+                        const revenueQuyDoi = evalResult.revenueQuyDoi;
                         
-                        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
-                        
-                        const nhomIdObj = row.maNhomHang 
-                            ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } 
-                            : parseIdentity(row.nhomHang);
-                        const nganhIdObj = row.maNganhHang 
-                            ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } 
-                            : parseIdentity(row.nganhHang);
+                        const nhomIdObj = row.maNhomHang ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } : parseIdentity(row.nhomHang);
+                        const nganhIdObj = row.maNganhHang ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } : parseIdentity(row.nganhHang);
 
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
                             const key = String(idObj.id).trim();
                             if (!container[key]) {
-                                container[key] = { 
-                                    id: key, 
-                                    name: idObj.name || rawString, 
-                                    revenue: 0, quantity: 0, revenueQuyDoi: 0 
-                                };
+                                container[key] = { id: key, name: idObj.name || rawString, revenue: 0, quantity: 0, revenueQuyDoi: 0 };
                             }
                             container[key].revenue += thanhTien;
                             container[key].quantity += soLuong;
@@ -123,7 +114,7 @@ export const salesProcessor = {
                         data.doanhThuQuyDoi += revenueQuyDoi;
                         data.tongSoLuong += soLuong;
 
-                        if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
+                        if (evalResult.isTraGop) {
                             data.doanhThuTraGop += thanhTien;
                         }
 
@@ -175,16 +166,9 @@ export const salesProcessor = {
                                 data.qdc[key].dtqd += revenueQuyDoi;
                             }
                         }
-                    } 
-                    
-                    // --- LOGIC CHƯA XUẤT ---
-                    else if (isDoanhThuHTX && trangThaiXuat === 'Chưa xuất' && isBaseValid) {
-                        const thanhTien = parseMoney(row.thanhTien);
-                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
-                        
-                        data.doanhThuChuaXuat += thanhTien;
-                        data.doanhThuQuyDoiChuaXuat += revenueQuyDoi;
+                    } else if (evalResult.isChuaXuat) {
+                        data.doanhThuChuaXuat += evalResult.thanhTien;
+                        data.doanhThuQuyDoiChuaXuat += evalResult.revenueQuyDoi;
                     }
                 }
             });

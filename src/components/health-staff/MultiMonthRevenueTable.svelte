@@ -1,8 +1,8 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
-  import { dataProcessing } from '../../services/dataProcessing.js';
   import { danhSachNhanVien } from '../../stores.js';
+  import { multiMonthReportLogic } from '../../services/reports/multiMonth.report.js';
   
   export let rawData = [];
 
@@ -10,118 +10,30 @@
   let sortKey = 'total';
   let sortDirection = 'desc';
 
-  // --- TRẠNG THÁI BỘ LỌC THÁNG ---
-  let allMonths = []; 
+  // --- TRẠNG THÁI ---
+  let allMonths = [];
   let selectedMonths = []; 
   let showFilter = false;
+  let processedMap = new Map();
 
   const formatRevenueNoDecimal = (val) => {
       if (!val || isNaN(val)) return '-';
       return Math.round(val / 1000000).toLocaleString('vi-VN');
   };
 
-  const parseMoney = (value) => {
-      if (typeof value === 'number') return value;
-      if (!value) return 0;
-      return parseFloat(String(value).replace(/,/g, '')) || 0;
-  };
+  // [SURGICAL LOGIC]: Nhờ Context Passing, hàm này giờ chạy siêu tốc, render tức thì
+  $: calculatedResult = multiMonthReportLogic.generateMultiMonthReport(rawData, $danhSachNhanVien);
 
-  const normStr = (val) => String(val || "").trim();
-
-  function parseUniversalDate(val) {
-      if (val === null || val === undefined || val === '') return null;
-      if (val instanceof Date) return new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
-      if (typeof val === 'number') {
-          const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
-          const tempDate = new Date(jsEpoch);
-          return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
-      }
-      const str = String(val).trim();
-      const parts = str.split(/[\s,T]+/); 
-      if (parts[0].includes('/')) {
-          const dParts = parts[0].split('/');
-          if (dParts.length >= 3) {
-              const p1 = parseInt(dParts[0], 10);
-              const p2 = parseInt(dParts[1], 10); 
-              const p3 = parseInt(dParts[2], 10);
-              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
-              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
-          }
-      } else if (parts[0].includes('-')) {
-          const dParts = parts[0].split('-');
-          if (dParts.length >= 3) {
-              const p1 = parseInt(dParts[0], 10);
-              const p2 = parseInt(dParts[1], 10); 
-              const p3 = parseInt(dParts[2], 10);
-              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
-              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
-          }
-      }
-      const fallbackDate = new Date(val);
-      if (!isNaN(fallbackDate.getTime())) return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
-      return null;
-  }
-
-  let processedMap = new Map();
-  $: validEmpIds = new Set(($danhSachNhanVien || []).map(e => String(e.maNV || e.ma_nv || '').trim()));
-
-  $: {
-      const monthsSet = new Set();
-      const map = new Map();
-      const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
+  $: if (calculatedResult) {
+      processedMap = calculatedResult.processedMap;
+      const newMonthsStr = JSON.stringify(calculatedResult.allMonths);
+      const oldMonthsStr = JSON.stringify(allMonths);
       
-      rawData.forEach(row => {
-          const msnvMatch = normStr(row.nguoiTao || row['Người tạo']).match(/(\d+)/);
-          if (!msnvMatch) return;
-          const empId = msnvMatch[1];
-          if (validEmpIds.size > 0 && !validEmpIds.has(empId)) return;
-
-          const thuTien = normStr(row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN);
-          const huy = normStr(row.trangThaiHuy || row.TRANG_THAI_HUY);
-          const tra = normStr(row.tinhTrangTra || row.TINH_TRANG_TRA);
-          if (thuTien !== 'Đã thu' || huy !== 'Chưa hủy' || tra !== 'Chưa trả') return;
-
-          const htx = normStr(row.hinhThucXuat || row.HINH_THUC_XUAT);
-          if (!validHTX.has(htx)) return;
-
-          const trangThaiXuat = normStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
-          const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
-          const isChuaXuat = trangThaiXuat === 'Chưa xuất';
-          if (!isDaXuat && !isChuaXuat) return;
-
-          let dateVal = row.ngayTao || row.ngayHenGiao;
-          const parsedDate = parseUniversalDate(dateVal);
-          if(!parsedDate) return;
-          
-          const d = new Date(parsedDate);
-          const monthKey = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-          monthsSet.add(monthKey);
-
-          if(!map.has(empId)) {
-              const empFromList = $danhSachNhanVien.find(e => normStr(e.maNV || e.ma_nv) === empId);
-              map.set(empId, { maNV: empId, hoTen: empFromList ? empFromList.hoTen : 'Unknown', months: {} });
-          }
-          
-          const emp = map.get(empId);
-          if(!emp.months[monthKey]) emp.months[monthKey] = { dtqd: 0, dt: 0 };
-
-          const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
-          let dtqd = row.revenueQuyDoi !== undefined ? parseMoney(row.revenueQuyDoi) : (thanhTien * (dataProcessing.getHeSoQuyDoi()[row.nhomHang] || 1));
-
-          emp.months[monthKey].dt += thanhTien;
-          emp.months[monthKey].dtqd += dtqd;
-      });
-
-      const sortedAll = Array.from(monthsSet).sort((a,b) => {
-          const [ma, ya] = a.split('/'); const [mb, yb] = b.split('/');
-          return new Date(ya, ma-1) - new Date(yb, mb-1);
-      });
-      
-      if (JSON.stringify(sortedAll) !== JSON.stringify(allMonths)) {
-          allMonths = sortedAll;
+      if (newMonthsStr !== oldMonthsStr) {
+          allMonths = calculatedResult.allMonths;
+          // Khởi tạo selectedMonths lần đầu hoặc reset nếu tập dữ liệu gốc đổi
           selectedMonths = [...allMonths];
       }
-      processedMap = map;
   }
 
   function toggleMonth(month) {
@@ -156,6 +68,7 @@
       };
       uniqueMonths.forEach(m => {
           stats.total.months[m] = { dtqd: 0, dt: 0, tyle: 0 };
+     
           groupedData.forEach(item => {
               if (item.months[m]) {
                   stats.total.months[m].dtqd += item.months[m].dtqd;
@@ -185,7 +98,6 @@
       return sortDirection === 'asc' ? valA - valB : valB - valA;
   });
 
-  // --- KHÔI PHỤC LOGIC UI BỊ MẤT ---
   $: topCount = sortedData.length <= 15 ? 3 : 5;
 
   function handleSort(key) {
@@ -302,7 +214,6 @@
                             {#each uniqueMonths as month}
                                 {@const mData = item.months[month] || {dtqd: 0, dt: 0}}
                                 {@const tyle = mData.dt > 0 ? (mData.dtqd / mData.dt) - 1 : 0}
-                                
                                 {@const isDtqdBelowAvg = mData.dtqd > 0 && mData.dtqd < footerStats.avg.months[month]}
                                 {@const shopTyle = footerStats.total.months[month].tyle}
                                 {@const isTyleBelowAvg = mData.dtqd > 0 && tyle < shopTyle}

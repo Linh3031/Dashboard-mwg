@@ -1,10 +1,8 @@
 // src/services/reports/detail.report.js
-// Version 1.0 - Detail views logic
 import { get } from 'svelte/store';
 import * as utils from '../../utils.js';
-import { formatters } from '../../utils/formatters.js';
+import { salesProcessor } from './master/salesProcessor.js';
 import { dataProcessing } from '../dataProcessing.js';
-import { masterReportData } from '../../stores.js';
 
 export const detailReportLogic = {
     generateRealtimeEmployeeDetailReport(employeeMaNV, realtimeYCXData) {
@@ -17,33 +15,28 @@ export const detailReportLogic = {
 
         if (employeeData.length === 0) return null;
 
-        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
-
-        const summary = {
-            totalRealRevenue: 0,
-            totalConvertedRevenue: 0,
-            unexportedRevenue: 0
-        };
+        const summary = { totalRealRevenue: 0, totalConvertedRevenue: 0, unexportedRevenue: 0 };
         const byProductGroup = {};
         const byCustomer = {};
 
-        employeeData.forEach(row => {
-            const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-            const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' && (row.trangThaiHuy || "").trim() === 'Chưa hủy' && (row.tinhTrangTra || "").trim() === 'Chưa trả';
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
 
-            if (isDoanhThuHTX && isBaseValid) {
-                const realRevenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                const quantity = parseInt(String(row.soLuong || "0"), 10) || 0;
-                const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                
-                // [FIX] Dùng revenueQuyDoi từ normalizer
-                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+        employeeData.forEach(row => {
+            const evalResult = salesProcessor.evaluateTransaction(row, context);
+
+            if (evalResult.isValid && evalResult.empId === String(employeeMaNV)) {
+                const realRevenue = evalResult.thanhTien;
+                const quantity = evalResult.soLuong;
+                const convertedRevenue = evalResult.revenueQuyDoi;
                 
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách lẻ';
 
-                if ((row.trangThaiXuat || "").trim() === 'Đã xuất') {
+                if (evalResult.isDaXuat) {
                     summary.totalRealRevenue += realRevenue;
                     summary.totalConvertedRevenue += convertedRevenue;
 
@@ -58,13 +51,11 @@ export const detailReportLogic = {
                         byCustomer[customerName] = { name: customerName, products: [], totalQuantity: 0 };
                     }
                     byCustomer[customerName].products.push({
-                        productName: row.tenSanPham,
-                        quantity: quantity,
-                        realRevenue: realRevenue,
-                        convertedRevenue: convertedRevenue,
+                        productName: row.tenSanPham, quantity: quantity,
+                        realRevenue: realRevenue, convertedRevenue: convertedRevenue,
                     });
                     byCustomer[customerName].totalQuantity += quantity;
-                } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
+                } else if (evalResult.isChuaXuat) {
                     summary.unexportedRevenue += convertedRevenue;
                 }
             }
@@ -82,56 +73,42 @@ export const detailReportLogic = {
     },
 
     generateLuyKeEmployeeDetailReport(employeeMaNV, luykeYCXData) {
-        if (!employeeMaNV || !luykeYCXData || luykeYCXData.length === 0) {
-            return null;
-        }
+        if (!employeeMaNV || !luykeYCXData || luykeYCXData.length === 0) return null;
 
         const employeeData = luykeYCXData.filter(row => {
             const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
             return msnvMatch && msnvMatch[1].trim() === String(employeeMaNV);
         });
 
-        if (employeeData.length === 0) {
-             return null;
-        }
+        if (employeeData.length === 0) return null;
 
-        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
-
-        const summary = {
-            totalRealRevenue: 0,
-            totalConvertedRevenue: 0,
-            unexportedRevenue: 0, 
-        };
+        const summary = { totalRealRevenue: 0, totalConvertedRevenue: 0, unexportedRevenue: 0 };
         const byProductGroup = {};
         const byCustomer = {};
         const categoryChartDataMap = {};
         const dailyStats = {}; 
         const unexportedDetails = {};
         
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
+
         employeeData.forEach(row => {
-            const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-            
-            const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
-                                (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
-                                (row.tinhTrangTra || "").trim() === 'Chưa trả';
+            const evalResult = salesProcessor.evaluateTransaction(row, context);
 
-            if (isDoanhThuHTX && isBaseValid) {
-                const realRevenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                const quantity = parseInt(String(row.soLuong || "0"), 10) || 0;
-                if(isNaN(realRevenue) || isNaN(quantity)) return;
-
-                const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                
-                // [FIX] Dùng revenueQuyDoi từ normalizer
-                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+            if (evalResult.isValid && evalResult.empId === String(employeeMaNV)) {
+                const realRevenue = evalResult.thanhTien;
+                const quantity = evalResult.soLuong;
+                const convertedRevenue = evalResult.revenueQuyDoi;
                 
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách Lẻ';
                 const categoryName = utils.cleanCategoryName(row.nganhHang || 'Khác');
                 const productName = row.tenSanPham || 'Không rõ';
                 
-                if ((row.trangThaiXuat || "").trim() === 'Đã xuất') {
+                if (evalResult.isDaXuat) {
                     summary.totalRealRevenue += realRevenue;
                     summary.totalConvertedRevenue += convertedRevenue;
 
@@ -146,14 +123,13 @@ export const detailReportLogic = {
                         categoryChartDataMap[categoryName] = { name: categoryName, revenue: 0 };
                     }
                     categoryChartDataMap[categoryName].revenue += realRevenue;
+                    
                     if (!byCustomer[customerName]) {
                         byCustomer[customerName] = { name: customerName, products: [], totalQuantity: 0, totalRealRevenue: 0, totalConvertedRevenue: 0 };
                     }
                     byCustomer[customerName].products.push({
-                        productName: row.tenSanPham,
-                        quantity: quantity,
-                        realRevenue: realRevenue,
-                        convertedRevenue: convertedRevenue,
+                        productName: row.tenSanPham, quantity: quantity,
+                        realRevenue: realRevenue, convertedRevenue: convertedRevenue,
                     });
                     byCustomer[customerName].totalQuantity += quantity;
                     byCustomer[customerName].totalRealRevenue += realRevenue;
@@ -169,7 +145,7 @@ export const detailReportLogic = {
                         dailyStats[dateString].convertedRevenue += convertedRevenue;
                     }
 
-                } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
+                } else if (evalResult.isChuaXuat) {
                     summary.unexportedRevenue += convertedRevenue;
 
                     if (!unexportedDetails[groupName]) {
@@ -209,12 +185,9 @@ export const detailReportLogic = {
 
         return {
             summary,
-            topProductGroups: Object.values(byProductGroup)
-                .sort((a, b) => b.realRevenue - a.realRevenue)
-                .slice(0, 8),
+            topProductGroups: Object.values(byProductGroup).sort((a, b) => b.realRevenue - a.realRevenue).slice(0, 8),
             categoryChartData: Object.values(categoryChartDataMap),
-            byCustomer: Object.values(byCustomer)
-                .sort((a,b) => b.totalRealRevenue - a.totalRealRevenue),
+            byCustomer: Object.values(byCustomer).sort((a,b) => b.totalRealRevenue - a.totalRealRevenue),
             dailyStats: finalDailyStats, 
             unexportedDetails: finalUnexportedDetails 
         };
