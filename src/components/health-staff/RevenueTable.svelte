@@ -59,31 +59,26 @@
       const projectedDTQD = (dtqd / currentDay) * daysInMonth;
       const duKienSoCK = projectedDTQD - dtqdCK;
       
-      return {
-          ...item,
-          dtqdCK,
-          duKienSoCK
-      };
+      return { ...item, dtqdCK, duKienSoCK };
   });
 
-  // --- QUẢN LÝ CỘT HIỂN THỊ DYNAMIC (CẬP NHẬT MÀU VÀ VIỀN TÁCH KHỐI) ---
+  // --- QUẢN LÝ CẤU TRÚC NHÓM CỘT DYNAMIC ---
   let columnSettings = [
-      { key: 'doanhThu', label: 'DT Thực', visible: true, headerClass: 'bg-slate-100 text-slate-800 border-l border-slate-200' },
-      { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', visible: true, headerClass: 'bg-slate-100 text-slate-800' },
-      { key: 'hieuQuaQuyDoi', label: '% QĐ', visible: true, headerClass: 'bg-slate-100 text-slate-800' },
+      { key: 'doanhThu', label: 'DT Thực', group: 'dt', visible: true },
+      { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', group: 'dt', visible: true },
+      { key: 'hieuQuaQuyDoi', label: '% QĐ', group: 'dt', visible: true },
       
-      // BLOCK CÙNG KỲ: Viền trái đậm (border-l-2), nền xanh dương
-      { key: 'dtqdCK', label: 'DTQĐ CÙNG KỲ', visible: true, headerClass: 'bg-blue-100 text-blue-900 border-l-2 border-blue-300 font-black' },
-      // BLOCK TĂNG TRƯỞNG: Nền xanh lá nhạt, viền phải đậm (border-r-2) tạo thành 1 cục
-      { key: 'duKienSoCK', label: 'DỰ KIẾN SO CK', visible: true, headerClass: 'bg-emerald-100 text-emerald-900 border-r-2 border-emerald-300 font-black' },
+      { key: 'dtqdCK', label: 'DTQĐ Cùng Kỳ', group: 'ck', visible: true },
+      { key: 'duKienSoCK', label: 'Dự Kiến So CK', group: 'ck', visible: true },
       
-      { key: 'doanhThuTraGop', label: 'DT Trả chậm', visible: true, headerClass: 'bg-amber-50 text-amber-800 border-l border-amber-200' },
-      { key: 'tyLeTraCham', label: '% Trả chậm', visible: true, headerClass: 'bg-amber-50 text-amber-800' },
-      { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', visible: true, headerClass: 'bg-gray-50 text-gray-600 border-l border-gray-200' }
+      { key: 'doanhThuTraGop', label: 'DT Trả Chậm', group: 'tc', visible: true },
+      { key: 'tyLeTraCham', label: '% Trả Chậm', group: 'tc', visible: true },
+      
+      { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', group: 'cx', visible: true }
   ];
 
   onMount(() => {
-      const saved = localStorage.getItem('sknv_revenue_table_cols_v2');
+      const saved = localStorage.getItem('sknv_revenue_table_cols_v4');
       if (saved) {
           try {
               const parsed = JSON.parse(saved);
@@ -97,10 +92,60 @@
 
   function toggleColumn(key) {
       columnSettings = columnSettings.map(c => c.key === key ? { ...c, visible: !c.visible } : c);
-      localStorage.setItem('sknv_revenue_table_cols_v2', JSON.stringify(columnSettings));
+      localStorage.setItem('sknv_revenue_table_cols_v4', JSON.stringify(columnSettings));
   }
 
-  $: visibleColumns = columnSettings.filter(c => c.visible);
+  // Phân tích nhóm để vẽ viền tự động
+  $: visibleColumns = columnSettings.filter(c => c.visible).map((c, index, arr) => {
+      const isLast = index === arr.length - 1 || arr[index + 1].group !== c.group;
+      const isFirst = index === 0 || arr[index - 1].group !== c.group;
+      return { ...c, isLastInGroup: isLast, isFirstInGroup: isFirst };
+  });
+
+  // --- ENGINE SINH CSS TỰ ĐỘNG THEO GROUP ---
+  function getGroupHeaderClass(col) {
+      let bg = '', border = 'border-r border-gray-200';
+      if (col.group === 'dt') bg = 'bg-sky-100/80 text-sky-900';
+      else if (col.group === 'ck') bg = 'bg-indigo-100/90 text-indigo-900';
+      else if (col.group === 'tc') bg = 'bg-orange-100/80 text-orange-900';
+      else if (col.group === 'cx') bg = 'bg-gray-200 text-gray-800';
+
+      if (col.isLastInGroup) {
+          if (col.group === 'dt') border = 'border-r-[2px] border-sky-400';
+          else if (col.group === 'ck') border = 'border-r-[2px] border-indigo-400';
+          else if (col.group === 'tc') border = 'border-r-[2px] border-orange-400';
+          else if (col.group === 'cx') border = 'border-r-[2px] border-gray-400';
+      }
+      if (col.isFirstInGroup) {
+          if (col.group === 'dt') border += ' border-l-[2px] border-l-sky-400';
+          else if (col.group === 'ck') border += ' border-l-[2px] border-l-indigo-400';
+          else if (col.group === 'tc') border += ' border-l-[2px] border-l-orange-400';
+          else if (col.group === 'cx') border += ' border-l-[2px] border-l-gray-400';
+      }
+      return `${bg} ${border}`;
+  }
+
+  function getGroupBodyClass(col) {
+      let bg = '', border = 'border-r border-gray-200';
+      if (col.group === 'dt') bg = 'bg-sky-50/40 group-hover:bg-sky-100/50';
+      else if (col.group === 'ck') bg = 'bg-indigo-50/50 group-hover:bg-indigo-100/60';
+      else if (col.group === 'tc') bg = 'bg-orange-50/40 group-hover:bg-orange-100/60';
+      else if (col.group === 'cx') bg = 'bg-gray-50/80 group-hover:bg-gray-200/60';
+
+      if (col.isLastInGroup) {
+          if (col.group === 'dt') border = 'border-r-[2px] border-sky-300';
+          else if (col.group === 'ck') border = 'border-r-[2px] border-indigo-300';
+          else if (col.group === 'tc') border = 'border-r-[2px] border-orange-300';
+          else if (col.group === 'cx') border = 'border-r-[2px] border-gray-300';
+      }
+      if (col.isFirstInGroup) {
+          if (col.group === 'dt') border += ' border-l-[2px] border-l-sky-300';
+          else if (col.group === 'ck') border += ' border-l-[2px] border-l-indigo-300';
+          else if (col.group === 'tc') border += ' border-l-[2px] border-l-orange-300';
+          else if (col.group === 'cx') border += ' border-l-[2px] border-l-gray-300';
+      }
+      return `${bg} ${border} transition-colors duration-150`;
+  }
 
   // --- LOGIC SẮP XẾP ---
   let sortKey = 'doanhThuQuyDoi';
@@ -119,14 +164,6 @@
   });
 
   $: topCount = sortedData.length <= 15 ? 3 : 5;
-
-  function getRowStyle(index) {
-      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
-      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
-      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
-      return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
-  }
 
   function getRankIcon(index) {
       if (index === 0) return '🏆';
@@ -149,7 +186,7 @@
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
 
-  function getCellClass(item, colKey) {
+  function getCellTextClass(item, colKey) {
       const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuQuyDoiChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
       let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
 
@@ -248,95 +285,102 @@
         </div>
 
         <div class="overflow-x-auto">
-            <table class="min-w-full text-sm text-left border-collapse">
-                <thead class="uppercase text-xs font-bold sticky top-0 z-10 shadow-sm">
+            <table class="min-w-full text-sm text-left border-collapse table-auto">
+                <thead class="uppercase text-[11px] font-bold sticky top-0 z-10 shadow-sm align-middle">
                     <tr>
-                        <th class="px-4 py-3 transition select-none whitespace-nowrap bg-gray-100 text-gray-700 w-14 text-center">Hạng</th>
-                        <th class="px-4 py-3 transition select-none whitespace-nowrap bg-gray-100 text-gray-700 text-left cursor-pointer hover:bg-gray-200" on:click={() => handleSort('hoTen')}>
-                            <div class="flex items-center gap-1 justify-start">
+                        <!-- Khóa cứng cột Hạng bằng min-w và max-w -->
+                        <th class="w-[45px] min-w-[45px] max-w-[45px] px-1 py-3 transition select-none bg-gray-100 text-gray-700 text-center border-r border-gray-200">Hạng</th>
+                        
+                        <!-- Cột Nhân Viên -->
+                        <th class="w-[160px] min-w-[160px] px-3 py-3 transition select-none bg-gray-100 text-gray-700 text-left cursor-pointer hover:bg-gray-200 border-r border-gray-200" on:click={() => handleSort('hoTen')}>
+                            <div class="flex items-center justify-between">
                                 Nhân viên
-                                {#if sortKey === 'hoTen'}<span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+                                {#if sortKey === 'hoTen'}<span class="text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                             </div>
                         </th>
+                        
+                        <!-- Cột Dữ Liệu: Gập dòng tự động (whitespace-normal break-words) -->
                         {#each visibleColumns as col}
-                            <th class="px-4 py-3 transition select-none whitespace-nowrap {col.headerClass} text-right cursor-pointer hover:bg-opacity-80" on:click={() => handleSort(col.key)}>
-                                <div class="flex items-center justify-end gap-1">
-                                    {col.label}
-                                    {#if sortKey === col.key}<span class="ml-1 opacity-70">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+                            <th class="w-[90px] min-w-[90px] max-w-[90px] px-1 py-2 transition select-none text-center cursor-pointer hover:brightness-95 {getGroupHeaderClass(col)}" on:click={() => handleSort(col.key)}>
+                                <div class="flex flex-col items-center justify-center w-full h-full">
+                                    <span class="whitespace-normal break-words leading-tight">{col.label}</span>
+                                    {#if sortKey === col.key}<span class="text-[10px] opacity-70 mt-0.5">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                                 </div>
                             </th>
                         {/each}
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200">
+                <tbody class="divide-y divide-gray-200 bg-white">
                     {#if sortedData.length === 0}
                         <tr><td colspan={visibleColumns.length + 2} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                     {:else}
                         {#each sortedData as item, index (item.maNV)}
-                            <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
-                                <td class="px-2 py-3 text-center border-r border-gray-200 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
+                            <tr class="group cursor-pointer hover:bg-gray-50/50" on:click={() => handleRowClick(item.maNV)}>
+                                <td class="w-[45px] min-w-[45px] max-w-[45px] px-1 py-3 text-center border-r border-gray-200 font-bold bg-white group-hover:bg-gray-50 {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
                                     {getRankIcon(index)}
                                 </td>
-                                <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 group-hover:text-blue-800 group-hover:underline">
+                                <td class="w-[160px] min-w-[160px] px-3 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 bg-white group-hover:bg-gray-50 group-hover:text-blue-800 truncate">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
                                 
                                 {#each visibleColumns as col}
-                                    {#if col.key === 'doanhThu'}
-                                        <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
-                                    {:else if col.key === 'doanhThuQuyDoi'}
-                                        <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
-                                    {:else if col.key === 'hieuQuaQuyDoi'}
-                                        <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
-                                    
-                                    {:else if col.key === 'dtqdCK'}
-                                        <td class="px-4 py-3 text-right border-l-2 border-blue-300 border-r border-blue-100 bg-blue-50/60 font-bold text-blue-800">
-                                            {formatters.formatRevenue(item.dtqdCK)}
-                                        </td>
-                                    {:else if col.key === 'duKienSoCK'}
-                                        <td class="px-4 py-3 text-right border-r-2 border-emerald-300 font-black bg-emerald-50/50 {item.duKienSoCK >= 0 ? 'text-emerald-600' : 'text-red-600'}">
-                                            {item.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(item.duKienSoCK)}
-                                        </td>
+                                    <td class="w-[90px] min-w-[90px] max-w-[90px] px-2 py-3 text-right text-sm {getGroupBodyClass(col)}">
+                                        {#if col.key === 'doanhThu'}
+                                            <span class={getCellTextClass(item, 'doanhThu')}>{formatters.formatRevenue(item.doanhThu)}</span>
+                                        {:else if col.key === 'doanhThuQuyDoi'}
+                                            <span class={getCellTextClass(item, 'doanhThuQuyDoi')}>{formatters.formatRevenue(item.doanhThuQuyDoi)}</span>
+                                        {:else if col.key === 'hieuQuaQuyDoi'}
+                                            <span class={getCellTextClass(item, 'hieuQuaQuyDoi')}>{formatters.formatPercentage(item.hieuQuaQuyDoi)}</span>
                                         
-                                    {:else if col.key === 'doanhThuTraGop'}
-                                        <td class="px-4 py-3 text-right border-l border-gray-200 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
-                                    {:else if col.key === 'tyLeTraCham'}
-                                        <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
-                                    {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
-                                        <td class="px-4 py-3 text-right border-l border-gray-200 {getCellClass(item, 'doanhThuQuyDoiChuaXuat')}">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
-                                    {/if}
+                                        {:else if col.key === 'dtqdCK'}
+                                            <span class="font-bold text-indigo-700">{formatters.formatRevenue(item.dtqdCK)}</span>
+                                        {:else if col.key === 'duKienSoCK'}
+                                            <span class="font-bold {item.duKienSoCK >= 0 ? 'text-blue-600' : 'text-red-500'}">
+                                                {item.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(item.duKienSoCK)}
+                                            </span>
+                                            
+                                        {:else if col.key === 'doanhThuTraGop'}
+                                            <span class={getCellTextClass(item, 'doanhThuTraGop')}>{formatters.formatRevenue(item.doanhThuTraGop)}</span>
+                                        {:else if col.key === 'tyLeTraCham'}
+                                            <span class={getCellTextClass(item, 'tyLeTraCham')}>{formatters.formatPercentage(item.tyLeTraCham)}</span>
+                                        
+                                        {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
+                                            <span class={getCellTextClass(item, 'doanhThuQuyDoiChuaXuat')}>{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</span>
+                                        {/if}
+                                    </td>
                                 {/each}
                             </tr>
                         {/each}
                     {/if}
                 </tbody>
-                <tfoot class="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300 text-xs uppercase">
+                <tfoot class="font-bold text-gray-900 border-t-[3px] border-gray-400 text-sm uppercase">
                     <tr>
-                        <td class="px-4 py-3 text-center tracking-wider" colspan="2">TỔNG CỘNG</td>
+                        <td class="px-3 py-4 text-center tracking-wider bg-gray-100 border-r border-gray-300" colspan="2">TỔNG CỘNG</td>
                         {#each visibleColumns as col}
-                            {#if col.key === 'doanhThu'}
-                                <td class="px-4 py-3 text-right text-base border-r border-gray-300">{formatters.formatRevenue(totals.doanhThu)}</td>
-                            {:else if col.key === 'doanhThuQuyDoi'}
-                                <td class="px-4 py-3 text-right text-base text-blue-700 border-r border-gray-300">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</td>
-                            {:else if col.key === 'hieuQuaQuyDoi'}
-                                <td class="px-4 py-3 text-right text-base text-blue-700 border-r border-gray-300">{formatters.formatPercentage(totalPctQD)}</td>
+                            <td class="px-2 py-4 text-right {getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-50">
+                                {#if col.key === 'doanhThu'}
+                                    {formatters.formatRevenue(totals.doanhThu)}
+                                {:else if col.key === 'doanhThuQuyDoi'}
+                                    <span class="text-sky-800">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</span>
+                                {:else if col.key === 'hieuQuaQuyDoi'}
+                                    <span class="text-sky-800">{formatters.formatPercentage(totalPctQD)}</span>
+                                    
+                                {:else if col.key === 'dtqdCK'}
+                                    <span class="text-indigo-900">{formatters.formatRevenue(totals.dtqdCK)}</span>
+                                {:else if col.key === 'duKienSoCK'}
+                                    <span class="{totals.duKienSoCK >= 0 ? 'text-blue-700' : 'text-red-600'}">
+                                        {totals.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(totals.duKienSoCK)}
+                                    </span>
+                                    
+                                {:else if col.key === 'doanhThuTraGop'}
+                                    {formatters.formatRevenue(totals.doanhThuTraGop)}
+                                {:else if col.key === 'tyLeTraCham'}
+                                    {formatters.formatPercentage(totalPctTC)}
                                 
-                            {:else if col.key === 'dtqdCK'}
-                                <td class="px-4 py-3 text-right text-base font-black text-blue-900 bg-blue-100/80 border-l-2 border-blue-300 border-r border-blue-200">
-                                    {formatters.formatRevenue(totals.dtqdCK)}
-                                </td>
-                            {:else if col.key === 'duKienSoCK'}
-                                <td class="px-4 py-3 text-right text-base font-black border-r-2 border-emerald-300 bg-emerald-100/80 {totals.duKienSoCK >= 0 ? 'text-emerald-700' : 'text-red-700'}">
-                                    {totals.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(totals.duKienSoCK)}
-                                </td>
-                                
-                            {:else if col.key === 'doanhThuTraGop'}
-                                <td class="px-4 py-3 text-right text-base border-l border-gray-300 border-r">{formatters.formatRevenue(totals.doanhThuTraGop)}</td>
-                            {:else if col.key === 'tyLeTraCham'}
-                                <td class="px-4 py-3 text-right text-base border-r border-gray-300">{formatters.formatPercentage(totalPctTC)}</td>
-                            {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
-                                <td class="px-4 py-3 text-right text-base text-gray-600 border-l border-gray-300">{formatters.formatRevenue(totals.doanhThuQuyDoiChuaXuat)}</td>
-                            {/if}
+                                {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
+                                    <span class="text-gray-700">{formatters.formatRevenue(totals.doanhThuQuyDoiChuaXuat)}</span>
+                                {/if}
+                            </td>
                         {/each}
                     </tr>
                 </tfoot>
