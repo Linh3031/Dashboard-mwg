@@ -132,7 +132,7 @@
             <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600"><i data-feather="layers" class="w-5 h-5"></i></div>
             <div>
                 <h3 class="font-bold text-indigo-900 text-lg uppercase">Phân tích Lũy kế nhiều tháng</h3>
-                <p class="text-xs text-indigo-600/80">Lọc rác: Đã thu/Chưa hủy/Chưa trả | Khôi phục xếp hạng Top</p>
+                <p class="text-xs text-indigo-600/80">Tính theo doanh thu tạo</p>
             </div>
         </div>
 

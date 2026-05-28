@@ -5,7 +5,6 @@
   import RevenueDetailView from './revenue/RevenueDetailView.svelte';
   import { dataProcessing } from '../../services/dataProcessing.js';
 
-  // Import Sub-Components
   import ColumnConfig from './revenue/table/ColumnConfig.svelte';
   import TableToolbar from './revenue/table/TableToolbar.svelte';
   import TableHeader from './revenue/table/TableHeader.svelte';
@@ -15,7 +14,6 @@
   export let reportData = [];
   const dispatch = createEventDispatcher();
 
-  // --- THỜI GIAN ĐỂ TÍNH DỰ KIẾN ---
   let currentDay = 1;
   let daysInMonth = 30;
   $: {
@@ -31,14 +29,11 @@
       }
   }
 
-  // --- TỔNG HỢP DATA CÙNG KỲ (LỌC THEO THÁNG LIỀN KỀ) ---
   $: lastMonthDataMap = (() => {
       const map = {};
       const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
       const today = new Date();
-      const d = today.getDate();
-      const activeMonthDate = d === 1 ? new Date(today.getFullYear(), today.getMonth() - 1, 1) : today;
-      const targetDate = new Date(activeMonthDate.getFullYear(), activeMonthDate.getMonth() - 1, 1);
+      const targetDate = new Date(today.getFullYear(), today.getMonth() - (today.getDate() === 1 ? 2 : 1), 1);
       const targetMonth = targetDate.getMonth();
       const targetYear = targetDate.getFullYear();
 
@@ -48,32 +43,30 @@
 
           const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
           if (!msnvMatch) return;
-          const maNV = msnvMatch[1].trim();
-          const hinhThucXuat = row.hinhThucXuat;
-          const trangThaiXuat = (row.trangThaiXuat || '').trim();
+          
+          const isDaXuat = !row.trangThaiXuat || ['Đã xuất', 'Đã giao'].includes(row.trangThaiXuat.trim());
           const isBaseValid = (row.trangThaiThuTien || '').trim() === 'Đã thu' &&
                               (row.trangThaiHuy || '').trim() === 'Chưa hủy' &&
                               (row.tinhTrangTra || '').trim() === 'Chưa trả';
-          const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
 
-          if (dataProcessing.getHinhThucXuatTinhDoanhThu().has(hinhThucXuat) && isDaXuat && isBaseValid) {
-              map[maNV] = (map[maNV] || 0) + (row.revenueQuyDoi || 0);
+          if (hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) && isDaXuat && isBaseValid) {
+              map[msnvMatch[1].trim()] = (map[msnvMatch[1].trim()] || 0) + (row.revenueQuyDoi || 0);
           }
       });
       return map;
   })();
 
-  // --- MERGE VÀ TÍNH TOÁN DỰ KIẾN SO CK + DT/GC ---
   $: enrichedReportData = reportData.map(item => {
       const dtqd = item.doanhThuQuyDoi || 0;
       const dtqdCK = lastMonthDataMap[item.maNV] || 0;
-      const projectedDTQD = (dtqd / currentDay) * daysInMonth;
-      const duKienSoCK = projectedDTQD - dtqdCK;
-      const dtTrenGc = item.gioCong > 0 ? (dtqd / item.gioCong) : 0;
-      return { ...item, dtqdCK, duKienSoCK, dtTrenGc };
+      return { 
+          ...item, 
+          dtqdCK, 
+          duKienSoCK: ((dtqd / currentDay) * daysInMonth) - dtqdCK, 
+          dtTrenGc: item.gioCong > 0 ? (dtqd / item.gioCong) / 1000 : 0
+      };
   });
 
-  // --- QUẢN LÝ CẤU TRÚC CỘT DYNAMIC ---
   let columnSettings = [
       { key: 'doanhThu', label: 'DT Thực', group: 'dt', visible: true },
       { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', group: 'dt', visible: true },
@@ -83,11 +76,11 @@
       { key: 'doanhThuTraGop', label: 'DT Trả Chậm', group: 'tc', visible: true },
       { key: 'tyLeTraCham', label: '% Trả Chậm', group: 'tc', visible: true },
       { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', group: 'cx', visible: true },
-      { key: 'dtTrenGc', label: 'DT/GC', group: 'ns', visible: true }
+      { key: 'dtTrenGc', label: 'DTQĐ/GC', group: 'ns', visible: true }
   ];
 
   onMount(() => {
-      const saved = localStorage.getItem('sknv_revenue_table_cols_v5');
+      const saved = localStorage.getItem('sknv_revenue_table_cols_v6');
       if (saved) {
           try {
               const parsed = JSON.parse(saved);
@@ -100,36 +93,30 @@
   });
 
   function handleToggleColumn(event) {
-      const key = event.detail;
-      columnSettings = columnSettings.map(c => c.key === key ? { ...c, visible: !c.visible } : c);
-      localStorage.setItem('sknv_revenue_table_cols_v5', JSON.stringify(columnSettings));
+      columnSettings = columnSettings.map(c => c.key === event.detail ? { ...c, visible: !c.visible } : c);
+      localStorage.setItem('sknv_revenue_table_cols_v6', JSON.stringify(columnSettings));
   }
 
-  $: visibleColumns = columnSettings.filter(c => c.visible).map((c, index, arr) => {
-      const isLast = index === arr.length - 1 || arr[index + 1].group !== c.group;
-      const isFirst = index === 0 || arr[index - 1].group !== c.group;
-      return { ...c, isLastInGroup: isLast, isFirstInGroup: isFirst };
-  });
+  $: visibleColumns = columnSettings.filter(c => c.visible).map((c, index, arr) => ({
+      ...c, 
+      isLastInGroup: index === arr.length - 1 || arr[index + 1].group !== c.group, 
+      isFirstInGroup: index === 0 || arr[index - 1].group !== c.group 
+  }));
 
-  // --- LOGIC SẮP XẾP ---
   let sortKey = 'doanhThuQuyDoi';
   let sortDirection = 'desc';
   function handleSort(event) {
-      const key = event.detail;
-      if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-      else { sortKey = key; sortDirection = 'desc'; }
+      if (sortKey === event.detail) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      else { sortKey = event.detail; sortDirection = 'desc'; }
   }
 
   $: sortedData = [...enrichedReportData].sort((a, b) => {
-      let valA = a[sortKey];
-      let valB = b[sortKey];
-      if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-      return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
+      if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(a[sortKey]).localeCompare(String(b[sortKey])) : String(b[sortKey]).localeCompare(String(a[sortKey]));
+      return sortDirection === 'asc' ? (Number(a[sortKey])||0) - (Number(b[sortKey])||0) : (Number(b[sortKey])||0) - (Number(a[sortKey])||0);
   });
 
   $: topCount = sortedData.length <= 15 ? 3 : 5;
 
-  // --- TỔNG CỘNG SIÊU THỊ ---
   $: totals = enrichedReportData.reduce((acc, item) => {
       acc.doanhThu += item.doanhThu || 0;
       acc.doanhThuQuyDoi += item.doanhThuQuyDoi || 0;
@@ -143,60 +130,55 @@
 
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
-  $: avgSupermarketDtTrenGc = totals.gioCong > 0 ? (totals.doanhThuQuyDoi / totals.gioCong) : 0;
+  $: avgSupermarketDtTrenGc = totals.gioCong > 0 ? (totals.doanhThuQuyDoi / totals.gioCong) / 1000 : 0;
 
-  // Store variables for KPI colors
+  $: employeeCount = enrichedReportData.length || 1;
+  $: averages = {
+      doanhThu: totals.doanhThu / employeeCount,
+      doanhThuQuyDoi: totals.doanhThuQuyDoi / employeeCount,
+      hieuQuaQuyDoi: totalPctQD,
+      dtqdCK: totals.dtqdCK / employeeCount,
+      duKienSoCK: totals.duKienSoCK / employeeCount,
+      doanhThuTraGop: totals.doanhThuTraGop / employeeCount,
+      tyLeTraCham: totalPctTC,
+      doanhThuQuyDoiChuaXuat: totals.doanhThuQuyDoiChuaXuat / employeeCount,
+      dtTrenGc: avgSupermarketDtTrenGc
+  };
+
   $: kpiTargets = $kpiStore.targets || {};
   $: kpiGlobalSettings = $kpiStore.globalSettings || {};
 
-  function handleViewDetail(event) {
-      dispatch('viewDetail', { employeeId: event.detail });
-  }
-
   function handleBatchCapture(event) {
-      const mode = event.detail;
-      if (!mode) return;
-      let targetData = [];
-      if (mode === 'top5') targetData = sortedData.slice(0, 5);
-      else if (mode === 'bot5') targetData = sortedData.slice(-5);
-      else if (mode === 'all') targetData = sortedData;
-      
-      const ids = targetData.map(item => item.maNV);
-      batchCaptureService.captureBatch(RevenueDetailView, ids, "DTLK_ChiTiet", (id) => ({ employeeId: id }));
+      if (!event.detail) return;
+      let targetData = event.detail === 'top5' ? sortedData.slice(0, 5) : event.detail === 'bot5' ? sortedData.slice(-5) : sortedData;
+      batchCaptureService.captureBatch(RevenueDetailView, targetData.map(i => i.maNV), "DTLK_ChiTiet", (id) => ({ employeeId: id }));
   }
 </script>
 
 <div class="space-y-4">
     <ColumnConfig {columnSettings} on:toggle={handleToggleColumn} />
-
     <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden animate-fade-in" data-capture-group="revenue-table">
         <TableToolbar on:toggleMode={() => dispatch('toggleMode')} on:batchCapture={handleBatchCapture} />
-
         <div class="overflow-x-auto">
+            
             <table class="min-w-full text-sm text-left border-collapse table-auto">
                 <TableHeader {visibleColumns} {sortKey} {sortDirection} on:sort={handleSort} />
-                
                 <tbody class="divide-y divide-gray-200 bg-white">
                     {#if sortedData.length === 0}
                         <tr><td colspan={visibleColumns.length + 2} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
                     {:else}
                         {#each sortedData as item, index (item.maNV)}
                             <TableRow 
-                                {item} 
-                                {index} 
-                                {visibleColumns} 
-                                {topCount} 
-                                {avgSupermarketDtTrenGc}
-                                {kpiTargets}
-                                {kpiGlobalSettings}
-                                on:viewDetail={handleViewDetail} 
+                                {item} {index} {visibleColumns} {topCount} {avgSupermarketDtTrenGc}
+                                {kpiTargets} {kpiGlobalSettings} {averages}
+                                on:viewDetail={(e) => dispatch('viewDetail', { employeeId: e.detail })} 
                             />
                         {/each}
                     {/if}
                 </tbody>
-                
-                <TableFooter {totals} {visibleColumns} {totalPctQD} {totalPctTC} {avgSupermarketDtTrenGc} />
+                <TableFooter {totals} {visibleColumns} {totalPctQD} {totalPctTC} {avgSupermarketDtTrenGc} {averages} />
             </table>
+            
         </div>
     </div>
 </div>
