@@ -468,7 +468,7 @@ export const datasyncService = {
 
             enrichedList.sort((a, b) => (b.doanhThu || 0) - (a.doanhThu || 0));
             enrichedList.forEach((e, i) => e.rankDtThuc = i + 1);
-            
+
             enrichedList.sort((a, b) => (b.doanhThuQuyDoi || 0) - (a.doanhThuQuyDoi || 0));
             enrichedList.forEach((e, i) => e.rankDtqd = i + 1);
 
@@ -507,6 +507,7 @@ export const datasyncService = {
                             dtqdCK: emp.dtqdCK || 0,
                             duKienSoCK: emp.duKienSoCK || 0,
                             
+                            rankDtThuc: emp.rankDtThuc, 
                             rankDtqd: emp.rankDtqd,
                             rankTyLe: emp.rankTyLe,
                             rankTraCham: emp.rankTraCham,
