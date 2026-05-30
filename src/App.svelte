@@ -12,7 +12,8 @@
       danhSachNhanVien,
       warehouseList,
       isDemoMode,
-      declarations
+      declarations,
+      masterReportData
   } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
