@@ -528,10 +528,26 @@ export const datasyncService = {
                     batch.set(docRef, mobileData, { merge: true });
                 }
 
-                await batch.commit();
+await batch.commit();
                 const processedCount = Math.min(i + CHUNK_SIZE, total);
                 if (onProgress) onProgress(processedCount, total, 'processing', `Đang đồng bộ chi tiết: ${processedCount}/${total} nhân viên...`);
                 await new Promise(resolve => setTimeout(resolve, 100)); // Nghỉ 100ms
+            }
+
+            // [CodeGenesis] BẮN TÍN HIỆU METADATA (VERSION CONTROL) CHO APP STAFF
+            try {
+                if (wh && wh !== 'ALL') { // Đảm bảo chỉ ghi meta khi đồng bộ 1 kho cụ thể
+                    const metaRef = doc(db, 'sknv_metadata', String(wh));
+                    await setDoc(metaRef, {
+                        lastUpdated: Date.now(), // Timestamp số nguyên dễ so sánh
+                        rowCount: total,
+                        updatedBy: getCurrentUserEmail()
+                    }, { merge: true });
+                    console.log(`[DataSync] Đã bắn tín hiệu Metadata cho Kho ${wh}`);
+                }
+            } catch (metaErr) {
+                console.error("[DataSync] Lỗi cập nhật Metadata:", metaErr);
+                // Lỗi này không làm gián đoạn thông báo thành công chính
             }
 
             if (onProgress) onProgress(total, total, 'success', '✓ Đã đồng bộ chi tiết và xếp hạng xuống App!');
