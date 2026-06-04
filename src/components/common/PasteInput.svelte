@@ -21,10 +21,11 @@
   export let saveKeyProcessed = ""; 
 
   const dispatch = createEventDispatcher();
+
   let textareaEl;
   let pastedText = "";
   let localError = "";
-  
+
   const storeMap = {
     'daily_paste_luyke': competitionData,
     'cluster_paste_luyke': competitionData,
@@ -33,7 +34,7 @@
     'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc,
     'cluster_summary_data': clusterSummaryData
   };
-  
+
   const unitMap = {
     'daily_paste_luyke': 'CT thi đua',
     'cluster_paste_luyke': 'CT thi đua',
@@ -142,10 +143,9 @@
       currentSaveKey = saveKeyPaste;
       const textLoadKey = saveKeyRaw || saveKeyPaste;
       pastedText = localStorage.getItem(textLoadKey) || "";
-      
       if (!$fileSyncState[saveKeyPaste]) {
           let targetWh = null;
-          let baseKeyForMeta = saveKeyPaste; 
+          let baseKeyForMeta = saveKeyPaste;
           for (const k of Object.keys(storeMap)) {
               if (saveKeyPaste.startsWith(k + '_')) {
                   targetWh = saveKeyPaste.replace(k + '_', '');
@@ -171,27 +171,19 @@
       }
   }
 
-  onMount(() => {
-    window.addEventListener('cloud-paste-loaded', (e) => {
-        if (e.detail.key === saveKeyPaste) {
-            pastedText = e.detail.text;
-        }
-    });
-
-    if (typeof feather !== 'undefined') feather.replace();
-  });
-
+  // --- [CodeGenesis] HÀM XỬ LÝ TRUNG TÂM ---
   let pasteTimer;
-  function handleInput(event) {
-      const text = event.target.value;
+  function processText(text) {
       pastedText = text;
       localError = "";
       clearTimeout(pasteTimer);
       
+      // Kích hoạt DataSection nhận dữ liệu ngay lập tức
       dispatch('paste', text);
       
       if (!text || text.trim().length < 5) return;
       
+      // Bắt đầu chu trình xử lý ngầm (Lưu Cloud/Local)
       isLoading = true;
       pasteTimer = setTimeout(async () => {
           try {
@@ -209,6 +201,21 @@
             isLoading = false;
           }
       }, 500);
+  }
+
+  onMount(() => {
+    // Khi bấm "Tải về máy", nó sẽ tự động chạy vào quy trình chuẩn này
+    window.addEventListener('cloud-paste-loaded', (e) => {
+        if (e.detail.key === saveKeyPaste) {
+            processText(e.detail.text);
+        }
+    });
+
+    if (typeof feather !== 'undefined') feather.replace();
+  });
+
+  function handleInput(event) {
+      processText(event.target.value);
   }
 
   function handleContainerClick(e) {

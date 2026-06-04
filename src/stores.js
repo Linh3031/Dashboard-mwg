@@ -18,7 +18,6 @@ export const userStats = writable([]);
 export const helpContent = writable({ data: '...', luyke: '...', sknv: '...', realtime: '...' });
 
 // --- [SỬA ĐỔI] XỬ LÝ LƯU TRỮ MẪU NHẬN XÉT (PERSISTENCE) ---
-// Thay vì khởi tạo rỗng, ta đọc từ localStorage nếu có
 let savedTemplates = { luyke: '', sknv: '', realtime: '' };
 if (typeof localStorage !== 'undefined') {
     try {
@@ -31,8 +30,50 @@ if (typeof localStorage !== 'undefined') {
 export const composerTemplates = writable(savedTemplates);
 // -------------------------------------------------------------
 
-export const competitionNameMappings = writable({}); 
-export const luykeNameMappings = writable({}); // [NEW] Dành riêng cho Thi đua Siêu thị
+// --- [SỬA ĐỔI CHÍNH] ĐỒNG BỘ MAPPING QUA LOCALSTORAGE (HỖ TRỢ CROSS-TAB REALTIME) ---
+let savedCompMappings = {};
+let savedLuykeMappings = {};
+if (typeof localStorage !== 'undefined') {
+    try {
+        const compRaw = localStorage.getItem('compMappings_cache');
+        if (compRaw) savedCompMappings = JSON.parse(compRaw);
+        
+        const luykeRaw = localStorage.getItem('luykeMappings_cache');
+        if (luykeRaw) savedLuykeMappings = JSON.parse(luykeRaw);
+    } catch (e) {
+        console.error('Lỗi đọc mapping từ localStorage:', e);
+    }
+}
+
+export const competitionNameMappings = writable(savedCompMappings);
+export const luykeNameMappings = writable(savedLuykeMappings);
+
+// Cập nhật localStorage khi store thay đổi (ở tab hiện tại)
+competitionNameMappings.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('compMappings_cache', JSON.stringify(value));
+    }
+});
+
+luykeNameMappings.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('luykeMappings_cache', JSON.stringify(value));
+    }
+});
+
+// Lắng nghe thay đổi từ các tab khác để đồng bộ realtime (Không cần F5)
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'compMappings_cache' && event.newValue) {
+            competitionNameMappings.set(JSON.parse(event.newValue));
+        }
+        if (event.key === 'luykeMappings_cache' && event.newValue) {
+            luykeNameMappings.set(JSON.parse(event.newValue));
+        }
+    });
+}
+// ---------------------------------------------------------------------------------
+
 export const homeConfig = writable({ videoUrl: '', timeline: [], sliderImages: [], changelogs: [] });
 export const danhSachNhanVien = writable([]);
 export const ycxData = writable([]);
