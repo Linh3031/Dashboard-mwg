@@ -195,11 +195,12 @@ export const datasyncService = {
         try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
-    async saveWarehouseMetadata(kho, key, metadata) {
+async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const multiModeKeys = ['saved_ycx', 'saved_ycx_cungkynam', 'saved_ycx_thangtruoc'];
+        // [PHẪU THUẬT LOGIC]: Bổ sung thêm saved_dt_ck_nam để không bị ghi đè nhầm nếu vẫn còn kho dùng form cũ
+        const multiModeKeys = ['saved_ycx', 'saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam'];
         try {
             if (multiModeKeys.includes(key)) {
                 const docSnap = await getDoc(khoRef);

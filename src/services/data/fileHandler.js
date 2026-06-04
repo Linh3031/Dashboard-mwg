@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { 
     selectedWarehouse, currentUser, realtimeYCXData, 
     categoryStructure, brandList, specialProductList,
-    warehouseList // [PHẪU THUẬT LOGIC]: Import store chứa danh sách kho của User
+    warehouseList 
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
@@ -64,13 +64,10 @@ export const fileHandler = {
                 return { success: false, message: `Thiếu cột bắt buộc` };
             }
 
-            // --- 🚨 [BỘ KHIÊN BẢO VỆ DỮ LIỆU GỐC] 🚨 ---
             if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
                 normalizedData = normalizedData.map((row, index) => {
                     const rawRow = rawData[index];
-                    
                     const diaChi = rawAddressCol ? String(rawRow[rawAddressCol] || '').trim() : row.diaChi;
-                    
                     const maKhoGoc = rawRow['Mã kho tạo'] || rawRow['Kho tạo'] || rawRow['Mã Kho Tạo'] || rawRow['maKhoTao'] || row.maKhoTao || row.maKho;
 
                     return {
@@ -82,8 +79,6 @@ export const fileHandler = {
                 });
             }
 
-            // --- 🚨 [PHẪU THUẬT LOGIC]: BỘ LỌC ĐỘC QUYỀN (FILTER SHIELD) 🚨 ---
-            // Tái định nghĩa: ALL = Chỉ các mã kho có trong bộ lọc của User
             const warehouse = get(selectedWarehouse);
             if (warehouse === 'ALL') {
                 const userAllowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && w !== 'CLUSTER_ALL');
@@ -94,15 +89,14 @@ export const fileHandler = {
                     });
                 }
             }
-            // -----------------------------------------------------------------
+
+            // --- 🚨 [PHẪU THUẬT LOGIC]: CHỐT DANH SÁCH THÁNG TRƯỚC KHI GỘP DATA 🚨 ---
+            const newlyUploadedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
+            // -------------------------------------------------------------------------
 
             if (isMultiMode && (saveKey === 'saved_ycx_cungkynam' || saveKey === 'saved_ycx_thangtruoc')) {
                 const currentData = get(mapping.store) || [];
-                const incomingMonthsSet = new Set();
-                normalizedData.forEach(r => {
-                    const my = getMonthYear(r.ngayTao || r.NGAY_TAO);
-                    if (my !== 'Unknown') incomingMonthsSet.add(my);
-                });
+                const incomingMonthsSet = new Set(newlyUploadedMonths);
                 const incomingMonths = Array.from(incomingMonthsSet);
 
                 const overlap = incomingMonths.filter(m => currentData.some(r => getMonthYear(r.ngayTao || r.NGAY_TAO) === m));
@@ -144,12 +138,13 @@ export const fileHandler = {
                     const path = `warehouse_data/${storagePathWh}/${saveKey}_${Date.now()}_${file.name}`;
                     const downloadURL = await storageService.uploadFileToStorage(file, path);
                     const now = Date.now();
-                    const extractedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
+                    
+                    // --- 🚨 SỬ DỤNG CHUẨN THÁNG TỪ FILE MỚI ĐỂ FIREBASE KHÔNG XÓA NHẦM FILE CŨ 🚨 ---
+                    const extractedMonths = newlyUploadedMonths;
 
                     if (warehouse === 'ALL') {
                         const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
                         
-                        // Chia rổ dữ liệu lên Cloud cho từng kho thực tế
                         await Promise.all(incomingWarehouses.map(async (kho) => {
                             const khoDataCount = normalizedData.filter(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim() === kho).length;
                             const khoMetadata = { 
@@ -169,12 +164,7 @@ export const fileHandler = {
                             updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
                         };
                         
-                        // Vẫn lưu Meta ở Local để giao diện UI có thể sáng đèn Xanh
                         localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(allMetadata));
-                        
-                        // [PHẪU THUẬT LOGIC]: BỊT ỐNG XẢ GLOBAL. Không lưu đè lên Document ALL trên Cloud nữa.
-                        // await datasyncService.saveWarehouseMetadata('ALL', saveKey, allMetadata);
-
                         updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho quyền hạn`, allMetadata);
 
                     } else {
@@ -204,7 +194,6 @@ export const fileHandler = {
     },
 
   async handleRealtimeFileInput(event) {
-        // (Logic hàm này không có lỗi leakage, giữ nguyên)
         const file = event.target.files[0];
         if (!file) return;
         try {
@@ -224,10 +213,7 @@ export const fileHandler = {
 
             if (rawAddressCol) {
                 normalizedData = normalizedData.map((row, index) => {
-                    return {
-                        ...row,
-                        diaChi: String(rawData[index][rawAddressCol] || '').trim()
-                    };
+                    return { ...row, diaChi: String(rawData[index][rawAddressCol] || '').trim() };
                 });
             }
 
