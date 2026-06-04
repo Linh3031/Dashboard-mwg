@@ -200,7 +200,7 @@ async saveWarehouseMetadata(kho, key, metadata) {
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         // [PHẪU THUẬT LOGIC]: Bổ sung thêm saved_dt_ck_nam để không bị ghi đè nhầm nếu vẫn còn kho dùng form cũ
-        const multiModeKeys = ['saved_ycx', 'saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam'];
+        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam'];
         try {
             if (multiModeKeys.includes(key)) {
                 const docSnap = await getDoc(khoRef);
