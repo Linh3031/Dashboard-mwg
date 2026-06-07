@@ -12,7 +12,7 @@
   import TableFooter from './revenue/table/TableFooter.svelte';
   
   export let reportData = [];
-  export let shopTargetQD = 0; // [PHẪU THUẬT LOGIC]: Nhận Target Tổng DTQĐ từ component cha
+  export let shopTargetQD = 0;
   
   const dispatch = createEventDispatcher();
 
@@ -76,7 +76,6 @@
       };
   });
 
-  // [PHẪU THUẬT LOGIC]: Chèn 2 cột Mục Tiêu (mt) lên đầu để tự động bọc viền chung
   let columnSettings = [
       { key: 'targetCaNhan', label: 'Target QĐ', group: 'mt', visible: true },
       { key: 'tyLeDuKien', label: '% Dự Kiến HT', group: 'mt', visible: true },

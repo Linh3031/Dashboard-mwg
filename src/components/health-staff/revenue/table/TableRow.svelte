@@ -30,10 +30,13 @@
 
         <td class="px-2 py-3 text-right text-sm overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupBodyClass(col)}" style="width: 90px; min-width: 90px; max-width: 90px;">
             {#if col.key === 'targetCaNhan'}
-                <span class="font-bold text-gray-700">{formatters.formatRevenue(item.targetCaNhan)}</span>
+                <span class="font-bold text-gray-700">{formatters.formatRevenue(Math.round(item.targetCaNhan))}</span>
             {:else if col.key === 'tyLeDuKien'}
-                <!-- Làm tròn tuyệt đối không số lẻ & Đổi màu xanh nếu đạt >= 100% -->
-                <span class="font-bold {redClass} {item.tyLeDuKien >= 1 && !isBelowAvg ? 'text-green-600' : ''}">{Math.round(item.tyLeDuKien * 100)}%</span>
+                {@const isBelow100 = item.tyLeDuKien < 1}
+                {@const isBelowAvgItem = averages && averages.tyLeDuKien !== undefined && item.tyLeDuKien < averages.tyLeDuKien}
+                <!-- [PHẪU THUẬT LOGIC]: Tách 3 sắc thái màu cho cột Tỷ Lệ -->
+                {@const tyLeColorClass = isBelowAvgItem ? 'text-red-600 font-bold' : (isBelow100 ? 'text-red-400 font-semibold' : 'text-gray-800 font-bold')}
+                <span class="{tyLeColorClass}">{Math.round(item.tyLeDuKien * 100)}%</span>
             {:else if col.key === 'doanhThu'}
                 <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThu', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThu)}</span>
             {:else if col.key === 'doanhThuQuyDoi'}

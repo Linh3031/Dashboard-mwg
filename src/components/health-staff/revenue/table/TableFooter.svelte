@@ -9,7 +9,6 @@
     export let avgSupermarketDtTrenGc;
     export let averages;
     
-    // Nhận Data từ component cha truyền vào
     export let shopTargetQD = 0;
     export let totalTyLeDuKien = 0;
 </script>
@@ -20,9 +19,9 @@
         {#each visibleColumns as col}
             <td class="px-2 py-3 text-right overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-30" style="width: 90px; min-width: 90px; max-width: 90px;">
                 {#if col.key === 'targetCaNhan'}
-                    <span class="text-gray-700 font-bold">{formatters.formatRevenue(averages.targetCaNhan)}</span>
+                    <span class="text-gray-700 font-bold">{formatters.formatRevenue(Math.round(averages.targetCaNhan))}</span>
                 {:else if col.key === 'tyLeDuKien'}
-                    <span class="text-blue-700 font-bold">{Math.round(averages.tyLeDuKien * 100)}%</span>
+                    <span class="text-gray-800 font-bold">{Math.round(averages.tyLeDuKien * 100)}%</span>
                 {:else if col.key === 'doanhThu'}
                     {formatters.formatRevenue(averages.doanhThu)}
                 {:else if col.key === 'doanhThuQuyDoi'}
@@ -53,9 +52,9 @@
         {#each visibleColumns as col}
             <td class="px-2 py-4 text-right overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-50" style="width: 90px; min-width: 90px; max-width: 90px;">
                 {#if col.key === 'targetCaNhan'}
-                    <span class="text-gray-900 font-bold">{formatters.formatRevenue(shopTargetQD)}</span>
+                    <span class="text-gray-900 font-bold">{formatters.formatRevenue(Math.round(shopTargetQD))}</span>
                 {:else if col.key === 'tyLeDuKien'}
-                    <span class="text-blue-800 font-black">{Math.round(totalTyLeDuKien * 100)}%</span>
+                    <span class="text-gray-900 font-black">{Math.round(totalTyLeDuKien * 100)}%</span>
                 {:else if col.key === 'doanhThu'}
                     {formatters.formatRevenue(totals.doanhThu)}
                 {:else if col.key === 'doanhThuQuyDoi'}
