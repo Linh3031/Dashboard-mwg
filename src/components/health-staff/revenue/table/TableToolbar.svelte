@@ -8,7 +8,7 @@
         <div class="p-2 bg-blue-100 rounded-lg text-blue-600"><i data-feather="dollar-sign" class="w-5 h-5"></i></div>
         <div>
             <h3 class="font-bold text-gray-800 text-lg uppercase">Chi tiết Doanh Thu Lũy Kế</h3>
-            <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
+            <p class="text-xs text-gray-500">Doanh thu nhân viên được tính theo doanh thu tạo trong tháng</p>
         </div>
     </div>
     <div class="flex items-center gap-3">
