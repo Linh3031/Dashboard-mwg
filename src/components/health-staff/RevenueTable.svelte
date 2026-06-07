@@ -12,6 +12,8 @@
   import TableFooter from './revenue/table/TableFooter.svelte';
   
   export let reportData = [];
+  export let shopTargetQD = 0; // [PHẪU THUẬT LOGIC]: Nhận Target Tổng DTQĐ từ component cha
+  
   const dispatch = createEventDispatcher();
 
   let currentDay = 1;
@@ -56,18 +58,28 @@
       return map;
   })();
 
+  $: employeeCount = reportData.length || 1;
+  $: targetCaNhan = shopTargetQD / employeeCount;
+
   $: enrichedReportData = reportData.map(item => {
       const dtqd = item.doanhThuQuyDoi || 0;
       const dtqdCK = lastMonthDataMap[item.maNV] || 0;
+      const duKienCuoiThang = (dtqd / currentDay) * daysInMonth;
+      
       return { 
           ...item, 
           dtqdCK, 
-          duKienSoCK: ((dtqd / currentDay) * daysInMonth) - dtqdCK, 
-          dtTrenGc: item.gioCong > 0 ? (dtqd / item.gioCong) / 1000 : 0
+          duKienSoCK: duKienCuoiThang - dtqdCK, 
+          dtTrenGc: item.gioCong > 0 ? (dtqd / item.gioCong) / 1000 : 0,
+          targetCaNhan: targetCaNhan,
+          tyLeDuKien: targetCaNhan > 0 ? (duKienCuoiThang / targetCaNhan) : 0
       };
   });
 
+  // [PHẪU THUẬT LOGIC]: Chèn 2 cột Mục Tiêu (mt) lên đầu để tự động bọc viền chung
   let columnSettings = [
+      { key: 'targetCaNhan', label: 'Target QĐ', group: 'mt', visible: true },
+      { key: 'tyLeDuKien', label: '% Dự Kiến HT', group: 'mt', visible: true },
       { key: 'doanhThu', label: 'DT Thực', group: 'dt', visible: true },
       { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', group: 'dt', visible: true },
       { key: 'hieuQuaQuyDoi', label: '% QĐ', group: 'dt', visible: true },
@@ -131,9 +143,12 @@
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
   $: avgSupermarketDtTrenGc = totals.gioCong > 0 ? (totals.doanhThuQuyDoi / totals.gioCong) / 1000 : 0;
+  
+  $: totalTyLeDuKien = shopTargetQD > 0 ? (((totals.doanhThuQuyDoi / currentDay) * daysInMonth) / shopTargetQD) : 0;
 
-  $: employeeCount = enrichedReportData.length || 1;
   $: averages = {
+      targetCaNhan: targetCaNhan,
+      tyLeDuKien: totalTyLeDuKien,
       doanhThu: totals.doanhThu / employeeCount,
       doanhThuQuyDoi: totals.doanhThuQuyDoi / employeeCount,
       hieuQuaQuyDoi: totalPctQD,
@@ -176,7 +191,7 @@
                         {/each}
                     {/if}
                 </tbody>
-                <TableFooter {totals} {visibleColumns} {totalPctQD} {totalPctTC} {avgSupermarketDtTrenGc} {averages} />
+                <TableFooter {totals} {visibleColumns} {totalPctQD} {totalPctTC} {avgSupermarketDtTrenGc} {averages} {shopTargetQD} {totalTyLeDuKien} />
             </table>
             
         </div>

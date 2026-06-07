@@ -29,7 +29,12 @@
         {@const redClass = isBelowAvg ? '!text-red-600 !font-bold' : ''}
 
         <td class="px-2 py-3 text-right text-sm overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupBodyClass(col)}" style="width: 90px; min-width: 90px; max-width: 90px;">
-            {#if col.key === 'doanhThu'}
+            {#if col.key === 'targetCaNhan'}
+                <span class="font-bold text-gray-700">{formatters.formatRevenue(item.targetCaNhan)}</span>
+            {:else if col.key === 'tyLeDuKien'}
+                <!-- Làm tròn tuyệt đối không số lẻ & Đổi màu xanh nếu đạt >= 100% -->
+                <span class="font-bold {redClass} {item.tyLeDuKien >= 1 && !isBelowAvg ? 'text-green-600' : ''}">{Math.round(item.tyLeDuKien * 100)}%</span>
+            {:else if col.key === 'doanhThu'}
                 <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThu', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThu)}</span>
             {:else if col.key === 'doanhThuQuyDoi'}
                 <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThuQuyDoi', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</span>

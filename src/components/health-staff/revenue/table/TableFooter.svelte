@@ -8,6 +8,10 @@
     export let totalPctTC;
     export let avgSupermarketDtTrenGc;
     export let averages;
+    
+    // Nhận Data từ component cha truyền vào
+    export let shopTargetQD = 0;
+    export let totalTyLeDuKien = 0;
 </script>
 
 <tfoot class="font-bold border-t-[3px] border-gray-400 text-sm uppercase">
@@ -15,7 +19,11 @@
         <td class="px-3 py-3 text-center tracking-wider border-r border-gray-300 overflow-hidden whitespace-nowrap text-ellipsis" colspan="2" style="width: 205px; min-width: 205px; max-width: 205px;">TRUNG BÌNH</td>
         {#each visibleColumns as col}
             <td class="px-2 py-3 text-right overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-30" style="width: 90px; min-width: 90px; max-width: 90px;">
-                {#if col.key === 'doanhThu'}
+                {#if col.key === 'targetCaNhan'}
+                    <span class="text-gray-700 font-bold">{formatters.formatRevenue(averages.targetCaNhan)}</span>
+                {:else if col.key === 'tyLeDuKien'}
+                    <span class="text-blue-700 font-bold">{Math.round(averages.tyLeDuKien * 100)}%</span>
+                {:else if col.key === 'doanhThu'}
                     {formatters.formatRevenue(averages.doanhThu)}
                 {:else if col.key === 'doanhThuQuyDoi'}
                     <span class="text-sky-700">{formatters.formatRevenue(averages.doanhThuQuyDoi)}</span>
@@ -44,7 +52,11 @@
         <td class="px-3 py-4 text-center tracking-wider bg-gray-100 border-r border-gray-300 overflow-hidden whitespace-nowrap text-ellipsis" colspan="2" style="width: 205px; min-width: 205px; max-width: 205px;">TỔNG CỘNG</td>
         {#each visibleColumns as col}
             <td class="px-2 py-4 text-right overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-50" style="width: 90px; min-width: 90px; max-width: 90px;">
-                {#if col.key === 'doanhThu'}
+                {#if col.key === 'targetCaNhan'}
+                    <span class="text-gray-900 font-bold">{formatters.formatRevenue(shopTargetQD)}</span>
+                {:else if col.key === 'tyLeDuKien'}
+                    <span class="text-blue-800 font-black">{Math.round(totalTyLeDuKien * 100)}%</span>
+                {:else if col.key === 'doanhThu'}
                     {formatters.formatRevenue(totals.doanhThu)}
                 {:else if col.key === 'doanhThuQuyDoi'}
                     <span class="text-sky-800">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</span>

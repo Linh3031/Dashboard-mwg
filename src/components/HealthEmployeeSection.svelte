@@ -33,6 +33,9 @@
   let processedReport = [];
   let isMultiMonthMode = false;
 
+  // [PHẪU THUẬT LOGIC]: Rút Target QĐ từ Store để bơm xuống RevenueTable
+  $: currentGoals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
+  $: shopTargetQD = (parseFloat(currentGoals.doanhThuQD || 0) * 1000000);
   // [PHẪU THUẬT 2]: Gộp 2 luồng YCX, Lọc đúng Kho, Bỏ qua lọc ngày để bảo toàn các tháng cũ
   $: combinedMultiMonthData = [...($ycxData || []), ...($ycxDataThangTruoc || [])].filter(item => {
       // [FIX] Nếu chọn ALL thì không lọc
@@ -348,7 +351,12 @@
                             
                             {#if !isMultiMonthMode}
                                 <div id="revenue-report-container-lk">
-                                    <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} on:toggleMode={() => isMultiMonthMode = true} />
+                                    <RevenueTable 
+    reportData={processedReport} 
+    shopTargetQD={shopTargetQD}
+    on:viewDetail={handleEmployeeClick} 
+    on:toggleMode={() => isMultiMonthMode = true} 
+/>
                                 </div>
                             {:else}
                                 {#if combinedMultiMonthData.length > 0 && uniqueMonthsCount <= 1}
