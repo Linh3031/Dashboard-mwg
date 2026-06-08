@@ -25,7 +25,6 @@
 
   let chartInstancePie = null;
   let chartInstanceBar = null;
-
   onMount(async () => {
       if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
           try {
@@ -36,7 +35,6 @@
           } catch (e) { console.error(e); }
       }
   });
-
   // --- THEME ---
   $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT" : "CHI TIẾT NGÀNH HÀNG";
   $: titleIcon = showUnexported ? "alert-circle" : "layers";
@@ -61,7 +59,6 @@
 
   // --- CLOUD SYNC ---
   $: if ($selectedWarehouse) loadCloudConfig($selectedWarehouse);
-
   async function loadCloudConfig(kho) {
       isLoadingConfig = true;
       const hiddenList = await datasyncService.loadRealtimeHiddenCategories(kho);
@@ -77,7 +74,6 @@
 
   // --- LOGIC AGGREGATION ---
   $: sourceData = showUnexported ? unexportedItems : items;
-
   $: allGroups = (() => {
       const macroItems = ($macroCategoryConfig || []).map(m => ({
           key: m.name, label: m.name, type: 'macro'
@@ -92,7 +88,6 @@
       const simpleItems = Array.from(simpleItemsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
       return [...macroItems, ...simpleItems];
   })();
-
   $: filterList = allGroups.filter(g => g.label.toLowerCase().includes(filterSearch.toLowerCase()));
 
   function toggleCategoryVisibility(key) {
@@ -114,7 +109,7 @@
       macroConfigs.forEach(macro => {
           if (!hiddenCategories.has(macro.name)) {
               const keywords = (macro.items || []).map(k => k.toLowerCase());
-              const childItems = sourceData.filter(item => {
+                  const childItems = sourceData.filter(item => {
                   const iName = (item.name || item.nganhHang || '').toLowerCase();
                   const iId = (item.id || '').toLowerCase();
                   return keywords.some(k => iName.includes(k) || iId === k);
@@ -125,14 +120,13 @@
                       id: `MACRO_${macro.name}`, name: macro.name, isMacro: true,
                       revenue: childItems.reduce((sum, i) => sum + (i.revenue || 0), 0),
                       doanhThuQuyDoi: childItems.reduce((sum, i) => sum + (i.doanhThuQuyDoi || 0), 0),
-                      quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.soLuong || 0), 0),
+                      quantity: childItems.reduce((sum, i) => sum + (i.quantity || i.soLuong || i.soLuong || 0), 0),
                       soLuong: childItems.reduce((sum, i) => sum + (i.soLuong || 0), 0),
                       doanhThuThuc: childItems.reduce((sum, i) => sum + (i.doanhThuThuc || 0), 0)
                   });
               }
           }
       });
-
       sourceData.forEach((item, index) => {
           const name = item.name || item.nganhHang || 'Chưa đặt tên';
           const safeId = item.id || name || `ITEM_${index}`;
@@ -140,7 +134,6 @@
               result.push({ ...item, id: safeId, name: name, isMacro: false });
           }
       });
-
       return result;
   })();
 
@@ -148,7 +141,6 @@
       const name = item.name || '';
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
   });
-
   function handleSort(event) {
       const key = event.detail;
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -173,7 +165,6 @@
       }
       return sortDirection === 'asc' ? valA - valB : valB - valA;
   });
-
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
   $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
@@ -186,7 +177,6 @@
       const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
       return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
   })();
-
   $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig);
 
   function calculateBrandData(source, visibleItems, configs) {
@@ -223,7 +213,6 @@
       if (ctxPie) {
           if (chartInstancePie) chartInstancePie.destroy();
           const totalPieRev = pieData.reduce((sum, d) => sum + (showUnexported ? d.doanhThuQuyDoi : d.revenue), 0);
-
           chartInstancePie = new Chart(ctxPie, {
               type: 'doughnut',
               data: {
@@ -278,7 +267,6 @@
   }
 
   $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
-
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) isSettingsOpen = false;
   }
@@ -289,6 +277,21 @@
 <svelte:window on:click={handleWindowClick} />
 
 <div class="luyke-widget h-full">
+    
+    <div class="capture-only-header hidden">
+        <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
+            <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
+            <span class="truncate flex items-center gap-2">
+                {titleText}
+                {#if showUnexported && totalRevenue > 0}
+                    <span class="px-2.5 py-0.5 bg-red-100 text-red-800 text-sm font-black rounded border border-red-200 shadow-sm whitespace-nowrap">
+                        {formatters.formatRevenue(totalRevenue, 0)}
+                    </span>
+                {/if}
+            </span>
+        </h3>
+    </div>
+
     <div class="luyke-toolbar">
         <div class="luyke-toolbar-left flex-grow min-w-0">
             <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
@@ -326,6 +329,7 @@
                         <div class="p-2 border-b">
                             <input type="text" class="w-full text-sm p-1.5 border rounded outline-none" placeholder="Tìm ngành hàng..." bind:value={filterSearch} />
                         </div>
+     
                         <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
                             {#if filterList.length === 0}
                                 <p class="text-xs text-gray-500 text-center p-2">Không tìm thấy.</p>
@@ -342,6 +346,7 @@
                                 {/each}
                             {/if}
                         </div>
+           
                         <div class="p-2 border-t flex justify-between bg-gray-50 rounded-b-lg">
                             <button class="text-xs font-bold text-blue-600 hover:underline" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                             <button class="text-xs font-bold text-red-600 hover:underline" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
@@ -375,9 +380,8 @@
                     {@const barColor = showUnexported ? 'bg-orange-500' : (isMacro ? 'bg-indigo-500' : theme.bar)}
 
                     <div class="relative {cardBg} border {cardBorder} rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col h-full group capture-card-inner">
-                        
                         <div class="absolute -right-3 -bottom-3 opacity-[0.06] transition-transform duration-500 group-hover:scale-110 z-0 {accentColor}">
-                            <i data-feather={theIcon} style="width: 110px; height: 110px; stroke-width: 1.5px;"></i>
+                           <i data-feather={theIcon} style="width: 110px; height: 110px; stroke-width: 1.5px;"></i>
                         </div>
 
                         <div class="flex justify-between items-stretch gap-2 mb-2.5 relative z-10 flex-1">
@@ -386,11 +390,13 @@
                                     <div class="flex items-center {accentColor} mb-1.5">
                                         <i data-feather={theIcon} class="w-4 h-4"></i>
                                     </div>
+                          
                                     <h4 class="text-[15px] sm:text-[16px] font-bold text-slate-800 line-clamp-2 leading-[1.25] pb-1 capture-text-title" title={name}>
                                         {name}
                                         {#if isMacro}<span class="ml-1 text-[10px] font-bold text-indigo-500 bg-white/70 px-1 py-0.5 rounded shadow-sm border border-indigo-100 translate-y-[-1px] inline-block">GỘP</span>{/if}
                                     </h4>
                                 </div>
+                   
                                 <div class="w-full h-1.5 bg-black/10 rounded-full overflow-hidden shadow-inner mt-1.5">
                                     <div class="h-full {barColor} rounded-full transition-all duration-700 ease-out" style="width: {barPercent}%"></div>
                                 </div>
@@ -408,18 +414,18 @@
                                 <span class="text-[10px] text-slate-500 uppercase font-bold tracking-tight capture-text-label">SL:</span>
                                 <span class="text-[14px] sm:text-[15px] font-bold text-slate-800 capture-text-value">{formatters.formatNumber(quantity)}</span>
                             </div>
-                            
+             
                             {#if !showUnexported}
-                            <div class="text-right">
-                                <span class="text-[15px] sm:text-[16px] font-black {accentColor} bg-white/70 px-2 py-0.5 rounded shadow-sm border border-white/50 inline-block drop-shadow-sm capture-text-percent">
-                                    {formatters.formatPercentage(marketSharePercent/100)}
-                                </span>
-                            </div>
+                                <div class="text-right">
+                                    <span class="text-[15px] sm:text-[16px] font-black {accentColor} bg-white/70 px-2 py-0.5 rounded shadow-sm border border-white/50 inline-block drop-shadow-sm capture-text-percent">
+                                        {formatters.formatPercentage(marketSharePercent/100)}
+                                    </span>
+                                </div>
                             {:else}
-                            <div class="flex items-baseline gap-1.5 text-right">
-                                <span class="text-[10px] text-slate-500 uppercase font-bold tracking-tight capture-text-label">THỰC:</span>
-                                <span class="text-[14px] sm:text-[15px] font-bold text-slate-800 capture-text-value">{formatters.formatRevenue(item.doanhThuThuc || 0, 0)}</span>
-                            </div>
+                                <div class="flex items-baseline gap-1.5 text-right">
+                                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-tight capture-text-label">THỰC:</span>
+                                    <span class="text-[14px] sm:text-[15px] font-bold text-slate-800 capture-text-value">{formatters.formatRevenue(item.doanhThuThuc || 0, 0)}</span>
+                                </div>
                             {/if}
                         </div>
                     </div>
@@ -453,7 +459,6 @@
                                 <td class="px-3 py-2 text-right font-bold">{formatters.formatNumber(qty)}</td>
                                 <td class="px-3 py-2 text-right font-bold text-blue-600">{formatters.formatRevenue(rev)}</td>
                                 <td class="px-3 py-2 text-right font-medium text-orange-600">{formatters.formatNumber(price / 1000000, 1)}</td>
-                                
                                 {#if showUnexported}
                                     <td class="px-3 py-2 text-right text-gray-500">{formatters.formatRevenue(item.doanhThuThuc || 0)}</td>
                                 {/if}
@@ -482,10 +487,27 @@
     /* =========================================
        CHỈ ÁP DỤNG KHI BẤM NÚT CHỤP ẢNH (CAPTURE)
        ========================================= */
+       
+    /* 1. Kích hoạt hiện tiêu đề cô lập khi chụp ảnh */
+    :global(.capture-container .capture-only-header) {
+        display: flex !important;
+        padding: 16px 16px 4px 16px !important;
+        background-color: #ffffff !important;
+        align-items: center !important;
+        border-top-left-radius: 0.75rem !important;
+        border-top-right-radius: 0.75rem !important;
+    }
+
+    /* 2. Ẩn khối toolbar chứa các nút lọc để làm sạch ảnh */
+    :global(.capture-container .luyke-toolbar) {
+        display: none !important;
+    }
+
     :global(.capture-container .rt-cat-grid) {
         display: grid !important;
         grid-template-columns: repeat(3, 1fr) !important; /* ÉP 3 CỘT */
-        width: 900px !important; /* ÉP CHIỀU NGANG VỪA MÀN ĐIỆN THOẠI */
+        width: 900px !important;
+        /* ÉP CHIỀU NGANG VỪA MÀN ĐIỆN THOẠI */
         max-width: 900px !important;
         margin: 0 auto !important;
         gap: 16px !important;
@@ -500,21 +522,22 @@
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         white-space: normal !important;
-        max-height: 3.2em !important; 
+        max-height: 3.2em !important;
     }
 
     /* Ép Font siêu to, chống gãy chân chữ chỉ dành cho xuất ảnh */
     :global(.capture-container .capture-text-title) { 
-        font-size: 16px !important; 
+        font-size: 16px !important;
         line-height: 1.4 !important; 
         padding-bottom: 4px !important; 
     }
     :global(.capture-container .capture-text-revenue) { 
-        font-size: 32px !important; 
+        font-size: 32px !important;
         line-height: 1.1 !important; 
         padding-bottom: 4px !important; 
     }
     :global(.capture-container .capture-text-label) { font-size: 10px !important; }
     :global(.capture-container .capture-text-value) { font-size: 15px !important; }
-    :global(.capture-container .capture-text-percent) { font-size: 17px !important; padding: 4px 8px !important; }
+    :global(.capture-container .capture-text-percent) { font-size: 17px !important;
+        padding: 4px 8px !important; }
 </style>
