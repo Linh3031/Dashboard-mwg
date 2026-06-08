@@ -151,7 +151,7 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     
-    // Title hiển thị TRONG ẢNH (Vẫn giữ có dấu cho đẹp)
+    // Title hiển thị TRONG ẢNH
     const displayTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
@@ -180,40 +180,50 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
             backgroundColor: '#f3f4f6',
             logging: false,
             windowWidth: windowWidth, 
-            windowHeight: null
+            windowHeight: null,
+            // [VẮC-XIN CŨ]: Chống lỗi iframe/Youtube
+            ignoreElements: (element) => {
+                if (element.tagName === 'IFRAME' || element.tagName === 'VIDEO') return true; 
+                if (element.id && (element.id.includes('modal-help') || element.id.includes('feather'))) return true;
+                return false; 
+            }
         });
 
-        const imageDataUrl = canvas.toDataURL('image/png');
         if (isPreview) {
+            const imageDataUrl = canvas.toDataURL('image/png');
             return { title: displayTitle, url: imageDataUrl };
         } else {
-            // [FIX NAME] Xử lý tiếng Việt thành không dấu trước khi lưu file
             const noToneTitle = removeVietnameseTones(displayTitle);
-            
-            // Chỉ giữ lại chữ cái không dấu, số và dấu gạch dưới
-            const safeFileName = noToneTitle
-                                    .replace(/[^a-zA-Z0-9]/g, '_')
-                                    .replace(/_+/g, '_'); // Tránh nhiều dấu _ liền nhau
+            const safeFileName = noToneTitle.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_'); 
 
-            // [PHẪU THUẬT LOGIC]: Chuyển Base64 thành file vật lý (Blob) để tải thẳng
-            const res = await fetch(imageDataUrl);
-            const blob = await res.blob();
-            const blobUrl = URL.createObjectURL(blob);
+            // [PHẪU THUẬT V5]: XUẤT FILE TRỰC TIẾP KHÔNG QUA CHUỖI BASE64 (CHỐNG TRÀN RAM & FILE 0KB)
+            return new Promise((resolve) => {
+                canvas.toBlob((blob) => {
+                    // Nếu Trình duyệt từ chối tạo blob (Do bảng cao vượt ngưỡng 32,767px giới hạn phần cứng)
+                    if (!blob) {
+                        alert("❌ Bảng dữ liệu quá dài và khổng lồ! Trình duyệt không đủ khả năng xử lý bức ảnh này.\n\n💡 GIẢI PHÁP: Vui lòng thu gọn bớt (Ẩn) các Ngành hàng không cần thiết hoặc dùng bộ lọc để làm bảng ngắn lại trước khi chụp.");
+                        resolve(null);
+                        return;
+                    }
 
-            const link = document.createElement('a');
-            link.download = `${safeFileName}.png`;
-            link.href = blobUrl;
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            // Xóa bộ nhớ đệm sau 1 giây
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-            
-            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
-            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
-            return null;
+                    const blobUrl = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `${safeFileName}.png`;
+                    link.href = blobUrl;
+                    
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    // Xóa bộ nhớ đệm an toàn
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                    
+                    notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
+                    setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+                    resolve(null);
+                    
+                }, 'image/png'); // Định dạng xuất
+            });
         }
     } finally {
         if (document.body.contains(captureWrapper)) document.body.removeChild(captureWrapper);
