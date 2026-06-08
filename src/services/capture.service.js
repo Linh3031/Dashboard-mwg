@@ -4,13 +4,11 @@ import { notificationStore, currentUser } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { get } from 'svelte/store';
 
-// Lấy logic chụp ảnh từ cấu trúc hệ thống mới của bạn
 import { injectCaptureStyles } from './capture/engine.js';
 import { getProcessor, SPLIT_GROUPS } from './capture/registry.js';
 import { processDefault } from './capture/processors/default.js';
 
-// --- [FIX GENESIS]: GHI ĐÈ CSS LỖI TỪ ENGINE ---
-// Hàm này có nhiệm vụ "Chữa cháy", ghi đè lên các style lỗi từ file engine.js
+// --- [FIX GENESIS V4]: CÔ LẬP, CO GIÃN THÔNG MINH & XÓA VẠCH TRẮNG ---
 const _injectCaptureFixes = () => {
     const styleId = 'genesis-capture-fixes';
     document.getElementById(styleId)?.remove();
@@ -18,7 +16,6 @@ const _injectCaptureFixes = () => {
     style.id = styleId;
     style.innerHTML = `
         /* 1. Trị bệnh cắt nội dung (Mất 80% phần dưới) */
-        /* Ép các widget phải hiển thị đầy đủ chiều cao, tắt thanh cuộn */
         body .capture-container .luyke-tier-1-grid,
         body .capture-container .luyke-widget,
         body .capture-container .luyke-widget-body,
@@ -29,7 +26,7 @@ const _injectCaptureFixes = () => {
             overflow: visible !important;
         }
 
-        /* 2. Trị bệnh phình to (Vô hiệu hóa transform scale(5) cũ) */
+        /* 2. Ép Mobile cho các khối chỉ định */
         body .capture-container .preset-mobile-portrait,
         body .capture-container.preset-mobile-portrait {
             transform: none !important; 
@@ -37,8 +34,6 @@ const _injectCaptureFixes = () => {
             min-width: 480px !important;
             max-width: 480px !important;
         }
-
-        /* 3. Ép cứng nhóm Hiệu quả & Top Nhóm hàng (tier1) thành giao diện Mobile dọc */
         body .capture-container .luyke-tier-1-grid {
             width: 480px !important;
             min-width: 480px !important;
@@ -48,19 +43,61 @@ const _injectCaptureFixes = () => {
             flex-direction: column !important;
             gap: 16px !important;
         }
+
+        /* 3. Tắt thuộc tính sticky */
+        body .capture-container .sticky {
+            position: static !important;
+        }
+
+        /* 4. CHỐNG THỪA KHOẢNG TRỐNG & XÓA VẠCH TRẮNG 2 BÊN RÌA */
+        /* Lột bỏ viền, bóng và nền trắng của cái vỏ Wrapper bên ngoài */
+        body .capture-container [data-capture-group="revenue-table"],
+        body .capture-container [data-capture-group="revenue-table"] > div,
+        body .capture-container [data-capture-group="pasted-competition"],
+        body .capture-container [data-capture-group="pasted-competition"] > div {
+            width: fit-content !important;
+            min-width: fit-content !important;
+            max-width: fit-content !important;
+            margin: 0 auto !important;
+            border: none !important;
+            box-shadow: none !important;
+            background-color: transparent !important; /* Khóa vạch trắng lộ ra do nền */
+            border-radius: 0 !important;
+        }
+        
+        /* Bơm nền trắng thẳng vào Table để ôm sát nút */
+        body .capture-container [data-capture-group="revenue-table"] table,
+        body .capture-container [data-capture-group="pasted-competition"] table {
+            width: max-content !important;
+            min-width: max-content !important;
+            max-width: max-content !important;
+            table-layout: auto !important;
+            background-color: #ffffff !important;
+        }
+
+        /* 5. CÔ LẬP HOÀN TOÀN: Khóa cột Hạng 45px không vạ lây */
+        body .capture-container [data-capture-group="revenue-table"] table th:first-child,
+        body .capture-container [data-capture-group="revenue-table"] table td:first-child,
+        body .capture-container [data-capture-group="pasted-competition"] table th:first-child,
+        body .capture-container [data-capture-group="pasted-competition"] table td:first-child {
+            width: 45px !important;
+            min-width: 45px !important;
+            max-width: 45px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+        }
     `;
     document.head.appendChild(style);
     return style;
 };
 
 export const captureService = {
-    // 1. Chụp lẻ
     async captureAndDownload(elementToCapture, title, presetClass = '') {
         const user = get(currentUser);
         analyticsService.incrementCounter('actionsTaken', user?.email);
         
         const styleElement = injectCaptureStyles();
-        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        const fixElement = _injectCaptureFixes(); 
         
         try {
             await processDefault([elementToCapture], title, { presetClass: presetClass });
@@ -69,11 +106,10 @@ export const captureService = {
             alert('Lỗi khi chụp ảnh: ' + error.message);
         } finally {
             styleElement.remove();
-            fixElement.remove(); // Dọn dẹp Fix
+            fixElement.remove(); 
         }
     },
     
-    // 2. Chụp tổng cũ
     async captureDashboardInParts(contentContainer, baseTitle) {
        if (!contentContainer) return alert('Lỗi: Không tìm thấy nội dung để chụp.');
         const user = get(currentUser);
@@ -90,7 +126,7 @@ export const captureService = {
         });
 
         const styleElement = injectCaptureStyles();
-        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        const fixElement = _injectCaptureFixes();
         
         if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -124,14 +160,13 @@ export const captureService = {
             }
         } finally {
             styleElement.remove();
-            fixElement.remove(); // Dọn dẹp Fix
+            fixElement.remove();
             if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
         }
         notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất quá trình chụp!' }));
         setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
     },
 
-    // 3. Tách Elements cực nhanh cho việc Clone DOM
     getPreviewElements(contentContainer, baseTitle) {
         if (!contentContainer) return [];
 
@@ -173,7 +208,6 @@ export const captureService = {
         return previewItems;
     },
 
-    // 4. [HÀM ĐÍCH] Chụp nét cao khi người dùng bấm Tải xuống
     async captureSelectedItems(contentContainer, baseTitle, selectedIndices) {
         if (!contentContainer || !selectedIndices || selectedIndices.length === 0) return;
 
@@ -190,7 +224,7 @@ export const captureService = {
         });
 
         const styleElement = injectCaptureStyles();
-        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        const fixElement = _injectCaptureFixes();
         
         if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -243,7 +277,7 @@ export const captureService = {
             throw e; 
         } finally {
             styleElement.remove();
-            fixElement.remove(); // Dọn dẹp Fix
+            fixElement.remove();
             if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
         }
 
