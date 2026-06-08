@@ -54,7 +54,9 @@ const _injectCaptureFixes = () => {
         body .capture-container [data-capture-group="revenue-table"],
         body .capture-container [data-capture-group="revenue-table"] > div,
         body .capture-container [data-capture-group="pasted-competition"],
-        body .capture-container [data-capture-group="pasted-competition"] > div {
+        body .capture-container [data-capture-group="pasted-competition"] > div,
+        body .capture-container [data-capture-group="revenue-detail-mobile"],
+        body .capture-container [data-capture-group="revenue-detail-mobile"] > div {
             width: fit-content !important;
             min-width: fit-content !important;
             max-width: fit-content !important;
@@ -67,7 +69,8 @@ const _injectCaptureFixes = () => {
         
         /* Bơm nền trắng thẳng vào Table để ôm sát nút */
         body .capture-container [data-capture-group="revenue-table"] table,
-        body .capture-container [data-capture-group="pasted-competition"] table {
+        body .capture-container [data-capture-group="pasted-competition"] table,
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table {
             width: max-content !important;
             min-width: max-content !important;
             max-width: max-content !important;
@@ -75,7 +78,7 @@ const _injectCaptureFixes = () => {
             background-color: #ffffff !important;
         }
 
-        /* 5. CÔ LẬP HOÀN TOÀN: Khóa cột Hạng 45px không vạ lây */
+        /* 5. CÔ LẬP HOÀN TOÀN: Khóa cột Hạng 45px không vạ lây (Dành cho bảng cũ) */
         body .capture-container [data-capture-group="revenue-table"] table th:first-child,
         body .capture-container [data-capture-group="revenue-table"] table td:first-child,
         body .capture-container [data-capture-group="pasted-competition"] table th:first-child,
@@ -83,6 +86,16 @@ const _injectCaptureFixes = () => {
             width: 45px !important;
             min-width: 45px !important;
             max-width: 45px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+        }
+
+        /* 6. CÔ LẬP DÀNH RIÊNG CHO BẢNG REALTIME: Khóa cột Hạng 50px */
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table th:first-child,
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table td:first-child {
+            width: 50px !important;
+            min-width: 50px !important;
+            max-width: 50px !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
         }
