@@ -10,7 +10,7 @@
         currency: 'VND',
         maximumFractionDigits: 0
     });
-    
+
     const numberFormatter = new Intl.NumberFormat('vi-VN', {
         maximumFractionDigits: 0 
     });
@@ -40,6 +40,7 @@
         const gap = (d.bestRank - rankCutoff);
         return gap >= 10;
     });
+
 </script>
 
 <div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition" data-capture-filename="Thi_Dua_Luy_Ke_Vung">
@@ -60,6 +61,7 @@
                 <h2 class="text-3xl font-black text-white mb-1 tracking-tight leading-tight">{safeData.sieuThi}</h2>
                 <div class="flex items-center flex-wrap gap-4 text-blue-100 mt-2 text-sm font-medium">
                     <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="box" class="w-4 h-4"></i> Thi đua: {safeData.soNganhHang} NH</span>
+  
                     <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="check-circle" class="w-4 h-4 text-green-400"></i> Đang đạt: {safeData.soNganhHangDat} NH</span>
                     
                     {#if listCoGiai.length > 0}
@@ -123,6 +125,7 @@
                         <i data-feather="trending-up" class="w-5 h-5 text-yellow-600"></i>
                         <h3 class="font-bold text-yellow-800 uppercase text-lg">Tiềm Năng Sắp Có Giải ({listTiemNang.length})</h3>
                     </div>
+                   
                     {#if safeData.tongThuongTiemNang > 0}
                         <span class="text-green-600 font-bold text-base bg-white px-3 py-0.5 rounded-full border border-green-200 shadow-sm whitespace-nowrap">
                             + {formatMoney(safeData.tongThuongTiemNang)}
@@ -168,20 +171,26 @@
                 </div>
                 <div class="p-5 tdv-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
                     {#each listCanCoGang as item}
-                        <div class="bg-white p-3 rounded-lg border border-gray-200 opacity-80 hover:opacity-100 flex flex-col h-full cursor-pointer hover:ring-2 hover:ring-red-400 hover:shadow-lg transition-all" on:click={() => dispatch('openCategoryModal', item.nganhHang)} tabindex="0" role="button">
-                            <h4 class="font-semibold text-gray-700 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
+                        <div class="bg-white p-4 rounded-lg border border-red-200 shadow-sm relative overflow-hidden flex flex-col h-full cursor-pointer hover:ring-2 hover:ring-red-400 hover:shadow-lg transition-all" on:click={() => dispatch('openCategoryModal', item.nganhHang)} tabindex="0" role="button">
+                            <div class="absolute top-0 right-0 w-16 h-16 bg-red-50 rounded-bl-full -z-0 opacity-50"></div>
                             
-                            <div class="space-y-1 mb-2 mt-auto">
-                                <div class="flex justify-between text-xs">
+                            <h4 class="font-bold text-gray-800 mb-2 leading-tight line-clamp-2 h-[44px]" title={item.nganhHang}>{item.nganhHang}</h4>
+                            
+                            <div class="text-2xl font-black text-gray-400 money-large mb-3 relative z-10">
+                                {item.potentialPrize > 0 ? formatMoney(item.potentialPrize) : '0 đ'}
+                            </div>
+                            
+                            <div class="space-y-1 mb-3 mt-auto relative z-10">
+                                <div class="flex justify-between text-sm">
                                     <span class="text-gray-500">DK Hoàn thành:</span>
                                     <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienHoanThanh * 100)}%</span>
                                 </div>
-                                <div class="flex justify-between text-xs">
+                                <div class="flex justify-between text-sm">
                                     <span class="text-gray-500">Vượt mục tiêu:</span>
                                     <span class="font-semibold text-gray-800">{numberFormatter.format(item.duKienVuot)}</span>
                                 </div>
                             </div>
-                            <div class="text-xs text-gray-500 flex justify-between items-center bg-white p-2 rounded border border-red-100">
+                            <div class="text-xs text-red-700 bg-red-50 flex justify-between px-2 py-1 rounded font-medium border border-red-100">
                                 <span>Hạng: <b>{item.bestRank}</b></span>
                                 <span>Cách giải: <b>{item.bestRank - rankCutoff} hạng</b></span>
                             </div>
@@ -204,12 +213,12 @@
 
     /* BẢO VỆ CHUẨN MỰC CHỤP ẢNH HTML2CANVAS */
     :global(.capture-container) .tdv-root {
-        width: 1100px !important; 
+        width: 1100px !important;
         max-width: 1100px !important;
         margin: 0 auto !important; 
         background-color: white;
         border: none !important;
-        padding: 0 !important; 
+        padding: 0 !important;
     }
 
     :global(.capture-container) .tdv-grid {
@@ -223,7 +232,7 @@
         -webkit-line-clamp: 2 !important;
         -webkit-box-orient: vertical !important;
         white-space: normal !important;
-        height: 44px !important; 
+        height: 44px !important;
     }
     
     :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
