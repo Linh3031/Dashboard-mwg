@@ -96,7 +96,8 @@ export const syncHandler = {
         
         if (isBatchMode) {
             if (warehouse === 'ALL') {
-                targetKeys = [...Object.keys(FILE_MAPPING), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc'];
+                // Bổ sung key cluster_summary_data
+                targetKeys = [...Object.keys(FILE_MAPPING), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc', 'cluster_summary_data'];
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
             } else {
@@ -230,10 +231,9 @@ export const syncHandler = {
         
         try {
             if (!isPaste) {
-                let allDataForStorage = []; // Hồ chứa chung lưu DB
-                let allDataForStore = [];   // Dữ liệu lọc cho UI
+                let allDataForStorage = []; 
+                let allDataForStore = [];   
                 
-                // MẢNG LỌC TOÀN CỤC CHUẨN XÁC
                 let userAllowedWarehouses = [];
                 const dsnvData = get(danhSachNhanVien);
                 if (dsnvData && dsnvData.length > 0) {
@@ -285,7 +285,6 @@ export const syncHandler = {
                     
                     normalizedData = applyDataShield(rawData, normalizedData, baseKey);
                     
-                    // 1. LỌC ĐỂ LƯU XUỐNG Ổ CỨNG (Giữ lại tất cả kho thuộc cụm của User)
                     let dataForStorage = normalizedData;
                     if (userAllowedWarehouses.length > 0) {
                          dataForStorage = normalizedData.filter(d => {
@@ -295,7 +294,6 @@ export const syncHandler = {
                     }
                     allDataForStorage = [...allDataForStorage, ...dataForStorage];
 
-                    // 2. LỌC ĐỂ HIỂN THỊ UI (Nếu chọn kho lẻ -> chỉ lấy 1 kho, Nếu ALL -> lấy toàn bộ)
                     let dataForStore = dataForStorage;
                     if (warehouse !== 'ALL') {
                          dataForStore = dataForStorage.filter(d => {
@@ -317,9 +315,7 @@ export const syncHandler = {
                     });
                 }
 
-                // LƯU CỤC DỮ LIỆU ĐỦ KHO VÀO Ổ CỨNG
                 await storage.setItem(stateKey, allDataForStorage);
-                // CHỈ SET CỤC ĐÃ LỌC LÊN STORE GIAO DIỆN
                 mapping.store.set(allDataForStore);
                 
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_FILE');
@@ -333,7 +329,18 @@ export const syncHandler = {
                 const textContent = await response.text();
                 
                 let processedCount = 0;
-                if (mapping.processFunc) {
+                
+                // Phân luồng chuẩn mực 2 bước
+                if (mapping.isThiDuaNV) {
+                    const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
+                    if (parsedData.success) {
+                        dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
+                        const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
+                        mapping.store.set(processedData);
+                        processedCount = processedData?.length || 0;
+                    }
+                    localStorage.setItem(stateKey, textContent);
+                } else if (mapping.processFunc) {
                     const processedData = mapping.processFunc(textContent);
                     mapping.store.set(processedData);
                     processedCount = processedData?.length || 0;

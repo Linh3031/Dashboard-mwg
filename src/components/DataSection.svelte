@@ -51,10 +51,26 @@
       currentClusterCode = '';
   }
 
+  let lastDsnvTimestamp = 0;
+  $: if ($fileSyncState && $fileSyncState['saved_danhsachnv']) {
+      const currentTs = $fileSyncState['saved_danhsachnv'].timestamp;
+      const status = $fileSyncState['saved_danhsachnv'].status;
+      
+      if (currentTs && currentTs !== lastDsnvTimestamp) {
+          lastDsnvTimestamp = currentTs;
+          
+          const currentWh = $selectedWarehouse || 'ALL';
+
+          if ((status === 'cached' || status === 'synced') && currentWh === 'ALL' && !isSyncing) {
+              if (!$selectedWarehouse) selectedWarehouse.set('ALL'); 
+              setTimeout(() => { triggerSync('ALL'); }, 500); 
+          }
+      }
+  }
+
   function checkClusterStatus(employees) {
       const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
       const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
-
       if (clusters.length > 0 && (warehouses.length > 1 || clusters.includes($selectedWarehouse))) {
           isClusterMode = true;
           currentClusterCode = clusters[0]; 
@@ -63,7 +79,6 @@
                if (!list.includes(currentClusterCode)) return [currentClusterCode, ...list];
                return list;
           });
-
           if (!$selectedWarehouse || $selectedWarehouse !== currentClusterCode) {
                console.log(`[Cluster] Detected cluster: ${currentClusterCode}`);
           }
@@ -78,27 +93,22 @@
   async function handlePasteClusterSummary(event) {
       const text = event.detail;
       if (!text) return;
-
       const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
       const isolatedKey = `cluster_summary_data_${targetClusterId}`;
-
       fileSyncState.update(s => ({
           ...s,
           [isolatedKey]: { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
       }));
-
       try {
           const parsedData = luykeParser.parseClusterSummaryData(text);
           clusterSummaryData.set(parsedData);
-          localStorage.setItem(isolatedKey, text); 
-
+          localStorage.setItem(isolatedKey, text);
           const count = Object.keys(parsedData).length;
           const now = Date.now();
 
           const blob = new Blob([text], { type: 'text/plain' });
           const path = `warehouse_data/${targetClusterId}/cluster_summary_data_${now}.txt`;
           const downloadUrl = await storageService.uploadFileToStorage(blob, path);
-
           const metaToSave = {
               downloadURL: downloadUrl,
               fileName: 'du_lieu_dan_cum.txt',
@@ -111,7 +121,6 @@
 
           await datasyncService.saveWarehouseMetadata(targetClusterId, 'cluster_summary_data', metaToSave);
           localStorage.setItem(`_meta_${targetClusterId}_cluster_summary_data`, JSON.stringify(metaToSave));
-
           fileSyncState.update(s => ({
               ...s,
               [isolatedKey]: { 
@@ -120,7 +129,6 @@
                   metadata: metaToSave 
               }
           }));
-
           notificationStore.set({ message: '✅ Đã trích xuất và đồng bộ Báo cáo Cụm!', type: 'success' });
       } catch (error) {
           console.error(error);
@@ -172,7 +180,6 @@
   onMount(async () => {
     if (typeof feather !== 'undefined') feather.replace();
 
-    // [SURGICAL FIX]: MIGRATION & DYNAMIC LOAD DỮ LIỆU CỤM
     let savedClusterText = null;
     let restoreMeta = null;
     let isolatedKeyToLoad = null;
@@ -193,7 +200,6 @@
         }
     }
 
-    // Nếu không có key cô lập, kiểm tra key cũ để Migrate
     if (!savedClusterText) {
         savedClusterText = localStorage.getItem('cluster_summary_data');
         if (savedClusterText) {
@@ -248,22 +254,25 @@
       isSyncing = true;
       try {
           if (warehouse === 'ALL') {
+              const syncPromises = [];
+              
+              // 1. Quét ALL (Đẩy thẳng lên mảng chờ)
+              syncPromises.push(dataService.syncDownFromCloud('ALL'));
+              
+              // 2. Bắn tín hiệu để đánh thức ô Báo Cáo Cụm
+              const targetCluster = (isClusterMode && currentClusterCode) ? currentClusterCode : 'UNKNOWN';
+              syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${targetCluster}`));
+              
+              // 3. Quét các kho con
               const validWarehouses = $warehouseList.filter(k => k && k !== 'ALL');
               if (validWarehouses.length > 0) {
-                  const syncPromises = [];
-                  syncPromises.push(dataService.syncDownFromCloud('ALL'));
-                  
-                  if (isClusterMode && currentClusterCode) {
-                      syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${currentClusterCode}`));
-                  }
-                  
                   validWarehouses.forEach(kho => {
                       syncPromises.push(dataService.syncDownFromCloud(kho));
                       syncPromises.push(dataService.loadWarehouseSettings(kho));
                   });
-                  
-                  await Promise.all(syncPromises);
               }
+              
+              await Promise.all(syncPromises);
           } else {
               await Promise.all([
                   dataService.syncDownFromCloud(warehouse),
@@ -272,10 +281,10 @@
           }
           notificationStore.set({ message: 'Đồng bộ thành công!', type: 'success' });
       } catch (error) {
-            console.error("SYNC ERROR:", error);
-            notificationStore.set({ message: 'Đồng bộ bị lỗi!', type: 'error' });
+          console.error("SYNC ERROR:", error);
+          notificationStore.set({ message: 'Đồng bộ bị lỗi!', type: 'error' });
       } finally {
-            isSyncing = false;
+          isSyncing = false;
       }
   }
 
