@@ -27,7 +27,7 @@
   $: isMonthlyOrYearly = saveKey.includes('thangtruoc') || saveKey.includes('cungkynam');
   $: showMonthSummary = isMultiMode && isMonthlyOrYearly;
 
-const storeMap = {
+  const storeMap = {
       'saved_danhsachnv': danhSachNhanVien,
       'saved_giocong': rawGioCongData,
       'saved_ycx': ycxData,
@@ -37,16 +37,18 @@ const storeMap = {
       'saved_ycx_cungkynam': ycxDataCungKyNam
   };
 
-  // [PHẪU THUẬT]: Tạo baseKey để map vào store chính xác ngay cả khi key có đuôi mã kho
+  // [PHẪU THUẬT LOGIC]: Chặn đứng hiện tượng trùng lặp tiền tố (ví dụ: saved_ycx gối đầu lên saved_ycx_thangtruoc) bằng cách ép sort độ dài key giảm dần
   $: baseKey = (() => {
-      for (const k of Object.keys(storeMap)) {
+      const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
+      for (const k of sortedKeys) {
           if (saveKey.startsWith(k)) return k;
       }
       return saveKey;
   })();
 
   $: dataStore = storeMap[baseKey]; // Map store từ baseKey thay vì saveKey gốc
-  $: syncState = $fileSyncState[saveKey]; // Trạng thái sync vẫn giữ nguyên ID độc lập
+  $: syncState = $fileSyncState[saveKey];
+  // Trạng thái sync vẫn giữ nguyên ID độc lập
   $: dataCount = $dataStore ? $dataStore.length : 0;
 
   // [PHẪU THUẬT LOGIC]: Máy quét bóc tách mã kho hạng nặng chống cache rác
@@ -213,7 +215,6 @@ const storeMap = {
               } catch(e) { return true; }
           });
       });
-
       try {
           await storage.setItem(saveKey, get(dataStore));
       } catch (e) {
@@ -263,7 +264,6 @@ const storeMap = {
               delete newState[saveKey];
               return newState;
           });
-          
           isLoading = false;
       }
   }
@@ -288,7 +288,7 @@ const storeMap = {
            <i data-feather={icon} class="h-5 w-5 feather"></i>
            {#if link}
                 <a href={link} target="_blank" class="text-blue-700 underline font-bold cursor-pointer relative z-10 hover:text-blue-900 pointer-events-auto" on:click|stopPropagation title="Mở báo cáo nguồn">
-                    {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
+                     {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
                 </a>
            {:else}
                 <span>{label}:</span>
@@ -304,7 +304,7 @@ const storeMap = {
         <div class="flex items-center gap-2"> 
             <label for="file-{saveKey}" class="data-input-group__file-trigger whitespace-nowrap" class:opacity-50={isLoading}>
                 {#if isLoading}
-                    Đang chạy...
+                     Đang chạy...
                 {:else}
                     Thêm file
                 {/if}
@@ -330,6 +330,7 @@ const storeMap = {
                         <div class="text-[11px] text-slate-500 font-bold uppercase flex items-center gap-1">
                             <i data-feather="database" class="w-3 h-3"></i> Tóm tắt dữ liệu Gộp:
                         </div>
+                   
                         {#if maxDateStr}
                             <div class="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 shadow-sm w-max mt-1">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 
@@ -340,16 +341,16 @@ const storeMap = {
                     <button class="text-[10px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-bold px-2 py-1 rounded transition-colors remove-wh-btn shadow-sm h-max" on:click|stopPropagation={clearAllData} title="Xóa trắng toàn bộ dữ liệu này">
                         Xóa tất cả
                     </button>
-                 </div>
+                </div>
 
                 {#if uniqueWarehouses.length > 0}
                 <div>
                     <div class="text-[10px] text-indigo-500 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
-                        <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
+                         <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
                     </div>
                     <div class="flex flex-wrap gap-2">
                         {#each uniqueWarehouses as whCode}
-                            <div class="flex items-center gap-1 bg-white border border-indigo-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
+                             <div class="flex items-center gap-1 bg-white border border-indigo-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
                                 {whCode}
                                 <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeWarehouse(whCode)} title="Xóa dữ liệu kho {whCode}">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -369,9 +370,9 @@ const storeMap = {
                     <div class="flex flex-wrap gap-2">
                         {#each uniqueMonths as monthStr}
                             <div class="flex items-center gap-1 bg-white border border-emerald-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-emerald-800">
-                                {monthStr}
+                                 {monthStr}
                                 <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeMonth(monthStr)} title="Xóa toàn bộ dữ liệu của tháng {monthStr}">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
                             </div>
                         {/each}

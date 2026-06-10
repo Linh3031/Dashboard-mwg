@@ -195,11 +195,10 @@ export const datasyncService = {
         try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
-async saveWarehouseMetadata(kho, key, metadata) {
+    async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        // [PHẪU THUẬT LOGIC]: Bổ sung thêm saved_dt_ck_nam để không bị ghi đè nhầm nếu vẫn còn kho dùng form cũ
         const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam'];
         try {
             if (multiModeKeys.includes(key)) {
@@ -259,8 +258,8 @@ async saveWarehouseMetadata(kho, key, metadata) {
         } catch (error) { throw error; }
     },
 
-// =========================================================================
-    // [CodeGenesis V4] HÀM ĐỒNG BỘ CHI TIẾT SÂU - CÂY PHÂN CẤP NGÀNH HÀNG
+    // =========================================================================
+    // [CodeGenesis V5] HÀM DEEP SYNC PHƯƠNG ÁN B: 1 DOC = 1 KHO (SIÊU TIẾT KIỆM)
     // =========================================================================
     async deepSyncToMobile(onProgress) {
         const db = getDB();
@@ -271,7 +270,7 @@ async saveWarehouseMetadata(kho, key, metadata) {
 
         const masterReport = get(masterReportData);
         const employeeList = masterReport?.sknv || [];
-        const currentYcx = get(ycxData) || []; // Lấy YCX hiện tại để build cây ngành hàng
+        const currentYcx = get(ycxData) || []; 
         const lastMonthYcx = get(ycxDataThangTruoc) || [];
         const thiDuaData = get(pastedThiDuaReportData) || [];
         const compDataStore = get(competitionData) || [];
@@ -288,7 +287,6 @@ async saveWarehouseMetadata(kho, key, metadata) {
         if (onProgress) onProgress(0, employeeList.length, 'processing', 'Đang thiết lập cấu hình xếp hạng...');
 
         try {
-            // 1. Tính toán thời gian
             const today = new Date();
             const d = today.getDate();
             let currentDay = 1, daysInMonth = 30;
@@ -300,7 +298,6 @@ async saveWarehouseMetadata(kho, key, metadata) {
                 daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
             }
 
-            // 2. Tính Doanh thu tháng trước
             const lastMonthDataMap = {};
             const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu(); 
             const targetDate = new Date(today.getFullYear(), today.getMonth() - (today.getDate() === 1 ? 2 : 1), 1); 
@@ -325,39 +322,47 @@ async saveWarehouseMetadata(kho, key, metadata) {
                 }
             });
 
-            // 3. Cấu hình Thi Đua
             let targetRatio = 100;
             try { targetRatio = await this.loadPersonalTargetRatio(wh) || 100; } catch(e){}
 
-            const filteredEmps = wh && wh !== 'ALL' ? allEmps.filter(e => String(e.maKho) === String(wh) || String(e.MAKHO) === String(wh)) : allEmps; 
-            const totalEmployeesCount = filteredEmps.length > 0 ? filteredEmps.length : 1; 
-
-            const stMappedData = {};
-            compDataStore.forEach(item => { 
-                const luykeMap = luykeNameMaps && luykeNameMaps[item.name]; 
-                let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
-                if (linkedEmpProg) {
-                    const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100); 
-                    const isQty = item.type === 'soLuong'; 
-                    const pTarget = totalEmployeesCount > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployeesCount) : Math.round(rawTarget / totalEmployeesCount)) : 0; 
-                    stMappedData[linkedEmpProg] = pTarget; 
-                }
-            });
+            // Hàm tính số nhân viên chuẩn xác theo từng kho lẻ
+            const getWarehouseEmpCount = (empWh) => {
+                const filtered = allEmps.filter(e => String(e.maKho || e.MAKHO || '').trim() === String(empWh).trim());
+                return filtered.length > 0 ? filtered.length : 1;
+            };
 
             let columnSettings = settingsService.loadPastedCompetitionViewSettings() || []; 
-            const categoryTargets = {};
-            columnSettings.forEach(col => { categoryTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0; });
             const activeColumns = columnSettings.filter(col => col.visible); 
 
-            // 4. TIỀN XỬ LÝ ĐỂ XẾP HẠNG & BUILD CÂY NGÀNH HÀNG
             let enrichedList = [...employeeList].map(emp => {
                 const cleanCode = String(emp.maNV || emp.ma_nv || '').trim();
+                const empWh = String(emp.maKho || emp.ma_kho || wh || '').trim();
+                const storeEmpCount = getWarehouseEmpCount(empWh);
+
                 const dtqdCK = lastMonthDataMap[cleanCode] || 0;
                 const duKienSoCK = ((emp.doanhThuQuyDoi || 0) / currentDay) * daysInMonth - dtqdCK;
 
                 const empThiDua = thiDuaData.find(t => String(t.maNV).trim() === cleanCode);
                 let thiDuaDetailCooked = [];
                 let thiDuaScore = 0;
+
+                // [PHẪU THUẬT LOGIC]: Tính Target cá nhân cô lập theo từng kho con
+                const stMappedData = {};
+                compDataStore.forEach(item => { 
+                    if (item.maKho && String(item.maKho).trim() !== empWh) return;
+
+                    const luykeMap = luykeNameMaps && luykeNameMaps[item.name]; 
+                    let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
+                    if (linkedEmpProg) {
+                        const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100); 
+                        const isQty = item.type === 'soLuong'; 
+                        const pTarget = (isQty ? Math.ceil(rawTarget / storeEmpCount) : Math.round(rawTarget / storeEmpCount)); 
+                        stMappedData[linkedEmpProg] = pTarget; 
+                    }
+                });
+
+                const categoryTargets = {};
+                columnSettings.forEach(col => { categoryTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0; });
 
                 if (empThiDua && empThiDua.competitions) {
                     activeColumns.forEach(col => { 
@@ -378,12 +383,10 @@ async saveWarehouseMetadata(kho, key, metadata) {
                     });
                 }
 
-// [CodeGenesis] BUILD CÂY NGÀNH HÀNG -> NHÓM HÀNG (BẢN CHỐNG MẤT DỮ LIỆU)
                 let categoryHierarchy = [];
                 let totalCat = { sl: 0, dt: 0, dtqd: 0 };
                 
                 try {
-                    // BƯỚC 1: Cố gắng build từ file YCX gốc (Nếu file còn trên RAM)
                     if (currentYcx && currentYcx.length > 0) {
                         const empTxs = currentYcx.filter(tx => {
                             const txNv = String(tx.ma_nv || tx.maNV || '').trim();
@@ -392,13 +395,11 @@ async saveWarehouseMetadata(kho, key, metadata) {
                         });
 
                         const hierarchyMap = {};
-                        // Lấy Set hình thức xuất an toàn, chống crash
                         const hinhThucSet = (typeof dataProcessing?.getHinhThucXuatTinhDoanhThu === 'function') 
                                             ? dataProcessing.getHinhThucXuatTinhDoanhThu() 
                                             : new Set();
 
                         empTxs.forEach(tx => {
-                            // Xử lý linh hoạt mọi định dạng key của Excel
                             const tXuat = String(tx.trangThaiXuat || tx.trang_thai_xuat || '').trim();
                             const isDaXuat = !tXuat || ['Đã xuất', 'Đã giao'].includes(tXuat);
                             
@@ -438,8 +439,6 @@ async saveWarehouseMetadata(kho, key, metadata) {
                         })).sort((a, b) => b.dt - a.dt);
                     }
 
-                    // BƯỚC 2: PHAO CỨU SINH (Nếu YCX bị xóa do F5 trình duyệt)
-                    // Bốc dữ liệu từ bản tóm tắt đã lưu cứng để dựng cây
                     if (categoryHierarchy.length === 0 && emp.doanhThuTheoNhomHang) {
                         categoryHierarchy = Object.entries(emp.doanhThuTheoNhomHang)
                             .filter(([name, data]) => (data.revenue || 0) > 0 || (data.quantity || 0) > 0)
@@ -454,7 +453,6 @@ async saveWarehouseMetadata(kho, key, metadata) {
                             }).sort((a,b) => b.dt - a.dt);
                     }
 
-                    // TÍNH LẠI TỔNG CHỐT HẠ
                     totalCat = categoryHierarchy.reduce((acc, curr) => {
                         acc.sl += curr.sl; acc.dt += curr.dt; acc.dtqd += curr.dtqd;
                         return acc;
@@ -465,7 +463,7 @@ async saveWarehouseMetadata(kho, key, metadata) {
                 return { ...emp, cleanCode, dtqdCK, duKienSoCK, thiDuaScore, thiDuaDetailCooked, categoryHierarchy, totalCat };
             });
 
-            // 5. CHẤM ĐIỂM 5 LOẠI XẾP HẠNG
+            const total = enrichedList.length;
 
             enrichedList.sort((a, b) => (b.doanhThu || 0) - (a.doanhThu || 0));
             enrichedList.forEach((e, i) => e.rankDtThuc = i + 1);
@@ -476,7 +474,7 @@ async saveWarehouseMetadata(kho, key, metadata) {
             enrichedList.sort((a, b) => (b.hieuQuaQuyDoi || 0) - (a.hieuQuaQuyDoi || 0));
             enrichedList.forEach((e, i) => e.rankTyLe = i + 1);
 
-            enrichedList.sort((a, b) => (a.tyLeTraCham || 0) - (b.tyLeTraCham || 0)); // Trả chậm: Thấp là tốt (Hạng 1)
+            enrichedList.sort((a, b) => (a.tyLeTraCham || 0) - (b.tyLeTraCham || 0)); 
             enrichedList.forEach((e, i) => e.rankTraCham = i + 1);
 
             enrichedList.sort((a, b) => (b.duKienSoCK || 0) - (a.duKienSoCK || 0));
@@ -485,75 +483,71 @@ async saveWarehouseMetadata(kho, key, metadata) {
             enrichedList.sort((a, b) => (b.thiDuaScore || 0) - (a.thiDuaScore || 0));
             enrichedList.forEach((e, i) => e.rankThiDua = i + 1);
 
-            // 6. ĐẨY LÊN FIREBASE (CHUNKING)
-            const CHUNK_SIZE = 10;
-            const total = enrichedList.length;
+            // [PHẪU THUẬT GOM NHÓM]: Nhóm mảng nhân sự theo từng siêu thị cụ thể
+            const warehouseGroups = {};
+            enrichedList.forEach(emp => {
+                const empWh = String(emp.maKho || emp.ma_kho || wh || 'UNKNOWN').trim();
+                if (empWh === 'UNKNOWN' || empWh === 'ALL') return;
+                
+                if (!warehouseGroups[empWh]) warehouseGroups[empWh] = [];
+                
+                warehouseGroups[empWh].push({
+                    maNV: emp.cleanCode,
+                    hoTen: emp.hoTen || emp.ten_nv || '',
+                    maKho: empWh,
+                    data: {
+                        doanhThu: emp.doanhThu || 0,
+                        doanhThuQuyDoi: emp.doanhThuQuyDoi || 0,
+                        hieuQuaQuyDoi: emp.hieuQuaQuyDoi || 0,
+                        tyLeTraCham: emp.tyLeTraCham || 0,
+                        dtqdCK: emp.dtqdCK || 0,
+                        duKienSoCK: emp.duKienSoCK || 0,
+                        
+                        rankDtThuc: emp.rankDtThuc, 
+                        rankDtqd: emp.rankDtqd,
+                        rankTyLe: emp.rankTyLe,
+                        rankTraCham: emp.rankTraCham,
+                        rankDuKien: emp.rankDuKien,
+                        rankThiDua: emp.rankThiDua,
+                        totalEmployees: total,
 
-            for (let i = 0; i < total; i += CHUNK_SIZE) {
-                const chunk = enrichedList.slice(i, i + CHUNK_SIZE);
-                const batch = writeBatch(db);
+                        categoryHierarchy: emp.categoryHierarchy,
+                        totalCat: emp.totalCat,
+                        
+                        thiDuaDetail: emp.thiDuaDetailCooked,
+                        thiDuaScore: emp.thiDuaScore
+                    }
+                });
+            });
 
-                for (const emp of chunk) {
-                    if (!emp.cleanCode) continue;
+            // [TỐI ƯU HÓA TUYỆT ĐỐI FIREBASE]: Chỉ thực hiện 1 Ghi duy nhất cho mỗi Siêu thị
+            const targetWarehouseCodes = Object.keys(warehouseGroups);
+            let index = 0;
 
-                    const mobileData = {
-                        maNV: emp.cleanCode,
-                        hoTen: emp.hoTen || emp.ten_nv || '',
-                        maKho: emp.maKho || emp.ma_kho || '',
-                        data: {
-                            doanhThu: emp.doanhThu || 0,
-                            doanhThuQuyDoi: emp.doanhThuQuyDoi || 0,
-                            hieuQuaQuyDoi: emp.hieuQuaQuyDoi || 0,
-                            tyLeTraCham: emp.tyLeTraCham || 0,
-                            dtqdCK: emp.dtqdCK || 0,
-                            duKienSoCK: emp.duKienSoCK || 0,
-                            
-                            rankDtThuc: emp.rankDtThuc, 
-                            rankDtqd: emp.rankDtqd,
-                            rankTyLe: emp.rankTyLe,
-                            rankTraCham: emp.rankTraCham,
-                            rankDuKien: emp.rankDuKien,
-                            rankThiDua: emp.rankThiDua,
-                            totalEmployees: total,
+            for (const currentWhCode of targetWarehouseCodes) {
+                const empsInStore = warehouseGroups[currentWhCode];
+                
+                const finalStoreDocRef = doc(db, 'sknv_final_data', currentWhCode);
+                await setDoc(finalStoreDocRef, {
+                    maKho: currentWhCode,
+                    employees: empsInStore,
+                    autoSyncedAt: serverTimestamp()
+                }, { merge: true });
 
-                            categoryHierarchy: emp.categoryHierarchy,
-                            totalCat: emp.totalCat,
-                            
-                            thiDuaDetail: emp.thiDuaDetailCooked,
-                            thiDuaScore: emp.thiDuaScore
-                        },
-                        autoSyncedAt: serverTimestamp()
-                    };
+                const metaRef = doc(db, 'sknv_metadata', currentWhCode);
+                await setDoc(metaRef, {
+                    lastUpdated: Date.now(), 
+                    rowCount: empsInStore.length,
+                    updatedBy: getCurrentUserEmail()
+                }, { merge: true });
 
-                    const docRef = doc(db, 'sknv_final_data', emp.cleanCode);
-                    batch.set(docRef, mobileData, { merge: true });
-                }
-
-await batch.commit();
-                const processedCount = Math.min(i + CHUNK_SIZE, total);
-                if (onProgress) onProgress(processedCount, total, 'processing', `Đang đồng bộ chi tiết: ${processedCount}/${total} nhân viên...`);
-                await new Promise(resolve => setTimeout(resolve, 100)); // Nghỉ 100ms
+                index++;
+                if (onProgress) onProgress(index, targetWarehouseCodes.length, 'processing', `Đang đồng bộ gói dữ liệu kho ${currentWhCode} (${index}/${targetWarehouseCodes.length})...`);
             }
 
-            // [CodeGenesis] BẮN TÍN HIỆU METADATA (VERSION CONTROL) CHO APP STAFF
-            try {
-                if (wh && wh !== 'ALL') { // Đảm bảo chỉ ghi meta khi đồng bộ 1 kho cụ thể
-                    const metaRef = doc(db, 'sknv_metadata', String(wh));
-                    await setDoc(metaRef, {
-                        lastUpdated: Date.now(), // Timestamp số nguyên dễ so sánh
-                        rowCount: total,
-                        updatedBy: getCurrentUserEmail()
-                    }, { merge: true });
-                    console.log(`[DataSync] Đã bắn tín hiệu Metadata cho Kho ${wh}`);
-                }
-            } catch (metaErr) {
-                console.error("[DataSync] Lỗi cập nhật Metadata:", metaErr);
-                // Lỗi này không làm gián đoạn thông báo thành công chính
-            }
-
-            if (onProgress) onProgress(total, total, 'success', '✓ Đã đồng bộ chi tiết và xếp hạng xuống App!');
+            if (onProgress) onProgress(targetWarehouseCodes.length, targetWarehouseCodes.length, 'success', '✓ Đã hoàn tất đóng gói và đồng bộ siêu tiết kiệm xuống App!');
         } catch (error) {
-            console.error("[DataSync] Lỗi luồng Deep Sync:", error);
+            console.error("[DataSync] Lỗi luồng Deep Sync Phương án B:", error);
             if (onProgress) onProgress(0, 0, 'error', `Thất bại: ${error.message}`);
         }
     }

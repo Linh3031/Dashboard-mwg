@@ -89,14 +89,12 @@ function getStateKey(key, wh) {
 export const syncHandler = {
     async syncDownFromCloud(warehouse) {
         if (!warehouse) return { success: false, message: "Chưa chọn kho." };
-        console.group(`[SYNC-DEBUG] Bắt đầu kiểm tra luồng: ${warehouse}`);
 
         const isBatchMode = get(selectedWarehouse) === 'ALL';
         let targetKeys = [];
         
         if (isBatchMode) {
             if (warehouse === 'ALL') {
-                // Bổ sung key cluster_summary_data
                 targetKeys = [...Object.keys(FILE_MAPPING), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc', 'cluster_summary_data'];
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
@@ -132,13 +130,11 @@ export const syncHandler = {
 
             const processKey = async (key) => {
                 const mapping = FILE_MAPPING[key] || PASTE_MAPPING[key];
-                
                 let stateKey = getStateKey(key, warehouse);
                 let baseKey = key;
 
                 const localMetaStr = localStorage.getItem(`_meta_${warehouse}_${baseKey}`);
                 let localMeta = localMetaStr ? JSON.parse(localMetaStr) : {};
-                
                 const cloudMeta = cloudData ? cloudData[baseKey] : null;
 
                 if (!cloudMeta) {
@@ -154,7 +150,6 @@ export const syncHandler = {
                     return;
                 }
 
-                console.groupCollapsed(`🔍 Kiểm tra: ${key} (State: ${stateKey})`);
                 const timeAgo = formatTimeAgo(cloudMeta.updatedAt);
                 const isMyUpload = cloudMeta.updatedBy === userEmail;
 
@@ -176,20 +171,14 @@ export const syncHandler = {
                         updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ ${timeAgo}`, cloudMeta);
                     }
                 }
-                console.groupEnd();
             };
 
             for (const key of targetKeys) {
                 await processKey(key);
             }
-
-            console.log(`✅ Hoàn tất kiểm tra luồng ${warehouse}.`);
-            console.groupEnd();
             return { success: true, message: `Đã kiểm tra dữ liệu.` };
 
         } catch (error) {
-            console.error("Sync error:", error);
-            console.groupEnd();
             return { success: false, message: "Lỗi kết nối Cloud: " + error.message };
         }
     },
@@ -203,7 +192,9 @@ export const syncHandler = {
         let isPaste = !!PASTE_MAPPING[stateKey];
 
         if (!mapping) {
-            for (const pKey of [...Object.keys(PASTE_MAPPING), ...Object.keys(FILE_MAPPING)]) {
+            // [CodeGenesis] Phẫu thuật Logic: Chặn đứng Prefix Overlap bằng cách ép Sort độ dài Key
+            const sortedKeys = [...Object.keys(PASTE_MAPPING), ...Object.keys(FILE_MAPPING)].sort((a, b) => b.length - a.length);
+            for (const pKey of sortedKeys) {
                 if (stateKey.startsWith(pKey + '_')) {
                     mapping = PASTE_MAPPING[pKey] || FILE_MAPPING[pKey];
                     baseKey = pKey;
@@ -330,7 +321,6 @@ export const syncHandler = {
                 
                 let processedCount = 0;
                 
-                // Phân luồng chuẩn mực 2 bước
                 if (mapping.isThiDuaNV) {
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {

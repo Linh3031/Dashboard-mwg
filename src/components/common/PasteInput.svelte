@@ -21,7 +21,6 @@
   export let saveKeyProcessed = ""; 
 
   const dispatch = createEventDispatcher();
-
   let textareaEl;
   let pastedText = "";
   let localError = "";
@@ -44,9 +43,11 @@
     'cluster_summary_data': 'dòng'
   };
 
+  // [PHẪU THUẬT LOGIC]: Ép sắp xếp key theo độ dài chuỗi giảm dần để chấm dứt tình trạng trùng lặp prefix (ví dụ: daily_paste_luyke gối đầu lên cluster_paste_luyke)
   $: baseKey = (() => {
       const pk = saveKeyProcessed || saveKeyPaste;
-      for (const k of Object.keys(storeMap)) {
+      const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
+      for (const k of sortedKeys) {
           if (pk.startsWith(k)) return k;
       }
       return pk;
@@ -171,19 +172,14 @@
       }
   }
 
-  // --- [CodeGenesis] HÀM XỬ LÝ TRUNG TÂM ---
   let pasteTimer;
   function processText(text) {
       pastedText = text;
       localError = "";
       clearTimeout(pasteTimer);
-      
-      // Kích hoạt DataSection nhận dữ liệu ngay lập tức
       dispatch('paste', text);
-      
       if (!text || text.trim().length < 5) return;
       
-      // Bắt đầu chu trình xử lý ngầm (Lưu Cloud/Local)
       isLoading = true;
       pasteTimer = setTimeout(async () => {
           try {
@@ -204,7 +200,6 @@
   }
 
   onMount(() => {
-    // Khi bấm "Tải về máy", nó sẽ tự động chạy vào quy trình chuẩn này
     window.addEventListener('cloud-paste-loaded', (e) => {
         if (e.detail.key === saveKeyPaste) {
             processText(e.detail.text);
