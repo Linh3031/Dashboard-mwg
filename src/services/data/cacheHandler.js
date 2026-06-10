@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList } from '../../stores.js';
+import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList, selectedWarehouse } from '../../stores.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { adminService } from '../admin.service.js';
@@ -24,6 +24,7 @@ export const cacheHandler = {
         
         const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
         
+        // MẢNG LỌC TOÀN CỤC CHUẨN XÁC
         let allowedWarehouses = [];
         if (dsnvData && dsnvData.length > 0) {
              const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
@@ -35,16 +36,29 @@ export const cacheHandler = {
         await Promise.all(otherFiles.map(async (key) => {
             let data = await storage.getItem(key);
             if (data && data.length > 0) {
+                // 1. Bảo vệ dữ liệu cứng: Lọc tạp chất ngoài cụm quản lý
                 if (key.includes('ycx') && allowedWarehouses.length > 0) {
                      data = data.filter(d => {
                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                         return allowedWarehouses.includes(whCode);
                      });
-                     try { await storage.setItem(key, data); } catch(e){}
+                     try { await storage.setItem(key, data); } catch(e){} 
                 }
 
-                FILE_MAPPING[key].store.set(data);
-                updateSyncState(key, 'cached', `✓ Đã tải ${data.length} dòng (Local)`, null);
+                // 2. LỌC Ở TẦNG GIAO DIỆN (View-level Filtering)
+                let displayData = data;
+                const currentWh = get(selectedWarehouse);
+                
+                // Cả ycx, giocong, thuongnong đều phải chạy qua View-Level filter nếu đang xem kho lẻ
+                if (currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
+                     displayData = data.filter(d => {
+                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                         return whCode === currentWh;
+                     });
+                }
+
+                FILE_MAPPING[key].store.set(displayData);
+                updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
              }
         }));
 
@@ -62,7 +76,6 @@ export const cacheHandler = {
                         dataProcessing.parseLuyKePastedData(luykeText); 
                         const comps = dataProcessing.parseCompetitionDataFromLuyKe(luykeText);
                         
-                        // [VÁ LỖI PHÂN RÃ DATA]: Đóng dấu định danh mã kho cho danh sách chương trình thi đua
                         const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: kho })) : [];
                         aggregatedLuykeComps = [...aggregatedLuykeComps, ...labeledComps];
                         updateSyncState(`daily_paste_luyke_${kho}`, 'cached', `(Local)`, null);

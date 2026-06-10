@@ -27,7 +27,7 @@
   $: isMonthlyOrYearly = saveKey.includes('thangtruoc') || saveKey.includes('cungkynam');
   $: showMonthSummary = isMultiMode && isMonthlyOrYearly;
 
-  const storeMap = {
+const storeMap = {
       'saved_danhsachnv': danhSachNhanVien,
       'saved_giocong': rawGioCongData,
       'saved_ycx': ycxData,
@@ -37,8 +37,16 @@
       'saved_ycx_cungkynam': ycxDataCungKyNam
   };
 
-  let dataStore = storeMap[saveKey];
-  $: syncState = $fileSyncState[saveKey];
+  // [PHẪU THUẬT]: Tạo baseKey để map vào store chính xác ngay cả khi key có đuôi mã kho
+  $: baseKey = (() => {
+      for (const k of Object.keys(storeMap)) {
+          if (saveKey.startsWith(k)) return k;
+      }
+      return saveKey;
+  })();
+
+  $: dataStore = storeMap[baseKey]; // Map store từ baseKey thay vì saveKey gốc
+  $: syncState = $fileSyncState[saveKey]; // Trạng thái sync vẫn giữ nguyên ID độc lập
   $: dataCount = $dataStore ? $dataStore.length : 0;
 
   // [PHẪU THUẬT LOGIC]: Máy quét bóc tách mã kho hạng nặng chống cache rác

@@ -93,7 +93,13 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="flex flex-col gap-4 overflow-hidden">
             <div class="h-fit w-full" data-tour="input-ycx">
-                <FileInput label="Yêu cầu xuất lũy kế" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx" isMultiMode={true} />
+                <FileInput 
+                    label="Yêu cầu xuất lũy kế" 
+                    icon="file-text" 
+                    link="https://report.mwgroup.vn/home/dashboard/077" 
+                    saveKey={$selectedWarehouse === 'ALL' ? 'saved_ycx' : `saved_ycx_${$selectedWarehouse}`} 
+                    isMultiMode={true} 
+                />
             </div>
             
             {#if $selectedWarehouse === 'ALL'}

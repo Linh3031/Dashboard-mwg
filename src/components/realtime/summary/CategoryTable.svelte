@@ -25,6 +25,7 @@
 
   let chartInstancePie = null;
   let chartInstanceBar = null;
+
   onMount(async () => {
       if (!$macroCategoryConfig || $macroCategoryConfig.length === 0) {
           try {
@@ -35,6 +36,7 @@
           } catch (e) { console.error(e); }
       }
   });
+
   // --- THEME ---
   $: titleText = showUnexported ? "CHI TIẾT CHƯA XUẤT" : "CHI TIẾT NGÀNH HÀNG";
   $: titleIcon = showUnexported ? "alert-circle" : "layers";
@@ -59,6 +61,7 @@
 
   // --- CLOUD SYNC ---
   $: if ($selectedWarehouse) loadCloudConfig($selectedWarehouse);
+
   async function loadCloudConfig(kho) {
       isLoadingConfig = true;
       const hiddenList = await datasyncService.loadRealtimeHiddenCategories(kho);
@@ -74,6 +77,7 @@
 
   // --- LOGIC AGGREGATION ---
   $: sourceData = showUnexported ? unexportedItems : items;
+
   $: allGroups = (() => {
       const macroItems = ($macroCategoryConfig || []).map(m => ({
           key: m.name, label: m.name, type: 'macro'
@@ -88,6 +92,7 @@
       const simpleItems = Array.from(simpleItemsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
       return [...macroItems, ...simpleItems];
   })();
+
   $: filterList = allGroups.filter(g => g.label.toLowerCase().includes(filterSearch.toLowerCase()));
 
   function toggleCategoryVisibility(key) {
@@ -109,7 +114,7 @@
       macroConfigs.forEach(macro => {
           if (!hiddenCategories.has(macro.name)) {
               const keywords = (macro.items || []).map(k => k.toLowerCase());
-                  const childItems = sourceData.filter(item => {
+              const childItems = sourceData.filter(item => {
                   const iName = (item.name || item.nganhHang || '').toLowerCase();
                   const iId = (item.id || '').toLowerCase();
                   return keywords.some(k => iName.includes(k) || iId === k);
@@ -127,6 +132,7 @@
               }
           }
       });
+
       sourceData.forEach((item, index) => {
           const name = item.name || item.nganhHang || 'Chưa đặt tên';
           const safeId = item.id || name || `ITEM_${index}`;
@@ -134,6 +140,7 @@
               result.push({ ...item, id: safeId, name: name, isMacro: false });
           }
       });
+
       return result;
   })();
 
@@ -141,6 +148,7 @@
       const name = item.name || '';
       return !searchText || name.toLowerCase().includes(searchText.toLowerCase());
   });
+
   function handleSort(event) {
       const key = event.detail;
       if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -165,6 +173,7 @@
       }
       return sortDirection === 'asc' ? valA - valB : valB - valA;
   });
+
   $: totalRevenue = sourceData.reduce((sum, item) => sum + (showUnexported ? (item.doanhThuQuyDoi || 0) : (item.revenue || 0)), 0);
   $: maxVal = Math.max(...sortedItems.map(i => showUnexported ? (i.doanhThuQuyDoi || 0) : (i.revenue || 0)), 1);
 
@@ -177,10 +186,12 @@
       const otherRevenue = others.reduce((sum, item) => sum + (showUnexported ? item.doanhThuQuyDoi : item.revenue), 0);
       return [...top13, { name: 'Khác', revenue: otherRevenue, doanhThuQuyDoi: otherRevenue }];
   })();
+
   $: barData = calculateBrandData(rawSource, aggregatedItems, $macroCategoryConfig);
 
   function calculateBrandData(source, visibleItems, configs) {
       if (!source || source.length === 0) return [];
+
       const allowedNames = new Set();
 
       visibleItems.forEach(item => {
@@ -193,6 +204,7 @@
       });
 
       const brands = {};
+
       source.forEach(row => {
           const rowCatName = cleanCategoryName(row.nganhHang || '');
           if (allowedNames.has(rowCatName)) {
@@ -202,6 +214,7 @@
               brands[brandName].revenue += revenue;
           }
       });
+
       return Object.values(brands).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
   }
 
@@ -267,6 +280,7 @@
   }
 
   $: if (viewMode === 'chart') setTimeout(renderCharts, 0);
+
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) isSettingsOpen = false;
   }
@@ -293,7 +307,7 @@
     </div>
 
     <div class="luyke-toolbar">
-        <div class="luyke-toolbar-left flex-grow min-w-0">
+        <div class="luyke-toolbar-left flex-grow min-w-0 bg-gradient-to-r from-indigo-50 to-white border-l-4 border-l-indigo-500 p-2 rounded-r-lg shadow-sm">
             <h3 class="text-base sm:text-lg font-bold uppercase flex items-center gap-2 {titleClass} truncate">
                 <i data-feather={titleIcon} class="{iconClass} flex-shrink-0"></i>
                 <span class="truncate flex items-center gap-2">
@@ -346,7 +360,7 @@
                                 {/each}
                             {/if}
                         </div>
-           
+      
                         <div class="p-2 border-t flex justify-between bg-gray-50 rounded-b-lg">
                             <button class="text-xs font-bold text-blue-600 hover:underline" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
                             <button class="text-xs font-bold text-red-600 hover:underline" on:click={() => toggleAllVisibility(false)}>Ẩn tất cả</button>
@@ -381,7 +395,7 @@
 
                     <div class="relative {cardBg} border {cardBorder} rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col h-full group capture-card-inner">
                         <div class="absolute -right-3 -bottom-3 opacity-[0.06] transition-transform duration-500 group-hover:scale-110 z-0 {accentColor}">
-                           <i data-feather={theIcon} style="width: 110px; height: 110px; stroke-width: 1.5px;"></i>
+                          <i data-feather={theIcon} style="width: 110px; height: 110px; stroke-width: 1.5px;"></i>
                         </div>
 
                         <div class="flex justify-between items-stretch gap-2 mb-2.5 relative z-10 flex-1">
@@ -390,13 +404,12 @@
                                     <div class="flex items-center {accentColor} mb-1.5">
                                         <i data-feather={theIcon} class="w-4 h-4"></i>
                                     </div>
-                          
                                     <h4 class="text-[15px] sm:text-[16px] font-bold text-slate-800 line-clamp-2 leading-[1.25] pb-1 capture-text-title" title={name}>
                                         {name}
                                         {#if isMacro}<span class="ml-1 text-[10px] font-bold text-indigo-500 bg-white/70 px-1 py-0.5 rounded shadow-sm border border-indigo-100 translate-y-[-1px] inline-block">GỘP</span>{/if}
                                     </h4>
                                 </div>
-                   
+                  
                                 <div class="w-full h-1.5 bg-black/10 rounded-full overflow-hidden shadow-inner mt-1.5">
                                     <div class="h-full {barColor} rounded-full transition-all duration-700 ease-out" style="width: {barPercent}%"></div>
                                 </div>

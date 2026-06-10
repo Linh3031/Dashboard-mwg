@@ -36,7 +36,9 @@
 </script>
 
 <div class="bg-white rounded-xl shadow-md p-4 border border-gray-200 h-full">
-  <h3 class="text-lg font-bold text-gray-700 mb-4 uppercase border-b pb-2 bg-yellow-50 p-2 rounded">Hiệu quả khai thác</h3>
+  <h3 class="text-lg font-bold text-teal-800 mb-4 uppercase border-b border-teal-200 pb-2 bg-gradient-to-r from-teal-50 to-white p-2.5 rounded-t-lg shadow-sm flex items-center gap-2 border-l-4 border-l-teal-500">
+    <i data-feather="bar-chart-2" class="w-5 h-5 text-teal-600"></i> Hiệu quả khai thác
+  </h3>
 
   {#if items.length === 0}
     <p class="text-gray-500 font-bold p-4 text-center">Vui lòng tải file realtime để xem chi tiết.</p>
@@ -70,13 +72,15 @@
 <style>
     /* [FIX GENESIS]: Tối ưu mật độ bảng */
     :global(.capture-container .eff-row td) {
-        padding: 4px 8px !important; /* Giảm đệm dòng */
+        padding: 4px 8px !important;
+        /* Giảm đệm dòng */
     }
     :global(.capture-container .eff-label) {
         font-size: 14px !important;
     }
     :global(.capture-container .eff-value) {
-        font-size: 18px !important; /* % Thực hiện to hơn */
+        font-size: 18px !important;
+        /* % Thực hiện to hơn */
         font-weight: 800 !important;
     }
     :global(.capture-container .eff-target) {

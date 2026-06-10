@@ -66,17 +66,17 @@
 
                 <div class="flex items-center gap-2 pl-4 border-l-2 border-blue-100 ml-2">
                     <label for="realtime-filter-warehouse" class="text-sm font-semibold text-gray-600 whitespace-nowrap">Kho:</label>
-                     <select 
-                       id="realtime-filter-warehouse" 
-                       class="p-2 border rounded-lg text-sm shadow-sm bg-white border-blue-200 text-blue-700 font-bold min-w-[120px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition"
-                       value={$selectedWarehouse}
-                       on:change={handleWarehouseChange}
-                     >
-                       <option value="">-- Toàn bộ --</option>
-                       {#each $warehouseList as kho}
-                       <option value={kho}>{kho}</option>
-                       {/each}
-                    </select>
+                    <select 
+   id="realtime-filter-warehouse" 
+   class="p-2 border rounded-lg text-sm shadow-sm bg-white border-blue-200 text-blue-700 font-bold min-w-[120px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:bg-blue-50 transition"
+   value={$selectedWarehouse || 'ALL'}
+   on:change={handleWarehouseChange}
+>
+   <option value="ALL">-- Toàn bộ --</option>
+   {#each $warehouseList as kho}
+   <option value={kho}>{kho}</option>
+   {/each}
+</select>
                 </div>
             </div>
 

@@ -10,7 +10,8 @@ export const config = {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },
             maNV: { required: true, displayName: 'Mã Nhân Viên', aliases: ['mã nv', 'msnv', 'mã nhân viên', 'manv', 'mã số nhân viên'] },
             hoTen: { required: true, displayName: 'Họ và Tên', aliases: ['họ và tên', 'tên nhân viên', 'tên nv', 'họ tên'] },
-            boPhan: { required: true, displayName: 'Bộ phận', aliases: ['bộ phận'] }
+            boPhan: { required: true, displayName: 'Bộ phận', aliases: ['bộ phận'] },
+            tenKho: { required: false, displayName: 'Tên Kho', aliases: ['tên kho', 'ten kho', 'tên siêu thị', 'ten sieu thi'] }
         },
         ycx: {
             maKhoTao: { required: false, displayName: 'Mã kho tạo', aliases: ['mã kho tạo', 'ma kho tao', 'mã kho', 'kho tạo'] },

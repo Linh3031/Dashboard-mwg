@@ -17,6 +17,7 @@
   let filterSearch = '';
   let saveTimer;
   let localConfig = [];
+
   // Bảng màu rực rỡ cho thanh tiến trình
   const BAR_COLORS = [
       'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-400',
@@ -24,6 +25,7 @@
       'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
       'bg-violet-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
   ];
+
   // 1. Load config Nhóm Hàng Lớn nếu chưa có
   onMount(async () => {
       if (!$macroProductGroupConfig || $macroProductGroupConfig.length === 0) {
@@ -35,6 +37,7 @@
           }
       }
   });
+
   // 2. Tạo danh sách Filter (Ưu tiên Nhóm Lớn lên đầu)
   $: allGroups = (() => {
       // A. Nhóm Lớn
@@ -57,9 +60,11 @@
 
       return [...macroNames, ...simpleNames];
   })();
+
   $: filterList = allGroups.filter(g => 
       g.name.toLowerCase().includes(filterSearch.toLowerCase())
   );
+
   // 3. Logic Load/Save Config (Dùng chung config với Lũy kế để đồng bộ trải nghiệm)
   $: if ($selectedWarehouse) {
       loadConfigForWarehouse($selectedWarehouse);
@@ -138,6 +143,7 @@
               finalResults.push(aggregatedItem);
           } 
       });
+
       // B. Xử lý Simple Items
       selectedSimples.forEach(simpleName => {
           const item = items.find(i => i.name === simpleName);
@@ -152,11 +158,13 @@
               });
           }
       });
+
       // Sắp xếp giảm dần theo doanh thu QĐ
       return finalResults.sort((a, b) => (b.dtqd || 0) - (a.dtqd || 0));
   })();
 
   $: maxVal = sortedItems.length > 0 ? (sortedItems[0].dtqd || 1) : 1;
+
   function handleWindowClick(e) {
       if (isSettingsOpen && !e.target.closest('.filter-wrapper')) {
           isSettingsOpen = false;
@@ -171,7 +179,7 @@
 <svelte:window on:click={handleWindowClick} />
 
 <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden h-full flex flex-col">
-  <div class="p-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+  <div class="p-3 border-b border-blue-200 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white border-l-4 border-l-blue-500 rounded-t-xl shadow-sm">
     <div class="flex items-center gap-2 font-bold text-slate-700 text-sm uppercase">
       <div class="p-1.5 bg-blue-100 rounded text-blue-600">
           <i data-feather="zap" class="w-4 h-4"></i>
@@ -194,19 +202,19 @@
                     {:else}
                         {#each filterList as group}
                             {@const isChecked = localConfig.includes(group.name)}
-                            <div class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer" on:click={() => toggleQdcSelection(group.name)}>
+                             <div class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer" on:click={() => toggleQdcSelection(group.name)}>
                                  <input type="checkbox" checked={isChecked} class="rounded text-blue-600 focus:ring-blue-500" />
                                  {#if group.type === 'macro'}
                                     <label class="{isChecked ? 'font-bold text-teal-700' : 'text-teal-600 font-semibold'} text-xs flex items-center gap-1 cursor-pointer flex-1">
                                         <i data-feather="layers" class="w-3 h-3"></i>
                                         {group.name}
-                                     </label>
+                                      </label>
                                  {:else}
                                     <label class="{isChecked ? 'font-bold text-blue-700' : 'text-gray-700'} text-xs cursor-pointer flex-1">{group.name}</label>
                                  {/if}
                             </div>
                         {/each}
-                    {/if}
+                     {/if}
                  </div>
                 <div class="p-2 border-t border-gray-100 bg-gray-50 flex justify-between text-xs">
                     <button class="text-blue-600 font-semibold hover:underline" on:click={() => toggleAllVisibility(true)}>Hiện tất cả</button>
@@ -221,7 +229,7 @@
     {#if sortedItems.length === 0}
         <div class="flex flex-col items-center justify-center h-full text-gray-400 py-10">
           <p class="text-sm">Không có dữ liệu hiển thị.</p>
-          {#if items.length > 0}
+           {#if items.length > 0}
              <p class="text-xs mt-1">Hãy kiểm tra bộ lọc nhóm hàng.</p>
           {/if}
        </div>
@@ -229,21 +237,18 @@
       <div class="flex flex-col gap-0">
         {#each sortedItems as item, index (item.name)}
           {@const percent = maxVal > 0 ? (item.dtqd / maxVal) * 100 : 0}
-          
           {@const barColor = BAR_COLORS[index % BAR_COLORS.length]}
           
-          <div class="py-2.5 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1.5 rounded
-                      {item.isMacro ? 'bg-teal-50/40 hover:bg-teal-50/60' : 'hover:bg-gray-50'}">
-            
+          <div class="py-2.5 border-b border-dashed border-gray-100 last:border-0 transition-colors px-1.5 rounded {item.isMacro ? 'bg-teal-50/40 hover:bg-teal-50/60' : 'hover:bg-gray-50'}">
              <div class="flex items-center gap-3">
                <div class="w-6 text-center font-bold text-gray-400 text-xs">#{index + 1}</div>
                
                <div class="flex-grow min-w-0 qdc-content-wrapper">
                    <div class="flex justify-between items-center mb-1.5 qdc-info-row">
-                       <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1.5 {item.isMacro ? 'text-teal-800' : 'text-slate-700'}" title={item.name}>
+                        <span class="text-sm font-semibold truncate pr-2 flex items-center gap-1.5 {item.isMacro ? 'text-teal-800' : 'text-slate-700'}" title={item.name}>
                            {#if item.isMacro}
                                 <i data-feather="layers" class="w-3.5 h-3.5 text-teal-600"></i>
-                           {/if}
+                            {/if}
                            {item.name}
                        </span>
                        <span class="text-sm font-bold whitespace-nowrap text-slate-800">
@@ -266,7 +271,7 @@
                                 <span>TB: <strong>{formatters.formatNumber(item.quantity / numDays, 0)}</strong>/ngày</span>
                            {/if}
                        </div>
-                   </div>
+                    </div>
                </div>
             </div>
           </div>

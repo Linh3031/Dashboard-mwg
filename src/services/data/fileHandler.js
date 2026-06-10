@@ -40,7 +40,22 @@ const getMonthYear = (dateStr) => {
 
 export const fileHandler = {
     async handleFileChange(file, saveKey, isMultiMode = false) {
-        const mapping = FILE_MAPPING[saveKey];
+        // [PHẪU THUẬT]: Tách baseKey để nhận diện FILE_MAPPING đúng
+        let mapping = FILE_MAPPING[saveKey];
+        let baseKey = saveKey;
+        let targetWarehouse = null;
+
+        if (!mapping) {
+            for (const k of Object.keys(FILE_MAPPING)) {
+                if (saveKey.startsWith(k + '_')) {
+                    mapping = FILE_MAPPING[k];
+                    baseKey = k;
+                    targetWarehouse = saveKey.replace(k + '_', '');
+                    break;
+                }
+            }
+        }
+
         if (!mapping) return { success: false, message: `Lỗi mapping: ${saveKey}` };
         
         updateSyncState(saveKey, 'uploading', 'Đang đọc & chuẩn hóa...');
@@ -64,7 +79,7 @@ export const fileHandler = {
                 return { success: false, message: `Thiếu cột bắt buộc` };
             }
 
-            if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
+            if (mapping.normalizeType === 'ycx' || baseKey.includes('ycx')) {
                 normalizedData = normalizedData.map((row, index) => {
                     const rawRow = rawData[index];
                     const diaChi = rawAddressCol ? String(rawRow[rawAddressCol] || '').trim() : row.diaChi;
@@ -79,7 +94,7 @@ export const fileHandler = {
                 });
             }
 
-            const warehouse = get(selectedWarehouse);
+            const warehouse = targetWarehouse || get(selectedWarehouse);
             if (warehouse === 'ALL') {
                 const userAllowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && w !== 'CLUSTER_ALL');
                 if (userAllowedWarehouses.length > 0) {
@@ -90,11 +105,9 @@ export const fileHandler = {
                 }
             }
 
-            // --- 🚨 [PHẪU THUẬT LOGIC]: CHỐT DANH SÁCH THÁNG TRƯỚC KHI GỘP DATA 🚨 ---
             const newlyUploadedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
-            // -------------------------------------------------------------------------
 
-            if (isMultiMode && (saveKey === 'saved_ycx_cungkynam' || saveKey === 'saved_ycx_thangtruoc')) {
+            if (isMultiMode && (baseKey === 'saved_ycx_cungkynam' || baseKey === 'saved_ycx_thangtruoc')) {
                 const currentData = get(mapping.store) || [];
                 const incomingMonthsSet = new Set(newlyUploadedMonths);
                 const incomingMonths = Array.from(incomingMonthsSet);
@@ -123,7 +136,18 @@ export const fileHandler = {
                 mapping.store.set(normalizedData);
             }
             
-            await storage.setItem(saveKey, isMultiMode ? get(mapping.store) : normalizedData); 
+            // [PHẪU THUẬT ISOLATION]: Chia rổ lưu Local Storage nếu đang ở chế độ ALL
+            if (warehouse === 'ALL' && baseKey === 'saved_ycx') {
+                const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
+                for (const kho of incomingWarehouses) {
+                    const khoDataFiltered = normalizedData.filter(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim() === kho);
+                    await storage.setItem(`saved_ycx_${kho}`, khoDataFiltered);
+                }
+                // Vẫn giữ lại bản tổng cho UI lúc đang view ALL
+                await storage.setItem(saveKey, isMultiMode ? get(mapping.store) : normalizedData); 
+            } else {
+                await storage.setItem(saveKey, isMultiMode ? get(mapping.store) : normalizedData); 
+            }
             
             if (saveKey === 'saved_danhsachnv') {
                 localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
@@ -139,7 +163,6 @@ export const fileHandler = {
                     const downloadURL = await storageService.uploadFileToStorage(file, path);
                     const now = Date.now();
                     
-                    // --- 🚨 SỬ DỤNG CHUẨN THÁNG TỪ FILE MỚI ĐỂ FIREBASE KHÔNG XÓA NHẦM FILE CŨ 🚨 ---
                     const extractedMonths = newlyUploadedMonths;
 
                     if (warehouse === 'ALL') {
@@ -153,8 +176,8 @@ export const fileHandler = {
                                 uploadedMonths: extractedMonths, 
                                 updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
                             };
-                            await datasyncService.saveWarehouseMetadata(kho, saveKey, khoMetadata);
-                            localStorage.setItem(`_meta_${kho}_${saveKey}`, JSON.stringify(khoMetadata));
+                            await datasyncService.saveWarehouseMetadata(kho, baseKey, khoMetadata);
+                            localStorage.setItem(`_meta_${kho}_${baseKey}`, JSON.stringify(khoMetadata));
                         }));
 
                         const allMetadata = { 
@@ -164,7 +187,7 @@ export const fileHandler = {
                             updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
                         };
                         
-                        localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(allMetadata));
+                        localStorage.setItem(`_meta_ALL_${baseKey}`, JSON.stringify(allMetadata));
                         updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho quyền hạn`, allMetadata);
 
                     } else {
@@ -174,8 +197,8 @@ export const fileHandler = {
                             updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
                         };
                         
-                        await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
-                        localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
+                        await datasyncService.saveWarehouseMetadata(warehouse, baseKey, metadata);
+                        localStorage.setItem(`_meta_${warehouse}_${baseKey}`, JSON.stringify(metadata));
                         updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
                     }
                 } catch (e) {

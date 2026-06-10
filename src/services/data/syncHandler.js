@@ -1,6 +1,6 @@
 /* global XLSX */
 import { get } from 'svelte/store';
-import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc } from '../../stores.js';
+import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, danhSachNhanVien } from '../../stores.js';
 import { datasyncService } from '../datasync.service.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
@@ -230,18 +230,22 @@ export const syncHandler = {
         
         try {
             if (!isPaste) {
-                let allNormalizedData = [];
+                let allDataForStorage = []; // Hồ chứa chung lưu DB
+                let allDataForStore = [];   // Dữ liệu lọc cho UI
                 
-                let allowedWarehouses = [];
-                if (warehouse === 'ALL') {
-                    allowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                // MẢNG LỌC TOÀN CỤC CHUẨN XÁC
+                let userAllowedWarehouses = [];
+                const dsnvData = get(danhSachNhanVien);
+                if (dsnvData && dsnvData.length > 0) {
+                     const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
+                     userAllowedWarehouses = dsKho.map(k => String(k).trim());
                 } else {
-                    allowedWarehouses = [warehouse];
+                     userAllowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_')).map(k => String(k).trim());
                 }
 
                 let filesToDownload = [];
                 if (warehouse === 'ALL' && state.metadata.isMulti) {
-                     for(let wh of allowedWarehouses) {
+                     for(let wh of userAllowedWarehouses) {
                          const singleMetaStr = localStorage.getItem(`_meta_${wh}_${baseKey}`);
                          if(singleMetaStr) {
                              try {
@@ -281,55 +285,55 @@ export const syncHandler = {
                     
                     normalizedData = applyDataShield(rawData, normalizedData, baseKey);
                     
-                    if (allowedWarehouses.length > 0) {
-                         normalizedData = normalizedData.filter(d => {
+                    // 1. LỌC ĐỂ LƯU XUỐNG Ổ CỨNG (Giữ lại tất cả kho thuộc cụm của User)
+                    let dataForStorage = normalizedData;
+                    if (userAllowedWarehouses.length > 0) {
+                         dataForStorage = normalizedData.filter(d => {
                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                            return allowedWarehouses.includes(whCode);
+                            return userAllowedWarehouses.includes(whCode);
                          });
                     }
+                    allDataForStorage = [...allDataForStorage, ...dataForStorage];
 
-                    allNormalizedData = [...allNormalizedData, ...normalizedData];
+                    // 2. LỌC ĐỂ HIỂN THỊ UI (Nếu chọn kho lẻ -> chỉ lấy 1 kho, Nếu ALL -> lấy toàn bộ)
+                    let dataForStore = dataForStorage;
+                    if (warehouse !== 'ALL') {
+                         dataForStore = dataForStorage.filter(d => {
+                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                            return whCode === warehouse;
+                         });
+                    }
+                    allDataForStore = [...allDataForStore, ...dataForStore];
                 }
 
                 if (state.metadata.deletedWarehouses && state.metadata.deletedWarehouses.length > 0) {
-                    allNormalizedData = allNormalizedData.filter(d => {
+                    allDataForStorage = allDataForStorage.filter(d => {
+                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                        return !state.metadata.deletedWarehouses.includes(whCode);
+                    });
+                    allDataForStore = allDataForStore.filter(d => {
                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                         return !state.metadata.deletedWarehouses.includes(whCode);
                     });
                 }
 
-                mapping.store.set(allNormalizedData);
-                await storage.setItem(stateKey, allNormalizedData);
+                // LƯU CỤC DỮ LIỆU ĐỦ KHO VÀO Ổ CỨNG
+                await storage.setItem(stateKey, allDataForStorage);
+                // CHỈ SET CỤC ĐÃ LỌC LÊN STORE GIAO DIỆN
+                mapping.store.set(allDataForStore);
                 
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_FILE');
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
                 
                 localStorage.setItem(`_meta_${warehouse}_${baseKey}`, JSON.stringify(metaToSave));
-                updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allNormalizedData.length} dòng)`, metaToSave);
-            
-            } else if (isPaste) {
-                const downloadUrl = state.metadata.downloadURL;
-                const cacheBusterUrl = `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allDataForStore.length} dòng)`, metaToSave);
+
+            } else {
+                const response = await fetch(state.metadata.downloadURL);
+                const textContent = await response.text();
                 
-                const textContent = await (await fetch(cacheBusterUrl)).text();
                 let processedCount = 0;
-                
-                if (mapping.isThiDuaNV) {
-                    // [PHẪU THUẬT LOGIC]: Sửa lỗi mất dữ liệu Thi đua Nhân Viên sau khi F5
-                    // Đổi stateKey + '_raw' (sai định dạng) thành dạng chuẩn raw_paste_thiduanv_xxx
-                    const rawKey = stateKey.replace('daily_paste_thiduanv', 'raw_paste_thiduanv');
-                    localStorage.setItem(rawKey, textContent);
-                    
-                    const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
-                    if (parsedData.success) {
-                        dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
-                        const $competitionData = get(competitionData);
-                        const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                        mapping.store.set(processedData);
-                        processedCount = processedData.length;
-                        localStorage.setItem(stateKey, JSON.stringify(processedData)); 
-                    }
-                } else if (mapping.processFunc) {
+                if (mapping.processFunc) {
                     const processedData = mapping.processFunc(textContent);
                     mapping.store.set(processedData);
                     processedCount = processedData?.length || 0;
