@@ -199,7 +199,7 @@ export const datasyncService = {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam'];
+        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
         try {
             if (multiModeKeys.includes(key)) {
                 const docSnap = await getDoc(khoRef);
@@ -258,9 +258,6 @@ export const datasyncService = {
         } catch (error) { throw error; }
     },
 
-    // =========================================================================
-    // [CodeGenesis V5] HÀM DEEP SYNC PHƯƠNG ÁN B: 1 DOC = 1 KHO (SIÊU TIẾT KIỆM)
-    // =========================================================================
     async deepSyncToMobile(onProgress) {
         const db = getDB();
         if (!db) {
@@ -325,7 +322,6 @@ export const datasyncService = {
             let targetRatio = 100;
             try { targetRatio = await this.loadPersonalTargetRatio(wh) || 100; } catch(e){}
 
-            // Hàm tính số nhân viên chuẩn xác theo từng kho lẻ
             const getWarehouseEmpCount = (empWh) => {
                 const filtered = allEmps.filter(e => String(e.maKho || e.MAKHO || '').trim() === String(empWh).trim());
                 return filtered.length > 0 ? filtered.length : 1;
@@ -346,7 +342,6 @@ export const datasyncService = {
                 let thiDuaDetailCooked = [];
                 let thiDuaScore = 0;
 
-                // [PHẪU THUẬT LOGIC]: Tính Target cá nhân cô lập theo từng kho con
                 const stMappedData = {};
                 compDataStore.forEach(item => { 
                     if (item.maKho && String(item.maKho).trim() !== empWh) return;
@@ -483,7 +478,6 @@ export const datasyncService = {
             enrichedList.sort((a, b) => (b.thiDuaScore || 0) - (a.thiDuaScore || 0));
             enrichedList.forEach((e, i) => e.rankThiDua = i + 1);
 
-            // [PHẪU THUẬT GOM NHÓM]: Nhóm mảng nhân sự theo từng siêu thị cụ thể
             const warehouseGroups = {};
             enrichedList.forEach(emp => {
                 const empWh = String(emp.maKho || emp.ma_kho || wh || 'UNKNOWN').trim();
@@ -520,7 +514,6 @@ export const datasyncService = {
                 });
             });
 
-            // [TỐI ƯU HÓA TUYỆT ĐỐI FIREBASE]: Chỉ thực hiện 1 Ghi duy nhất cho mỗi Siêu thị
             const targetWarehouseCodes = Object.keys(warehouseGroups);
             let index = 0;
 

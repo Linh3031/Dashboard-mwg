@@ -73,7 +73,7 @@ function applyDataShield(rawData, normalizedData, baseKey) {
 }
 
 function getStateKey(key, wh) {
-    if (['daily_paste_luyke', 'daily_paste_thiduanv'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
+    if (['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
         return `${key}_${wh}`;
     }
     if (['cluster_paste_luyke', 'cluster_paste_comp'].includes(key) && wh.startsWith('CLUSTER_')) {
@@ -95,11 +95,11 @@ export const syncHandler = {
         
         if (isBatchMode) {
             if (warehouse === 'ALL') {
-                targetKeys = [...Object.keys(FILE_MAPPING), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc', 'cluster_summary_data'];
+                targetKeys = [...Object.keys(FILE_MAPPING).filter(k => !['saved_giocong', 'saved_thuongnong'].includes(k)), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc', 'cluster_summary_data'];
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
             } else {
-                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv'];
+                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'];
             }
         } else {
             targetKeys = [...Object.keys(FILE_MAPPING), ...Object.keys(PASTE_MAPPING)];
@@ -117,6 +117,8 @@ export const syncHandler = {
 
         try {
             let cloudData = null;
+            // [PHẪU THUẬT LOGIC]: Tiêu diệt việc đọc từ document ALL. 
+            // Giờ đây file tổng đã được nhân bản vào phòng của các kho con, chỉ cần nhón lấy 1 kho là biết có update!
             if (warehouse === 'ALL') {
                const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
                if(validWarehouses.length > 0) {
@@ -135,6 +137,7 @@ export const syncHandler = {
 
                 const localMetaStr = localStorage.getItem(`_meta_${warehouse}_${baseKey}`);
                 let localMeta = localMetaStr ? JSON.parse(localMetaStr) : {};
+                
                 const cloudMeta = cloudData ? cloudData[baseKey] : null;
 
                 if (!cloudMeta) {
@@ -192,7 +195,6 @@ export const syncHandler = {
         let isPaste = !!PASTE_MAPPING[stateKey];
 
         if (!mapping) {
-            // [CodeGenesis] Phẫu thuật Logic: Chặn đứng Prefix Overlap bằng cách ép Sort độ dài Key
             const sortedKeys = [...Object.keys(PASTE_MAPPING), ...Object.keys(FILE_MAPPING)].sort((a, b) => b.length - a.length);
             for (const pKey of sortedKeys) {
                 if (stateKey.startsWith(pKey + '_')) {

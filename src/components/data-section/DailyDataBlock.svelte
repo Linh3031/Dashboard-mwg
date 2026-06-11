@@ -57,7 +57,7 @@
                 <div class="flex flex-col items-end gap-1.5 min-w-[180px] sm:min-w-[240px]">
                     <div class="w-full bg-slate-200 rounded-full h-2.5 shadow-inner overflow-hidden relative border border-slate-300">
                         <div class="h-full transition-all duration-300 progress-shimmer bg-gradient-to-r from-blue-600 to-cyan-400" 
-                             style="width: {syncTotal > 0 ? (syncProgress / syncTotal) * 100 : 0}%"></div>
+                           style="width: {syncTotal > 0 ? (syncProgress / syncTotal) * 100 : 0}%"></div>
                     </div>
                     <span class="text-[10px] font-bold text-blue-700 truncate max-w-[180px] sm:max-w-[240px] tracking-wide">{syncMessage}</span>
                 </div>
@@ -88,16 +88,16 @@
                 </button>
             {/if}
         </div>
-        </h3>
+    </h3>
     
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="flex flex-col gap-4 overflow-hidden">
-            <div class="h-fit w-full" data-tour="input-ycx">
+             <div class="h-fit w-full" data-tour="input-ycx">
                 <FileInput 
                     label="Yêu cầu xuất lũy kế" 
                     icon="file-text" 
                     link="https://report.mwgroup.vn/home/dashboard/077" 
-                    saveKey={$selectedWarehouse === 'ALL' ? 'saved_ycx' : `saved_ycx_${$selectedWarehouse}`} 
+                    saveKey="saved_ycx" 
                     isMultiMode={true} 
                 />
             </div>

@@ -48,7 +48,6 @@ export const fileHandler = {
         let targetWarehouse = null;
 
         if (!mapping) {
-            // [CodeGenesis] Phẫu thuật Logic: Sắp xếp Key giảm dần để chặn đứng lỗi ghi đè Lũy kế / Tháng trước
             const sortedKeys = Object.keys(FILE_MAPPING).sort((a, b) => b.length - a.length);
             for (const key of sortedKeys) {
                 if (saveKey.startsWith(key + '_')) {
@@ -82,6 +81,11 @@ export const fileHandler = {
             if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv') {
                 dataToStore = normalizedData.filter(row => {
                     const maKhoRow = String(row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'] || row.MA_KHO_TAO || row.MA_KHO || '').trim();
+                    // [BƠM MÁU LOGIC TỪ BƯỚC TRƯỚC]
+                    if (!maKhoRow && (baseKey === 'saved_giocong' || baseKey === 'saved_thuongnong')) {
+                        row.maKho = currentWh;
+                        return true; 
+                    }
                     return maKhoRow === currentWh;
                 });
             }
@@ -113,29 +117,40 @@ export const fileHandler = {
 
             if (!mapping.localOnly) {
                 try {
-                    const path = `warehouse_data/${currentWh}/${baseKey}_${Date.now()}.xlsx`;
-                    const downloadUrl = await storageService.uploadFileToStorage(file, path);
-                    const now = Date.now();
-                    
-                    const metadata = {
-                        downloadURL: downloadUrl,
-                        fileName: file.name,
-                        fileType: 'excel',
-                        rowCount: dataToStore.length,
-                        updatedAt: new Date(now),
-                        timestamp: now,
-                        updatedBy: get(currentUser)?.email || 'Tôi',
-                        uploadedMonths: isMultiMode ? currentMonths : null,
-                        isMulti: isMultiMode
-                    };
+                    // [PHẪU THUẬT LOGIC]: Chặn lưu vào document "ALL", nhân bản Metadata cho từng kho
+                    const validWarehouses = currentWh === 'ALL' 
+                        ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
+                        : [currentWh];
 
-                    await datasyncService.saveWarehouseMetadata(currentWh, baseKey, metadata);
-                    localStorage.setItem(`_meta_${currentWh}_${baseKey}`, JSON.stringify(metadata));
+                    if (validWarehouses.length > 0) {
+                        const primaryWh = validWarehouses[0];
+                        const path = `warehouse_data/${primaryWh}/${baseKey}_${Date.now()}.xlsx`;
+                        const downloadUrl = await storageService.uploadFileToStorage(file, path);
+                        const now = Date.now();
+                        
+                        const metadata = {
+                            downloadURL: downloadUrl,
+                            fileName: file.name,
+                            fileType: 'excel',
+                            rowCount: dataToStore.length,
+                            updatedAt: new Date(now),
+                            timestamp: now,
+                            updatedBy: get(currentUser)?.email || 'Tôi',
+                            uploadedMonths: isMultiMode ? currentMonths : null,
+                            isMulti: isMultiMode
+                        };
 
-                    const successMsg = isMultiMode && currentMonths.length > 0 
-                        ? `✓ Đã lưu tháng: ${currentMonths.join(', ')}` 
-                        : `✓ Đã đồng bộ lên Cloud`;
-                    updateSyncState(saveKey, 'synced', successMsg, metadata);
+                        // [NÒNG CỐT]: Lưu cho tất cả các kho có trong cụm của quản lý này
+                        for (const wh of validWarehouses) {
+                            await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
+                            localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
+                        }
+
+                        const successMsg = isMultiMode && currentMonths.length > 0 
+                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')}` 
+                            : `✓ Đã đồng bộ lên Cloud`;
+                        updateSyncState(saveKey, 'synced', successMsg, metadata);
+                    }
 
                 } catch (cloudErr) {
                     console.error("Cloud sync error:", cloudErr);
@@ -165,7 +180,6 @@ export const fileHandler = {
             let mapping = FILE_MAPPING[saveKey];
 
             if (!mapping) {
-                // [CodeGenesis] Phẫu thuật Logic: Chặn đứng xoá nhầm chéo file
                 const sortedKeys = Object.keys(FILE_MAPPING).sort((a, b) => b.length - a.length);
                 for (const key of sortedKeys) {
                     if (saveKey.startsWith(key + '_')) {
@@ -195,8 +209,16 @@ export const fileHandler = {
                     timestamp: now,
                     updatedBy: get(currentUser)?.email || 'Tôi'
                 };
-                await datasyncService.saveWarehouseMetadata(targetWarehouse, baseKey, metadata);
-                localStorage.removeItem(`_meta_${targetWarehouse}_${baseKey}`);
+                
+                // [PHẪU THUẬT LOGIC]: Khi xóa ở chế độ ALL, phải xóa rải rác ở từng kho con
+                const validWarehouses = targetWarehouse === 'ALL' 
+                    ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
+                    : [targetWarehouse];
+
+                for (const wh of validWarehouses) {
+                    await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
+                    localStorage.removeItem(`_meta_${wh}_${baseKey}`);
+                }
             }
 
             updateSyncState(saveKey, 'error', 'Chưa có file. Vui lòng tải file.', null);

@@ -14,6 +14,13 @@
     function onWarehouseSelect(event) {
         dispatch('warehouseChange', event.target.value);
     }
+
+    // [PHẪU THUẬT LOGIC]: Nếu list chỉ có 1 kho, và state đang trống hoặc kẹt ở ALL -> Tự ép về kho duy nhất đó
+    $: if ($warehouseList && $warehouseList.length === 1 && (!$selectedWarehouse || $selectedWarehouse === 'ALL')) {
+        selectedWarehouse.set($warehouseList[0]);
+        // Báo cho component cha (DataSection) biết để cập nhật dữ liệu tương ứng
+        dispatch('warehouseChange', $warehouseList[0]); 
+    }
 </script>
 
 <div class="page-header">
@@ -50,7 +57,9 @@
                     {#if $warehouseList.length === 0}
                         <option>Vui lòng tải file DSNV...</option>
                     {:else}
-                        <option value="ALL">Tất cả các kho</option>
+                        {#if $warehouseList.length > 1}
+                            <option value="ALL">Tất cả các kho</option>
+                        {/if}
                         
                         {#each $warehouseList as kho}
                             <option value={kho}>{kho}</option>
