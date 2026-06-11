@@ -117,8 +117,6 @@ export const syncHandler = {
 
         try {
             let cloudData = null;
-            // [PHẪU THUẬT LOGIC]: Tiêu diệt việc đọc từ document ALL. 
-            // Giờ đây file tổng đã được nhân bản vào phòng của các kho con, chỉ cần nhón lấy 1 kho là biết có update!
             if (warehouse === 'ALL') {
                const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
                if(validWarehouses.length > 0) {
@@ -237,18 +235,25 @@ export const syncHandler = {
                 }
 
                 let filesToDownload = [];
-                if (warehouse === 'ALL' && state.metadata.isMulti) {
+                // Phẫu thuật File: Hỗ trợ nạp song song cả Multi (YCX) và Single split (Giờ công, Thưởng nóng)
+                if (get(selectedWarehouse) === 'ALL') {
                      for(let wh of userAllowedWarehouses) {
                          const singleMetaStr = localStorage.getItem(`_meta_${wh}_${baseKey}`);
                          if(singleMetaStr) {
                              try {
                                  const sm = JSON.parse(singleMetaStr);
-                                 if(!sm.isDeleted && sm.downloadURL) filesToDownload.push(sm);
+                                 if (sm.files && Array.isArray(sm.files)) {
+                                     filesToDownload.push(...sm.files.filter(f => !f.isDeleted && f.downloadURL));
+                                 } else if (!sm.isDeleted && sm.downloadURL) {
+                                     filesToDownload.push(sm);
+                                 }
                              } catch(e){}
                          }
                      }
                      if(filesToDownload.length === 0 && state.metadata.files) {
                          filesToDownload = state.metadata.files;
+                     } else if (filesToDownload.length === 0 && state.metadata.downloadURL) {
+                         filesToDownload = [state.metadata];
                      }
                 } else if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
                      filesToDownload = state.metadata.files;
@@ -288,10 +293,10 @@ export const syncHandler = {
                     allDataForStorage = [...allDataForStorage, ...dataForStorage];
 
                     let dataForStore = dataForStorage;
-                    if (warehouse !== 'ALL') {
+                    if (get(selectedWarehouse) !== 'ALL') {
                          dataForStore = dataForStorage.filter(d => {
                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                            return whCode === warehouse;
+                            return whCode === get(selectedWarehouse);
                          });
                     }
                     allDataForStore = [...allDataForStore, ...dataForStore];
@@ -318,30 +323,77 @@ export const syncHandler = {
                 updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allDataForStore.length} dòng)`, metaToSave);
 
             } else {
+                // Phẫu thuật PASTE: Gom tụ nguyên tử (Atomic Aggregation) để triệt tiêu Race Condition
                 const response = await fetch(state.metadata.downloadURL);
                 const textContent = await response.text();
                 
+                // Lưu text của ô hiện tại xuống kho riêng của nó
+                localStorage.setItem(stateKey, textContent);
+                
                 let processedCount = 0;
+                const isBatchMode = get(selectedWarehouse) === 'ALL';
                 
                 if (mapping.isThiDuaNV) {
+                    // 1. Tính toán số dòng cho riêng ô này để hiển thị UI
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {
                         dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
                         const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
-                        mapping.store.set(processedData);
                         processedCount = processedData?.length || 0;
                     }
-                    localStorage.setItem(stateKey, textContent);
+
+                    // 2. Gom tụ dữ liệu cho Store tổng
+                    if (isBatchMode) {
+                        let combinedData = [];
+                        const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                        for (let wh of validWarehouses) {
+                            const txt = localStorage.getItem(`${baseKey}_${wh}`);
+                            if (txt) {
+                                const pd = dataProcessing.parsePastedThiDuaTableData(txt);
+                                if (pd.success) {
+                                    const pData = dataProcessing.processThiDuaNhanVienData(pd, get(competitionData));
+                                    combinedData.push(...pData);
+                                }
+                            }
+                        }
+                        mapping.store.set(combinedData); // Bảng chung nhận 100% data
+                    } else {
+                        if (parsedData.success) {
+                            const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
+                            mapping.store.set(processedData);
+                        }
+                    }
                 } else if (mapping.processFunc) {
-                    const processedData = mapping.processFunc(textContent);
-                    mapping.store.set(processedData);
-                    processedCount = processedData?.length || 0;
-                    localStorage.setItem(stateKey, textContent);
-                    
+                    // 1. Tính toán số dòng cho riêng ô này
                     if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
-                         const comps = dataProcessing.parseCompetitionDataFromLuyKe(textContent);
-                         dataProcessing.parseLuyKePastedData(textContent);
-                         processedCount = comps.length;
+                         processedCount = dataProcessing.parseCompetitionDataFromLuyKe(textContent).length;
+                    } else {
+                         processedCount = mapping.processFunc(textContent)?.length || 0;
+                    }
+                    
+                    // 2. Gom tụ dữ liệu cho Store tổng
+                    if (isBatchMode) {
+                        let combinedData = [];
+                        let combinedText = '';
+                        const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                        for (let wh of validWarehouses) {
+                            const txt = localStorage.getItem(`${baseKey}_${wh}`);
+                            if (txt) {
+                                const pData = mapping.processFunc(txt);
+                                combinedData.push(...pData);
+                                combinedText += txt + '\n'; // Nối văn bản để parse tổng hợp
+                            }
+                        }
+                        mapping.store.set(combinedData);
+                        if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
+                            dataProcessing.parseLuyKePastedData(combinedText);
+                        }
+                    } else {
+                        const processedData = mapping.processFunc(textContent);
+                        mapping.store.set(processedData);
+                        if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
+                             dataProcessing.parseLuyKePastedData(textContent);
+                        }
                     }
                 }
                 
