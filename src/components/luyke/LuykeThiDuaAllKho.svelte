@@ -81,7 +81,7 @@
     afterUpdate(() => { 
         if (typeof feather !== 'undefined') feather.replace(); 
         
-        // Cố định tên ảnh lúc capture
+        // Cố định tên fallback cho cả cụm dashboard nếu cần
         const captureContainer = document.querySelector('.luyke-dashboard-container');
         if (captureContainer) {
             captureContainer.setAttribute('data-capture-filename', 'Luy_Ke_Thi_Dua_Cum');
@@ -114,7 +114,10 @@
     {#each uniqueWarehouses as kho}
         {@const khoData = warehouseDataMap[kho] || { items: [], groups: {daDat:[], butToc:[], baoDong:[]}, summary: { total:0, achieved:0, revenueTotal:0, revenueAchieved:0, quantityTotal:0, quantityAchieved:0, overallRate:0 } }}
         
-        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-full min-w-[280px]">
+        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-full min-w-[280px] luyke-thi-dua-kho-card"
+             data-capture-group="competition-program"
+             data-capture-filename="Luy_Ke_Thi_Dua_Kho_{kho}">
+            
             <div class="bg-indigo-900 border-b border-indigo-950 p-2.5 flex items-center justify-between shadow-sm">
                 <span class="font-bold text-white text-[13px] flex items-center gap-1 uppercase tracking-wide truncate max-w-[80%] drop-shadow-sm">
                     <i data-feather="map-pin" class="w-4 h-4 text-indigo-300"></i>
@@ -195,55 +198,49 @@
 </div>
 
 <style>
-    /* BỘ GIÁP CAPTURE: Vá lỗi dồn cột và hiển thị toàn bộ thanh cuộn */
+    /* BỘ GIÁP CAPTURE: Phá khóa scroll, hiển thị trọn vẹn danh sách ngành hàng dài */
     :global(.capture-container .luyke-thidua-scroller) {
         max-height: none !important;
         overflow: visible !important;
         height: auto !important;
     }
     
-    /* Ép giao diện chụp ảnh thành dạng lưới ngang với padding an toàn */
-    :global(.capture-container:has(.luyke-thidua-multi-columns)) {
-        width: max-content !important;
-        min-width: 0 !important;
-        padding: 30px !important;
-        background-color: #f8fafc !important;
-    }
-
-    :global(.capture-container .luyke-thidua-multi-columns) {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: wrap !important;
-        justify-content: center !important;
-        width: max-content !important;
-        min-width: 0 !important;
-        margin: 0 auto !important;
-        gap: 20px !important;
-    }
-    
-    :global(.capture-container .luyke-thidua-multi-columns > div) {
+    /* ÉP ĐỘ RỘNG TIÊU CHUẨN KHI THẺ KHO ĐƯỢC CLONE TÁCH BIỆT TRONG TRẠM CHỤP */
+    :global(.capture-container .luyke-thi-dua-kho-card) {
         width: 550px !important;
         min-width: 550px !important;
         max-width: 550px !important;
-        page-break-inside: avoid;
+        height: auto !important;
+        background-color: #ffffff !important;
+        box-shadow: none !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 0.75rem !important;
+    }
+    
+    /* Làm sạch nền bao quanh của trạm chụp đơn lẻ */
+    :global(.capture-container .capture-layout-container) {
+        padding: 12px !important;
+        background-color: #f8fafc !important;
+        display: flex !important;
+        justify-content: center !important;
     }
 
     /* CHỐNG VỠ FONT CHỮ CỦA KPI */
-    :global(.capture-container .luyke-thidua-multi-columns .whitespace-nowrap) {
+    :global(.capture-container .whitespace-nowrap) {
         white-space: nowrap !important;
         word-break: normal !important;
     }
 
     /* CHỈ CHO PHÉP RỚT DÒNG TẠI THẺ NGÀNH HÀNG */
-    :global(.capture-container .luyke-thidua-multi-columns .line-clamp-2) {
+    :global(.capture-container .line-clamp-2) {
         overflow: visible !important;
         white-space: normal !important; 
         word-break: break-word !important;
     }
     
-    :global(.capture-container .luyke-thidua-multi-columns .leading-none), 
-    :global(.capture-container .luyke-thidua-multi-columns .leading-tight),
-    :global(.capture-container .luyke-thidua-multi-columns .tracking-tight) {
+    :global(.capture-container .leading-none), 
+    :global(.capture-container .leading-tight),
+    :global(.capture-container .tracking-tight) {
         line-height: 1.4 !important;
         padding-bottom: 2px !important;
     }

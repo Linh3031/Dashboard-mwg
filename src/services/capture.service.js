@@ -159,11 +159,25 @@ export const captureService = {
                     }
                     continue; 
                 }
+
+                // --- [PHẪU THUẬT LOGIC VÀNG]: Loại bỏ container cha tổng nếu nó chứa thẻ con thuộc nhóm TÁCH ẢNH ---
+                const filteredElements = elements.filter(el => {
+                    const childGroups = el.querySelectorAll('[data-capture-group]');
+                    for (const child of childGroups) {
+                        if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
+                            return false; // Hủy chụp tấm tổng thảm họa này
+                        }
+                    }
+                    return true;
+                });
+
+                if (filteredElements.length === 0) continue;
+
                 const processor = getProcessor(group);
                 if (processor) {
-                    await processor(elements, baseTitle);
+                    await processor(filteredElements, baseTitle);
                 } else {
-                    for (const el of elements) {
+                    for (const el of filteredElements) {
                          let customName = el.dataset.captureFilename;
                          let subTitle = customName || baseTitle;
                          await processDefault([el], subTitle);
@@ -207,11 +221,24 @@ export const captureService = {
                  continue;
             }
             
+            // --- ĐỒNG BỘ LOGIC CHO PHẦN XEM TRƯỚC (PREVIEW) ---
+            const filteredElements = elements.filter(el => {
+                const childGroups = el.querySelectorAll('[data-capture-group]');
+                for (const child of childGroups) {
+                    if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (filteredElements.length === 0) continue;
+
             const processor = getProcessor(group);
             if (processor) {
-                previewItems.push({ title: baseTitle, elements: elements });
+                previewItems.push({ title: baseTitle, elements: filteredElements });
             } else {
-                 for (const el of elements) {
+                 for (const el of filteredElements) {
                     let customName = el.dataset.captureFilename;
                     let subTitle = customName || baseTitle;
                     previewItems.push({ title: subTitle, elements: [el] });
@@ -266,15 +293,31 @@ export const captureService = {
                      continue;
                 }
                 
+                // --- ĐỒNG BỘ LOGIC CHO PHẦN CHỤP CHỌN LỌC ---
+                const filteredElements = elements.filter(el => {
+                    const childGroups = el.querySelectorAll('[data-capture-group]');
+                    for (const child of childGroups) {
+                        if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+
+                if (filteredElements.length === 0) {
+                    currentIndex++;
+                    continue;
+                }
+
                 const processor = getProcessor(group);
                 if (processor) {
                     if (selectedIndices.includes(currentIndex)) {
-                        await processor(elements, baseTitle);
+                        await processor(filteredElements, baseTitle);
                         await new Promise(r => setTimeout(r, 400));
                     }
                     currentIndex++;
                 } else {
-                     for (const el of elements) {
+                     for (const el of filteredElements) {
                         if (selectedIndices.includes(currentIndex)) {
                             let customName = el.dataset.captureFilename;
                             let subTitle = customName || baseTitle;
