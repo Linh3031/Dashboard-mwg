@@ -8,7 +8,7 @@ import { injectCaptureStyles } from './capture/engine.js';
 import { getProcessor, SPLIT_GROUPS } from './capture/registry.js';
 import { processDefault } from './capture/processors/default.js';
 
-// --- [FIX GENESIS V5]: CÔ LẬP VÀ ÉP VỎ ÔM SÁT RUỘT CHỐNG PHÌNH TO ---
+// --- [FIX GENESIS V4]: CÔ LẬP, CO GIÃN THÔNG MINH & XÓA VẠCH TRẮNG ---
 const _injectCaptureFixes = () => {
     const styleId = 'genesis-capture-fixes';
     document.getElementById(styleId)?.remove();
@@ -49,19 +49,28 @@ const _injectCaptureFixes = () => {
             position: static !important;
         }
 
-        /* 4. [PHẪU THUẬT V5] - TRỊ BỆNH VIỀN DÀY / KHUNG PHÌNH TO (Surgical Logic) */
-        /* Giữ nguyên toàn bộ màu nền, bo góc, viền xám nhưng ép nó co lại ôm sát bảng (max-content) */
-        body .capture-container .bg-white.border.border-gray-200.rounded-xl,
-        body .capture-container .bg-white.rounded-xl.border.border-gray-200,
-        body .capture-container .overflow-x-auto {
-            width: max-content !important;
-            min-width: max-content !important;
-            max-width: max-content !important;
+        /* 4. CHỐNG THỪA KHOẢNG TRỐNG & XÓA VẠCH TRẮNG 2 BÊN RÌA */
+        /* Lột bỏ viền, bóng và nền trắng của cái vỏ Wrapper bên ngoài */
+        body .capture-container [data-capture-group="revenue-table"],
+        body .capture-container [data-capture-group="revenue-table"] > div,
+        body .capture-container [data-capture-group="pasted-competition"],
+        body .capture-container [data-capture-group="pasted-competition"] > div,
+        body .capture-container [data-capture-group="revenue-detail-mobile"],
+        body .capture-container [data-capture-group="revenue-detail-mobile"] > div {
+            width: fit-content !important;
+            min-width: fit-content !important;
+            max-width: fit-content !important;
             margin: 0 auto !important;
+            border: none !important;
+            box-shadow: none !important;
+            background-color: transparent !important; /* Khóa vạch trắng lộ ra do nền */
+            border-radius: 0 !important;
         }
-
-        /* 5. Củng cố thẻ Table bên trong để bung đúng nội dung, không bị rớt chữ */
-        body .capture-container table {
+        
+        /* Bơm nền trắng thẳng vào Table để ôm sát nút */
+        body .capture-container [data-capture-group="revenue-table"] table,
+        body .capture-container [data-capture-group="pasted-competition"] table,
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table {
             width: max-content !important;
             min-width: max-content !important;
             max-width: max-content !important;
@@ -69,9 +78,23 @@ const _injectCaptureFixes = () => {
             background-color: #ffffff !important;
         }
 
-        /* 6. BỘ KHÓA CỘT HẠNG: Chống trình duyệt nhét không gian thừa vào cột đầu tiên */
-        body .capture-container table th:first-child,
-        body .capture-container table td:first-child {
+        /* 5. CÔ LẬP HOÀN TOÀN: Khóa cột Hạng 45px không vạ lây (Dành cho bảng cũ) */
+        body .capture-container [data-capture-group="revenue-table"] table th:first-child,
+        body .capture-container [data-capture-group="revenue-table"] table td:first-child,
+        body .capture-container [data-capture-group="pasted-competition"] table th:first-child,
+        body .capture-container [data-capture-group="pasted-competition"] table td:first-child {
+            width: 45px !important;
+            min-width: 45px !important;
+            max-width: 45px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+        }
+
+        /* 6. CÔ LẬP DÀNH RIÊNG CHO BẢNG REALTIME: Khóa cột Hạng 50px */
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table th:first-child,
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table td:first-child {
+            width: 50px !important;
+            min-width: 50px !important;
             max-width: 50px !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
@@ -137,12 +160,12 @@ export const captureService = {
                     continue; 
                 }
 
-                // Loại bỏ container cha tổng nếu nó chứa thẻ con thuộc nhóm TÁCH ẢNH (Fix trùng ảnh thảm họa)
+                // --- [PHẪU THUẬT LOGIC VÀNG]: Loại bỏ container cha tổng nếu nó chứa thẻ con thuộc nhóm TÁCH ẢNH ---
                 const filteredElements = elements.filter(el => {
                     const childGroups = el.querySelectorAll('[data-capture-group]');
                     for (const child of childGroups) {
                         if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
-                            return false; 
+                            return false; // Hủy chụp tấm tổng thảm họa này
                         }
                     }
                     return true;
@@ -198,6 +221,7 @@ export const captureService = {
                  continue;
             }
             
+            // --- ĐỒNG BỘ LOGIC CHO PHẦN XEM TRƯỚC (PREVIEW) ---
             const filteredElements = elements.filter(el => {
                 const childGroups = el.querySelectorAll('[data-capture-group]');
                 for (const child of childGroups) {
@@ -269,6 +293,7 @@ export const captureService = {
                      continue;
                 }
                 
+                // --- ĐỒNG BỘ LOGIC CHO PHẦN CHỤP CHỌN LỌC ---
                 const filteredElements = elements.filter(el => {
                     const childGroups = el.querySelectorAll('[data-capture-group]');
                     for (const child of childGroups) {
