@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_00_CORE.txt
-GENERATED AT: 5/13/2026, 7:07:23 PM
+GENERATED AT: 6/12/2026, 1:52:43 PM
 
 
 >>> FILE_START: src/stores.js
@@ -23,7 +23,6 @@ export const userStats = writable([]);
 export const helpContent = writable({ data: '...', luyke: '...', sknv: '...', realtime: '...' });
 
 // --- [SỬA ĐỔI] XỬ LÝ LƯU TRỮ MẪU NHẬN XÉT (PERSISTENCE) ---
-// Thay vì khởi tạo rỗng, ta đọc từ localStorage nếu có
 let savedTemplates = { luyke: '', sknv: '', realtime: '' };
 if (typeof localStorage !== 'undefined') {
     try {
@@ -36,8 +35,50 @@ if (typeof localStorage !== 'undefined') {
 export const composerTemplates = writable(savedTemplates);
 // -------------------------------------------------------------
 
-export const competitionNameMappings = writable({}); 
-export const luykeNameMappings = writable({}); // [NEW] Dành riêng cho Thi đua Siêu thị
+// --- [SỬA ĐỔI CHÍNH] ĐỒNG BỘ MAPPING QUA LOCALSTORAGE (HỖ TRỢ CROSS-TAB REALTIME) ---
+let savedCompMappings = {};
+let savedLuykeMappings = {};
+if (typeof localStorage !== 'undefined') {
+    try {
+        const compRaw = localStorage.getItem('compMappings_cache');
+        if (compRaw) savedCompMappings = JSON.parse(compRaw);
+        
+        const luykeRaw = localStorage.getItem('luykeMappings_cache');
+        if (luykeRaw) savedLuykeMappings = JSON.parse(luykeRaw);
+    } catch (e) {
+        console.error('Lỗi đọc mapping từ localStorage:', e);
+    }
+}
+
+export const competitionNameMappings = writable(savedCompMappings);
+export const luykeNameMappings = writable(savedLuykeMappings);
+
+// Cập nhật localStorage khi store thay đổi (ở tab hiện tại)
+competitionNameMappings.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('compMappings_cache', JSON.stringify(value));
+    }
+});
+
+luykeNameMappings.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('luykeMappings_cache', JSON.stringify(value));
+    }
+});
+
+// Lắng nghe thay đổi từ các tab khác để đồng bộ realtime (Không cần F5)
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'compMappings_cache' && event.newValue) {
+            competitionNameMappings.set(JSON.parse(event.newValue));
+        }
+        if (event.key === 'luykeMappings_cache' && event.newValue) {
+            luykeNameMappings.set(JSON.parse(event.newValue));
+        }
+    });
+}
+// ---------------------------------------------------------------------------------
+
 export const homeConfig = writable({ videoUrl: '', timeline: [], sliderImages: [], changelogs: [] });
 export const danhSachNhanVien = writable([]);
 export const ycxData = writable([]);
@@ -255,7 +296,8 @@ initializeApp();
       danhSachNhanVien,
       warehouseList,
       isDemoMode,
-      declarations
+      declarations,
+      masterReportData
   } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
@@ -279,12 +321,14 @@ initializeApp();
   // --- COMMON UI ---
   import GlobalNotification from './components/common/GlobalNotification.svelte';
   import VersionManager from './components/common/VersionManager.svelte';
+  import FastTagPicker from './components/common/FastTagPicker.svelte';
 
   // --- DRAWERS ---
   import InterfaceDrawer from './components/drawers/InterfaceDrawer.svelte';
   import GoalDrawer from './components/drawers/GoalDrawer.svelte';
 
   // --- MODALS ---
+  import QuickGoalModal from './components/modals/QuickGoalModal.svelte';
   import AdminModal from './components/modals/AdminModal.svelte';
   import LoginModal from './components/modals/LoginModal.svelte';
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
@@ -514,12 +558,14 @@ initializeApp();
 
 <GlobalNotification />
 <VersionManager />
+<FastTagPicker />
 
 <InterfaceDrawer />
 <GoalDrawer />
 
 <AdminModal />
 <LoginModal />
+<QuickGoalModal />
 <UserCompetitionModal />
 <UserSpecialProgramModal />
 <ComposerModal /> 
@@ -670,7 +716,8 @@ export const config = {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },
             maNV: { required: true, displayName: 'Mã Nhân Viên', aliases: ['mã nv', 'msnv', 'mã nhân viên', 'manv', 'mã số nhân viên'] },
             hoTen: { required: true, displayName: 'Họ và Tên', aliases: ['họ và tên', 'tên nhân viên', 'tên nv', 'họ tên'] },
-            boPhan: { required: true, displayName: 'Bộ phận', aliases: ['bộ phận'] }
+            boPhan: { required: true, displayName: 'Bộ phận', aliases: ['bộ phận'] },
+            tenKho: { required: false, displayName: 'Tên Kho', aliases: ['tên kho', 'ten kho', 'tên siêu thị', 'ten sieu thi'] }
         },
         ycx: {
             maKhoTao: { required: false, displayName: 'Mã kho tạo', aliases: ['mã kho tạo', 'ma kho tao', 'mã kho', 'kho tạo'] },
@@ -1232,6 +1279,75 @@ export const authService = {
 };
 <<< FILE_END: src/services/auth.service.js
 
+>>> FILE_START: src/services/batchCapture.service.js
+import { tick, mount, unmount } from 'svelte';
+import { notificationStore } from '../stores.js';
+import { captureService } from './capture.service.js';
+
+export const batchCaptureService = {
+    /**
+     * Hàm chạy băng chuyền chụp ảnh ngầm (Hỗ trợ Svelte 5)
+     */
+    async captureBatch(SvelteComponent, itemIds, baseTitle, propsExtractor = (id) => ({})) {
+        if (!itemIds || itemIds.length === 0) {
+            notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Không có dữ liệu nhân viên để chụp.' }));
+            return;
+        }
+
+        // Tắt hoạt ảnh ChartJS toàn cầu để biểu đồ không bị trống khi chụp ngầm
+        if (typeof window.Chart !== 'undefined') window.Chart.defaults.animation = false;
+
+        // Tạo Vùng tối (Ghost Container)
+        const ghostContainer = document.createElement('div');
+        ghostContainer.className = 'capture-container';
+        ghostContainer.style.position = 'absolute';
+        ghostContainer.style.left = '-9999px';
+        ghostContainer.style.top = '0';
+        ghostContainer.style.zIndex = '-1';
+        document.body.appendChild(ghostContainer);
+
+        try {
+            for (let i = 0; i < itemIds.length; i++) {
+                const id = itemIds[i];
+                notificationStore.update(s => ({ ...s, visible: true, type: 'info', message: `Đang xử lý ảnh ${i + 1}/${itemIds.length}...` }));
+
+                // 1. Lắp ráp Component vào Vùng tối bằng Svelte 5 API
+                const props = propsExtractor(id);
+                const componentInstance = mount(SvelteComponent, {
+                    target: ghostContainer,
+                    props: { ...props, isGhostMode: true }
+                });
+
+                // 2. Chờ DOM chín (Svelte render + Chart vẽ)
+                await tick();
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                // 3. Tiến hành chụp
+                const elementToCapture = ghostContainer.firstElementChild;
+                if (elementToCapture) {
+                    const dynamicName = elementToCapture.getAttribute('data-capture-filename') || `${baseTitle}_${id}`;
+                    await captureService.captureAndDownload(elementToCapture, dynamicName, 'preset-mobile-view');
+                    await new Promise(resolve => setTimeout(resolve, 400)); // Tránh nghẽn trình duyệt
+                }
+
+                // 4. Phá hủy Component, dọn dẹp RAM bằng Svelte 5 API
+                unmount(componentInstance);
+                ghostContainer.innerHTML = ''; 
+            }
+            
+            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: `Hoàn tất tải xuống ${itemIds.length} ảnh!` }));
+        } catch (error) {
+            console.error("Batch Capture Error:", error);
+            notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Lỗi trong quá trình chụp hàng loạt.' }));
+        } finally {
+            if (document.body.contains(ghostContainer)) document.body.removeChild(ghostContainer);
+            if (typeof window.Chart !== 'undefined') window.Chart.defaults.animation = {};
+            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+        }
+    }
+};
+<<< FILE_END: src/services/batchCapture.service.js
+
 >>> FILE_START: src/services/capture/engine.js
 import { notificationStore } from '../../stores.js';
 
@@ -1386,7 +1502,7 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
     const dateString = date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
     const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     
-    // Title hiển thị TRONG ẢNH (Vẫn giữ có dấu cho đẹp)
+    // Title hiển thị TRONG ẢNH
     const displayTitle = `${title.replace(/_/g, ' ')} - ${timeString} ${dateString}`;
 
     const captureWrapper = document.createElement('div');
@@ -1415,40 +1531,50 @@ export const coreCapture = async (elementToCapture, title, presetClass = '', opt
             backgroundColor: '#f3f4f6',
             logging: false,
             windowWidth: windowWidth, 
-            windowHeight: null
+            windowHeight: null,
+            // [VẮC-XIN CŨ]: Chống lỗi iframe/Youtube
+            ignoreElements: (element) => {
+                if (element.tagName === 'IFRAME' || element.tagName === 'VIDEO') return true; 
+                if (element.id && (element.id.includes('modal-help') || element.id.includes('feather'))) return true;
+                return false; 
+            }
         });
 
-        const imageDataUrl = canvas.toDataURL('image/png');
         if (isPreview) {
+            const imageDataUrl = canvas.toDataURL('image/png');
             return { title: displayTitle, url: imageDataUrl };
         } else {
-            // [FIX NAME] Xử lý tiếng Việt thành không dấu trước khi lưu file
             const noToneTitle = removeVietnameseTones(displayTitle);
-            
-            // Chỉ giữ lại chữ cái không dấu, số và dấu gạch dưới
-            const safeFileName = noToneTitle
-                                    .replace(/[^a-zA-Z0-9]/g, '_')
-                                    .replace(/_+/g, '_'); // Tránh nhiều dấu _ liền nhau
+            const safeFileName = noToneTitle.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_'); 
 
-            // [PHẪU THUẬT LOGIC]: Chuyển Base64 thành file vật lý (Blob) để tải thẳng
-            const res = await fetch(imageDataUrl);
-            const blob = await res.blob();
-            const blobUrl = URL.createObjectURL(blob);
+            // [PHẪU THUẬT V5]: XUẤT FILE TRỰC TIẾP KHÔNG QUA CHUỖI BASE64 (CHỐNG TRÀN RAM & FILE 0KB)
+            return new Promise((resolve) => {
+                canvas.toBlob((blob) => {
+                    // Nếu Trình duyệt từ chối tạo blob (Do bảng cao vượt ngưỡng 32,767px giới hạn phần cứng)
+                    if (!blob) {
+                        alert("❌ Bảng dữ liệu quá dài và khổng lồ! Trình duyệt không đủ khả năng xử lý bức ảnh này.\n\n💡 GIẢI PHÁP: Vui lòng thu gọn bớt (Ẩn) các Ngành hàng không cần thiết hoặc dùng bộ lọc để làm bảng ngắn lại trước khi chụp.");
+                        resolve(null);
+                        return;
+                    }
 
-            const link = document.createElement('a');
-            link.download = `${safeFileName}.png`;
-            link.href = blobUrl;
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            // Xóa bộ nhớ đệm sau 1 giây
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-            
-            notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
-            setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
-            return null;
+                    const blobUrl = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `${safeFileName}.png`;
+                    link.href = blobUrl;
+                    
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    // Xóa bộ nhớ đệm an toàn
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                    
+                    notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Đã tải ảnh xuống thành công!' }));
+                    setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
+                    resolve(null);
+                    
+                }, 'image/png'); // Định dạng xuất
+            });
         }
     } finally {
         if (document.body.contains(captureWrapper)) document.body.removeChild(captureWrapper);
@@ -1673,13 +1799,11 @@ import { notificationStore, currentUser } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { get } from 'svelte/store';
 
-// Lấy logic chụp ảnh từ cấu trúc hệ thống mới của bạn
 import { injectCaptureStyles } from './capture/engine.js';
 import { getProcessor, SPLIT_GROUPS } from './capture/registry.js';
 import { processDefault } from './capture/processors/default.js';
 
-// --- [FIX GENESIS]: GHI ĐÈ CSS LỖI TỪ ENGINE ---
-// Hàm này có nhiệm vụ "Chữa cháy", ghi đè lên các style lỗi từ file engine.js
+// --- [FIX GENESIS V4]: CÔ LẬP, CO GIÃN THÔNG MINH & XÓA VẠCH TRẮNG ---
 const _injectCaptureFixes = () => {
     const styleId = 'genesis-capture-fixes';
     document.getElementById(styleId)?.remove();
@@ -1687,7 +1811,6 @@ const _injectCaptureFixes = () => {
     style.id = styleId;
     style.innerHTML = `
         /* 1. Trị bệnh cắt nội dung (Mất 80% phần dưới) */
-        /* Ép các widget phải hiển thị đầy đủ chiều cao, tắt thanh cuộn */
         body .capture-container .luyke-tier-1-grid,
         body .capture-container .luyke-widget,
         body .capture-container .luyke-widget-body,
@@ -1698,7 +1821,7 @@ const _injectCaptureFixes = () => {
             overflow: visible !important;
         }
 
-        /* 2. Trị bệnh phình to (Vô hiệu hóa transform scale(5) cũ) */
+        /* 2. Ép Mobile cho các khối chỉ định */
         body .capture-container .preset-mobile-portrait,
         body .capture-container.preset-mobile-portrait {
             transform: none !important; 
@@ -1706,8 +1829,6 @@ const _injectCaptureFixes = () => {
             min-width: 480px !important;
             max-width: 480px !important;
         }
-
-        /* 3. Ép cứng nhóm Hiệu quả & Top Nhóm hàng (tier1) thành giao diện Mobile dọc */
         body .capture-container .luyke-tier-1-grid {
             width: 480px !important;
             min-width: 480px !important;
@@ -1717,19 +1838,74 @@ const _injectCaptureFixes = () => {
             flex-direction: column !important;
             gap: 16px !important;
         }
+
+        /* 3. Tắt thuộc tính sticky */
+        body .capture-container .sticky {
+            position: static !important;
+        }
+
+        /* 4. CHỐNG THỪA KHOẢNG TRỐNG & XÓA VẠCH TRẮNG 2 BÊN RÌA */
+        /* Lột bỏ viền, bóng và nền trắng của cái vỏ Wrapper bên ngoài */
+        body .capture-container [data-capture-group="revenue-table"],
+        body .capture-container [data-capture-group="revenue-table"] > div,
+        body .capture-container [data-capture-group="pasted-competition"],
+        body .capture-container [data-capture-group="pasted-competition"] > div,
+        body .capture-container [data-capture-group="revenue-detail-mobile"],
+        body .capture-container [data-capture-group="revenue-detail-mobile"] > div {
+            width: fit-content !important;
+            min-width: fit-content !important;
+            max-width: fit-content !important;
+            margin: 0 auto !important;
+            border: none !important;
+            box-shadow: none !important;
+            background-color: transparent !important; /* Khóa vạch trắng lộ ra do nền */
+            border-radius: 0 !important;
+        }
+        
+        /* Bơm nền trắng thẳng vào Table để ôm sát nút */
+        body .capture-container [data-capture-group="revenue-table"] table,
+        body .capture-container [data-capture-group="pasted-competition"] table,
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table {
+            width: max-content !important;
+            min-width: max-content !important;
+            max-width: max-content !important;
+            table-layout: auto !important;
+            background-color: #ffffff !important;
+        }
+
+        /* 5. CÔ LẬP HOÀN TOÀN: Khóa cột Hạng 45px không vạ lây (Dành cho bảng cũ) */
+        body .capture-container [data-capture-group="revenue-table"] table th:first-child,
+        body .capture-container [data-capture-group="revenue-table"] table td:first-child,
+        body .capture-container [data-capture-group="pasted-competition"] table th:first-child,
+        body .capture-container [data-capture-group="pasted-competition"] table td:first-child {
+            width: 45px !important;
+            min-width: 45px !important;
+            max-width: 45px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+        }
+
+        /* 6. CÔ LẬP DÀNH RIÊNG CHO BẢNG REALTIME: Khóa cột Hạng 50px */
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table th:first-child,
+        body .capture-container [data-capture-group="revenue-detail-mobile"] table td:first-child {
+            width: 50px !important;
+            min-width: 50px !important;
+            max-width: 50px !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+        }
     `;
     document.head.appendChild(style);
     return style;
 };
 
 export const captureService = {
-    // 1. Chụp lẻ
     async captureAndDownload(elementToCapture, title, presetClass = '') {
         const user = get(currentUser);
         analyticsService.incrementCounter('actionsTaken', user?.email);
         
         const styleElement = injectCaptureStyles();
-        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        const fixElement = _injectCaptureFixes(); 
         
         try {
             await processDefault([elementToCapture], title, { presetClass: presetClass });
@@ -1738,11 +1914,10 @@ export const captureService = {
             alert('Lỗi khi chụp ảnh: ' + error.message);
         } finally {
             styleElement.remove();
-            fixElement.remove(); // Dọn dẹp Fix
+            fixElement.remove(); 
         }
     },
     
-    // 2. Chụp tổng cũ
     async captureDashboardInParts(contentContainer, baseTitle) {
        if (!contentContainer) return alert('Lỗi: Không tìm thấy nội dung để chụp.');
         const user = get(currentUser);
@@ -1759,7 +1934,7 @@ export const captureService = {
         });
 
         const styleElement = injectCaptureStyles();
-        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        const fixElement = _injectCaptureFixes();
         
         if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -1779,11 +1954,25 @@ export const captureService = {
                     }
                     continue; 
                 }
+
+                // --- [PHẪU THUẬT LOGIC VÀNG]: Loại bỏ container cha tổng nếu nó chứa thẻ con thuộc nhóm TÁCH ẢNH ---
+                const filteredElements = elements.filter(el => {
+                    const childGroups = el.querySelectorAll('[data-capture-group]');
+                    for (const child of childGroups) {
+                        if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
+                            return false; // Hủy chụp tấm tổng thảm họa này
+                        }
+                    }
+                    return true;
+                });
+
+                if (filteredElements.length === 0) continue;
+
                 const processor = getProcessor(group);
                 if (processor) {
-                    await processor(elements, baseTitle);
+                    await processor(filteredElements, baseTitle);
                 } else {
-                    for (const el of elements) {
+                    for (const el of filteredElements) {
                          let customName = el.dataset.captureFilename;
                          let subTitle = customName || baseTitle;
                          await processDefault([el], subTitle);
@@ -1793,14 +1982,13 @@ export const captureService = {
             }
         } finally {
             styleElement.remove();
-            fixElement.remove(); // Dọn dẹp Fix
+            fixElement.remove();
             if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
         }
         notificationStore.update(s => ({ ...s, visible: true, type: 'success', message: 'Hoàn tất quá trình chụp!' }));
         setTimeout(() => notificationStore.update(s => ({ ...s, visible: false })), 3000);
     },
 
-    // 3. Tách Elements cực nhanh cho việc Clone DOM
     getPreviewElements(contentContainer, baseTitle) {
         if (!contentContainer) return [];
 
@@ -1828,11 +2016,24 @@ export const captureService = {
                  continue;
             }
             
+            // --- ĐỒNG BỘ LOGIC CHO PHẦN XEM TRƯỚC (PREVIEW) ---
+            const filteredElements = elements.filter(el => {
+                const childGroups = el.querySelectorAll('[data-capture-group]');
+                for (const child of childGroups) {
+                    if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (filteredElements.length === 0) continue;
+
             const processor = getProcessor(group);
             if (processor) {
-                previewItems.push({ title: baseTitle, elements: elements });
+                previewItems.push({ title: baseTitle, elements: filteredElements });
             } else {
-                 for (const el of elements) {
+                 for (const el of filteredElements) {
                     let customName = el.dataset.captureFilename;
                     let subTitle = customName || baseTitle;
                     previewItems.push({ title: subTitle, elements: [el] });
@@ -1842,7 +2043,6 @@ export const captureService = {
         return previewItems;
     },
 
-    // 4. [HÀM ĐÍCH] Chụp nét cao khi người dùng bấm Tải xuống
     async captureSelectedItems(contentContainer, baseTitle, selectedIndices) {
         if (!contentContainer || !selectedIndices || selectedIndices.length === 0) return;
 
@@ -1859,7 +2059,7 @@ export const captureService = {
         });
 
         const styleElement = injectCaptureStyles();
-        const fixElement = _injectCaptureFixes(); // Kích hoạt Fix
+        const fixElement = _injectCaptureFixes();
         
         if (typeof Chart !== 'undefined') Chart.defaults.animation = false;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -1888,15 +2088,31 @@ export const captureService = {
                      continue;
                 }
                 
+                // --- ĐỒNG BỘ LOGIC CHO PHẦN CHỤP CHỌN LỌC ---
+                const filteredElements = elements.filter(el => {
+                    const childGroups = el.querySelectorAll('[data-capture-group]');
+                    for (const child of childGroups) {
+                        if (SPLIT_GROUPS.includes(child.dataset.captureGroup)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+
+                if (filteredElements.length === 0) {
+                    currentIndex++;
+                    continue;
+                }
+
                 const processor = getProcessor(group);
                 if (processor) {
                     if (selectedIndices.includes(currentIndex)) {
-                        await processor(elements, baseTitle);
+                        await processor(filteredElements, baseTitle);
                         await new Promise(r => setTimeout(r, 400));
                     }
                     currentIndex++;
                 } else {
-                     for (const el of elements) {
+                     for (const el of filteredElements) {
                         if (selectedIndices.includes(currentIndex)) {
                             let customName = el.dataset.captureFilename;
                             let subTitle = customName || baseTitle;
@@ -1912,7 +2128,7 @@ export const captureService = {
             throw e; 
         } finally {
             styleElement.remove();
-            fixElement.remove(); // Dọn dẹp Fix
+            fixElement.remove();
             if (typeof Chart !== 'undefined') Chart.defaults.animation = {};
         }
 
@@ -2304,10 +2520,10 @@ export const clusterService = {
 
 >>> FILE_START: src/services/composerService.js
 // File: src/services/composerService.js
-// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Update: Thêm % Trả chậm & Ranking Top 5)
+// MỤC ĐÍCH: Logic Trình tạo Nhận xét (Update: Lọc nhân viên có số bán cho BOT_TARGET)
 
 import { get } from 'svelte/store';
-import { masterReportData } from '../stores.js';
+import { masterReportData, selectedWarehouse } from '../stores.js';
 import { dataProcessing } from './dataProcessing.js';
 import * as utils from '../utils.js'; 
 import { formatters } from '../utils/formatters.js';
@@ -2322,11 +2538,12 @@ const composerServices = {
         }
 
         return [...filteredData]
-            .filter(e => e[key] > 0 || (key === 'tyLeTraCham' && e[key] >= 0)) // Trả chậm có thể = 0 vẫn xếp hạng
+            .filter(e => e[key] > 0 || (key === 'tyLeTraCham' && e[key] >= 0)) 
             .sort((a, b) => direction === 'desc' ? (b[key] || 0) - (a[key] || 0) : (a[key] || 0) - (b[key] || 0))
             .slice(0, count);
     },
 
+    // [PHẪU THUẬT LOGIC]: Sửa lỗi gom nhân viên chưa vào ca (Doanh thu = 0) vào danh sách dưới target
     getEmployeesBelowTarget(reportData, dataKey, goalKey, department = 'ALL') {
         if (!reportData || reportData.length === 0) return [];
         let filteredData = reportData;
@@ -2335,8 +2552,14 @@ const composerServices = {
         }
 
         return filteredData.filter(employee => {
+            // Kiểm tra điều kiện tiên quyết: Nhân viên phải có đi làm và phát sinh số bán tổng trước đã
+            const hasSales = (employee.doanhThu > 0) || (employee.doanhThuQuyDoi > 0);
+            if (!hasSales) return false; // Không có số bán tổng -> Loại ngay lập tức (Chưa vào ca / Nghỉ làm)
+
             const value = employee[dataKey] || 0;
             const target = (employee.mucTieu?.[goalKey] || 0) / 100;
+            
+            // Nếu có số bán tổng và tỷ lệ thấp hơn chỉ tiêu thì giữ lại (Kể cả tỷ lệ ngành hàng đó = 0)
             return target > 0 && value < target;
         }).sort((a, b) => (b[dataKey] || 0) - (a[dataKey] || 0));
     },
@@ -2365,7 +2588,6 @@ const composerServices = {
             return "Lỗi: Dữ liệu không đủ để tạo nhận xét.";
         }
 
-        // [UPDATE] Thêm TLTC (Tỷ lệ trả chậm) vào mapping ranking
         const tagMapping = {
             'DTQD': { key: 'doanhThuQuyDoi', format: 'currency' },
             'THUNHAP': { key: 'tongThuNhap', format: 'currency' },
@@ -2384,98 +2606,124 @@ const composerServices = {
             'BH': { dataKey: 'pctBaoHiem', goalKey: 'phanTramBaoHiem', format: 'percent' },
         };
 
-        // --- BƯỚC 1: CHUẨN BỊ SỐ LIỆU ---
+        // --- BƯỚC 1: KHỞI TẠO BIẾN CHỨA SỐ LIỆU MẶC ĐỊNH TỪ KHỐI TỰ TÍNH (YCX / REALTIME) ---
         let dtThuc = supermarketReport.doanhThu || 0;
         let dtQd = supermarketReport.doanhThuQuyDoi || 0;
         let tlQd = supermarketReport.hieuQuaQuyDoi || 0; 
-        let tlTraCham = supermarketReport.tyLeTraCham || 0; // [NEW] Biến trả chậm
-        let comparisonPercentage = 'N/A';
+        let tlTraCham = supermarketReport.tyLeTraCham || 0;
+        let comparisonPercentage = supermarketReport.comparisonData?.percentage || 'N/A';
         
         let dtThucDuKienFromPaste = 0; 
         let phanTramTargetQdFromPaste = null;
+        let phanTramTargetThucFromPaste = null;
+        
+        let hasValidPasteData = false;
+        const warehouseContext = get(selectedWarehouse);
 
-        // Ưu tiên lấy dữ liệu Paste
+        // --- BƯỚC 2: CHỈ ĐÈ DỮ LIỆU DÁN ĐỐI VỚI NGỮ CẢNH LUY KẾ ---
         if (sectionId === 'luyke' && typeof localStorage !== 'undefined') {
-            const pastedText = localStorage.getItem('daily_paste_luyke');
+            let pastedText = null;
+            const isClusterMode = !warehouseContext || warehouseContext === 'ALL' || Array.isArray(warehouseContext);
+            
+            if (isClusterMode) {
+                pastedText = localStorage.getItem('daily_paste_luyke_tonghop') || 
+                             localStorage.getItem('daily_paste_luyke_all') || 
+                             localStorage.getItem('daily_paste_luyke');
+            } else {
+                pastedText = localStorage.getItem(`daily_paste_luyke_${warehouseContext}`) || 
+                             localStorage.getItem('daily_paste_luyke');
+            }
+
             if (pastedText) {
                 const pastedData = dataProcessing.parseLuyKePastedData(pastedText);
-                const { mainKpis, comparisonData, dtDuKien, tyLeTraCham } = pastedData;
-
-                // Xử lý DT & TLQĐ
-                if (mainKpis && mainKpis['Thực hiện DT thực']) {
+                if (pastedData && pastedData.mainKpis) {
+                    const { mainKpis, comparisonData, dtDuKien, tyLeTraCham: pastedTyLeTraCham } = pastedData;
                     const clean = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
                     
-                    const dtThucPaste = clean(mainKpis['Thực hiện DT thực']) * 1000000;
-                    const dtQdPaste = clean(mainKpis['Thực hiện DTQĐ']) * 1000000;
+                    if (mainKpis['Thực hiện DT thực']) {
+                        const dtThucPaste = clean(mainKpis['Thực hiện DT thực']) * 1000000;
+                        const dtQdPaste = clean(mainKpis['Thực hiện DTQĐ']) * 1000000;
 
-                    if (dtThucPaste > 0) {
-                        dtThuc = dtThucPaste;
-                        dtQd = dtQdPaste;
-                        tlQd = (dtQd / dtThuc) - 1;
+                        if (dtThucPaste > 0) {
+                            dtThuc = dtThucPaste;
+                            dtQd = dtQdPaste;
+                            tlQd = (dtQd / dtThuc) - 1;
+                            hasValidPasteData = true;
+                        }
                     }
 
                     if (mainKpis['% HT Target Dự Kiến (QĐ)']) {
                          const rawPct = String(mainKpis['% HT Target Dự Kiến (QĐ)']).replace(/%|,/g, '');
                          phanTramTargetQdFromPaste = parseFloat(rawPct) / 100;
+                         hasValidPasteData = true;
                     }
-                }
 
-                // [NEW] Xử lý Tỷ lệ trả chậm từ paste (Dữ liệu paste thường là số 10.5 -> cần chia 100)
-                if (tyLeTraCham !== undefined) {
-                    tlTraCham = parseFloat(tyLeTraCham) / 100;
-                }
+                    if (mainKpis['% HT Target Thực'] || mainKpis['% HT Target DT thực']) {
+                        const rawPctThuc = String(mainKpis['% HT Target Thực'] || mainKpis['% HT Target DT thực']).replace(/%|,/g, '');
+                        phanTramTargetThucFromPaste = parseFloat(rawPctThuc) / 100;
+                        hasValidPasteData = true;
+                    }
 
-                // DT Dự kiến
-                if (dtDuKien) {
-                    dtThucDuKienFromPaste = parseFloat(String(dtDuKien).replace(/,/g, '')) * 1000000;
-                }
+                    if (pastedTyLeTraCham !== undefined) {
+                        tlTraCham = parseFloat(pastedTyLeTraCham) / 100;
+                        hasValidPasteData = true;
+                    }
 
-                // So sánh cùng kỳ
-                if (comparisonData && comparisonData.percentage) {
-                    comparisonPercentage = comparisonData.percentage;
+                    if (dtDuKien) {
+                        dtThucDuKienFromPaste = parseFloat(String(dtDuKien).replace(/,/g, '')) * 1000000;
+                        hasValidPasteData = true;
+                    }
+
+                    if (comparisonData && comparisonData.percentage) {
+                        comparisonPercentage = comparisonData.percentage;
+                        hasValidPasteData = true;
+                    }
                 }
             }
         }
 
-        // --- BƯỚC 2: TÍNH TOÁN DỰ KIẾN FALLBACK ---
         const now = new Date();
         const currentDay = now.getDate() || 1;
-        const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-        // --- BƯỚC 3: THAY THẾ TAG ---
+        // --- BƯỚC 3: DỊCH CÁC THÈ TAGS ---
         return template.replace(/\[(.*?)\]/g, (match, tag) => {
             
             if (tag === 'NGAY') return now.toLocaleDateString('vi-VN');
             if (tag === 'GIO') return now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 
+            // Chỉ kích hoạt cơ chế Fail-Fast chặn lỗi khi và chỉ khi đang ở tab luyke
+            const kpiTags = ['DT_THUC', 'DTQD', 'TLQD', 'TLTC', '%HT_DTQD', '%HT_DTT', 'SS_CUNGKY'];
+            if (sectionId === 'luyke' && kpiTags.includes(tag)) {
+                if (!hasValidPasteData) {
+                    return "⚠️ CHƯA DÁN DỮ LIỆU CHẾ ĐỘ NÀY";
+                }
+            }
+
             if (tag === 'DT_THUC') return formatters.formatNumber(dtThuc / 1000000, 0) + " tr";
             if (tag === 'DTQD') return formatters.formatNumber(dtQd / 1000000, 0) + " tr";
             if (tag === 'TLQD') return formatters.formatPercentage(tlQd);
-            if (tag === 'TLTC') return formatters.formatPercentage(tlTraCham); // [NEW] Tag TLTC
+            if (tag === 'TLTC') return formatters.formatPercentage(tlTraCham);
             
             if (tag === '%HT_DTQD') {
                 if (phanTramTargetQdFromPaste !== null) {
                     return formatters.formatPercentage(phanTramTargetQdFromPaste);
                 }
-                const target = parseFloat(goals.doanhThuQD) || 0;
-                if (target > 0) {
-                    const currentRev = dtQd / 1000000;
-                    const projectedRev = (currentRev / currentDay) * totalDaysInMonth;
-                    return formatters.formatPercentage(projectedRev / target);
+                const targetMillions = parseFloat(goals.doanhThuQD) || 0;
+                if (targetMillions > 0) {
+                    const currentRevMillions = dtQd / 1000000;
+                    return formatters.formatPercentage(currentRevMillions / targetMillions);
                 }
                 return '0%';
             }
 
             if (tag === '%HT_DTT') {
+                if (phanTramTargetThucFromPaste !== null) {
+                    return formatters.formatPercentage(phanTramTargetThucFromPaste);
+                }
                 const targetMillions = parseFloat(goals.doanhThuThuc) || 0;
-                const targetFull = targetMillions * 1000000; 
-
-                if (targetFull > 0) {
-                    if (dtThucDuKienFromPaste > 0) {
-                        return formatters.formatPercentage(dtThucDuKienFromPaste / targetFull);
-                    }
-                    const projectedRev = (dtThuc / currentDay) * totalDaysInMonth;
-                    return formatters.formatPercentage(projectedRev / targetFull);
+                if (targetMillions > 0) {
+                    const currentRevMillions = dtThuc / 1000000;
+                    return formatters.formatPercentage(currentRevMillions / targetMillions);
                 }
                 return '0%';
             }
@@ -2563,7 +2811,7 @@ export const composerService = composerServices;
 
 >>> FILE_START: src/services/data/cacheHandler.js
 import { get } from 'svelte/store';
-import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList } from '../../stores.js';
+import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList, selectedWarehouse } from '../../stores.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { adminService } from '../admin.service.js';
@@ -2588,6 +2836,7 @@ export const cacheHandler = {
         
         const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
         
+        // MẢNG LỌC TOÀN CỤC CHUẨN XÁC
         let allowedWarehouses = [];
         if (dsnvData && dsnvData.length > 0) {
              const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
@@ -2599,22 +2848,34 @@ export const cacheHandler = {
         await Promise.all(otherFiles.map(async (key) => {
             let data = await storage.getItem(key);
             if (data && data.length > 0) {
+                // 1. Bảo vệ dữ liệu cứng: Lọc tạp chất ngoài cụm quản lý
                 if (key.includes('ycx') && allowedWarehouses.length > 0) {
                      data = data.filter(d => {
                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                         return allowedWarehouses.includes(whCode);
                      });
-                     try { await storage.setItem(key, data); } catch(e){}
+                     try { await storage.setItem(key, data); } catch(e){} 
                 }
 
-                FILE_MAPPING[key].store.set(data);
-                updateSyncState(key, 'cached', `✓ Đã tải ${data.length} dòng (Local)`, null);
+                // 2. LỌC Ở TẦNG GIAO DIỆN (View-level Filtering)
+                let displayData = data;
+                const currentWh = get(selectedWarehouse);
+                
+                // Cả ycx, giocong, thuongnong đều phải chạy qua View-Level filter nếu đang xem kho lẻ
+                if (currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
+                     displayData = data.filter(d => {
+                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                         return whCode === currentWh;
+                     });
+                }
+
+                FILE_MAPPING[key].store.set(displayData);
+                updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
              }
         }));
 
         console.log("[DataService] Bắt đầu xử lý dữ liệu Paste (Absolute Isolation)...");
         try {
-            // [PHẪU THUẬT LOGIC]: Tự động quét theo list kho cho phép
             let aggregatedLuykeComps = [];
             let aggregatedErp = [];
             let aggregatedThidua = [];
@@ -2624,13 +2885,15 @@ export const cacheHandler = {
                 allowedWarehouses.forEach(kho => {
                     const luykeText = localStorage.getItem(`daily_paste_luyke_${kho}`);
                     if (luykeText) {
-                        dataProcessing.parseLuyKePastedData(luykeText); // Sẽ ghi đè store luykePastedStore ở dạng cuối cùng
+                        dataProcessing.parseLuyKePastedData(luykeText); 
                         const comps = dataProcessing.parseCompetitionDataFromLuyKe(luykeText);
-                        aggregatedLuykeComps = [...aggregatedLuykeComps, ...comps];
+                        
+                        const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: kho })) : [];
+                        aggregatedLuykeComps = [...aggregatedLuykeComps, ...labeledComps];
                         updateSyncState(`daily_paste_luyke_${kho}`, 'cached', `(Local)`, null);
                     }
 
-                    const erpText = localStorage.getItem(`daily_paste_thuongerp_${kho}`) || localStorage.getItem(`daily_paste_thuongerp`); // Hỗ trợ fallback nhẹ nếu lỡ lưu kiểu cũ
+                    const erpText = localStorage.getItem(`daily_paste_thuongerp_${kho}`) || localStorage.getItem(`daily_paste_thuongerp`); 
                     if (erpText) {
                         const data = dataProcessing.processThuongERP(erpText);
                         aggregatedErp = [...aggregatedErp, ...data];
@@ -2654,7 +2917,6 @@ export const cacheHandler = {
                     }
                 });
 
-                // Cập nhật lên Store một lần duy nhất
                 if (aggregatedLuykeComps.length > 0) competitionData.set(aggregatedLuykeComps);
                 if (aggregatedErp.length > 0) thuongERPData.set(aggregatedErp);
                 if (aggregatedThidua.length > 0) pastedThiDuaReportData.set(aggregatedThidua);
@@ -2740,7 +3002,7 @@ import { get } from 'svelte/store';
 import { 
     selectedWarehouse, currentUser, realtimeYCXData, 
     categoryStructure, brandList, specialProductList,
-    warehouseList // [PHẪU THUẬT LOGIC]: Import store chứa danh sách kho của User
+    warehouseList 
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
@@ -2768,210 +3030,217 @@ const getMonthYear = (dateStr) => {
     if (!dateStr) return 'Unknown';
     if (dateStr instanceof Date && !isNaN(dateStr)) return `${String(dateStr.getMonth() + 1).padStart(2, '0')}/${dateStr.getFullYear()}`;
     const str = String(dateStr).trim();
-    const parts = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
-    if (parts) return `${parts[2].padStart(2, '0')}/${parts[3]}`;
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    return 'Unknown';
+    const parts = str.split(/[-/]/);
+    if (parts.length >= 2) {
+        let month = parts[1];
+        let year = parts[0];
+        if (parts[0].length === 2) { month = parts[0]; year = parts[parts.length > 2 ? 2 : 1]; }
+        return `${month.padStart(2, '0')}/${year}`;
+    }
+    return str;
 };
 
 export const fileHandler = {
     async handleFileChange(file, saveKey, isMultiMode = false) {
-        const mapping = FILE_MAPPING[saveKey];
-        if (!mapping) return { success: false, message: `Lỗi mapping: ${saveKey}` };
-        
-        updateSyncState(saveKey, 'uploading', 'Đang đọc & chuẩn hóa...');
-        
+        let mapping = FILE_MAPPING[saveKey];
+        let baseKey = saveKey;
+        let targetWarehouse = null;
+
+        if (!mapping) {
+            const sortedKeys = Object.keys(FILE_MAPPING).sort((a, b) => b.length - a.length);
+            for (const key of sortedKeys) {
+                if (saveKey.startsWith(key + '_')) {
+                    mapping = FILE_MAPPING[key];
+                    baseKey = key;
+                    targetWarehouse = saveKey.replace(key + '_', '');
+                    break;
+                }
+            }
+        }
+
+        if (!mapping) return { success: false, message: `Lỗi cấu hình key: ${saveKey}` };
+
+        updateSyncState(saveKey, 'uploading', 'Đang đọc file...');
+
         try {
             const workbook = await _handleFileRead(file);
             const sheetName = workbook.SheetNames[0];
-            
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
-            const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
-            const rawAddressCol = headers.find(h => 
-                h.toLowerCase().includes('địa chỉ') || 
-                h.toLowerCase().includes('dia chi') || 
-                h.toLowerCase().includes('address')
-            );
 
-            let { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
-            
-            if (!success) {
-                updateSyncState(saveKey, 'error', `Thiếu cột: ${missingColumns.join(', ')}`);
-                return { success: false, message: `Thiếu cột bắt buộc` };
+            let { normalizedData, missingColumns, error } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
+
+            if (error) {
+                updateSyncState(saveKey, 'error', `Lỗi: ${error}`);
+                return { success: false, message: `Lỗi: ${error}` };
             }
 
-            // --- 🚨 [BỘ KHIÊN BẢO VỆ DỮ LIỆU GỐC] 🚨 ---
-            if (mapping.normalizeType === 'ycx' || saveKey.includes('ycx')) {
-                normalizedData = normalizedData.map((row, index) => {
-                    const rawRow = rawData[index];
-                    
-                    const diaChi = rawAddressCol ? String(rawRow[rawAddressCol] || '').trim() : row.diaChi;
-                    
-                    const maKhoGoc = rawRow['Mã kho tạo'] || rawRow['Kho tạo'] || rawRow['Mã Kho Tạo'] || rawRow['maKhoTao'] || row.maKhoTao || row.maKho;
+            let dataToStore = normalizedData;
+            const currentWh = targetWarehouse || get(selectedWarehouse);
 
-                    return {
-                        ...row,
-                        diaChi: diaChi,
-                        maKhoTao: maKhoGoc ? String(maKhoGoc).trim() : row.maKhoTao,
-                        maKho: maKhoGoc ? String(maKhoGoc).trim() : row.maKho
-                    };
-                });
-            }
-
-            // --- 🚨 [PHẪU THUẬT LOGIC]: BỘ LỌC ĐỘC QUYỀN (FILTER SHIELD) 🚨 ---
-            // Tái định nghĩa: ALL = Chỉ các mã kho có trong bộ lọc của User
-            const warehouse = get(selectedWarehouse);
-            if (warehouse === 'ALL') {
-                const userAllowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && w !== 'CLUSTER_ALL');
-                if (userAllowedWarehouses.length > 0) {
-                    normalizedData = normalizedData.filter(d => {
-                        const khoCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim();
-                        return userAllowedWarehouses.includes(khoCode);
-                    });
-                }
-            }
-            // -----------------------------------------------------------------
-
-            if (isMultiMode && (saveKey === 'saved_ycx_cungkynam' || saveKey === 'saved_ycx_thangtruoc')) {
-                const currentData = get(mapping.store) || [];
-                const incomingMonthsSet = new Set();
-                normalizedData.forEach(r => {
-                    const my = getMonthYear(r.ngayTao || r.NGAY_TAO);
-                    if (my !== 'Unknown') incomingMonthsSet.add(my);
-                });
-                const incomingMonths = Array.from(incomingMonthsSet);
-
-                const overlap = incomingMonths.filter(m => currentData.some(r => getMonthYear(r.ngayTao || r.NGAY_TAO) === m));
-                
-                if (overlap.length > 0) {
-                    const confirmOverwrite = window.confirm(`CẢNH BÁO: Dữ liệu của các tháng: ${overlap.join(', ')} đã tồn tại.\nBạn có muốn xóa dữ liệu cũ của các tháng này và nạp file mới đè lên không?`);
-                    if (!confirmOverwrite) {
-                        updateSyncState(saveKey, 'error', 'Người dùng hủy thao tác ghi đè.');
-                        return { success: false, message: 'Đã hủy thao tác ghi đè' };
+            if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv') {
+                dataToStore = normalizedData.filter(row => {
+                    const maKhoRow = String(row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'] || row.MA_KHO_TAO || row.MA_KHO || '').trim();
+                    // [BƠM MÁU LOGIC TỪ BƯỚC TRƯỚC]
+                    if (!maKhoRow && (baseKey === 'saved_giocong' || baseKey === 'saved_thuongnong')) {
+                        row.maKho = currentWh;
+                        return true; 
                     }
-                }
-
-                const filteredOldData = currentData.filter(r => !incomingMonths.includes(getMonthYear(r.ngayTao || r.NGAY_TAO)));
-                normalizedData = [...filteredOldData, ...normalizedData];
-                mapping.store.set(normalizedData);
-            } 
-            else if (isMultiMode) {
-                const currentData = get(mapping.store) || [];
-                const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
-                const filteredOldData = currentData.filter(d => !incomingWarehouses.includes(String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()));
-                normalizedData = [...filteredOldData, ...normalizedData];
-                mapping.store.set(normalizedData);
-            } else {
-                mapping.store.set(normalizedData);
+                    return maKhoRow === currentWh;
+                });
             }
-            
-            await storage.setItem(saveKey, isMultiMode ? get(mapping.store) : normalizedData); 
-            
+
+            let filesArray = [];
+            let currentMonths = [];
+
+            if (isMultiMode) {
+                const dates = normalizedData.map(d => d.ngayTao || d.ngay_tao || d.NgayTao || d['Ngày tạo']).filter(Boolean);
+                currentMonths = [...new Set(dates.map(getMonthYear))];
+
+                let existingData = await storage.getItem(saveKey) || [];
+                
+                existingData = existingData.filter(row => {
+                    const rowDate = row.ngayTao || row.ngay_tao || row.NgayTao || row['Ngày tạo'];
+                    if (!rowDate) return true;
+                    return !currentMonths.includes(getMonthYear(rowDate));
+                });
+                
+                dataToStore = [...existingData, ...dataToStore];
+            }
+
+            mapping.store.set(dataToStore);
+            await storage.setItem(saveKey, dataToStore);
+
             if (saveKey === 'saved_danhsachnv') {
                 localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
-                updateSyncState(saveKey, 'cached', `✓ Đã tải ${normalizedData.length} dòng`, null);
-                return { success: true };
             }
 
-            if (warehouse && !mapping.localOnly) {
-                updateSyncState(saveKey, 'uploading', 'Đang tải lên Cloud...');
+            if (!mapping.localOnly) {
                 try {
-                    const storagePathWh = warehouse === 'ALL' ? 'CLUSTER' : warehouse;
-                    const path = `warehouse_data/${storagePathWh}/${saveKey}_${Date.now()}_${file.name}`;
-                    const downloadURL = await storageService.uploadFileToStorage(file, path);
-                    const now = Date.now();
-                    const extractedMonths = [...new Set(normalizedData.map(r => getMonthYear(r.ngayTao || r.NGAY_TAO)).filter(m => m !== 'Unknown'))];
+                    // [PHẪU THUẬT LOGIC]: Chặn lưu vào document "ALL", nhân bản Metadata cho từng kho
+                    const validWarehouses = currentWh === 'ALL' 
+                        ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
+                        : [currentWh];
 
-                    if (warehouse === 'ALL') {
-                        const incomingWarehouses = [...new Set(normalizedData.map(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim()).filter(Boolean))];
+                    if (validWarehouses.length > 0) {
+                        const primaryWh = validWarehouses[0];
+                        const path = `warehouse_data/${primaryWh}/${baseKey}_${Date.now()}.xlsx`;
+                        const downloadUrl = await storageService.uploadFileToStorage(file, path);
+                        const now = Date.now();
                         
-                        // Chia rổ dữ liệu lên Cloud cho từng kho thực tế
-                        await Promise.all(incomingWarehouses.map(async (kho) => {
-                            const khoDataCount = normalizedData.filter(d => String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || '').trim() === kho).length;
-                            const khoMetadata = { 
-                                downloadURL, fileName: file.name, fileType: 'excel', 
-                                rowCount: khoDataCount, 
-                                uploadedMonths: extractedMonths, 
-                                updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
-                            };
-                            await datasyncService.saveWarehouseMetadata(kho, saveKey, khoMetadata);
-                            localStorage.setItem(`_meta_${kho}_${saveKey}`, JSON.stringify(khoMetadata));
-                        }));
-
-                        const allMetadata = { 
-                            downloadURL, fileName: file.name, fileType: 'excel', 
-                            rowCount: normalizedData.length, 
-                            uploadedMonths: extractedMonths, 
-                            updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
+                        const metadata = {
+                            downloadURL: downloadUrl,
+                            fileName: file.name,
+                            fileType: 'excel',
+                            rowCount: dataToStore.length,
+                            updatedAt: new Date(now),
+                            timestamp: now,
+                            updatedBy: get(currentUser)?.email || 'Tôi',
+                            uploadedMonths: isMultiMode ? currentMonths : null,
+                            isMulti: isMultiMode
                         };
-                        
-                        // Vẫn lưu Meta ở Local để giao diện UI có thể sáng đèn Xanh
-                        localStorage.setItem(`_meta_ALL_${saveKey}`, JSON.stringify(allMetadata));
-                        
-                        // [PHẪU THUẬT LOGIC]: BỊT ỐNG XẢ GLOBAL. Không lưu đè lên Document ALL trên Cloud nữa.
-                        // await datasyncService.saveWarehouseMetadata('ALL', saveKey, allMetadata);
 
-                        updateSyncState(saveKey, 'synced', `✓ Đã chia rổ Cloud cho ${incomingWarehouses.length} kho quyền hạn`, allMetadata);
+                        // [NÒNG CỐT]: Lưu cho tất cả các kho có trong cụm của quản lý này
+                        for (const wh of validWarehouses) {
+                            await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
+                            localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
+                        }
 
-                    } else {
-                        const metadata = { 
-                            downloadURL, fileName: file.name, fileType: 'excel', 
-                            rowCount: normalizedData.length, uploadedMonths: extractedMonths, 
-                            updatedAt: new Date(now), timestamp: now, updatedBy: get(currentUser)?.email || 'Tôi' 
-                        };
-                        
-                        await datasyncService.saveWarehouseMetadata(warehouse, saveKey, metadata);
-                        localStorage.setItem(`_meta_${warehouse}_${saveKey}`, JSON.stringify(metadata));
-                        updateSyncState(saveKey, 'synced', `✓ Đã đồng bộ`, metadata);
+                        const successMsg = isMultiMode && currentMonths.length > 0 
+                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')}` 
+                            : `✓ Đã đồng bộ lên Cloud`;
+                        updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
-                } catch (e) {
-                    updateSyncState(saveKey, 'error', `Lỗi lưu Cloud: ${e.message}`, null);
+
+                } catch (cloudErr) {
+                    console.error("Cloud sync error:", cloudErr);
+                    updateSyncState(saveKey, 'error', `Lưu local OK nhưng lỗi Cloud: ${cloudErr.message}`);
                 }
             } else {
-                 updateSyncState(saveKey, 'synced', `✓ Đã tải ${normalizedData.length} dòng`, null);
+                updateSyncState(saveKey, 'cached', `✓ Đã tải ${dataToStore.length} dòng (Chỉ lưu máy này)`, { fileName: file.name });
             }
-            
+
             analyticsService.trackAction();
-            return { success: true };
+
+            if (missingColumns && missingColumns.length > 0) {
+                return { success: true, message: `Thành công (Thiếu cột: ${missingColumns.join(', ')})`, count: dataToStore.length };
+            }
+            return { success: true, count: dataToStore.length };
+
         } catch (err) {
-            updateSyncState(saveKey, 'error', `Lỗi: ${err.message}`, null);
-            return { success: false, message: err.message };
+            updateSyncState(saveKey, 'error', `Lỗi: ${err.message}`);
+            return { success: false, message: `Lỗi: ${err.message}` };
         }
     },
 
-  async handleRealtimeFileInput(event) {
-        // (Logic hàm này không có lỗi leakage, giữ nguyên)
+    async removeFile(saveKey, fileName, isMultiMode = false) {
+        try {
+            let baseKey = saveKey;
+            let targetWarehouse = get(selectedWarehouse);
+            let mapping = FILE_MAPPING[saveKey];
+
+            if (!mapping) {
+                const sortedKeys = Object.keys(FILE_MAPPING).sort((a, b) => b.length - a.length);
+                for (const key of sortedKeys) {
+                    if (saveKey.startsWith(key + '_')) {
+                        mapping = FILE_MAPPING[key];
+                        baseKey = key;
+                        targetWarehouse = saveKey.replace(key + '_', '');
+                        break;
+                    }
+                }
+            }
+
+            if (!mapping) return { success: false };
+
+            updateSyncState(saveKey, 'uploading', 'Đang xóa file...');
+            mapping.store.set([]);
+            await storage.setItem(saveKey, []);
+
+            if (saveKey === 'saved_danhsachnv') {
+                localStorage.removeItem(LOCAL_DSNV_FILENAME_KEY);
+            }
+
+            if (!mapping.localOnly) {
+                const now = Date.now();
+                const metadata = {
+                    isDeleted: true,
+                    deletedAt: new Date(now),
+                    timestamp: now,
+                    updatedBy: get(currentUser)?.email || 'Tôi'
+                };
+                
+                // [PHẪU THUẬT LOGIC]: Khi xóa ở chế độ ALL, phải xóa rải rác ở từng kho con
+                const validWarehouses = targetWarehouse === 'ALL' 
+                    ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
+                    : [targetWarehouse];
+
+                for (const wh of validWarehouses) {
+                    await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
+                    localStorage.removeItem(`_meta_${wh}_${baseKey}`);
+                }
+            }
+
+            updateSyncState(saveKey, 'error', 'Chưa có file. Vui lòng tải file.', null);
+            return { success: true };
+        } catch (error) {
+            updateSyncState(saveKey, 'error', `Lỗi xóa file: ${error.message}`);
+            return { success: false, message: error.message };
+        }
+    },
+
+    async handleRealtimeFileInput(event) {
         const file = event.target.files[0];
         if (!file) return;
         try {
             const workbook = await _handleFileRead(file);
             const sheetName = workbook.SheetNames[0];
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
-            
-            const headers = rawData.length > 0 ? Object.keys(rawData[0]) : [];
-            const rawAddressCol = headers.find(h => 
-                h.toLowerCase().includes('địa chỉ') || 
-                h.toLowerCase().includes('dia chi') || 
-                h.toLowerCase().includes('address')
-            );
-
-            let { normalizedData, success, missingColumns } = dataProcessing.normalizeData(rawData, 'ycx');
-            if (!success) { alert(`File thiếu cột: ${missingColumns.join(', ')}`); return; }
-
-            if (rawAddressCol) {
-                normalizedData = normalizedData.map((row, index) => {
-                    return {
-                        ...row,
-                        diaChi: String(rawData[index][rawAddressCol] || '').trim()
-                    };
-                });
-            }
-
+            const { success, normalizedData, error } = dataProcessing.normalizeData(rawData, 'ycx');
+            if (!success) throw new Error(error);
             realtimeYCXData.set(normalizedData);
-            analyticsService.trackAction();
             event.target.value = null;
-        } catch (error) { alert("Lỗi đọc file Realtime: " + error.message); }
+            return { success: true, count: normalizedData.length };
+        } catch (err) { throw err; }
     },
 
     async handleCategoryFile(event) {
@@ -2984,7 +3253,8 @@ export const fileHandler = {
             const { success, normalizedData, error } = dataProcessing.normalizeCategoryStructureData(rawData);
             if (!success) throw new Error(error);
             categoryStructure.set(normalizedData);
-            const brands = [...new Set(normalizedData.map(i => i.nhaSanXuat).filter(Boolean))].sort();
+            
+            const brands = [...new Set(normalizedData.map(item => item.brand).filter(Boolean))].sort();
             brandList.set(brands);
             event.target.value = null;
             return { success: true, count: normalizedData.length };
@@ -3041,13 +3311,12 @@ export const pasteHandler = {
         let baseKey = primaryKey;
         let targetWarehouse = null;
 
-        // --- 🚨 [GENESIS PREFIX ROUTING ENGINE] 🚨 ---
         if (!mapping) {
             for (const key of Object.keys(PASTE_MAPPING)) {
                 if (primaryKey.startsWith(key + '_')) {
                     mapping = PASTE_MAPPING[key];
-                    baseKey = key; // Lấy tiền tố
-                    targetWarehouse = primaryKey.replace(key + '_', ''); // Lấy mã kho ở đuôi
+                    baseKey = key; 
+                    targetWarehouse = primaryKey.replace(key + '_', ''); 
                     break;
                 }
             }
@@ -3055,7 +3324,6 @@ export const pasteHandler = {
 
         if (!mapping) return { success: false, message: `Lỗi mapping paste` };
 
-        // [BYPASS] Dành cho Báo cáo Cụm
         if (mapping.bypassHandler) {
              return { success: true, message: `Bypassed to component logic` };
         }
@@ -3064,6 +3332,9 @@ export const pasteHandler = {
         try {
             let processedData;
             let processedCount = 0;
+            
+            const warehouse = targetWarehouse || get(selectedWarehouse);
+            
             if (mapping.isThiDuaNV) {
                 const parsedData = dataProcessing.parsePastedThiDuaTableData(pastedText);
                 if (!parsedData.success) throw new Error(parsedData.error);
@@ -3072,7 +3343,6 @@ export const pasteHandler = {
                 processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
                 mapping.store.set(processedData);
                 
-                // [PHẪU THUẬT LOGIC]: Ghi đúng vào Key Đích Danh (Có nối kho)
                 if(saveKeyRaw) localStorage.setItem(saveKeyRaw, pastedText);
                 if(saveKeyProcessed) localStorage.setItem(saveKeyProcessed, JSON.stringify(processedData));
                 processedCount = processedData.length;
@@ -3080,21 +3350,29 @@ export const pasteHandler = {
                 processedData = mapping.processFunc(pastedText);
                 mapping.store.set(processedData);
                 
-                // [PHẪU THUẬT LOGIC]: Ghi đúng vào Key Đích Danh
                 localStorage.setItem(saveKeyPaste, pastedText);
                 processedCount = processedData?.length || 0;
                 
+                // [VÁ LỖI CÔ LẬP DATA KHI LIVE PASTE]: Đóng dấu maKho cho chương trình thi đua
                 if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
                      const comps = dataProcessing.parseCompetitionDataFromLuyKe(pastedText);
                      dataProcessing.parseLuyKePastedData(pastedText);
+                     
+                     const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: warehouse })) : [];
+                     const globalWh = get(selectedWarehouse);
+                     
+                     if (globalWh === 'ALL') {
+                          competitionData.update(current => {
+                              const cleanCurrent = Array.isArray(current) ? current : [];
+                              return [...cleanCurrent.filter(item => item.maKho !== warehouse), ...labeledComps];
+                          });
+                     } else {
+                          competitionData.set(labeledComps);
+                     }
                      processedCount = comps.length;
                 }
             }
             
-            // [SMART ROUTING]
-            const warehouse = targetWarehouse || get(selectedWarehouse);
-            
-            // Chặn không cho lưu vào thư mục ảo 'ALL' trên Cloud
             if (warehouse && warehouse !== 'ALL') {
                 try {
                     updateSyncState(saveKeyPaste, 'uploading', 'Đang lưu Cloud...');
@@ -3137,7 +3415,7 @@ export const pasteHandler = {
 >>> FILE_START: src/services/data/syncHandler.js
 /* global XLSX */
 import { get } from 'svelte/store';
-import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc } from '../../stores.js';
+import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, danhSachNhanVien } from '../../stores.js';
 import { datasyncService } from '../datasync.service.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
@@ -3209,14 +3487,16 @@ function applyDataShield(rawData, normalizedData, baseKey) {
     });
 }
 
-// --- 🚨 [PHẪU THUẬT LOGIC]: BỘ ĐỊNH TUYẾN KEY KẾT NỐI UI 🚨 ---
 function getStateKey(key, wh) {
-    if (['daily_paste_luyke', 'daily_paste_thiduanv'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
+    if (['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
         return `${key}_${wh}`;
     }
     if (['cluster_paste_luyke', 'cluster_paste_comp'].includes(key) && wh.startsWith('CLUSTER_')) {
         const clusterCode = wh.replace('CLUSTER_', '');
         return `${key}_${clusterCode}`;
+    }
+    if (key === 'cluster_summary_data' && wh.startsWith('CLUSTER_')) {
+        return `cluster_summary_data_${wh}`; 
     }
     return key;
 }
@@ -3224,18 +3504,17 @@ function getStateKey(key, wh) {
 export const syncHandler = {
     async syncDownFromCloud(warehouse) {
         if (!warehouse) return { success: false, message: "Chưa chọn kho." };
-        console.group(`[SYNC-DEBUG] Bắt đầu kiểm tra luồng: ${warehouse}`);
 
         const isBatchMode = get(selectedWarehouse) === 'ALL';
         let targetKeys = [];
         
         if (isBatchMode) {
             if (warehouse === 'ALL') {
-                targetKeys = [...Object.keys(FILE_MAPPING), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc'];
+                targetKeys = [...Object.keys(FILE_MAPPING).filter(k => !['saved_giocong', 'saved_thuongnong'].includes(k)), 'daily_paste_thuongerp', 'saved_thuongerp_thangtruoc', 'cluster_summary_data'];
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
             } else {
-                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv'];
+                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'];
             }
         } else {
             targetKeys = [...Object.keys(FILE_MAPPING), ...Object.keys(PASTE_MAPPING)];
@@ -3246,7 +3525,6 @@ export const syncHandler = {
             return map && !map.localOnly;
         });
 
-        // [SỬA LỖI MẤT SÓNG]: Phát tín hiệu Checking đúng kênh
         targetKeys.forEach(key => {
             let stateKey = getStateKey(key, warehouse);
             updateSyncState(stateKey, 'checking', 'Đang so sánh dữ liệu...', null);
@@ -3267,8 +3545,6 @@ export const syncHandler = {
 
             const processKey = async (key) => {
                 const mapping = FILE_MAPPING[key] || PASTE_MAPPING[key];
-                
-                // [SỬA LỖI MẤT SÓNG]: Xác định luồng kênh
                 let stateKey = getStateKey(key, warehouse);
                 let baseKey = key;
 
@@ -3290,7 +3566,6 @@ export const syncHandler = {
                     return;
                 }
 
-                console.groupCollapsed(`🔍 Kiểm tra: ${key} (State: ${stateKey})`);
                 const timeAgo = formatTimeAgo(cloudMeta.updatedAt);
                 const isMyUpload = cloudMeta.updatedBy === userEmail;
 
@@ -3312,20 +3587,14 @@ export const syncHandler = {
                         updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ ${timeAgo}`, cloudMeta);
                     }
                 }
-                console.groupEnd();
             };
 
             for (const key of targetKeys) {
                 await processKey(key);
             }
-
-            console.log(`✅ Hoàn tất kiểm tra luồng ${warehouse}.`);
-            console.groupEnd();
             return { success: true, message: `Đã kiểm tra dữ liệu.` };
 
         } catch (error) {
-            console.error("Sync error:", error);
-            console.groupEnd();
             return { success: false, message: "Lỗi kết nối Cloud: " + error.message };
         }
     },
@@ -3339,7 +3608,8 @@ export const syncHandler = {
         let isPaste = !!PASTE_MAPPING[stateKey];
 
         if (!mapping) {
-            for (const pKey of [...Object.keys(PASTE_MAPPING), ...Object.keys(FILE_MAPPING)]) {
+            const sortedKeys = [...Object.keys(PASTE_MAPPING), ...Object.keys(FILE_MAPPING)].sort((a, b) => b.length - a.length);
+            for (const pKey of sortedKeys) {
                 if (stateKey.startsWith(pKey + '_')) {
                     mapping = PASTE_MAPPING[pKey] || FILE_MAPPING[pKey];
                     baseKey = pKey;
@@ -3367,28 +3637,38 @@ export const syncHandler = {
         
         try {
             if (!isPaste) {
-                let allNormalizedData = [];
+                let allDataForStorage = []; 
+                let allDataForStore = [];   
                 
-                let allowedWarehouses = [];
-                if (warehouse === 'ALL') {
-                    allowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                let userAllowedWarehouses = [];
+                const dsnvData = get(danhSachNhanVien);
+                if (dsnvData && dsnvData.length > 0) {
+                     const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
+                     userAllowedWarehouses = dsKho.map(k => String(k).trim());
                 } else {
-                    allowedWarehouses = [warehouse];
+                     userAllowedWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_')).map(k => String(k).trim());
                 }
 
                 let filesToDownload = [];
-                if (warehouse === 'ALL' && state.metadata.isMulti) {
-                     for(let wh of allowedWarehouses) {
+                // Phẫu thuật File: Hỗ trợ nạp song song cả Multi (YCX) và Single split (Giờ công, Thưởng nóng)
+                if (get(selectedWarehouse) === 'ALL') {
+                     for(let wh of userAllowedWarehouses) {
                          const singleMetaStr = localStorage.getItem(`_meta_${wh}_${baseKey}`);
                          if(singleMetaStr) {
                              try {
                                  const sm = JSON.parse(singleMetaStr);
-                                 if(!sm.isDeleted && sm.downloadURL) filesToDownload.push(sm);
+                                 if (sm.files && Array.isArray(sm.files)) {
+                                     filesToDownload.push(...sm.files.filter(f => !f.isDeleted && f.downloadURL));
+                                 } else if (!sm.isDeleted && sm.downloadURL) {
+                                     filesToDownload.push(sm);
+                                 }
                              } catch(e){}
                          }
                      }
                      if(filesToDownload.length === 0 && state.metadata.files) {
                          filesToDownload = state.metadata.files;
+                     } else if (filesToDownload.length === 0 && state.metadata.downloadURL) {
+                         filesToDownload = [state.metadata];
                      }
                 } else if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
                      filesToDownload = state.metadata.files;
@@ -3418,60 +3698,117 @@ export const syncHandler = {
                     
                     normalizedData = applyDataShield(rawData, normalizedData, baseKey);
                     
-                    if (allowedWarehouses.length > 0) {
-                         normalizedData = normalizedData.filter(d => {
+                    let dataForStorage = normalizedData;
+                    if (userAllowedWarehouses.length > 0) {
+                         dataForStorage = normalizedData.filter(d => {
                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                            return allowedWarehouses.includes(whCode);
+                            return userAllowedWarehouses.includes(whCode);
                          });
                     }
+                    allDataForStorage = [...allDataForStorage, ...dataForStorage];
 
-                    allNormalizedData = [...allNormalizedData, ...normalizedData];
+                    let dataForStore = dataForStorage;
+                    if (get(selectedWarehouse) !== 'ALL') {
+                         dataForStore = dataForStorage.filter(d => {
+                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                            return whCode === get(selectedWarehouse);
+                         });
+                    }
+                    allDataForStore = [...allDataForStore, ...dataForStore];
                 }
 
                 if (state.metadata.deletedWarehouses && state.metadata.deletedWarehouses.length > 0) {
-                    allNormalizedData = allNormalizedData.filter(d => {
+                    allDataForStorage = allDataForStorage.filter(d => {
+                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                        return !state.metadata.deletedWarehouses.includes(whCode);
+                    });
+                    allDataForStore = allDataForStore.filter(d => {
                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                         return !state.metadata.deletedWarehouses.includes(whCode);
                     });
                 }
 
-                mapping.store.set(allNormalizedData);
-                await storage.setItem(stateKey, allNormalizedData);
+                await storage.setItem(stateKey, allDataForStorage);
+                mapping.store.set(allDataForStore);
                 
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_FILE');
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
                 
                 localStorage.setItem(`_meta_${warehouse}_${baseKey}`, JSON.stringify(metaToSave));
-                updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allNormalizedData.length} dòng)`, metaToSave);
-            
-            } else if (isPaste) {
-                const downloadUrl = state.metadata.downloadURL;
-                const cacheBusterUrl = `${downloadUrl}${downloadUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allDataForStore.length} dòng)`, metaToSave);
+
+            } else {
+                // Phẫu thuật PASTE: Gom tụ nguyên tử (Atomic Aggregation) để triệt tiêu Race Condition
+                const response = await fetch(state.metadata.downloadURL);
+                const textContent = await response.text();
                 
-                const textContent = await (await fetch(cacheBusterUrl)).text();
+                // Lưu text của ô hiện tại xuống kho riêng của nó
+                localStorage.setItem(stateKey, textContent);
+                
                 let processedCount = 0;
+                const isBatchMode = get(selectedWarehouse) === 'ALL';
                 
                 if (mapping.isThiDuaNV) {
-                    localStorage.setItem(stateKey + '_raw', textContent);
+                    // 1. Tính toán số dòng cho riêng ô này để hiển thị UI
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {
                         dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
-                        const $competitionData = get(competitionData);
-                        const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                        mapping.store.set(processedData);
-                        processedCount = processedData.length;
-                        localStorage.setItem(stateKey, JSON.stringify(processedData)); 
+                        const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
+                        processedCount = processedData?.length || 0;
+                    }
+
+                    // 2. Gom tụ dữ liệu cho Store tổng
+                    if (isBatchMode) {
+                        let combinedData = [];
+                        const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                        for (let wh of validWarehouses) {
+                            const txt = localStorage.getItem(`${baseKey}_${wh}`);
+                            if (txt) {
+                                const pd = dataProcessing.parsePastedThiDuaTableData(txt);
+                                if (pd.success) {
+                                    const pData = dataProcessing.processThiDuaNhanVienData(pd, get(competitionData));
+                                    combinedData.push(...pData);
+                                }
+                            }
+                        }
+                        mapping.store.set(combinedData); // Bảng chung nhận 100% data
+                    } else {
+                        if (parsedData.success) {
+                            const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
+                            mapping.store.set(processedData);
+                        }
                     }
                 } else if (mapping.processFunc) {
-                    const processedData = mapping.processFunc(textContent);
-                    mapping.store.set(processedData);
-                    processedCount = processedData?.length || 0;
-                    localStorage.setItem(stateKey, textContent);
-                    
+                    // 1. Tính toán số dòng cho riêng ô này
                     if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
-                         const comps = dataProcessing.parseCompetitionDataFromLuyKe(textContent);
-                         dataProcessing.parseLuyKePastedData(textContent);
-                         processedCount = comps.length;
+                         processedCount = dataProcessing.parseCompetitionDataFromLuyKe(textContent).length;
+                    } else {
+                         processedCount = mapping.processFunc(textContent)?.length || 0;
+                    }
+                    
+                    // 2. Gom tụ dữ liệu cho Store tổng
+                    if (isBatchMode) {
+                        let combinedData = [];
+                        let combinedText = '';
+                        const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
+                        for (let wh of validWarehouses) {
+                            const txt = localStorage.getItem(`${baseKey}_${wh}`);
+                            if (txt) {
+                                const pData = mapping.processFunc(txt);
+                                combinedData.push(...pData);
+                                combinedText += txt + '\n'; // Nối văn bản để parse tổng hợp
+                            }
+                        }
+                        mapping.store.set(combinedData);
+                        if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
+                            dataProcessing.parseLuyKePastedData(combinedText);
+                        }
+                    } else {
+                        const processedData = mapping.processFunc(textContent);
+                        mapping.store.set(processedData);
+                        if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
+                             dataProcessing.parseLuyKePastedData(textContent);
+                        }
                     }
                 }
                 
@@ -3516,6 +3853,7 @@ export const dataProcessing = {
     _cleanCompetitionName: helpers.cleanCompetitionName,
     classifyInsurance: helpers.classifyInsurance,
     _findHeaderAndProcess: helpers.findHeaderAndProcess, // Public alias cho processors dùng
+    getHeSoForCategory: helpers.getHeSoForCategory,
 
     // --- Normalizers ---
     normalizeData: normalizers.normalizeData,
@@ -3600,9 +3938,26 @@ export const dataService = {
 
 >>> FILE_START: src/services/datasync.service.js
 // src/services/datasync.service.js
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"; 
-import { firebaseStore, currentUser } from '../stores.js'; 
+import { doc, setDoc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"; 
+import { 
+    firebaseStore, 
+    currentUser,
+    masterReportData,
+    ycxData,
+    ycxDataThangTruoc,
+    pastedThiDuaReportData,
+    globalCompetitionConfigs,
+    localCompetitionConfigs,
+    competitionData,
+    luykeNameMappings,
+    competitionNameMappings,
+    selectedWarehouse,
+    danhSachNhanVien
+} from '../stores.js'; 
 import { get } from 'svelte/store';
+import { reportService } from './reportService.js';
+import { settingsService } from './settings.service.js';
+import { dataProcessing } from './dataProcessing.js';
 
 const getDB = () => {
     const fb = get(firebaseStore);
@@ -3618,9 +3973,7 @@ export const datasyncService = {
     async saveGoalSettings(kho, type, settings) {
         const db = getDB();
         if (!db || !kho) return;
-
         const fieldName = type === 'luyke' ? 'luykeGoals' : 'realtimeGoals';
-
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
@@ -3629,30 +3982,21 @@ export const datasyncService = {
                 [`${fieldName}UpdatedBy`]: getCurrentUserEmail()
             }, { merge: true });
             console.log(`[DataSync] Đã lưu mục tiêu ${type} cho kho ${kho}`);
-        } catch (error) {
-            console.error(`[DataSync] Lỗi lưu mục tiêu ${type}:`, error);
-        }
+        } catch (error) { console.error(`[DataSync] Lỗi lưu mục tiêu ${type}:`, error); }
     },
 
     async loadGoalSettings(kho) {
         const db = getDB();
         if (!db || !kho) return { luyke: {}, realtime: {} };
-
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                return {
-                    luyke: data.luykeGoals || {},
-                    realtime: data.realtimeGoals || {}
-                };
+                return { luyke: data.luykeGoals || {}, realtime: data.realtimeGoals || {} };
             }
             return { luyke: {}, realtime: {} };
-        } catch (e) {
-            console.error("[DataSync] Lỗi tải mục tiêu:", e);
-            return { luyke: {}, realtime: {} };
-        }
+        } catch (e) { return { luyke: {}, realtime: {} }; }
     },
 
     async savePersonalTargetRatio(kho, ratio) {
@@ -3665,9 +4009,7 @@ export const datasyncService = {
                 personalTargetRatioUpdatedAt: serverTimestamp(),
                 personalTargetRatioUpdatedBy: getCurrentUserEmail()
             }, { merge: true });
-        } catch (error) {
-            console.error("[DataSync] Lỗi lưu personalTargetRatio:", error);
-        }
+        } catch (error) { console.error(error); }
     },
 
     async loadPersonalTargetRatio(kho) {
@@ -3680,54 +4022,35 @@ export const datasyncService = {
                 return docSnap.data().personalTargetRatio;
             }
             return 100;
-        } catch (e) {
-            console.error("[DataSync] Lỗi tải personalTargetRatio:", e);
-            return 100;
-        }
+        } catch (e) { return 100; }
     },
 
     async saveQdcConfig(kho, config) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            await setDoc(khoRef, {
-                qdcConfig: config,
-                qdcConfigUpdatedAt: serverTimestamp(),
-                qdcConfigUpdatedBy: getCurrentUserEmail()
-            }, { merge: true });
-        } catch (error) { console.error(error); }
+        try { await setDoc(khoRef, { qdcConfig: config, qdcConfigUpdatedAt: serverTimestamp(), qdcConfigUpdatedBy: getCurrentUserEmail() }, { merge: true }); } catch (error) { console.error(error); }
     },
 
     async loadQdcConfig(kho) {
         const db = getDB();
         if (!db || !kho) return null;
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return (docSnap.exists() && docSnap.data().qdcConfig) ? docSnap.data().qdcConfig : null;
-        } catch (e) { return null; }
+        try { const docSnap = await getDoc(khoRef); return (docSnap.exists() && docSnap.data().qdcConfig) ? docSnap.data().qdcConfig : null; } catch (e) { return null; }
     },
 
     async saveRealtimeHiddenCategories(kho, hiddenList) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            await setDoc(khoRef, {
-                realtimeConfig: { hiddenCategories: hiddenList, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() }
-            }, { merge: true });
-        } catch (error) { console.error(error); }
+        try { await setDoc(khoRef, { realtimeConfig: { hiddenCategories: hiddenList, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } }, { merge: true }); } catch (error) { console.error(error); }
     },
 
     async loadRealtimeHiddenCategories(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try {
-            const docSnap = await getDoc(khoRef);
-            return (docSnap.exists() && docSnap.data().realtimeConfig) ? docSnap.data().realtimeConfig.hiddenCategories || [] : [];
-        } catch (e) { return []; }
+        try { const docSnap = await getDoc(khoRef); return (docSnap.exists() && docSnap.data().realtimeConfig) ? docSnap.data().realtimeConfig.hiddenCategories || [] : []; } catch (e) { return []; }
     },
 
     async savePersonalRevenueTables(kho, tables) {
@@ -3750,25 +4073,14 @@ export const datasyncService = {
         if (!db || !kho) return;
         const personalTables = tables.filter(t => !t.isSystem);
         const khoRef = doc(db, "warehouseData", kho);
-        try { 
-            await setDoc(khoRef, { 
-                personalPerformanceTables: personalTables, 
-                updatedAt: serverTimestamp() 
-            }, { merge: true }); 
-        } catch (error) { throw error; }
+        try { await setDoc(khoRef, { personalPerformanceTables: personalTables, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
     async loadPersonalPerformanceTables(kho) {
         const db = getDB();
         if (!db || !kho) return [];
         const khoRef = doc(db, "warehouseData", kho);
-        try { 
-            const docSnap = await getDoc(khoRef); 
-            return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; 
-        } catch(e) { 
-            console.error("Lỗi tải bảng hiệu quả cá nhân:", e);
-            return []; 
-        }
+        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; } catch(e) { return []; }
     },
 
     async saveCustomMetrics(kho, metrics) {
@@ -3822,63 +4134,36 @@ export const datasyncService = {
         try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
 
-    // --- 🚨 [ATOMIC FIX: METADATA ARRAY FOR MULTI-FILES] 🚨 ---
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
-        
-        // [PHẪU THUẬT LOGIC]: Bổ sung 'saved_ycx' vào mảng kích hoạt chế độ Multi (Merge)
-        const multiModeKeys = ['saved_ycx', 'saved_ycx_cungkynam', 'saved_ycx_thangtruoc'];
-
+        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
         try {
             if (multiModeKeys.includes(key)) {
                 const docSnap = await getDoc(khoRef);
                 let existingFiles = [];
-                
                 if (docSnap.exists() && docSnap.data()[key]) {
                     const existingData = docSnap.data()[key];
-                    if (Array.isArray(existingData.files)) {
-                        existingFiles = existingData.files;
-                    } else if (existingData.downloadURL) { 
-                        existingFiles = [existingData];
-                    }
+                    if (Array.isArray(existingData.files)) existingFiles = existingData.files;
+                    else if (existingData.downloadURL) existingFiles = [existingData];
                 }
-
                 if (metadata.uploadedMonths && metadata.uploadedMonths.length > 0) {
                     existingFiles = existingFiles.filter(f => {
                         if (!f.uploadedMonths) return f.fileName !== metadata.fileName;
-                        const isOverlap = f.uploadedMonths.some(m => metadata.uploadedMonths.includes(m));
-                        return !isOverlap; 
+                        return !f.uploadedMonths.some(m => metadata.uploadedMonths.includes(m));
                     });
                 } else {
                     existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
                 }
-                
-                existingFiles.push({
-                    ...metadata,
-                    updatedAt: new Date().toISOString(), 
-                    updatedBy: getCurrentUserEmail()
-                });
-
-                const dataToSave = { 
-                    [key]: { 
-                        files: existingFiles, 
-                        isMulti: true, 
-                        timestamp: Date.now(),
-                        updatedAt: serverTimestamp(), 
-                        updatedBy: getCurrentUserEmail() 
-                    } 
-                };
+                existingFiles.push({ ...metadata, updatedAt: new Date().toISOString(), updatedBy: getCurrentUserEmail() });
+                const dataToSave = { [key]: { files: existingFiles, isMulti: true, timestamp: Date.now(), updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
                 await setDoc(khoRef, dataToSave, { merge: true });
-
             } else {
                 const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
                 await setDoc(khoRef, dataToSave, { merge: true });
             }
-        } catch (error) { 
-            throw error; 
-        }
+        } catch (error) { throw error; }
     },
 
     async loadWarehouseData(kho) {
@@ -3892,48 +4177,312 @@ export const datasyncService = {
         const db = getDB();
         if (!db || !kho) return null;
         const khoRef = doc(db, "warehouseData", kho);
-
         try {
             const docSnap = await getDoc(khoRef);
             if (docSnap.exists() && docSnap.data()[key]) {
                 const existingData = docSnap.data()[key];
-                
                 if (Array.isArray(existingData.files)) {
                     const updatedFiles = existingData.files.filter(f => {
                         if (f.uploadedMonths) return !f.uploadedMonths.includes(targetMonth);
-                        
-                        const [m, y] = targetMonth.split('/'); 
-                        const mNum = parseInt(m, 10); 
-                        const regex = new RegExp(`(${mNum}|${m})[\\s_\\-\\/]*${y}`, 'i');
-                        
-                        if (regex.test(f.fileName)) {
-                            return false; 
-                        }
-                        return true; 
+                        const [m, y] = targetMonth.split('/');
+                        const regex = new RegExp(`(${parseInt(m, 10)}|${m})[\\s_\\-\\/]*${y}`, 'i');
+                        return !regex.test(f.fileName);
                     });
-
-                    const dataToSave = { 
-                        [key]: { 
-                            files: updatedFiles, 
-                            isMulti: true, 
-                            timestamp: Date.now(), 
-                            updatedAt: serverTimestamp(), 
-                            updatedBy: getCurrentUserEmail() 
-                        } 
-                    };
+                    const dataToSave = { [key]: { files: updatedFiles, isMulti: true, timestamp: Date.now(), updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
                     await setDoc(khoRef, dataToSave, { merge: true });
-                    console.log(`[DataSync] Đã dọn dẹp tháng ${targetMonth} trên Cloud.`);
-                    
-                    return dataToSave[key]; 
+                    return dataToSave[key];
                 }
             }
             return null;
-        } catch (error) { 
-            console.error("[DataSync] Lỗi xóa tháng trên Cloud:", error); 
-            throw error;
+        } catch (error) { throw error; }
+    },
+
+    async deepSyncToMobile(onProgress) {
+        const db = getDB();
+        if (!db) {
+            if (onProgress) onProgress(0, 0, 'error', 'Không kết nối được Firestore Database');
+            return;
+        }
+
+        const masterReport = get(masterReportData);
+        const employeeList = masterReport?.sknv || [];
+        const currentYcx = get(ycxData) || []; 
+        const lastMonthYcx = get(ycxDataThangTruoc) || [];
+        const thiDuaData = get(pastedThiDuaReportData) || [];
+        const compDataStore = get(competitionData) || [];
+        const luykeNameMaps = get(luykeNameMappings) || {};
+        const compNameMaps = get(competitionNameMappings) || {};
+        const wh = get(selectedWarehouse);
+        const allEmps = get(danhSachNhanVien) || [];
+
+        if (employeeList.length === 0) {
+            if (onProgress) onProgress(0, 0, 'error', 'Chưa có dữ liệu tính toán để đồng bộ');
+            return;
+        }
+
+        if (onProgress) onProgress(0, employeeList.length, 'processing', 'Đang thiết lập cấu hình xếp hạng...');
+
+        try {
+            const today = new Date();
+            const d = today.getDate();
+            let currentDay = 1, daysInMonth = 30;
+            if (d === 1) {
+                const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+                currentDay = lastMonth.getDate(); daysInMonth = lastMonth.getDate();
+            } else {
+                currentDay = Math.max(d - 1, 1);
+                daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+            }
+
+            const lastMonthDataMap = {};
+            const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu(); 
+            const targetDate = new Date(today.getFullYear(), today.getMonth() - (today.getDate() === 1 ? 2 : 1), 1); 
+            const targetMonth = targetDate.getMonth();
+            const targetYear = targetDate.getFullYear();
+
+            lastMonthYcx.forEach(row => { 
+                if (!row.ngayTao || !(row.ngayTao instanceof Date)) return; 
+                if (row.ngayTao.getMonth() !== targetMonth || row.ngayTao.getFullYear() !== targetYear) return;
+
+                const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/); 
+                if (!msnvMatch) return;
+                
+                const isDaXuat = !row.trangThaiXuat || ['Đã xuất', 'Đã giao'].includes(row.trangThaiXuat.trim()); 
+                const isBaseValid = (row.trangThaiThuTien || '').trim() === 'Đã thu' && 
+                                    (row.trangThaiHuy || '').trim() === 'Chưa hủy' && 
+                                    (row.tinhTrangTra || '').trim() === 'Chưa trả'; 
+
+                if (hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) && isDaXuat && isBaseValid) { 
+                    const cleanId = msnvMatch[1].trim(); 
+                    lastMonthDataMap[cleanId] = (lastMonthDataMap[cleanId] || 0) + (row.revenueQuyDoi || 0); 
+                }
+            });
+
+            let targetRatio = 100;
+            try { targetRatio = await this.loadPersonalTargetRatio(wh) || 100; } catch(e){}
+
+            const getWarehouseEmpCount = (empWh) => {
+                const filtered = allEmps.filter(e => String(e.maKho || e.MAKHO || '').trim() === String(empWh).trim());
+                return filtered.length > 0 ? filtered.length : 1;
+            };
+
+            let columnSettings = settingsService.loadPastedCompetitionViewSettings() || []; 
+            const activeColumns = columnSettings.filter(col => col.visible); 
+
+            let enrichedList = [...employeeList].map(emp => {
+                const cleanCode = String(emp.maNV || emp.ma_nv || '').trim();
+                const empWh = String(emp.maKho || emp.ma_kho || wh || '').trim();
+                const storeEmpCount = getWarehouseEmpCount(empWh);
+
+                const dtqdCK = lastMonthDataMap[cleanCode] || 0;
+                const duKienSoCK = ((emp.doanhThuQuyDoi || 0) / currentDay) * daysInMonth - dtqdCK;
+
+                const empThiDua = thiDuaData.find(t => String(t.maNV).trim() === cleanCode);
+                let thiDuaDetailCooked = [];
+                let thiDuaScore = 0;
+
+                const stMappedData = {};
+                compDataStore.forEach(item => { 
+                    if (item.maKho && String(item.maKho).trim() !== empWh) return;
+
+                    const luykeMap = luykeNameMaps && luykeNameMaps[item.name]; 
+                    let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
+                    if (linkedEmpProg) {
+                        const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100); 
+                        const isQty = item.type === 'soLuong'; 
+                        const pTarget = (isQty ? Math.ceil(rawTarget / storeEmpCount) : Math.round(rawTarget / storeEmpCount)); 
+                        stMappedData[linkedEmpProg] = pTarget; 
+                    }
+                });
+
+                const categoryTargets = {};
+                columnSettings.forEach(col => { categoryTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0; });
+
+                if (empThiDua && empThiDua.competitions) {
+                    activeColumns.forEach(col => { 
+                        const compData = empThiDua.competitions.find(c => c.tenGoc === col.tenGoc); 
+                        const val = compData?.giaTri || 0; 
+                        const target = categoryTargets[col.tenGoc] || 0; 
+                        const projectedVal = (val / currentDay) * daysInMonth; 
+
+                        const isCompleted = (target > 0 && projectedVal >= target) || (target === 0 && val > 0); 
+                        if (isCompleted) thiDuaScore++;
+
+                        thiDuaDetailCooked.push({
+                            name: compNameMaps[col.tenGoc] || col.label || col.tenGoc,
+                            luyKe: val,
+                            target: target,
+                            hoanThanhValue: target > 0 ? (projectedVal / target) * 100 : (val > 0 ? 100 : 0)
+                        });
+                    });
+                }
+
+                let categoryHierarchy = [];
+                let totalCat = { sl: 0, dt: 0, dtqd: 0 };
+                
+                try {
+                    if (currentYcx && currentYcx.length > 0) {
+                        const empTxs = currentYcx.filter(tx => {
+                            const txNv = String(tx.ma_nv || tx.maNV || '').trim();
+                            const txTao = String(tx.nguoiTao || '');
+                            return txNv === cleanCode || txTao.includes(cleanCode);
+                        });
+
+                        const hierarchyMap = {};
+                        const hinhThucSet = (typeof dataProcessing?.getHinhThucXuatTinhDoanhThu === 'function') 
+                                            ? dataProcessing.getHinhThucXuatTinhDoanhThu() 
+                                            : new Set();
+
+                        empTxs.forEach(tx => {
+                            const tXuat = String(tx.trangThaiXuat || tx.trang_thai_xuat || '').trim();
+                            const isDaXuat = !tXuat || ['Đã xuất', 'Đã giao'].includes(tXuat);
+                            
+                            const tThu = String(tx.trangThaiThuTien || tx.trang_thai_thu_tien || '').trim();
+                            const tHuy = String(tx.trangThaiHuy || tx.trang_thai_huy || '').trim();
+                            const tTra = String(tx.tinhTrangTra || tx.tinh_trang_tra || '').trim();
+                            const isBaseValid = (tThu === 'Đã thu' && tHuy === 'Chưa hủy' && tTra === 'Chưa trả');
+                            
+                            const hThuc = String(tx.hinhThucXuat || tx.hinh_thuc_xuat || '');
+                            const isHinhThucValid = hinhThucSet.size === 0 || hinhThucSet.has(hThuc);
+
+                            if (isDaXuat && isBaseValid && isHinhThucValid) {
+                                const nganhStr = String(tx.nganh_hang || tx.nganhHang || tx['Ngành hàng'] || tx.NganhHang || 'Khác');
+                                const nhomStr = String(tx.nhom_hang || tx.nhomHang || tx['Nhóm hàng'] || tx.NhomHang || 'Khác');
+                                
+                                const sl = Number(tx.soLuong || tx.so_luong || tx['Số lượng'] || tx.quantity) || 0;
+                                let dt = Number(tx.revenue || tx.doanhThu || tx.doanh_thu || tx['Doanh thu']) || 0;
+                                let dtqd = Number(tx.revenueQuyDoi || tx.doanhThuQuyDoi || tx['Doanh thu quy đổi']) || 0;
+
+                                if (!hierarchyMap[nganhStr]) hierarchyMap[nganhStr] = { name: nganhStr, sl: 0, dt: 0, dtqd: 0, childrenMap: {} };
+                                
+                                hierarchyMap[nganhStr].sl += sl;
+                                hierarchyMap[nganhStr].dt += dt;
+                                hierarchyMap[nganhStr].dtqd += dtqd;
+
+                                if (!hierarchyMap[nganhStr].childrenMap[nhomStr]) hierarchyMap[nganhStr].childrenMap[nhomStr] = { name: nhomStr, sl: 0, dt: 0, dtqd: 0 };
+                                
+                                hierarchyMap[nganhStr].childrenMap[nhomStr].sl += sl;
+                                hierarchyMap[nganhStr].childrenMap[nhomStr].dt += dt;
+                                hierarchyMap[nganhStr].childrenMap[nhomStr].dtqd += dtqd;
+                            }
+                        });
+
+                        categoryHierarchy = Object.values(hierarchyMap).map(nganh => ({
+                            name: nganh.name, sl: nganh.sl, dt: nganh.dt, dtqd: nganh.dtqd,
+                            children: Object.values(nganh.childrenMap).sort((a, b) => b.dt - a.dt)
+                        })).sort((a, b) => b.dt - a.dt);
+                    }
+
+                    if (categoryHierarchy.length === 0 && emp.doanhThuTheoNhomHang) {
+                        categoryHierarchy = Object.entries(emp.doanhThuTheoNhomHang)
+                            .filter(([name, data]) => (data.revenue || 0) > 0 || (data.quantity || 0) > 0)
+                            .map(([name, data]) => {
+                                const dt = data.revenue || 0;
+                                const dtqd = data.revenueQuyDoi || 0;
+                                const sl = data.quantity || 0;
+                                return {
+                                    name: name, sl: sl, dt: dt, dtqd: dtqd,
+                                    children: [{ name: name, sl: sl, dt: dt, dtqd: dtqd }]
+                                };
+                            }).sort((a,b) => b.dt - a.dt);
+                    }
+
+                    totalCat = categoryHierarchy.reduce((acc, curr) => {
+                        acc.sl += curr.sl; acc.dt += curr.dt; acc.dtqd += curr.dtqd;
+                        return acc;
+                    }, {sl: 0, dt: 0, dtqd: 0});
+
+                } catch(e) { console.error("Lỗi build hierarchy", e); }
+
+                return { ...emp, cleanCode, dtqdCK, duKienSoCK, thiDuaScore, thiDuaDetailCooked, categoryHierarchy, totalCat };
+            });
+
+            const total = enrichedList.length;
+
+            enrichedList.sort((a, b) => (b.doanhThu || 0) - (a.doanhThu || 0));
+            enrichedList.forEach((e, i) => e.rankDtThuc = i + 1);
+
+            enrichedList.sort((a, b) => (b.doanhThuQuyDoi || 0) - (a.doanhThuQuyDoi || 0));
+            enrichedList.forEach((e, i) => e.rankDtqd = i + 1);
+
+            enrichedList.sort((a, b) => (b.hieuQuaQuyDoi || 0) - (a.hieuQuaQuyDoi || 0));
+            enrichedList.forEach((e, i) => e.rankTyLe = i + 1);
+
+            enrichedList.sort((a, b) => (a.tyLeTraCham || 0) - (b.tyLeTraCham || 0)); 
+            enrichedList.forEach((e, i) => e.rankTraCham = i + 1);
+
+            enrichedList.sort((a, b) => (b.duKienSoCK || 0) - (a.duKienSoCK || 0));
+            enrichedList.forEach((e, i) => e.rankDuKien = i + 1);
+
+            enrichedList.sort((a, b) => (b.thiDuaScore || 0) - (a.thiDuaScore || 0));
+            enrichedList.forEach((e, i) => e.rankThiDua = i + 1);
+
+            const warehouseGroups = {};
+            enrichedList.forEach(emp => {
+                const empWh = String(emp.maKho || emp.ma_kho || wh || 'UNKNOWN').trim();
+                if (empWh === 'UNKNOWN' || empWh === 'ALL') return;
+                
+                if (!warehouseGroups[empWh]) warehouseGroups[empWh] = [];
+                
+                warehouseGroups[empWh].push({
+                    maNV: emp.cleanCode,
+                    hoTen: emp.hoTen || emp.ten_nv || '',
+                    maKho: empWh,
+                    data: {
+                        doanhThu: emp.doanhThu || 0,
+                        doanhThuQuyDoi: emp.doanhThuQuyDoi || 0,
+                        hieuQuaQuyDoi: emp.hieuQuaQuyDoi || 0,
+                        tyLeTraCham: emp.tyLeTraCham || 0,
+                        dtqdCK: emp.dtqdCK || 0,
+                        duKienSoCK: emp.duKienSoCK || 0,
+                        
+                        rankDtThuc: emp.rankDtThuc, 
+                        rankDtqd: emp.rankDtqd,
+                        rankTyLe: emp.rankTyLe,
+                        rankTraCham: emp.rankTraCham,
+                        rankDuKien: emp.rankDuKien,
+                        rankThiDua: emp.rankThiDua,
+                        totalEmployees: total,
+
+                        categoryHierarchy: emp.categoryHierarchy,
+                        totalCat: emp.totalCat,
+                        
+                        thiDuaDetail: emp.thiDuaDetailCooked,
+                        thiDuaScore: emp.thiDuaScore
+                    }
+                });
+            });
+
+            const targetWarehouseCodes = Object.keys(warehouseGroups);
+            let index = 0;
+
+            for (const currentWhCode of targetWarehouseCodes) {
+                const empsInStore = warehouseGroups[currentWhCode];
+                
+                const finalStoreDocRef = doc(db, 'sknv_final_data', currentWhCode);
+                await setDoc(finalStoreDocRef, {
+                    maKho: currentWhCode,
+                    employees: empsInStore,
+                    autoSyncedAt: serverTimestamp()
+                }, { merge: true });
+
+                const metaRef = doc(db, 'sknv_metadata', currentWhCode);
+                await setDoc(metaRef, {
+                    lastUpdated: Date.now(), 
+                    rowCount: empsInStore.length,
+                    updatedBy: getCurrentUserEmail()
+                }, { merge: true });
+
+                index++;
+                if (onProgress) onProgress(index, targetWarehouseCodes.length, 'processing', `Đang đồng bộ gói dữ liệu kho ${currentWhCode} (${index}/${targetWarehouseCodes.length})...`);
+            }
+
+            if (onProgress) onProgress(targetWarehouseCodes.length, targetWarehouseCodes.length, 'success', '✓ Đã hoàn tất đóng gói và đồng bộ siêu tiết kiệm xuống App!');
+        } catch (error) {
+            console.error("[DataSync] Lỗi luồng Deep Sync Phương án B:", error);
+            if (onProgress) onProgress(0, 0, 'error', `Thất bại: ${error.message}`);
         }
     }
-
 };
 <<< FILE_END: src/services/datasync.service.js
 
@@ -4900,7 +5449,6 @@ export const modalManager = {
 /* global XLSX */
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
-// [FIX] Import thêm efficiencyConfig
 import { declarations, efficiencyConfig } from '../../stores.js';
 
 // [CODEGENESIS] Hàm vũ khí: Chuẩn hóa chuỗi (Xóa dấu tiếng Việt, viết thường, xóa khoảng trắng)
@@ -4912,11 +5460,23 @@ const normalizeStr = (str) => {
         .trim();
 };
 
+// [PHẪU THUẬT LOGIC]: Bóc tách ID - Dùng ID làm chìa khóa tuyệt đối an toàn
+const extractKey = (str) => {
+    if (!str) return 'unknown';
+    const rawStr = str.toString().trim();
+    // Quét tìm cụm số đứng trước dấu gạch ngang (VD: "1273 - Máy tính" -> bóc ra "1273")
+    const match = rawStr.match(/^(\d+)\s*[-–]/);
+    if (match) {
+        return match[1]; 
+    }
+    // Fallback: Nếu không có mã số (VD: "Phụ kiện"), trả về chuỗi chuẩn hóa
+    return normalizeStr(rawStr);
+};
+
 export const helpers = {
     findColumnName(header, aliases) {
         for (const colName of header) {
             const processedColName = normalizeStr(colName);
-            // Chuẩn hóa luôn cả aliases để so sánh an toàn
             if (aliases.map(a => normalizeStr(a)).includes(processedColName)) {
                 return colName;
             }
@@ -4927,7 +5487,6 @@ export const helpers = {
     getHinhThucXuatTinhDoanhThu: () => {
         const declarationData = get(declarations).hinhThucXuat;
         if (declarationData) {
-            // [HOTFIX] Chỉ cắt bằng phẩy/xuống dòng và trim(). Tuyệt đối không dùng normalizeStr ở đây để giữ nguyên Hoa/Thường.
             return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
         }
         return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || []);
@@ -4936,7 +5495,6 @@ export const helpers = {
     getHinhThucXuatTraGop: () => {
         const declarationData = get(declarations).hinhThucXuatGop;
         if (declarationData) {
-            // [HOTFIX] Chỉ cắt bằng phẩy/xuống dòng và trim()
             return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
         }
         return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || []);
@@ -4944,35 +5502,34 @@ export const helpers = {
 
     getHeSoQuyDoi: () => {
         const heSoMap = {};
-        let sourceUsed = 'DEFAULT'; 
-
+        
         // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
         const dynamicConfig = get(efficiencyConfig);
         if (dynamicConfig && dynamicConfig.length > 0) {
-            sourceUsed = 'ADMIN_CONFIG_STORE';
             dynamicConfig.forEach(item => {
                 if (item.id && item.heSo !== undefined && item.heSo !== null) {
-                    heSoMap[normalizeStr(item.id)] = parseFloat(item.heSo);
+                    heSoMap[extractKey(item.id)] = parseFloat(item.heSo);
                 }
             });
         }
 
-        // ƯU TIÊN 2: Lấy từ Khai báo Text (Cũ - nếu Priority 1 không đủ hoặc rỗng)
+        // ƯU TIÊN 2: Lấy từ Khai báo Text
         const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
-                // [VÁ LỖI] Dùng lastIndexOf để tránh lỗi khi tên Ngành Hàng có chứa dấu phẩy
                 const lastCommaIndex = line.lastIndexOf(',');
                 if (lastCommaIndex > -1) {
                     const rawKey = line.substring(0, lastCommaIndex);
                     const rawVal = line.substring(lastCommaIndex + 1);
                     
-                    const cleanKey = normalizeStr(rawKey);
-                    const value = parseFloat(rawVal.trim());
+                    // SỬ DỤNG ID LÀM CHÌA KHÓA LƯU TRỮ
+                    const safeKey = extractKey(rawKey);
+                    // Đề phòng trường hợp gõ nhầm dấu phẩy thập phân
+                    const value = parseFloat(rawVal.trim().replace(',', '.')); 
                     
-                    if (cleanKey && !isNaN(value)) {
-                         if (heSoMap[cleanKey] === undefined) {
-                             heSoMap[cleanKey] = value;
+                    if (safeKey && !isNaN(value)) {
+                         if (heSoMap[safeKey] === undefined) {
+                             heSoMap[safeKey] = value;
                          }
                     }
                 }
@@ -4982,25 +5539,19 @@ export const helpers = {
         // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
         const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI || {};
         Object.entries(defaultData).forEach(([key, value]) => {
-             const cleanKey = normalizeStr(key);
-             if (heSoMap[cleanKey] === undefined) {
-                 heSoMap[cleanKey] = value;
+             const safeKey = extractKey(key);
+             if (heSoMap[safeKey] === undefined) {
+                 heSoMap[safeKey] = value;
              }
         });
-
-        // --- [DEBUG LOG THEO YÊU CẦU] ---
-        if (Object.keys(heSoMap).length > 0) {
-            // console.log(`[Helpers] Đã nạp ${Object.keys(heSoMap).length} hệ số quy đổi. Nguồn chính: ${sourceUsed}`);
-        }
-        // -------------------------------
 
         return heSoMap;
     },
 
-    // [CODEGENESIS] Thêm hàm trung gian giúp file báo cáo gọi an toàn (áp dụng Fuzzy Match)
+    // [CODEGENESIS] Cổng giao tiếp an toàn cho các báo cáo Lũy kế, Realtime
     getHeSoForCategory: (nhomHangRaw, mapHeSo) => {
-        const cleanNhomHang = normalizeStr(nhomHangRaw);
-        return mapHeSo[cleanNhomHang] !== undefined ? mapHeSo[cleanNhomHang] : 1;
+        const safeKey = extractKey(nhomHangRaw);
+        return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;
     },
 
     cleanCompetitionName(name) {
@@ -5221,13 +5772,14 @@ export const competitionProcessor = {
             }
 
             if (!employee) {
-                employee = { hoTen: row.name, maNV: msnv || 'N/A', boPhan: 'Nhân viên không tìm thấy' };
+                employee = { hoTen: row.name, maNV: msnv || 'N/A', boPhan: 'Nhân viên không tìm thấy', maKho: '' };
             }
 
             const employeeResult = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
                 boPhan: employee.boPhan,
+                maKho: employee.maKho || employee.ma_kho || '',
                 completedCount: 0,
                 totalCompetitions: mainHeaders.length,
                 competitions: []
@@ -5931,7 +6483,6 @@ export const normalizers = {
     normalizeData(rawData, fileType) {
         const mapping = config.COLUMN_MAPPINGS[fileType];
         if (!mapping) {
-            console.error(`No column mapping found for fileType: ${fileType}`);
             return { normalizedData: [], success: false, missingColumns: ['Unknown mapping'] };
         }
 
@@ -6027,19 +6578,6 @@ export const normalizers = {
                 // 4. Tính toán
                 newRow.heSoQuyDoi = baseRate + bonusRate; 
                 newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
-                
-                // [DEBUG LOG]
-                if (index === 0) {
-                    console.group(`%c🔍 DEBUG LOGIC QUY ĐỔI (Dòng 1)`, "color: white; background: red; font-weight: bold; padding: 2px 5px");
-                    console.log(`- Sản phẩm: ${productKey}`);
-                    console.log(`- Hệ số gốc (Base): ${baseRate}`);
-                    console.log(`- Hình thức xuất: "${exportModeRaw}"`);
-                    console.log(`- Có phải trả góp không?: ${isInstallment ? '✅ CÓ (+30%)' : '❌ KHÔNG'}`);
-                    console.log(`- Tổng hệ số: ${baseRate} + ${bonusRate} = ${newRow.heSoQuyDoi}`);
-                    console.log(`- Doanh thu gốc: ${revenue.toLocaleString()}`);
-                    console.log(`- Doanh thu quy đổi: ${newRow.revenueQuyDoi.toLocaleString()}`);
-                    console.groupEnd();
-                }
             }
             // ------------------------------------------------------------------
 
@@ -6618,11 +7156,16 @@ export const luykeParser = {
                 hasChanges = true;
             }
         });
+        
         if (hasChanges) {
             luykeNameMappings.set(currentMappings);
         }
 
-        competitionData.set(results);
+        // [SURGICAL FIX - RACE CONDITION VACCINE]
+        // Đã tước quyền tự ý đẩy vào Store của Parser. 
+        // Store sẽ được cập nhật nguyên khối 1 lần bên pasteHandler/cacheHandler.
+        // competitionData.set(results); 
+
         return results;
     }
 };
@@ -7054,12 +7597,10 @@ export const competitionReportLogic = {
 
 >>> FILE_START: src/services/reports/detail.report.js
 // src/services/reports/detail.report.js
-// Version 1.0 - Detail views logic
 import { get } from 'svelte/store';
 import * as utils from '../../utils.js';
-import { formatters } from '../../utils/formatters.js';
+import { salesProcessor } from './master/salesProcessor.js';
 import { dataProcessing } from '../dataProcessing.js';
-import { masterReportData } from '../../stores.js';
 
 export const detailReportLogic = {
     generateRealtimeEmployeeDetailReport(employeeMaNV, realtimeYCXData) {
@@ -7072,33 +7613,28 @@ export const detailReportLogic = {
 
         if (employeeData.length === 0) return null;
 
-        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
-
-        const summary = {
-            totalRealRevenue: 0,
-            totalConvertedRevenue: 0,
-            unexportedRevenue: 0
-        };
+        const summary = { totalRealRevenue: 0, totalConvertedRevenue: 0, unexportedRevenue: 0 };
         const byProductGroup = {};
         const byCustomer = {};
 
-        employeeData.forEach(row => {
-            const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-            const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' && (row.trangThaiHuy || "").trim() === 'Chưa hủy' && (row.tinhTrangTra || "").trim() === 'Chưa trả';
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
 
-            if (isDoanhThuHTX && isBaseValid) {
-                const realRevenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                const quantity = parseInt(String(row.soLuong || "0"), 10) || 0;
-                const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                
-                // [FIX] Dùng revenueQuyDoi từ normalizer
-                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+        employeeData.forEach(row => {
+            const evalResult = salesProcessor.evaluateTransaction(row, context);
+
+            if (evalResult.isValid && evalResult.empId === String(employeeMaNV)) {
+                const realRevenue = evalResult.thanhTien;
+                const quantity = evalResult.soLuong;
+                const convertedRevenue = evalResult.revenueQuyDoi;
                 
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách lẻ';
 
-                if ((row.trangThaiXuat || "").trim() === 'Đã xuất') {
+                if (evalResult.isDaXuat) {
                     summary.totalRealRevenue += realRevenue;
                     summary.totalConvertedRevenue += convertedRevenue;
 
@@ -7113,13 +7649,11 @@ export const detailReportLogic = {
                         byCustomer[customerName] = { name: customerName, products: [], totalQuantity: 0 };
                     }
                     byCustomer[customerName].products.push({
-                        productName: row.tenSanPham,
-                        quantity: quantity,
-                        realRevenue: realRevenue,
-                        convertedRevenue: convertedRevenue,
+                        productName: row.tenSanPham, quantity: quantity,
+                        realRevenue: realRevenue, convertedRevenue: convertedRevenue,
                     });
                     byCustomer[customerName].totalQuantity += quantity;
-                } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
+                } else if (evalResult.isChuaXuat) {
                     summary.unexportedRevenue += convertedRevenue;
                 }
             }
@@ -7137,56 +7671,42 @@ export const detailReportLogic = {
     },
 
     generateLuyKeEmployeeDetailReport(employeeMaNV, luykeYCXData) {
-        if (!employeeMaNV || !luykeYCXData || luykeYCXData.length === 0) {
-            return null;
-        }
+        if (!employeeMaNV || !luykeYCXData || luykeYCXData.length === 0) return null;
 
         const employeeData = luykeYCXData.filter(row => {
             const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
             return msnvMatch && msnvMatch[1].trim() === String(employeeMaNV);
         });
 
-        if (employeeData.length === 0) {
-             return null;
-        }
+        if (employeeData.length === 0) return null;
 
-        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
-
-        const summary = {
-            totalRealRevenue: 0,
-            totalConvertedRevenue: 0,
-            unexportedRevenue: 0, 
-        };
+        const summary = { totalRealRevenue: 0, totalConvertedRevenue: 0, unexportedRevenue: 0 };
         const byProductGroup = {};
         const byCustomer = {};
         const categoryChartDataMap = {};
         const dailyStats = {}; 
         const unexportedDetails = {};
         
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
+
         employeeData.forEach(row => {
-            const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
-            
-            const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
-                                (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
-                                (row.tinhTrangTra || "").trim() === 'Chưa trả';
+            const evalResult = salesProcessor.evaluateTransaction(row, context);
 
-            if (isDoanhThuHTX && isBaseValid) {
-                const realRevenue = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
-                const quantity = parseInt(String(row.soLuong || "0"), 10) || 0;
-                if(isNaN(realRevenue) || isNaN(quantity)) return;
-
-                const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                
-                // [FIX] Dùng revenueQuyDoi từ normalizer
-                const convertedRevenue = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (realRevenue * heSo);
+            if (evalResult.isValid && evalResult.empId === String(employeeMaNV)) {
+                const realRevenue = evalResult.thanhTien;
+                const quantity = evalResult.soLuong;
+                const convertedRevenue = evalResult.revenueQuyDoi;
                 
                 const groupName = utils.cleanCategoryName(row.nhomHang || 'Khác');
                 const customerName = row.tenKhachHang || 'Khách Lẻ';
                 const categoryName = utils.cleanCategoryName(row.nganhHang || 'Khác');
                 const productName = row.tenSanPham || 'Không rõ';
                 
-                if ((row.trangThaiXuat || "").trim() === 'Đã xuất') {
+                if (evalResult.isDaXuat) {
                     summary.totalRealRevenue += realRevenue;
                     summary.totalConvertedRevenue += convertedRevenue;
 
@@ -7201,14 +7721,13 @@ export const detailReportLogic = {
                         categoryChartDataMap[categoryName] = { name: categoryName, revenue: 0 };
                     }
                     categoryChartDataMap[categoryName].revenue += realRevenue;
+                    
                     if (!byCustomer[customerName]) {
                         byCustomer[customerName] = { name: customerName, products: [], totalQuantity: 0, totalRealRevenue: 0, totalConvertedRevenue: 0 };
                     }
                     byCustomer[customerName].products.push({
-                        productName: row.tenSanPham,
-                        quantity: quantity,
-                        realRevenue: realRevenue,
-                        convertedRevenue: convertedRevenue,
+                        productName: row.tenSanPham, quantity: quantity,
+                        realRevenue: realRevenue, convertedRevenue: convertedRevenue,
                     });
                     byCustomer[customerName].totalQuantity += quantity;
                     byCustomer[customerName].totalRealRevenue += realRevenue;
@@ -7224,7 +7743,7 @@ export const detailReportLogic = {
                         dailyStats[dateString].convertedRevenue += convertedRevenue;
                     }
 
-                } else if ((row.trangThaiXuat || "").trim() === 'Chưa xuất') {
+                } else if (evalResult.isChuaXuat) {
                     summary.unexportedRevenue += convertedRevenue;
 
                     if (!unexportedDetails[groupName]) {
@@ -7264,12 +7783,9 @@ export const detailReportLogic = {
 
         return {
             summary,
-            topProductGroups: Object.values(byProductGroup)
-                .sort((a, b) => b.realRevenue - a.realRevenue)
-                .slice(0, 8),
+            topProductGroups: Object.values(byProductGroup).sort((a, b) => b.realRevenue - a.realRevenue).slice(0, 8),
             categoryChartData: Object.values(categoryChartDataMap),
-            byCustomer: Object.values(byCustomer)
-                .sort((a,b) => b.totalRealRevenue - a.totalRealRevenue),
+            byCustomer: Object.values(byCustomer).sort((a,b) => b.totalRealRevenue - a.totalRealRevenue),
             dailyStats: finalDailyStats, 
             unexportedDetails: finalUnexportedDetails 
         };
@@ -7946,125 +8462,120 @@ import { normalize } from './utils.js';
 import { dataProcessing } from '../../dataProcessing.js';
 import { parseIdentity } from '../../../utils.js';
 
-// [FIX] Hàm xử lý số an toàn
 const parseMoney = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
     return parseFloat(String(value).replace(/,/g, '')) || 0;
 };
 
-// [HELPER] Hàm chuẩn hóa chuỗi
 const normalizeStr = (val) => (val || "").trim();
 
 export const salesProcessor = {
-    // --- KHỞI TẠO DỮ LIỆU RỖNG ---
+    // [SURGICAL OPTIMIZATION]: Nhận context để tránh gọi config lại hàng nghìn lần
+    evaluateTransaction(row, context = null) {
+        const hinhThucXuatTinhDoanhThu = context?.hinhThucXuatTinhDoanhThu || dataProcessing.getHinhThucXuatTinhDoanhThu();
+        const hinhThucXuatTraGop = context?.hinhThucXuatTraGop || dataProcessing.getHinhThucXuatTraGop();
+        const heSoQuyDoi = context?.heSoQuyDoi || dataProcessing.getHeSoQuyDoi();
+
+        const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || "").trim();
+        const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || "").trim();
+        const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || "").trim();
+        const htx = row.hinhThucXuat || row.HINH_THUC_XUAT || "";
+        const trangThaiXuat = normalizeStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
+
+        const isBaseValid = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả';
+        const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(htx);
+
+        if (!isBaseValid || !isDoanhThuHTX) {
+            return { isValid: false };
+        }
+
+        const nguoiTaoRaw = row.nguoiTao || row['Người tạo'] || "";
+        const msnvMatch = String(nguoiTaoRaw).match(/(\d+)/);
+        const empId = msnvMatch ? msnvMatch[1].trim() : null;
+
+        const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
+        const isChuaXuat = trangThaiXuat === 'Chưa xuất';
+
+        if (!isDaXuat && !isChuaXuat) {
+            return { isValid: false };
+        }
+
+        const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
+        const soLuong = parseInt(String(row.soLuong || row.SO_LUONG || "0"), 10) || 0;
+        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? parseMoney(row.revenueQuyDoi) : (thanhTien * heSo);
+        const isTraGop = hinhThucXuatTraGop.has(htx);
+
+        return { isValid: true, empId, isDaXuat, isChuaXuat, isTraGop, thanhTien, soLuong, revenueQuyDoi };
+    },
+
     createEmptySalesData() {
         const PG = config.PRODUCT_GROUPS;
         let data = {
-            // Tổng hợp chung
-            doanhThu: 0, 
-            doanhThuQuyDoi: 0, 
-            doanhThuTraGop: 0,
-            doanhThuChuaXuat: 0, 
-            doanhThuQuyDoiChuaXuat: 0,
-            doanhThuGiaoXa: 0, 
-            doanhThuQuyDoiGiaoXa: 0,
-            
-            // Map chi tiết
-            doanhThuTheoNganhHang: {}, 
-            doanhThuTheoNhomHang: {}, 
-            tongSoLuong: 0, // [GENESIS FIX]: Thêm biến lưu tổng số lượng
-            
-            // Quy đổi chuẩn (QDC)
-            qdc: {},
-
-            // [HARDCODED METRICS]
-            dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, 
-            dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
-            
-            // Chi tiết sản phẩm
-            dtTivi: 0, slTivi: 0, 
-            dtTuLanh: 0, slTuLanh: 0,
-            dtMayGiat: 0, slMayGiat: 0, 
-            dtMayLanh: 0, slMayLanh: 0,
-            dtDienThoai: 0, slDienThoai: 0, 
-            dtLaptop: 0, slLaptop: 0
+            doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
+            doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
+            doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
+            doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, tongSoLuong: 0, qdc: {},
+            dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
+            dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0, dtMayGiat: 0, slMayGiat: 0, 
+            dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
         };
 
-        // Init QDC Groups
-        for (const key in PG.QDC_GROUPS) {
-            data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
+        if (PG && PG.QDC_GROUPS) {
+            for (const key in PG.QDC_GROUPS) {
+                data.qdc[key] = { sl: 0, dt: 0, dtqd: 0, name: PG.QDC_GROUPS[key].name };
+            }
         }
         return data;
     },
 
-    // --- XỬ LÝ DOANH THU NHÂN VIÊN ---
     processEmployeeSales(employee, sourceData, uiKeywords) {
         const data = this.createEmptySalesData();
         const PG = config.PRODUCT_GROUPS;
-        
-        const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
-        const heSoQuyDoi = dataProcessing.getHeSoQuyDoi();
+
+        // [XÂY DỰNG NGỮ CẢNH] 1 lần duy nhất
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
 
         if (sourceData && Array.isArray(sourceData)) {
             sourceData.forEach(row => {
-                const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
-                if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
-                    
-                    const hinhThucXuat = row.hinhThucXuat;
-                    const trangThaiXuat = normalizeStr(row.trangThaiXuat);
-                    
-                    // [STRICT] Bắt buộc phải có HTX trong danh sách
-                    const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(hinhThucXuat);
-                    
-                    // --- LOGIC ĐÃ XUẤT ---
-                    const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
+                const evalResult = this.evaluateTransaction(row, context); // Truyền context vào
 
-                    if (isDoanhThuHTX && isDaXuat) {
-                        const thanhTien = parseMoney(row.thanhTien);
-                        const soLuong = parseInt(String(row.soLuong || "0"), 10) || 0;
-                        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+                if (evalResult.isValid && evalResult.empId === String(employee.maNV)) {
+                    if (evalResult.isDaXuat) {
+                        const thanhTien = evalResult.thanhTien;
+                        const soLuong = evalResult.soLuong;
+                        const revenueQuyDoi = evalResult.revenueQuyDoi;
                         
-                        // [FIX] Lấy doanh thu quy đổi chính xác từ Normalizer (đã tính trả góp)
-                        // Fallback về cách tính cũ nếu row.revenueQuyDoi chưa tồn tại
-                        const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
-                        
-                        const nhomIdObj = row.maNhomHang 
-                            ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } 
-                            : parseIdentity(row.nhomHang);
-                        const nganhIdObj = row.maNganhHang 
-                            ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } 
-                            : parseIdentity(row.nganhHang);
+                        const nhomIdObj = row.maNhomHang ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } : parseIdentity(row.nhomHang);
+                        const nganhIdObj = row.maNganhHang ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } : parseIdentity(row.nganhHang);
 
-                        // A. Map chi tiết
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
                             const key = String(idObj.id).trim();
                             if (!container[key]) {
-                                container[key] = { 
-                                    id: key, 
-                                    name: idObj.name || rawString, 
-                                    revenue: 0, quantity: 0, revenueQuyDoi: 0 
-                                };
+                                container[key] = { id: key, name: idObj.name || rawString, revenue: 0, quantity: 0, revenueQuyDoi: 0 };
                             }
                             container[key].revenue += thanhTien;
                             container[key].quantity += soLuong;
-                            container[key].revenueQuyDoi += revenueQuyDoi; // [UPDATED]
+                            container[key].revenueQuyDoi += revenueQuyDoi;
                         }
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
 
                         data.doanhThu += thanhTien;
-                        data.doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
-                        data.tongSoLuong += soLuong; // [GENESIS FIX]: Cộng dồn số lượng để chia đơn giá TB
+                        data.doanhThuQuyDoi += revenueQuyDoi;
+                        data.tongSoLuong += soLuong;
 
-                        if (hinhThucXuat && hinhThucXuatTraGop.has(hinhThucXuat)) {
+                        if (evalResult.isTraGop) {
                             data.doanhThuTraGop += thanhTien;
                         }
 
-                        // C. Phân loại nhóm
                         const nhomHangCode = String(nhomIdObj.id).trim();
                         
                         if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { data.dtICT += thanhTien; }
@@ -8076,7 +8587,6 @@ export const salesProcessor = {
                         if (PG.VAS && PG.VAS.includes(nhomHangCode)) { data.dtVAS += thanhTien; }
                         if (PG.BAO_HIEM_VAS && PG.BAO_HIEM_VAS.includes(nhomHangCode)) { data.dtBaoHiem += thanhTien; }
 
-                        // Dynamic Keyword Logic
                         const rawNhomHang = normalize(row.nhomHang);
                         const rawNganhHang = normalize(row.nganhHang);
                         const cleanNhomId = normalize(nhomHangCode);
@@ -8111,37 +8621,17 @@ export const salesProcessor = {
                             if (PG.QDC_GROUPS[key].codes.includes(nhomHangCode)) {
                                 data.qdc[key].sl += soLuong; 
                                 data.qdc[key].dt += thanhTien; 
-                                data.qdc[key].dtqd += revenueQuyDoi; // [UPDATED]
+                                data.qdc[key].dtqd += revenueQuyDoi;
                             }
                         }
-                    } 
-                    
-                    // --- LOGIC CHƯA XUẤT ---
-                    else if (isDoanhThuHTX && trangThaiXuat === 'Chưa xuất') {
-                        
-                        const valThuTien = normalizeStr(row.trangThaiThuTien);
-                        const valHuy = normalizeStr(row.trangThaiHuy);
-                        const valTra = normalizeStr(row.tinhTrangTra);
-
-                        const isThuTien = valThuTien === 'Đã thu';
-                        const isChuaHuy = valHuy === 'Chưa hủy';
-                        const isChuaTra = valTra === 'Chưa trả';
-
-                        if (isThuTien && isChuaHuy && isChuaTra) {
-                            const thanhTien = parseMoney(row.thanhTien);
-                            const heSo = heSoQuyDoi[row.nhomHang] || 1;
-                            // [FIX] Lấy doanh thu quy đổi chính xác (Chưa xuất)
-                            const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
-                            
-                            data.doanhThuChuaXuat += thanhTien;
-                            data.doanhThuQuyDoiChuaXuat += revenueQuyDoi; // [UPDATED]
-                        } 
+                    } else if (evalResult.isChuaXuat) {
+                        data.doanhThuChuaXuat += evalResult.thanhTien;
+                        data.doanhThuQuyDoiChuaXuat += evalResult.revenueQuyDoi;
                     }
                 }
             });
         }
 
-        // [GENESIS FIX]: Bơm tính toán Đơn Giá vào đây trước khi xuất data ra ngoài
         data.donGiaTrungBinh = data.tongSoLuong > 0 ? data.doanhThu / data.tongSoLuong : 0;
         data.donGiaTivi = data.slTivi > 0 ? data.dtTivi / data.slTivi : 0;
         data.donGiaTuLanh = data.slTuLanh > 0 ? data.dtTuLanh / data.slTuLanh : 0;
@@ -8153,7 +8643,6 @@ export const salesProcessor = {
         return data;
     },
 
-    // --- TÍNH TỶ LỆ PHẦN TRĂM ---
     calculateStaticRatios(data) {
         const totalRevenue = data.doanhThu > 0 ? data.doanhThu : 1;
         return {
@@ -8180,7 +8669,7 @@ export const normalize = (str) => {
 
 >>> FILE_START: src/services/reports/master.report.js
 // src/services/reports/master.report.js
-// Version 6.2 - Surgical Logic: Warehouse Filtering for both Employee & Transactions
+// Version 6.3 - Surgical Logic: Fix Warehouse Filtering for Multi-Warehouse (Array Support)
 import { get } from 'svelte/store';
 import { danhSachNhanVien, selectedWarehouse } from '../../stores.js';
 
@@ -8203,24 +8692,29 @@ export const masterReportLogic = {
 
         // --- PHẪU THUẬT LOGIC: LỌC DỮ LIỆU ĐÚNG THEO KHO (WAREHOUSE ISOLATION) ---
         
-        // Bước 1: Lọc nhân sự theo Kho đang chọn
         let filteredEmployees = $rawDanhSachNhanVien;
         let filteredSourceData = sourceData;
 
         if (currentSelectedWh && currentSelectedWh !== 'ALL') {
+             // [SỬA LỖI]: Hàm helper kiểm tra xem mã kho có nằm trong danh sách đang chọn không (Hỗ trợ cả Mảng và Chuỗi)
+             const isMatchWh = (code, selected) => {
+                 if (Array.isArray(selected)) return selected.includes(code);
+                 return code === selected;
+             };
+
              // 1.1 Lọc Nhân viên
              filteredEmployees = $rawDanhSachNhanVien.filter(emp => {
                  const whCode = String(emp.maKho || emp.storeId || emp['Mã kho tạo'] || emp['Kho tạo'] || '').trim();
-                 return whCode === currentSelectedWh;
+                 return isMatchWh(whCode, currentSelectedWh);
              });
 
              // 1.2 Lọc Dữ liệu Giao dịch (YCX) chỉ thuộc về kho đang chọn
              if (filteredSourceData && filteredSourceData.length > 0) {
                  filteredSourceData = sourceData.filter(tx => {
                      const txWhCode = String(tx.maKho || tx.maKhoTao || tx['Mã kho tạo'] || tx['Kho tạo'] || '').trim();
-                     // Nếu giao dịch không có mã kho rõ ràng, ta tạm cho qua để khỏi mất số (hoặc bạn có thể strict hơn)
+                     // Nếu giao dịch không có mã kho rõ ràng, ta tạm cho qua để khỏi mất số
                      if (!txWhCode) return true; 
-                     return txWhCode === currentSelectedWh;
+                     return isMatchWh(txWhCode, currentSelectedWh);
                  });
              }
         }
@@ -8276,6 +8770,108 @@ export const masterReportLogic = {
     }
 };
 <<< FILE_END: src/services/reports/master.report.js
+
+>>> FILE_START: src/services/reports/multiMonth.report.js
+// src/services/reports/multiMonth.report.js
+import { salesProcessor } from './master/salesProcessor.js';
+import { dataProcessing } from '../dataProcessing.js';
+
+function parseUniversalDate(val) {
+    if (val === null || val === undefined || val === '') return null;
+    if (val instanceof Date) return new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
+    if (typeof val === 'number') {
+        const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
+        const tempDate = new Date(jsEpoch);
+        return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
+    }
+    const str = String(val).trim();
+    const parts = str.split(/[\s,T]+/); 
+    if (parts[0].includes('/')) {
+        const dParts = parts[0].split('/');
+        if (dParts.length >= 3) {
+            const p1 = parseInt(dParts[0], 10);
+            const p2 = parseInt(dParts[1], 10); 
+            const p3 = parseInt(dParts[2], 10);
+            if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+            return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+        }
+    } else if (parts[0].includes('-')) {
+        const dParts = parts[0].split('-');
+        if (dParts.length >= 3) {
+            const p1 = parseInt(dParts[0], 10);
+            const p2 = parseInt(dParts[1], 10); 
+            const p3 = parseInt(dParts[2], 10);
+            if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+            return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+        }
+    }
+    const fallbackDate = new Date(val);
+    if (!isNaN(fallbackDate.getTime())) return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
+    return null;
+}
+
+const normStr = (val) => String(val || "").trim();
+
+export const multiMonthReportLogic = {
+    generateMultiMonthReport(rawData, danhSachNhanVien) {
+        const map = new Map();
+        const monthsSet = new Set();
+        if (!rawData || !Array.isArray(rawData)) return { processedMap: map, allMonths: [] };
+
+        const validEmpIds = new Set((danhSachNhanVien || []).map(e => String(e.maNV || e.ma_nv || '').trim()));
+
+        // [XÂY DỰNG NGỮ CẢNH] 1 lần duy nhất cho Nhiều tháng
+        const context = {
+            hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+            hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+            heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+        };
+
+        rawData.forEach(row => {
+            const evalResult = salesProcessor.evaluateTransaction(row, context);
+            if (!evalResult.isValid) return;
+
+            const empId = evalResult.empId;
+            if (!empId) return;
+            if (validEmpIds.size > 0 && !validEmpIds.has(empId)) return;
+
+            let dateVal = row.ngayTao || row.ngayHenGiao;
+            const parsedDate = parseUniversalDate(dateVal);
+            if (!parsedDate) return;
+            
+            const d = new Date(parsedDate);
+            const monthKey = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+            monthsSet.add(monthKey);
+            
+            if (!map.has(empId)) {
+                const empFromList = (danhSachNhanVien || []).find(e => normStr(e.maNV || e.ma_nv) === empId);
+                map.set(empId, { 
+                    maNV: empId, 
+                    hoTen: empFromList ? empFromList.hoTen : 'Unknown', 
+                    months: {} 
+                });
+            }
+            
+            const emp = map.get(empId);
+            if (!emp.months[monthKey]) {
+                emp.months[monthKey] = { dtqd: 0, dt: 0 };
+            }
+            
+            if (evalResult.isDaXuat) {
+                emp.months[monthKey].dt += evalResult.thanhTien;
+                emp.months[monthKey].dtqd += evalResult.revenueQuyDoi;
+            }
+        });
+
+        const sortedAll = Array.from(monthsSet).sort((a,b) => {
+            const [ma, ya] = a.split('/'); const [mb, yb] = b.split('/');
+            return new Date(ya, ma-1) - new Date(yb, mb-1);
+        });
+
+        return { processedMap: map, allMonths: sortedAll };
+    }
+};
+<<< FILE_END: src/services/reports/multiMonth.report.js
 
 >>> FILE_START: src/services/settings.service.js
 // src/services/settings.service.js
@@ -9152,6 +9748,94 @@ export const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 };
 <<< FILE_END: src/utils/kpi.utils.js
+
+>>> FILE_START: src/utils/revenue-table.utils.js
+import { getCompletionColor } from './kpi.utils.js';
+
+export const revenueTableUtils = {
+    getGroupHeaderClass(col) {
+        let bg = '', border = 'border-r border-gray-200';
+        if (col.group === 'dt') bg = 'bg-sky-100/80 text-sky-900';
+        else if (col.group === 'ck') bg = 'bg-indigo-100/90 text-indigo-900';
+        else if (col.group === 'tc') bg = 'bg-orange-100/80 text-orange-900';
+        else if (col.group === 'cx') bg = 'bg-gray-200 text-gray-800';
+        else if (col.group === 'ns') bg = 'bg-emerald-100 text-emerald-900';
+
+        if (col.isLastInGroup) {
+            if (col.group === 'dt') border = 'border-r-[2px] border-sky-400';
+            else if (col.group === 'ck') border = 'border-r-[2px] border-indigo-400';
+            else if (col.group === 'tc') border = 'border-r-[2px] border-orange-400';
+            else if (col.group === 'cx') border = 'border-r-[2px] border-gray-400';
+            else if (col.group === 'ns') border = 'border-r-[2px] border-emerald-400';
+        }
+        if (col.isFirstInGroup) {
+            if (col.group === 'dt') border += ' border-l-[2px] border-l-sky-400';
+            else if (col.group === 'ck') border += ' border-l-[2px] border-l-indigo-400';
+            else if (col.group === 'tc') border += ' border-l-[2px] border-l-orange-400';
+            else if (col.group === 'cx') border += ' border-l-[2px] border-l-gray-400';
+            else if (col.group === 'ns') border += ' border-l-[2px] border-l-emerald-400';
+        }
+        return `${bg} ${border}`;
+    },
+
+    getGroupBodyClass(col) {
+        let bg = '', border = 'border-r border-gray-200';
+        if (col.group === 'dt') bg = 'bg-sky-50/40 group-hover:bg-sky-100/50';
+        else if (col.group === 'ck') bg = 'bg-indigo-50/50 group-hover:bg-indigo-100/60';
+        else if (col.group === 'tc') bg = 'bg-orange-50/40 group-hover:bg-orange-100/60';
+        else if (col.group === 'cx') bg = 'bg-gray-50/80 group-hover:bg-gray-200/60';
+        else if (col.group === 'ns') bg = 'bg-emerald-50/40 group-hover:bg-emerald-100/50';
+
+        if (col.isLastInGroup) {
+            if (col.group === 'dt') border = 'border-r-[2px] border-sky-300';
+            else if (col.group === 'ck') border = 'border-r-[2px] border-indigo-300';
+            else if (col.group === 'tc') border = 'border-r-[2px] border-orange-300';
+            else if (col.group === 'cx') border = 'border-r-[2px] border-gray-300';
+            else if (col.group === 'ns') border = 'border-r-[2px] border-emerald-300';
+        }
+        if (col.isFirstInGroup) {
+            if (col.group === 'dt') border += ' border-l-[2px] border-l-sky-300';
+            else if (col.group === 'ck') border += ' border-l-[2px] border-l-indigo-300';
+            else if (col.group === 'tc') border += ' border-l-[2px] border-l-orange-300';
+            else if (col.group === 'cx') border += ' border-l-[2px] border-l-gray-300';
+            else if (col.group === 'ns') border += ' border-l-[2px] border-l-emerald-300';
+        }
+        return `${bg} ${border} transition-colors duration-150`;
+    },
+
+    getCellTextClass(item, colKey, userTarget, globalSettings) {
+        const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuQuyDoiChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
+        let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
+
+        const targetSettings = userTarget || globalSettings;
+        if (!targetSettings || Object.keys(targetSettings).length === 0) return baseClass;
+
+        if (colKey === 'hieuQuaQuyDoi') {
+            const actual = item.hieuQuaQuyDoi;
+            const target = (targetSettings.phanTramQD || 0) / 100; 
+            const colorClass = getCompletionColor(actual, target);
+            return colorClass ? `${colorClass} font-bold` : baseClass;
+        }
+        
+        if (colKey === 'tyLeTraCham') {
+            const actual = item.tyLeTraCham;
+            const target = (targetSettings.phanTramTC || 0) / 100;
+            const colorClass = getCompletionColor(actual, target);
+            return colorClass ? `${colorClass} font-bold` : baseClass;
+        }
+
+        return baseClass;
+    },
+
+    getRankIcon(index, topCount) {
+        if (index === 0) return '🏆';
+        if (index === 1) return '🥈';
+        if (index === 2) return '🥉';
+        if (index < topCount) return '⭐';
+        return `#${index + 1}`;
+    }
+};
+<<< FILE_END: src/utils/revenue-table.utils.js
 
 >>> FILE_START: src/styles/base.css
 /* Version 1.0 - Base styles (Refactored from v6.19) */

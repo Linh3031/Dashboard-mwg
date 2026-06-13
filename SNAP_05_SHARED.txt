@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_05_SHARED.txt
-GENERATED AT: 5/13/2026, 7:07:23 PM
+GENERATED AT: 6/12/2026, 1:52:43 PM
 
 
 >>> FILE_START: src/components/modals/AddEfficiencyColumnModal.svelte
@@ -2273,6 +2273,156 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 {/if}
 <<< FILE_END: src/components/modals/LoginModal.svelte
 
+>>> FILE_START: src/components/modals/QuickGoalModal.svelte
+<script>
+    import { modalState, luykeGoalSettings, realtimeGoalSettings, selectedWarehouse } from '../../stores.js';
+    import { datasyncService } from '../../services/datasync.service.js';
+    import { afterUpdate } from 'svelte';
+
+    $: isOpen = $modalState.activeModal === 'quick-goal-modal';
+    $: payload = $modalState.payload || {};
+    
+    let editValue = 0;
+    let inputEl;
+
+    // Tự động lấy giá trị và bôi đen toàn bộ text khi modal mở ra
+    $: if (isOpen && payload) {
+        editValue = payload.currentValue || 0;
+        setTimeout(() => {
+            if (inputEl) {
+                inputEl.focus();
+                inputEl.select(); // Quét đen số cũ để gõ đè ngay
+            }
+        }, 60);
+    }
+
+    function close() {
+        modalState.update(s => ({ ...s, activeModal: null, payload: null }));
+    }
+
+    async function handleSave() {
+        // Ưu tiên mã kho từ payload khi đang ở chế độ Cụm
+        const targetWarehouse = String(payload.warehouse || ($selectedWarehouse ? $selectedWarehouse : 'ALL')).trim();
+        const numericValue = parseFloat(editValue) || 0;
+        
+        if (payload.type === 'realtime') {
+            // [PHẪU THUẬT NGUYÊN TỬ]: Tránh Reference Trap của Svelte bằng cách Clone Object mới 100%
+            realtimeGoalSettings.update(store => {
+                const currentStore = store || {};
+                const warehouseSettings = currentStore[targetWarehouse] || { goals: {}, timing: {} };
+                const currentGoals = warehouseSettings.goals || {};
+                
+                return {
+                    ...currentStore,
+                    [targetWarehouse]: {
+                        ...warehouseSettings,
+                        goals: {
+                            ...currentGoals,
+                            [payload.fieldId]: numericValue
+                        }
+                    }
+                };
+            });
+            
+            // Lưu trực tiếp xuống Firebase
+            try {
+                await datasyncService.saveGoalSettings(targetWarehouse, 'realtime', { [payload.fieldId]: numericValue });
+            } catch (err) {
+                console.error("Lỗi đồng bộ Firebase:", err);
+            }
+
+        } else {
+            // LƯU CHO LŨY KẾ
+            luykeGoalSettings.update(store => {
+                const currentStore = store || {};
+                const warehouseSettings = currentStore[targetWarehouse] || { goals: {}, timing: {} };
+                const currentGoals = warehouseSettings.goals || {};
+                
+                return {
+                    ...currentStore,
+                    [targetWarehouse]: {
+                        ...warehouseSettings,
+                        goals: {
+                            ...currentGoals,
+                            [payload.fieldId]: numericValue
+                        }
+                    }
+                };
+            });
+            
+            try {
+                await datasyncService.saveGoalSettings(targetWarehouse, 'luyke', { [payload.fieldId]: numericValue });
+            } catch (err) {
+                console.error("Lỗi đồng bộ Firebase:", err);
+            }
+        }
+        close();
+    }
+
+    afterUpdate(() => {
+        if (typeof feather !== 'undefined') feather.replace();
+    });
+</script>
+
+{#if isOpen}
+<div class="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center animate-fade-in" on:click={close}>
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden animate-scale-up" on:click|stopPropagation>
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-indigo-50/50">
+            <h3 class="font-bold text-gray-800 flex items-center gap-2 text-base">
+                <i data-feather="edit-3" class="w-4 h-4 text-indigo-600"></i>
+                {payload.title || 'Cập nhật mục tiêu'}
+            </h3>
+            <button on:click={close} class="text-gray-400 hover:text-gray-600 transition-colors">
+                <i data-feather="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        
+        <div class="p-6">
+            <div class="relative mt-1 rounded-md shadow-sm">
+                <input 
+                    type="number" 
+                    step="any"
+                    bind:this={inputEl}
+                    bind:value={editValue}
+                    on:focus={(e) => e.target.select()}
+                    class="block w-full rounded-lg border-gray-300 pr-12 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border outline-none transition-colors font-bold text-lg text-gray-800"
+                    placeholder="Nhập giá trị..."
+                />
+                {#if payload.fieldId && payload.fieldId.includes('phanTram')}
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">%</span>
+                {/if}
+            </div>
+
+            <div class="mt-4 text-xs text-gray-500 flex items-center gap-1 bg-slate-50 p-2 rounded border border-slate-100">
+                <i data-feather="info" class="w-3.5 h-3.5 text-blue-500"></i>
+                <span>Đang áp dụng cho:</span>
+                <span class="font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                    {payload.warehouse && payload.warehouse !== 'ALL' ? 'Siêu thị ' + payload.warehouse : 'ALL (Toàn bộ cụm)'}
+                </span>
+                <span class="px-1.5 py-0.5 bg-gray-200 rounded text-[10px] ml-auto uppercase font-black tracking-wider text-gray-600">{payload.type === 'realtime' ? 'Realtime' : 'Lũy kế'}</span>
+            </div>
+        </div>
+
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+            <button on:click={close} class="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors">
+                Hủy
+            </button>
+            <button on:click={handleSave} class="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors">
+                Lưu lại
+            </button>
+        </div>
+    </div>
+</div>
+{/if}
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+    .animate-scale-up { animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+</style>
+<<< FILE_END: src/components/modals/QuickGoalModal.svelte
+
 >>> FILE_START: src/components/modals/StEmpCompetitionModal.svelte
 <script>
     import { modalState, pastedThiDuaReportData, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
@@ -3342,7 +3492,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               { id: 'subtab-realtime-hang-ban', label: 'Chi tiết YCX Real' },
               { id: 'subtab-realtime-thi-dua', label: 'Thi đua NV Real' },
               { id: 'subtab-realtime-tragop', label: 'Trả chậm Real' }
-          ]
+           ]
       }
   };
 
@@ -3358,7 +3508,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   let rankingReportData = [];
   let compData = [];
   let currentGoals = {};
-
   let editorComponent;
 
   // --- LOGIC ANTI-FREEZE ---
@@ -3409,7 +3558,16 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       }
 
       const masterReport = reportService.generateMasterReportData(sourceData, currentGoals, isRealtime);
-      rankingReportData = warehouse ? masterReport.filter(nv => nv.maKho == warehouse) : masterReport;
+      
+      // [PHẪU THUẬT LOGIC]: Đồng bộ bộ lọc Đa kho chuẩn xác cho danh sách nhân sự (Dùng cho Ranking)
+      if (!warehouse || warehouse === 'ALL') {
+          rankingReportData = masterReport;
+      } else if (Array.isArray(warehouse)) {
+          rankingReportData = masterReport.filter(nv => warehouse.map(w => String(w).trim()).includes(String(nv.maKho || '').trim()));
+      } else {
+          rankingReportData = masterReport.filter(nv => String(nv.maKho || '').trim() === String(warehouse).trim());
+      }
+
       supermarketReport = reportService.aggregateReport(rankingReportData, warehouse);
       compData = (context === 'luyke' || context === 'sknv') ? $competitionData : [];
   }
@@ -3476,7 +3634,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
             </div>
 
             <div class="flex-grow flex flex-col md:flex-row overflow-hidden relative">
-                
                 {#if isLoading}
                     <div class="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                         <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-3"></div>
@@ -3856,6 +4013,189 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 </style>
 <<< FILE_END: src/components/modals/composer/tabs/TabRanking.svelte
 
+>>> FILE_START: src/components/common/FastTagPicker.svelte
+<script>
+    import { onMount, onDestroy } from 'svelte';
+    import { notificationStore } from '../../stores.js';
+
+    let isCollecting = false;
+    let collectedTags = [];
+    let isExpanded = false;
+    let isCopied = false; // Biến kích hoạt hiệu ứng chữ nổi
+
+    $: if (isExpanded && typeof window !== 'undefined' && window.feather) {
+        setTimeout(() => window.feather.replace(), 0);
+    }
+
+    function notify(msg, type = 'info') {
+        if (typeof notificationStore.show === 'function') {
+            notificationStore.show(msg, type);
+        } else {
+            notificationStore.set({ message: msg, type: type, visible: true });
+            setTimeout(() => {
+                notificationStore.update(s => ({ ...s, visible: false }));
+            }, 3000);
+        }
+    }
+
+    function toggleMode() {
+        isExpanded = !isExpanded;
+        isCollecting = isExpanded;
+        
+        if (isCollecting) {
+            document.body.style.cursor = 'crosshair';
+            notify('Chế độ thu thập: Đã BẬT. Hãy click vào MSNV trên bảng.', 'success');
+        } else {
+            document.body.style.cursor = 'default';
+            notify('Chế độ thu thập: Đã TẮT.', 'info');
+        }
+    }
+
+    function handleGlobalClick(e) {
+        if (!isCollecting) return;
+        if (e.target.closest('#fast-tag-picker')) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const text = e.target.textContent;
+        if (!text) return;
+
+        const match = text.match(/\b(\d{4,6})\b/);
+        if (match) {
+            const msnv = match[1];
+            const tag = `@${msnv}`;
+            if (!collectedTags.includes(tag)) {
+                collectedTags = [...collectedTags, tag];
+            }
+        }
+    }
+
+    function removeTag(tagToRemove) {
+        collectedTags = collectedTags.filter(t => t !== tagToRemove);
+    }
+
+    function copyTags() {
+        if (collectedTags.length === 0) return;
+        
+        // [PHẪU THUẬT]: Thay đổi khoảng trắng thành '\n' để danh sách tự xuống dòng theo hàng dọc
+        const textToCopy = collectedTags.join('\n');
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            // Kích hoạt hiệu ứng Tooltip nổi lên
+            isCopied = true;
+            setTimeout(() => { if (window.feather) window.feather.replace(); }, 0);
+            
+            // Tự động tắt hiệu ứng sau 1.5 giây
+            setTimeout(() => {
+                isCopied = false;
+                setTimeout(() => { if (window.feather) window.feather.replace(); }, 0);
+            }, 1500);
+        }).catch(err => {
+            console.error("Lỗi Copy Clipboard:", err);
+            notify('Trình duyệt từ chối quyền Copy.', 'error');
+        });
+    }
+
+    onMount(() => {
+        if (typeof window !== 'undefined') window.addEventListener('click', handleGlobalClick, true);
+    });
+
+    onDestroy(() => {
+        if (typeof window !== 'undefined') window.removeEventListener('click', handleGlobalClick, true);
+        if (typeof document !== 'undefined') document.body.style.cursor = 'default';
+    });
+</script>
+
+<div id="fast-tag-picker" class="fixed bottom-24 right-6 z-[9999] flex flex-col items-end gap-3">
+    
+    {#if isExpanded}
+        <div class="bg-white rounded-xl shadow-2xl border border-indigo-200 w-64 overflow-hidden flex flex-col animate-fade-in-up">
+            <div class="bg-indigo-600 text-white px-3 py-2 text-sm font-bold flex justify-between items-center shadow-sm">
+                <span class="flex items-center gap-1.5">
+                    <i data-feather="shopping-cart" class="w-4 h-4"></i> Giỏ hàng Tag
+                </span>
+                <span class="bg-white text-indigo-600 text-[10px] px-1.5 py-0.5 rounded-full">{collectedTags.length}</span>
+            </div>
+            
+            <div class="p-3 bg-slate-50 min-h-[80px] max-h-[200px] overflow-y-auto custom-scrollbar">
+                {#if collectedTags.length === 0}
+                    <span class="text-xs text-gray-500 italic block text-center mt-2">Đang chờ... Click vào bảng để hút MSNV.</span>
+                {:else}
+                    <div class="flex flex-wrap gap-1.5">
+                        {#each collectedTags as tag}
+                            <button 
+                                on:click|preventDefault|stopPropagation={() => removeTag(tag)}
+                                class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs font-mono font-bold flex items-center gap-1 cursor-pointer hover:bg-red-100 hover:text-red-700 transition-colors border border-indigo-200"
+                                title="Click để xóa"
+                            >
+                                {tag} <i data-feather="x" class="w-3 h-3"></i>
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+
+            <div class="p-2 border-t border-gray-200 flex gap-2 bg-white relative">
+                <button on:click|preventDefault|stopPropagation={() => collectedTags = []} class="flex-1 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">
+                    Xóa hết
+                </button>
+                
+                <div class="flex-1 relative flex">
+                    {#if isCopied}
+                        <div class="absolute -top-9 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-lg pointer-events-none whitespace-nowrap z-50 animate-float-up">
+                            Đã copy!
+                            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
+                        </div>
+                    {/if}
+
+                    <button 
+                        on:click|preventDefault|stopPropagation={copyTags} 
+                        class="w-full py-1.5 text-xs font-bold text-white rounded-md flex justify-center items-center gap-1 shadow-sm transition-all duration-300 {isCopied ? 'bg-indigo-600' : 'bg-green-600 hover:bg-green-700'}"
+                    >
+                        <i data-feather={isCopied ? "check" : "copy"} class="w-3.5 h-3.5"></i> 
+                        Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    <button 
+        on:click|preventDefault|stopPropagation={toggleMode}
+        class="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 border-2 
+        {isCollecting ? 'bg-indigo-600 text-white border-indigo-400 animate-pulse' : 'bg-white text-indigo-600 border-transparent hover:border-indigo-100'}"
+        title="Công cụ Hái Tag"
+    >
+        <i data-feather="crosshair" class="w-6 h-6"></i>
+        {#if collectedTags.length > 0 && !isExpanded}
+            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm">
+                {collectedTags.length}
+            </span>
+        {/if}
+    </button>
+</div>
+
+<style>
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(15px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in-up { animation: fadeInUp 0.25s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards; }
+    
+    @keyframes floatUp {
+        0% { opacity: 0; transform: translate(-50%, 10px) scale(0.8); }
+        40% { opacity: 1; transform: translate(-50%, -2px) scale(1.1); }
+        100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    }
+    .animate-float-up { animation: floatUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards; }
+    
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+</style>
+<<< FILE_END: src/components/common/FastTagPicker.svelte
+
 >>> FILE_START: src/components/common/FileInput.svelte
 <script>
   import { onMount } from 'svelte';
@@ -3896,8 +4236,18 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       'saved_ycx_cungkynam': ycxDataCungKyNam
   };
 
-  let dataStore = storeMap[saveKey];
+  // [PHẪU THUẬT LOGIC]: Chặn đứng hiện tượng trùng lặp tiền tố (ví dụ: saved_ycx gối đầu lên saved_ycx_thangtruoc) bằng cách ép sort độ dài key giảm dần
+  $: baseKey = (() => {
+      const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
+      for (const k of sortedKeys) {
+          if (saveKey.startsWith(k)) return k;
+      }
+      return saveKey;
+  })();
+
+  $: dataStore = storeMap[baseKey]; // Map store từ baseKey thay vì saveKey gốc
   $: syncState = $fileSyncState[saveKey];
+  // Trạng thái sync vẫn giữ nguyên ID độc lập
   $: dataCount = $dataStore ? $dataStore.length : 0;
 
   // [PHẪU THUẬT LOGIC]: Máy quét bóc tách mã kho hạng nặng chống cache rác
@@ -4064,7 +4414,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               } catch(e) { return true; }
           });
       });
-
       try {
           await storage.setItem(saveKey, get(dataStore));
       } catch (e) {
@@ -4114,7 +4463,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               delete newState[saveKey];
               return newState;
           });
-          
           isLoading = false;
       }
   }
@@ -4139,7 +4487,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
            <i data-feather={icon} class="h-5 w-5 feather"></i>
            {#if link}
                 <a href={link} target="_blank" class="text-blue-700 underline font-bold cursor-pointer relative z-10 hover:text-blue-900 pointer-events-auto" on:click|stopPropagation title="Mở báo cáo nguồn">
-                    {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
+                     {label}: <i class="w-3 h-3 inline-block ml-1" data-feather="external-link"></i>
                 </a>
            {:else}
                 <span>{label}:</span>
@@ -4155,7 +4503,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
         <div class="flex items-center gap-2"> 
             <label for="file-{saveKey}" class="data-input-group__file-trigger whitespace-nowrap" class:opacity-50={isLoading}>
                 {#if isLoading}
-                    Đang chạy...
+                     Đang chạy...
                 {:else}
                     Thêm file
                 {/if}
@@ -4181,6 +4529,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                         <div class="text-[11px] text-slate-500 font-bold uppercase flex items-center gap-1">
                             <i data-feather="database" class="w-3 h-3"></i> Tóm tắt dữ liệu Gộp:
                         </div>
+                   
                         {#if maxDateStr}
                             <div class="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 shadow-sm w-max mt-1">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 
@@ -4191,16 +4540,16 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                     <button class="text-[10px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-bold px-2 py-1 rounded transition-colors remove-wh-btn shadow-sm h-max" on:click|stopPropagation={clearAllData} title="Xóa trắng toàn bộ dữ liệu này">
                         Xóa tất cả
                     </button>
-                 </div>
+                </div>
 
                 {#if uniqueWarehouses.length > 0}
                 <div>
                     <div class="text-[10px] text-indigo-500 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
-                        <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
+                         <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
                     </div>
                     <div class="flex flex-wrap gap-2">
                         {#each uniqueWarehouses as whCode}
-                            <div class="flex items-center gap-1 bg-white border border-indigo-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
+                             <div class="flex items-center gap-1 bg-white border border-indigo-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
                                 {whCode}
                                 <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeWarehouse(whCode)} title="Xóa dữ liệu kho {whCode}">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -4220,9 +4569,9 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                     <div class="flex flex-wrap gap-2">
                         {#each uniqueMonths as monthStr}
                             <div class="flex items-center gap-1 bg-white border border-emerald-200 pl-2 pr-1 py-1 rounded shadow-sm text-xs font-bold text-emerald-800">
-                                {monthStr}
+                                 {monthStr}
                                 <button class="remove-wh-btn ml-1 text-red-400 hover:text-white hover:bg-red-500 transition-colors rounded p-0.5 cursor-pointer" on:click|stopPropagation={() => removeMonth(monthStr)} title="Xóa toàn bộ dữ liệu của tháng {monthStr}">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                                 </button>
                             </div>
                         {/each}
@@ -4269,18 +4618,18 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     thuongERPData,
     thuongERPDataThangTruoc,
     fileSyncState,
-    selectedWarehouse
+    selectedWarehouse,
+    clusterSummaryData
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
   export let icon = "clipboard";
-  export let link = "#"; 
+  export let link = "#";
   export let saveKeyPaste = ""; 
   export let saveKeyRaw = ""; 
   export let saveKeyProcessed = ""; 
 
   const dispatch = createEventDispatcher();
-
   let textareaEl;
   let pastedText = "";
   let localError = "";
@@ -4290,9 +4639,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     'cluster_paste_luyke': competitionData,
     'daily_paste_thiduanv': pastedThiDuaReportData,
     'daily_paste_thuongerp': thuongERPData,
-    'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc
+    'saved_thuongerp_thangtruoc': thuongERPDataThangTruoc,
+    'cluster_summary_data': clusterSummaryData
   };
-  
+
   const unitMap = {
     'daily_paste_luyke': 'CT thi đua',
     'cluster_paste_luyke': 'CT thi đua',
@@ -4302,9 +4652,11 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     'cluster_summary_data': 'dòng'
   };
 
+  // [PHẪU THUẬT LOGIC]: Ép sắp xếp key theo độ dài chuỗi giảm dần để chấm dứt tình trạng trùng lặp prefix (ví dụ: daily_paste_luyke gối đầu lên cluster_paste_luyke)
   $: baseKey = (() => {
       const pk = saveKeyProcessed || saveKeyPaste;
-      for (const k of Object.keys(storeMap)) {
+      const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
+      for (const k of sortedKeys) {
           if (pk.startsWith(k)) return k;
       }
       return pk;
@@ -4351,7 +4703,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               statusClass = "text-orange-600 font-semibold";
               const timeAgo = syncState.metadata ? formatTimeAgo(syncState.metadata.timestamp || syncState.metadata.updatedAt) : '';
               const sender = syncState.metadata?.updatedBy || 'người khác';
-              
               statusHTML = `
                   <span class="mr-2">Có cập nhật mới từ ${sender} ${timeAgo}</span>
                   <button class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 border border-blue-300 font-bold btn-download-cloud pointer-events-auto shadow-sm">
@@ -4373,7 +4724,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                   const prefix = syncState.status === 'synced' ? '✓ Đã đồng bộ' : '✓ Đã tải (Local)';
                   const timeAgo = syncState.metadata ? formatTimeAgo(syncState.metadata.timestamp || syncState.metadata.updatedAt) : '';
                   const timeDisplay = timeAgo ? ` ${timeAgo}` : '';
-
                   if (pastedText.trim().length === 0 && syncState.status === 'synced') {
                        statusHTML = `
                           <span class="mr-2 text-gray-500">✓ Có dữ liệu mới trên Cloud.</span>
@@ -4398,18 +4748,14 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       }
   }
 
-  // [PHẪU THUẬT LOGIC]: Chuyển logic nạp LocalStorage sang khối Phản ứng
-  // Đảm bảo cứ khi saveKeyPaste có giá trị chuẩn (VD: daily_paste_luyke_908) là text tự hiện ra.
   let currentSaveKey = "";
   $: if (saveKeyPaste && saveKeyPaste !== currentSaveKey) {
       currentSaveKey = saveKeyPaste;
       const textLoadKey = saveKeyRaw || saveKeyPaste;
       pastedText = localStorage.getItem(textLoadKey) || "";
-      
-      // Đồng thời cập nhật lại cái khiên Meta Sync
       if (!$fileSyncState[saveKeyPaste]) {
           let targetWh = null;
-          let baseKeyForMeta = saveKeyPaste; 
+          let baseKeyForMeta = saveKeyPaste;
           for (const k of Object.keys(storeMap)) {
               if (saveKeyPaste.startsWith(k + '_')) {
                   targetWh = saveKeyPaste.replace(k + '_', '');
@@ -4435,25 +4781,12 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       }
   }
 
-  onMount(() => {
-    window.addEventListener('cloud-paste-loaded', (e) => {
-        if (e.detail.key === saveKeyPaste) {
-            pastedText = e.detail.text;
-        }
-    });
-
-    if (typeof feather !== 'undefined') feather.replace();
-  });
-
   let pasteTimer;
-  function handleInput(event) {
-      const text = event.target.value;
+  function processText(text) {
       pastedText = text;
       localError = "";
       clearTimeout(pasteTimer);
-      
       dispatch('paste', text);
-      
       if (!text || text.trim().length < 5) return;
       
       isLoading = true;
@@ -4473,6 +4806,20 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
             isLoading = false;
           }
       }, 500);
+  }
+
+  onMount(() => {
+    window.addEventListener('cloud-paste-loaded', (e) => {
+        if (e.detail.key === saveKeyPaste) {
+            processText(e.detail.text);
+        }
+    });
+
+    if (typeof feather !== 'undefined') feather.replace();
+  });
+
+  function handleInput(event) {
+      processText(event.target.value);
   }
 
   function handleContainerClick(e) {
@@ -4785,26 +5132,21 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
     onMount(async () => {
         clientVersion = localStorage.getItem('app_client_version') || '0.0';
-        
-        // Gọi load 1 lần đầu để đảm bảo các store khởi tạo mượt mà (Có thể giữ lại)
         await fetchLatestConfig();
     });
 
     // [CODEGENESIS] Phản ứng thiết lập kết nối Real-time (Zero delay)
     $: if ($firebaseStore && $firebaseStore.db && !unsubRealtime) {
-        // Thay đường dẫn collection 'declarations' và document 'homeConfig' 
-        // sao cho đúng với vị trí Firebase hiện tại của bạn nếu adminService lưu chỗ khác.
         const docRef = doc($firebaseStore.db, 'declarations', 'homeConfig'); 
         unsubRealtime = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) {
                 const raw = docSnap.data();
-homeConfig.set(raw.data || raw.config || raw);
+                homeConfig.set(raw.data || raw.config || raw);
             }
         });
     }
 
     onDestroy(() => {
-        // [CODEGENESIS] Ngắt ống nghe khi thoát component (Dọn dẹp rác tài nguyên)
         if (unsubRealtime) unsubRealtime();
     });
 
@@ -4820,12 +5162,12 @@ homeConfig.set(raw.data || raw.config || raw);
     $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
         latestVersionData = $homeConfig.changelogs[0];
         serverVersionString = latestVersionData.version;
-
         checkVersionMismatch(serverVersionString);
     }
 
     function checkVersionMismatch(serverVer) {
         if (!serverVer) return;
+        
         // Nếu là lần đầu tiên vào app, lưu luôn version server và không làm phiền
         if (clientVersion === '0.0') {
             localStorage.setItem('app_client_version', serverVer);
@@ -4841,12 +5183,10 @@ homeConfig.set(raw.data || raw.config || raw);
 
     // [PWA NUKE] Hàm diệt Cache, lưu Version mới và ép tải lại
     async function forceUpdateApp() {
-        // 1. Lưu version mới vào máy (Để triệt tiêu vòng lặp vô tận)
         if (serverVersionString) {
             localStorage.setItem('app_client_version', serverVersionString);
         }
 
-        // 2. Diệt PWA và Cache
         if ('caches' in window) {
             try {
                 const cacheNames = await caches.keys();
@@ -4860,7 +5200,6 @@ homeConfig.set(raw.data || raw.config || raw);
             } catch (err) {}
         }
         
-        // 3. Tải lại trang với timestamp để phá cache trình duyệt
         window.location.href = window.location.pathname + "?v=" + new Date().getTime();
     }
 
@@ -4870,34 +5209,47 @@ homeConfig.set(raw.data || raw.config || raw);
 </script>
 
 {#if showForceUpdateModal}
-    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/80 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md max-h-[90vh] p-6 flex flex-col items-center text-center animate-bounce-in">
-            <div class="w-16 h-16 shrink-0 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/85 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-bounce-in">
+            
+            <div class="bg-blue-600 p-6 text-center relative overflow-hidden shrink-0">
+                <div class="absolute -right-4 -top-4 opacity-20">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-32 w-32 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-black text-white mb-2 relative z-10 uppercase tracking-wide">Cập Nhật Hệ Thống</h3>
+                <span class="inline-block bg-white text-blue-800 px-4 py-1 rounded-full text-sm font-black tracking-widest relative z-10 shadow-md">
+                    Phiên bản {serverVersionString}
+                </span>
             </div>
             
-            <h3 class="text-xl shrink-0 font-bold text-gray-800 mb-2">Đã có bản cập nhật mới!</h3>
-            <p class="text-gray-600 shrink-0 mb-4">Hệ thống vừa được nâng cấp lên phiên bản <strong class="text-blue-600">{serverVersionString}</strong>.</p>
-            
-            {#if latestVersionData && latestVersionData.content}
-                <div class="w-full text-left bg-slate-50 border border-slate-100 rounded-xl p-4 mb-4 overflow-y-auto max-h-52 custom-scrollbar">
-                    <h4 class="text-xs font-bold text-slate-500 uppercase mb-2">Chi tiết thay đổi:</h4>
-                    <div class="text-sm text-slate-700 leading-relaxed custom-content pl-2">
-                        {@html latestVersionData.content}
+            <div class="p-5 flex flex-col flex-grow overflow-hidden">
+                {#if latestVersionData && latestVersionData.content}
+                    <div class="flex-grow flex flex-col border-2 border-amber-200 bg-amber-50/50 rounded-xl overflow-hidden mb-4 shadow-sm">
+                        <div class="bg-amber-100 px-4 py-2 border-b border-amber-200 flex items-center gap-2 text-amber-800 shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span class="font-bold text-sm uppercase tracking-wider">Chi tiết nội dung mới</span>
+                        </div>
+                        <div class="p-4 overflow-y-auto max-h-[35vh] custom-scrollbar">
+                            <div class="text-sm text-slate-800 leading-relaxed custom-content">
+                                {@html latestVersionData.content}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            {/if}
+                {/if}
 
-            <p class="text-sm shrink-0 text-gray-500 mb-6">Để đảm bảo tính năng hoạt động ổn định và không bị lỗi, vui lòng cập nhật.</p>
-            
-            <button class="w-full shrink-0 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2" on:click={forceUpdateApp}>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Tải lại Hệ thống ngay
-            </button>
+                <p class="text-[13px] shrink-0 text-center text-gray-500 mb-5 italic">Hệ thống yêu cầu tải lại trang để áp dụng các tính năng mới nhất.</p>
+                
+                <button class="w-full shrink-0 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2" on:click={forceUpdateApp}>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Đồng ý cập nhật ngay
+                </button>
+            </div>
         </div>
     </div>
 {/if}
@@ -4905,7 +5257,7 @@ homeConfig.set(raw.data || raw.config || raw);
 {#if showDetails && latestVersionData}
     <div class="fixed inset-0 z-[9998] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm" on:click={closeDetails}>
         <div class="bg-white rounded-2xl shadow-xl w-11/12 max-w-2xl max-h-[85vh] flex flex-col animate-bounce-in" on:click|stopPropagation>
-            <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-blue-50/50 rounded-t-2xl">
+            <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-blue-50/50 rounded-t-2xl shrink-0">
                 <h3 class="text-xl font-bold text-blue-900 flex items-center gap-2">
                     <i data-feather="info" class="w-5 h-5"></i>
                     Thông tin phiên bản
@@ -4915,7 +5267,7 @@ homeConfig.set(raw.data || raw.config || raw);
                 </button>
             </div>
             
-            <div class="p-6 overflow-y-auto custom-scrollbar">
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-grow">
                 <div class="flex items-center gap-4 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
                     <div class="flex-1">
                         <p class="text-[10px] text-slate-500 uppercase font-bold">Phiên bản</p>
@@ -4936,7 +5288,7 @@ homeConfig.set(raw.data || raw.config || raw);
                 </div>
             </div>
             
-            <div class="p-4 bg-gray-50 rounded-b-xl border-t border-gray-100 text-right">
+            <div class="p-4 bg-gray-50 rounded-b-xl border-t border-gray-100 text-right shrink-0">
                 <button class="px-4 py-2 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition" on:click={closeDetails}>Đóng</button>
             </div>
         </div>
@@ -4947,9 +5299,27 @@ homeConfig.set(raw.data || raw.config || raw);
     .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
     @keyframes bounceIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
     
+    /* Tối ưu định dạng nội dung HTML trả về từ server */
     :global(.custom-content ul) { list-style-type: disc; padding-left: 1.5rem; margin-top: 0.5rem; }
     :global(.custom-content p) { margin-bottom: 0.5rem; }
     :global(.custom-content strong) { color: #1e293b; }
+    :global(.custom-content h1), 
+    :global(.custom-content h2), 
+    :global(.custom-content h3), 
+    :global(.custom-content h4) {
+        color: #1d4ed8; /* blue-700 */
+        font-weight: 800;
+        text-transform: uppercase;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    :global(.custom-content h1:first-child), 
+    :global(.custom-content h2:first-child), 
+    :global(.custom-content h3:first-child), 
+    :global(.custom-content h4:first-child) {
+        margin-top: 0;
+    }
+
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -5097,18 +5467,7 @@ homeConfig.set(raw.data || raw.config || raw);
                 >
                     <i data-feather="settings"></i>
                     <span class="menu-text">Cài đặt giao diện</span>
-                </button>
-            </li>
-
-            <li>
-                 <button 
-                  id="goal-settings-btn" 
-                  class="w-full flex items-center p-3 text-gray-700 rounded-lg hover:bg-gray-200 font-semibold"
-                  on:click={() => openDrawer('goal-drawer')}
-                >
-                    <i data-feather="target"></i>
-                    <span class="menu-text">Thiết lập mục tiêu</span>
-                </button>
+                 </button>
             </li>
 
             <li>

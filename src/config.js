@@ -34,6 +34,7 @@ export const config = {
             diaChi: { required: false, displayName: 'Địa chỉ', aliases: ['địa chỉ', 'dia chi', 'address', 'địa chỉ giao hàng', 'địa chỉ kh'] }
         },
         giocong: {
+            maKho: { required: false, displayName: 'Mã siêu thị', aliases: ['mã siêu thị', 'masieuthi', 'mã kho'] },
             maNV: { required: false, displayName: 'Mã NV', aliases: ['mã nv', 'msnv'] },
             hoTen: { required: false, displayName: 'Tên NV', aliases: ['tên nv', 'tennv'] },
             tongGioCong: { required: true, displayName: 'Tổng giờ công', aliases: ['tổng giờ công (x.nhận) total', 'tổng giờ công'] }

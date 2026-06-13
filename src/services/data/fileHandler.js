@@ -147,8 +147,8 @@ export const fileHandler = {
                         }
 
                         const successMsg = isMultiMode && currentMonths.length > 0 
-                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')}` 
-                            : `✓ Đã đồng bộ lên Cloud`;
+                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')} (${dataToStore.length} dòng)` 
+                            : `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
                         updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
 

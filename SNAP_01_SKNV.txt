@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_01_SKNV.txt
-GENERATED AT: 5/13/2026, 7:07:23 PM
+GENERATED AT: 6/12/2026, 1:52:43 PM
 
 
 >>> FILE_START: src/components/health-staff/CategoryRevenueView.svelte
@@ -255,18 +255,16 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   import CompetitionModeSelector from './competition/CompetitionModeSelector.svelte';
   import ProgramView from './competition/ProgramView.svelte';
   import EmployeeView from './competition/EmployeeView.svelte';
-  // [NEW] Import view chi tiết mới
   import CompetitionDetailView from './competition/CompetitionDetailView.svelte';
 
-  // [YÊU CẦU] Mặc định vào là xem theo nhân viên
+  // Import dịch vụ Quản lý Hàng đợi Chụp ngầm vật lý
+  import { batchCaptureService } from '../../services/batchCapture.service.js';
+
   let activeView = 'employee'; 
   let programReportData = [];
-  
-  // [NEW] State cho view chi tiết
   let isDetailView = false;
   let selectedEmployeeId = null;
 
-  // Logic tính toán cho Program View (Tự động khi YCX hoặc Config thay đổi)
   $: {
       if ($ycxData.length > 0) {
           const allConfigs = [...$globalCompetitionConfigs, ...$localCompetitionConfigs];
@@ -278,21 +276,45 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
   function handleViewChange(event) {
       activeView = event.detail;
-      // Reset về list khi đổi tab con
       isDetailView = false;
       selectedEmployeeId = null;
   }
 
-  // [NEW] Xử lý khi click vào nhân viên
   function handleViewDetail(event) {
       selectedEmployeeId = event.detail.employeeId;
       isDetailView = true;
   }
 
-  // [NEW] Xử lý quay lại
   function handleBackToList() {
       isDetailView = false;
       selectedEmployeeId = null;
+  }
+
+  // LOGIC XỬ LÝ CHỤP HÀNG LOẠT THI ĐUA (Đã tiêm allReportData chống trắng trang)
+  function handleBatchCapture(event) {
+      const mode = event.target.value;
+      if (!mode) return;
+
+      const baseData = $pastedThiDuaReportData || [];
+      let targetData = [];
+
+      if (mode === 'top5') targetData = baseData.slice(0, 5);
+      else if (mode === 'bot5') targetData = baseData.slice(-5);
+      else if (mode === 'all') targetData = baseData;
+
+      const ids = targetData.map(item => item.maNV || item.employeeCode || item.id);
+      
+      batchCaptureService.captureBatch(
+          CompetitionDetailView, 
+          ids, 
+          "ThiDua_ChiTiet", 
+          (id) => ({ 
+              employeeId: id,
+              allReportData: baseData
+          })
+      );
+
+      event.target.value = ""; // Reset dropdown
   }
 </script>
 
@@ -303,23 +325,40 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                 <i data-feather="award" class="w-5 h-5"></i>
             </div>
             <div>
-                <h3 class="text-lg font-bold text-gray-800 uppercase leading-tight">Thi Đua Lũy Kế</h3>
+                 <h3 class="text-lg font-bold text-gray-800 uppercase leading-tight">Thi Đua Lũy Kế</h3>
                 <p class="text-xs text-gray-500">Theo dõi tiến độ các chương trình thi đua</p>
             </div>
         </div>
         
-        <CompetitionModeSelector {activeView} on:change={handleViewChange} />
+        <div class="flex items-center gap-4">
+            {#if activeView === 'employee'}
+                <div class="relative flex items-center">
+                    <div class="absolute left-3 text-purple-600 pointer-events-none flex items-center justify-center">
+                        <i data-feather="camera" class="w-4 h-4"></i>
+                    </div>
+                    <select class="text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm py-2 pl-9 pr-8 focus:outline-none focus:ring-purple-500 focus:border-purple-500 cursor-pointer"
+                            on:change={handleBatchCapture}>
+                        <option value="" disabled selected>Chụp Hàng Loạt</option>
+                        <option value="top5">Chụp Top 5 NV</option>
+                        <option value="bot5">Chụp Bot 5 NV</option>
+                        <option value="all">Chụp Tất Cả</option>
+                    </select>
+                </div>
+            {/if}
+
+            <CompetitionModeSelector {activeView} on:change={handleViewChange} />
+        </div>
     </div>
 
     <div class="min-h-[400px]">
         {#if activeView === 'program'}
-            <ProgramView reportData={programReportData} />
+             <ProgramView reportData={programReportData} />
         {:else}
             {#if isDetailView && selectedEmployeeId}
                 <CompetitionDetailView 
                     employeeId={selectedEmployeeId}
                     allReportData={$pastedThiDuaReportData}
-                    on:back={handleBackToList}
+                     on:back={handleBackToList}
                 />
             {:else}
                 <EmployeeView 
@@ -1164,8 +1203,8 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 <script>
   import { createEventDispatcher } from 'svelte';
   import { formatters } from '../../utils/formatters.js';
-  import { dataProcessing } from '../../services/dataProcessing.js';
   import { danhSachNhanVien } from '../../stores.js';
+  import { multiMonthReportLogic } from '../../services/reports/multiMonth.report.js';
   
   export let rawData = [];
 
@@ -1173,178 +1212,90 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   let sortKey = 'total';
   let sortDirection = 'desc';
 
-  let uniqueMonths = [];
-  let groupedData = [];
+  // --- TRẠNG THÁI ---
+  let allMonths = [];
+  let selectedMonths = []; 
+  let showFilter = false;
+  let processedMap = new Map();
 
-  // [PHẪU THUẬT]: Làm tròn không số lẻ, giữ nguyên chia 1 triệu
   const formatRevenueNoDecimal = (val) => {
       if (!val || isNaN(val)) return '-';
       return Math.round(val / 1000000).toLocaleString('vi-VN');
   };
 
-  const parseMoney = (value) => {
-      if (typeof value === 'number') return value;
-      if (!value) return 0;
-      return parseFloat(String(value).replace(/,/g, '')) || 0;
-  };
+  // [SURGICAL LOGIC]: Nhờ Context Passing, hàm này giờ chạy siêu tốc, render tức thì
+  $: calculatedResult = multiMonthReportLogic.generateMultiMonthReport(rawData, $danhSachNhanVien);
 
-  const normStr = (val) => String(val || "").trim();
-
-  function parseUniversalDate(val) {
-      if (val === null || val === undefined || val === '') return null;
-      if (val instanceof Date) return new Date(val.getFullYear(), val.getMonth(), val.getDate()).getTime();
-      if (typeof val === 'number') {
-          const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
-          const tempDate = new Date(jsEpoch);
-          return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
-      }
-      const str = String(val).trim();
-      const parts = str.split(/[\s,T]+/); 
-      if (parts[0].includes('/')) {
-          const dParts = parts[0].split('/');
-          if (dParts.length >= 3) {
-              const p1 = parseInt(dParts[0], 10);
-              const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
-              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
-              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
-          }
-      } else if (parts[0].includes('-')) {
-          const dParts = parts[0].split('-');
-          if (dParts.length >= 3) {
-              const p1 = parseInt(dParts[0], 10);
-              const p2 = parseInt(dParts[1], 10); const p3 = parseInt(dParts[2], 10);
-              if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
-              return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
-          }
-      }
-      const fallbackDate = new Date(val);
-      if (!isNaN(fallbackDate.getTime())) return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
-      return null;
-  }
-
-  $: validEmpIds = new Set(($danhSachNhanVien || []).map(e => String(e.maNV || e.ma_nv || e.MANHANVIEN || e['Mã NV'] || '').trim()));
-  
-  $: {
-      const monthsSet = new Set();
-      const map = new Map();
-      const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
+  $: if (calculatedResult) {
+      processedMap = calculatedResult.processedMap;
+      const newMonthsStr = JSON.stringify(calculatedResult.allMonths);
+      const oldMonthsStr = JSON.stringify(allMonths);
       
-      rawData.forEach(row => {
-          const msnvMatch = normStr(row.nguoiTao || row['Người tạo']).match(/(\d+)/);
-          if (!msnvMatch) return;
-          const empId = msnvMatch[1];
-
-          if (validEmpIds.size > 0 && !validEmpIds.has(empId)) return;
-
-          const empFromList = $danhSachNhanVien.find(e => normStr(e.maNV || e.ma_nv || e.MANHANVIEN) === empId);
-          const hoTen = empFromList ? empFromList.hoTen : 'Unknown';
-
-          const htx = normStr(row.hinhThucXuat || row.HINH_THUC_XUAT || row['Hình thức xuất']);
-          if (!validHTX.has(htx)) return;
-
-          let isValid = false;
-          const trangThaiXuat = normStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
-          const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
-          
-          if (isDaXuat) {
-              isValid = true;
-          } else if (trangThaiXuat === 'Chưa xuất') {
-              const thuTien = normStr(row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN);
-              const huy = normStr(row.trangThaiHuy || row.TRANG_THAI_HUY);
-              const tra = normStr(row.tinhTrangTra || row.TINH_TRANG_TRA);
-              if (thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả') {
-                  isValid = true;
-              }
-          }
-          if (!isValid) return;
-
-          let dateVal = row.ngayTao || row.ngayHenGiao;
-          if (!dateVal) {
-              for (const key of Object.keys(row)) {
-                  const normKey = key.toLowerCase().replace(/[\s_]/g, '');
-                  if (normKey.includes('ngàytạo') || normKey.includes('ngaytao') || normKey === 'createdate') {
-                      dateVal = row[key]; break;
-                  }
-              }
-          }
-          const parsedDate = parseUniversalDate(dateVal);
-          if(!parsedDate) return;
-          
-          const d = new Date(parsedDate);
-          const monthKey = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-          monthsSet.add(monthKey);
-
-          if(!map.has(empId)) {
-              map.set(empId, { maNV: empId, hoTen: hoTen, months: {}, totalDtqd: 0, totalDt: 0 });
-          }
-          
-          const emp = map.get(empId);
-          if(!emp.months[monthKey]) emp.months[monthKey] = { dtqd: 0, dt: 0 };
-
-          const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN || row.DoanhThu || row['Thành tiền']);
-          let dtqd = 0;
-          
-          if (row.revenueQuyDoi !== undefined) {
-              dtqd = parseMoney(row.revenueQuyDoi);
-          } else {
-              const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi ? dataProcessing.getHeSoQuyDoi() : {};
-              const heSo = heSoQuyDoiMap[row.nhomHang || row.NHOM_HANG || row['Nhóm hàng']] || 1;
-              dtqd = thanhTien * heSo;
-          }
-
-          emp.months[monthKey].dt += thanhTien;
-          emp.months[monthKey].dtqd += dtqd;
-          emp.totalDt += thanhTien;
-          emp.totalDtqd += dtqd;
-      });
-
-      uniqueMonths = Array.from(monthsSet).sort((a,b) => {
-          const [ma, ya] = a.split('/');
-          const [mb, yb] = b.split('/');
-          return new Date(ya, ma-1) - new Date(yb, mb-1);
-      });
-      groupedData = Array.from(map.values());
+      if (newMonthsStr !== oldMonthsStr) {
+          allMonths = calculatedResult.allMonths;
+          // Khởi tạo selectedMonths lần đầu hoặc reset nếu tập dữ liệu gốc đổi
+          selectedMonths = [...allMonths];
+      }
   }
 
-  // Tính Tổng & Trung bình
+  function toggleMonth(month) {
+      if (selectedMonths.includes(month)) {
+          selectedMonths = selectedMonths.filter(m => m !== month);
+      } else {
+          selectedMonths = [...selectedMonths, month].sort((a,b) => {
+              const [ma, ya] = a.split('/'); const [mb, yb] = b.split('/');
+              return new Date(ya, ma-1) - new Date(yb, mb-1);
+          });
+      }
+  }
+
+  $: uniqueMonths = selectedMonths;
+
+  $: groupedData = Array.from(processedMap.values()).map(emp => {
+      let totalDt = 0; let totalDtqd = 0;
+      uniqueMonths.forEach(m => {
+          if (emp.months[m]) {
+              totalDt += emp.months[m].dt;
+              totalDtqd += emp.months[m].dtqd;
+          }
+      });
+      return { ...emp, totalDt, totalDtqd };
+  }).filter(emp => emp.totalDtqd > 0);
+
   $: footerStats = (() => {
       const count = groupedData.length || 1;
-      const stats = { total: { dtqd: 0, months: {} }, avg: { dtqd: 0, months: {} } };
-      uniqueMonths.forEach(m => stats.total.months[m] = 0);
-
-      groupedData.forEach(item => {
-          stats.total.dtqd += item.totalDtqd;
-          uniqueMonths.forEach(m => {
-              if (item.months[m]) stats.total.months[m] += item.months[m].dtqd;
+      const stats = { 
+          total: { dtqd: 0, dt: 0, months: {} }, 
+          avg: { dtqd: 0, months: {} } 
+      };
+      uniqueMonths.forEach(m => {
+          stats.total.months[m] = { dtqd: 0, dt: 0, tyle: 0 };
+     
+          groupedData.forEach(item => {
+              if (item.months[m]) {
+                  stats.total.months[m].dtqd += item.months[m].dtqd;
+                  stats.total.months[m].dt += item.months[m].dt;
+              }
           });
+          stats.avg.months[m] = stats.total.months[m].dtqd / count;
+          stats.total.months[m].tyle = stats.total.months[m].dt > 0 ? (stats.total.months[m].dtqd / stats.total.months[m].dt) - 1 : 0;
       });
-
+      stats.total.dtqd = groupedData.reduce((sum, item) => sum + item.totalDtqd, 0);
+      stats.total.dt = groupedData.reduce((sum, item) => sum + item.totalDt, 0);
       stats.avg.dtqd = stats.total.dtqd / count;
-      uniqueMonths.forEach(m => { stats.avg.months[m] = stats.total.months[m] / count; });
       return stats;
   })();
 
   $: sortedData = [...groupedData].sort((a, b) => {
       let valA = 0, valB = 0;
-      if (sortKey === 'hoTen') {
-         return sortDirection === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
-      } else if (sortKey === 'total') {
-          valA = a.totalDtqd; valB = b.totalDtqd;
-      } else if (sortKey.startsWith('month_')) {
-          // [FIXED] Trả lại đúng logic split nguyên bản
-          const parts = sortKey.split('_');
-          const m = parts[1];
-          const type = parts[2];
-
+      if (sortKey === 'hoTen') return sortDirection === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
+      if (sortKey === 'total') { valA = a.totalDtqd; valB = b.totalDtqd; }
+      else if (sortKey.startsWith('month_')) {
+          const [_, m, type] = sortKey.split('_');
           const aM = a.months[m] || {dtqd: 0, dt: 0};
           const bM = b.months[m] || {dtqd: 0, dt: 0};
-
-          if (type === 'dtqd') {
-              valA = aM.dtqd; valB = bM.dtqd;
-          } else if (type === 'tyle') {
-              valA = aM.dt > 0 ? (aM.dtqd / aM.dt) - 1 : -1;
-              valB = bM.dt > 0 ? (bM.dtqd / bM.dt) - 1 : -1;
-          }
+          valA = type === 'dtqd' ? aM.dtqd : (aM.dt > 0 ? aM.dtqd/aM.dt : -1);
+          valB = type === 'dtqd' ? bM.dtqd : (bM.dt > 0 ? bM.dtqd/bM.dt : -1);
       }
       return sortDirection === 'asc' ? valA - valB : valB - valA;
   });
@@ -1377,21 +1328,44 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   }
 </script>
 
-<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in" data-capture-group="revenue-multi-month-table">
+<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in">
     <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-indigo-50">
         <div class="flex items-center gap-2">
             <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600"><i data-feather="layers" class="w-5 h-5"></i></div>
             <div>
                 <h3 class="font-bold text-indigo-900 text-lg uppercase">Phân tích Lũy kế nhiều tháng</h3>
-                <p class="text-xs text-indigo-600/80">Chỉ thống kê NV thuộc danh sách do QL cập nhật</p>
+                <p class="text-xs text-indigo-600/80">Tính theo doanh thu tạo</p>
             </div>
         </div>
-        <div class="flex items-center gap-3">
-            <span class="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
-            <div class="flex items-center gap-2 ml-1 border-l border-indigo-200 pl-4" title="Tắt chế độ xem nhiều tháng">
+
+        <div class="flex items-center gap-4">
+            <div class="relative">
+                <button on:click={() => showFilter = !showFilter} class="flex items-center gap-2 px-3 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 hover:bg-indigo-50 shadow-sm">
+                    <i data-feather="calendar" class="w-3.5 h-3.5"></i>
+                    Tháng ({selectedMonths.length}/{allMonths.length})
+                    <i data-feather={showFilter ? 'chevron-up' : 'chevron-down'} class="w-3.5 h-3.5"></i>
+                </button>
+                {#if showFilter}
+                    <div class="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-[100] p-2">
+                        <div class="flex justify-between border-b pb-2 mb-2 px-1">
+                            <button on:click={() => selectedMonths = [...allMonths]} class="text-[10px] text-blue-600 font-bold hover:underline">Tất cả</button>
+                            <button on:click={() => selectedMonths = []} class="text-[10px] text-red-500 font-bold hover:underline">Bỏ hết</button>
+                        </div>
+                        <div class="max-h-48 overflow-y-auto custom-scrollbar">
+                            {#each allMonths as m}
+                                <label class="flex items-center gap-2 p-2 hover:bg-slate-50 rounded-lg cursor-pointer">
+                                    <input type="checkbox" checked={selectedMonths.includes(m)} on:change={() => toggleMonth(m)} class="rounded text-indigo-600">
+                                    <span class="text-sm font-medium text-gray-700">Tháng {m}</span>
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+            </div>
+            <div class="flex items-center gap-2 border-l border-indigo-200 pl-4">
                 <span class="text-xs font-bold text-indigo-700 cursor-pointer" on:click={() => dispatch('toggleMode')}>Xem nhiều tháng</span>
-                <button class="bg-indigo-600 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
-                    <span class="translate-x-4 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                <button class="bg-indigo-600 relative inline-flex h-5 w-9 rounded-full border-2 border-transparent" on:click={() => dispatch('toggleMode')}>
+                    <span class="translate-x-4 inline-block h-4 w-4 transform rounded-full bg-white shadow transition"></span>
                 </button>
             </div>
         </div>
@@ -1399,70 +1373,81 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
     <div class="overflow-x-auto custom-scrollbar">
         <table class="min-w-full text-sm text-left border-collapse" style="min-width: {350 + uniqueMonths.length * 160}px">
-            <thead class="uppercase text-xs shadow-[0_2px_4px_rgba(0,0,0,0.02)] relative z-30">
-                 <tr class="bg-slate-50 border-b border-gray-200 text-slate-500">
-                    <th rowspan="2" class="px-2 py-3 text-center w-[56px] min-w-[56px] border-r border-gray-200 sticky left-0 z-30 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] font-bold">Hạng</th>
-                    <th rowspan="2" class="px-4 py-3 text-left w-[180px] min-w-[180px] max-w-[180px] border-r border-gray-200 cursor-pointer hover:bg-slate-100 sticky left-[56px] z-30 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] font-bold" on:click={() => handleSort('hoTen')}>
-                        <div class="flex items-center text-slate-700">Nhân viên{#if sortKey === 'hoTen'}<span class="ml-1 text-indigo-500">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+            <thead class="uppercase text-xs sticky top-0 z-30 shadow-sm">
+                <tr class="bg-slate-50 border-b border-gray-200 text-slate-500">
+                    <th rowspan="2" class="px-2 py-3 text-center w-[56px] border-r border-gray-200 sticky left-0 z-40 bg-slate-50 font-bold">Hạng</th>
+                    <th rowspan="2" class="px-4 py-3 text-left w-[180px] border-r border-gray-200 sticky left-[56px] z-40 bg-slate-50 font-bold cursor-pointer" on:click={() => handleSort('hoTen')}>
+                        Nhân viên {#if sortKey === 'hoTen'}<span class="text-indigo-500">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                     </th>
-                    <th rowspan="2" class="px-4 py-3 text-right border-r border-gray-200 cursor-pointer hover:bg-slate-100 sticky left-[236px] z-30 bg-indigo-50/50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] font-black text-indigo-900" on:click={() => handleSort('total')}>
-                        <div class="flex items-center justify-end">Tổng DTQĐ{#if sortKey === 'total'}<span class="ml-1 text-indigo-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                    <th rowspan="2" class="px-4 py-3 text-right border-r border-gray-200 sticky left-[236px] z-40 bg-indigo-50 font-black text-indigo-900 cursor-pointer" on:click={() => handleSort('total')}>
+                        Tổng DTQĐ {#if sortKey === 'total'}<span class="text-indigo-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                     </th>
                     {#each uniqueMonths as month}
-                        <th colspan="2" class="px-4 py-2 text-center border-r border-gray-200 border-l-2 border-l-slate-300 font-bold tracking-wider text-slate-600">Tháng {month}</th>
+                        <th colspan="2" class="px-4 py-2 text-center border-r border-gray-200 border-l-2 border-l-slate-300 font-bold text-slate-600">Tháng {month}</th>
                     {/each}
                 </tr>
                 <tr class="bg-white border-b border-gray-200">
                     {#each uniqueMonths as month}
-                        <th class="px-3 py-2 text-right text-slate-600 border-r border-gray-100 border-l-2 border-l-slate-300 cursor-pointer hover:bg-slate-50 font-semibold" on:click={() => handleSort(`month_${month}_dtqd`)}>
-                            <div class="flex items-center justify-end">DT QĐ{#if sortKey === `month_${month}_dtqd`}<span class="ml-1 text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                        <th class="px-3 py-2 text-right text-slate-600 border-r border-gray-100 border-l-2 border-l-slate-300 cursor-pointer" on:click={() => handleSort(`month_${month}_dtqd`)}>
+                            DT QĐ {#if sortKey === `month_${month}_dtqd`}<span class="text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                         </th>
-                        <th class="px-3 py-2 text-right text-slate-400 border-r border-gray-200 cursor-pointer hover:bg-slate-50 font-medium" on:click={() => handleSort(`month_${month}_tyle`)}>
-                            <div class="flex items-center justify-end">% QĐ{#if sortKey === `month_${month}_tyle`}<span class="ml-1 text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}</div>
+                        <th class="px-3 py-2 text-right text-slate-400 border-r border-gray-200 cursor-pointer" on:click={() => handleSort(`month_${month}_tyle`)}>
+                            % QĐ {#if sortKey === `month_${month}_tyle`}<span class="text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                         </th>
                     {/each}
                 </tr>
             </thead>
-            <tbody>
+            <tbody class="divide-y divide-gray-100">
                 {#if sortedData.length === 0}
-                    <tr><td colspan={3 + uniqueMonths.length * 2} class="p-12 text-center text-gray-400 italic bg-gray-50">Không có dữ liệu của NV siêu thị hiện tại hoặc dữ liệu không hợp lệ.</td></tr>
+                    <tr><td colspan={3 + uniqueMonths.length * 2} class="p-12 text-center text-gray-400 italic">Vui lòng chọn tháng hoặc không có dữ liệu hợp lệ.</td></tr>
                 {:else}
                     {#each sortedData as item, index (item.maNV)}
-                        <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
-                            <td class="px-2 py-3 text-center border-r border-gray-100 font-bold sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)} {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">{getRankIcon(index)}</td>
-                            <td class="px-4 py-3 font-semibold text-slate-700 truncate border-r border-gray-100 group-hover:text-indigo-700 sticky left-[56px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)}" title={item.hoTen}>{formatters.getShortEmployeeName(item.hoTen, item.maNV)}</td>
-                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 bg-indigo-50/40 sticky left-[236px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(item.totalDtqd)}</td>
+                        <tr class="transition-colors cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
+                            <td class="px-2 py-3 text-center border-r border-gray-100 font-bold sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'} {getRowStyle(index)}">
+                                {getRankIcon(index)}
+                            </td>
+                            <td class="px-4 py-3 font-semibold text-slate-700 truncate border-r border-gray-100 sticky left-[56px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)}">
+                                {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
+                            </td>
+                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 sticky left-[236px] z-20 bg-indigo-50/40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                {formatRevenueNoDecimal(item.totalDtqd)}
+                            </td>
+                            
                             {#each uniqueMonths as month}
                                 {@const mData = item.months[month] || {dtqd: 0, dt: 0}}
                                 {@const tyle = mData.dt > 0 ? (mData.dtqd / mData.dt) - 1 : 0}
-                                {@const isBelowAvg = mData.dtqd > 0 && mData.dtqd < footerStats.avg.months[month]}
-                                <td class="px-3 py-3 text-right font-bold border-r border-gray-100 border-l-2 border-l-slate-200 {isBelowAvg ? 'bg-red-50 text-red-500' : 'text-gray-800'}">
+                                {@const isDtqdBelowAvg = mData.dtqd > 0 && mData.dtqd < footerStats.avg.months[month]}
+                                {@const shopTyle = footerStats.total.months[month].tyle}
+                                {@const isTyleBelowAvg = mData.dtqd > 0 && tyle < shopTyle}
+                                
+                                <td class="px-3 py-3 text-right font-bold border-r border-gray-100 border-l-2 border-l-slate-200 {isDtqdBelowAvg ? 'bg-red-50 text-red-500' : 'text-gray-800'}">
                                     {mData.dtqd > 0 ? formatRevenueNoDecimal(mData.dtqd) : '-'}
                                 </td>
-                                <td class="px-3 py-3 text-right text-xs border-r border-gray-100 font-medium {isBelowAvg ? 'bg-red-50 text-red-400' : 'text-slate-400'}">
+                                <td class="px-3 py-3 text-right text-xs border-r border-gray-100 font-medium {isTyleBelowAvg ? 'bg-red-50 text-red-400' : 'text-slate-400'}">
                                     {mData.dtqd > 0 ? formatters.formatPercentage(tyle) : '-'}
                                 </td>
                             {/each}
-                         </tr>
+                        </tr>
                     {/each}
                 {/if}
             </tbody>
             {#if sortedData.length > 0}
-            <tfoot class="sticky bottom-0 z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+            <tfoot class="sticky bottom-0 z-30 shadow-md">
                 <tr class="bg-slate-100 text-slate-600 font-bold text-xs uppercase border-t-2 border-slate-300">
-                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-slate-100 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Trung Bình</td>
-                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-slate-200 border-r border-gray-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(footerStats.avg.dtqd)}</td>
+                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-slate-100 border-r border-gray-300">Trung Bình</td>
+                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-slate-200 border-r border-gray-300">{formatRevenueNoDecimal(footerStats.avg.dtqd)}</td>
                     {#each uniqueMonths as month}
                         <td class="px-3 py-3 text-right border-r border-gray-200 border-l-2 border-l-slate-300">{formatRevenueNoDecimal(footerStats.avg.months[month])}</td>
                         <td class="bg-slate-100 border-r border-gray-200"></td>
                     {/each}
                 </tr>
                 <tr class="bg-indigo-600 text-white font-black text-xs uppercase">
-                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-indigo-600 border-r border-indigo-500 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Tổng Cộng</td>
-                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-indigo-700 border-r border-indigo-500 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{formatRevenueNoDecimal(footerStats.total.dtqd)}</td>
+                    <td colspan="2" class="px-4 py-3 text-center sticky left-0 z-40 bg-indigo-600 border-r border-indigo-500">Tổng Cộng</td>
+                    <td class="px-4 py-3 text-right sticky left-[236px] z-40 bg-indigo-700 border-r border-indigo-500">{formatRevenueNoDecimal(footerStats.total.dtqd)}</td>
                     {#each uniqueMonths as month}
-                        <td class="px-3 py-3 text-right border-r border-indigo-500 border-l-2 border-l-indigo-400">{formatRevenueNoDecimal(footerStats.total.months[month])}</td>
-                        <td class="bg-indigo-600 border-r border-indigo-500"></td>
+                        {@const monthTotal = footerStats.total.months[month]}
+                        <td class="px-3 py-3 text-right border-r border-indigo-500 border-l-2 border-l-indigo-400">{formatRevenueNoDecimal(monthTotal.dtqd)}</td>
+                        <td class="px-3 py-3 text-right text-[10px] bg-indigo-700/50">{formatters.formatPercentage(monthTotal.tyle)}</td>
                     {/each}
                 </tr>
             </tfoot>
@@ -1474,7 +1459,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 <style>
     .animate-fade-in { animation: fadeIn 0.4s ease-out; } 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+    .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
@@ -1576,183 +1561,207 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 >>> FILE_START: src/components/health-staff/RevenueTable.svelte
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { formatters } from '../../utils/formatters.js';
-  import { kpiStore } from '../../stores.js';
-  import { getCompletionColor } from '../../utils/kpi.utils.js';
+  import { kpiStore, ycxDataThangTruoc } from '../../stores.js';
+  import { batchCaptureService } from '../../services/batchCapture.service.js';
+  import RevenueDetailView from './revenue/RevenueDetailView.svelte';
+  import { dataProcessing } from '../../services/dataProcessing.js';
+
+  import ColumnConfig from './revenue/table/ColumnConfig.svelte';
+  import TableToolbar from './revenue/table/TableToolbar.svelte';
+  import TableHeader from './revenue/table/TableHeader.svelte';
+  import TableRow from './revenue/table/TableRow.svelte';
+  import TableFooter from './revenue/table/TableFooter.svelte';
   
   export let reportData = [];
+  export let shopTargetQD = 0;
+  
+  const dispatch = createEventDispatcher();
 
+  let currentDay = 1;
+  let daysInMonth = 30;
   $: {
-      console.log(`[RevenueTable ${new Date().toLocaleTimeString()}] Store Value:`, $kpiStore);
-      console.log(`[RevenueTable] Report Data Length:`, reportData.length);
+      const today = new Date();
+      const d = today.getDate();
+      if (d === 1) {
+          const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+          currentDay = lastMonth.getDate(); 
+          daysInMonth = lastMonth.getDate();
+      } else {
+          currentDay = Math.max(d - 1, 1);
+          daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      }
   }
 
-  const dispatch = createEventDispatcher();
-  let sortKey = 'doanhThu';
-  let sortDirection = 'desc';
+  $: lastMonthDataMap = (() => {
+      const map = {};
+      const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+      const today = new Date();
+      const targetDate = new Date(today.getFullYear(), today.getMonth() - (today.getDate() === 1 ? 2 : 1), 1);
+      const targetMonth = targetDate.getMonth();
+      const targetYear = targetDate.getFullYear();
 
-  const columns = [
-      { key: 'rank', label: 'Hạng', align: 'center', headerClass: 'bg-gray-100 text-gray-700 w-14' },
-      { key: 'hoTen', label: 'Nhân viên', align: 'left', headerClass: 'bg-gray-100 text-gray-700' },
-      { key: 'doanhThu', label: 'DT Thực', align: 'right', headerClass: 'bg-blue-100 text-blue-800 border-l border-blue-200' },
-      { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
-      { key: 'hieuQuaQuyDoi', label: '% QĐ', align: 'right', headerClass: 'bg-blue-100 text-blue-800' },
-      { key: 'doanhThuTraGop', label: 'DT Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800 border-l border-green-200' },
-      { key: 'tyLeTraCham', label: '% Trả chậm', align: 'right', headerClass: 'bg-green-100 text-green-800' },
-      { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', align: 'right', headerClass: 'bg-yellow-50 text-yellow-800 border-l border-yellow-200' }
+      ($ycxDataThangTruoc || []).forEach(row => {
+          if (!row.ngayTao || !(row.ngayTao instanceof Date)) return;
+          if (row.ngayTao.getMonth() !== targetMonth || row.ngayTao.getFullYear() !== targetYear) return;
+
+          const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+          if (!msnvMatch) return;
+          
+          const isDaXuat = !row.trangThaiXuat || ['Đã xuất', 'Đã giao'].includes(row.trangThaiXuat.trim());
+          const isBaseValid = (row.trangThaiThuTien || '').trim() === 'Đã thu' &&
+                              (row.trangThaiHuy || '').trim() === 'Chưa hủy' &&
+                              (row.tinhTrangTra || '').trim() === 'Chưa trả';
+
+          if (hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) && isDaXuat && isBaseValid) {
+              map[msnvMatch[1].trim()] = (map[msnvMatch[1].trim()] || 0) + (row.revenueQuyDoi || 0);
+          }
+      });
+      return map;
+  })();
+
+  $: employeeCount = reportData.length || 1;
+  $: targetCaNhan = shopTargetQD / employeeCount;
+
+  $: enrichedReportData = reportData.map(item => {
+      const dtqd = item.doanhThuQuyDoi || 0;
+      const dtqdCK = lastMonthDataMap[item.maNV] || 0;
+      const duKienCuoiThang = (dtqd / currentDay) * daysInMonth;
+      
+      return { 
+          ...item, 
+          dtqdCK, 
+          duKienSoCK: duKienCuoiThang - dtqdCK, 
+          dtTrenGc: item.gioCong > 0 ? (dtqd / item.gioCong) / 1000 : 0,
+          targetCaNhan: targetCaNhan,
+          tyLeDuKien: targetCaNhan > 0 ? (duKienCuoiThang / targetCaNhan) : 0
+      };
+  });
+
+  let columnSettings = [
+      { key: 'targetCaNhan', label: 'Target QĐ', group: 'mt', visible: true },
+      { key: 'tyLeDuKien', label: '% Dự Kiến HT', group: 'mt', visible: true },
+      { key: 'doanhThu', label: 'DT Thực', group: 'dt', visible: true },
+      { key: 'doanhThuQuyDoi', label: 'DT Quy Đổi', group: 'dt', visible: true },
+      { key: 'hieuQuaQuyDoi', label: '% QĐ', group: 'dt', visible: true },
+      { key: 'dtqdCK', label: 'DTQĐ Cùng Kỳ', group: 'ck', visible: true },
+      { key: 'duKienSoCK', label: 'Dự Kiến So CK', group: 'ck', visible: true },
+      { key: 'doanhThuTraGop', label: 'DT Trả Chậm', group: 'tc', visible: true },
+      { key: 'tyLeTraCham', label: '% Trả Chậm', group: 'tc', visible: true },
+      { key: 'doanhThuQuyDoiChuaXuat', label: 'DTQĐ Chưa Xuất', group: 'cx', visible: true },
+      { key: 'dtTrenGc', label: 'DTQĐ/GC', group: 'ns', visible: true }
   ];
 
-  function handleSort(key) {
-      if (key === 'rank') return;
-      if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-      else { sortKey = key; sortDirection = 'desc'; }
+  onMount(() => {
+      const saved = localStorage.getItem('sknv_revenue_table_cols_v6');
+      if (saved) {
+          try {
+              const parsed = JSON.parse(saved);
+              columnSettings = columnSettings.map(c => {
+                  const s = parsed.find(p => p.key === c.key);
+                  return s ? { ...c, visible: s.visible } : c;
+              });
+          } catch(e){}
+      }
+  });
+
+  function handleToggleColumn(event) {
+      columnSettings = columnSettings.map(c => c.key === event.detail ? { ...c, visible: !c.visible } : c);
+      localStorage.setItem('sknv_revenue_table_cols_v6', JSON.stringify(columnSettings));
   }
 
-  $: sortedData = [...reportData].sort((a, b) => {
-      let valA = a[sortKey];
-      let valB = b[sortKey];
-      if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-      return sortDirection === 'asc' ? (Number(valA)||0) - (Number(valB)||0) : (Number(valB)||0) - (Number(valA)||0);
+  $: visibleColumns = columnSettings.filter(c => c.visible).map((c, index, arr) => ({
+      ...c, 
+      isLastInGroup: index === arr.length - 1 || arr[index + 1].group !== c.group, 
+      isFirstInGroup: index === 0 || arr[index - 1].group !== c.group 
+  }));
+
+  let sortKey = 'doanhThuQuyDoi';
+  let sortDirection = 'desc';
+  function handleSort(event) {
+      if (sortKey === event.detail) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+      else { sortKey = event.detail; sortDirection = 'desc'; }
+  }
+
+  $: sortedData = [...enrichedReportData].sort((a, b) => {
+      if (sortKey === 'hoTen') return sortDirection === 'asc' ? String(a[sortKey]).localeCompare(String(b[sortKey])) : String(b[sortKey]).localeCompare(String(a[sortKey]));
+      return sortDirection === 'asc' ? (Number(a[sortKey])||0) - (Number(b[sortKey])||0) : (Number(b[sortKey])||0) - (Number(a[sortKey])||0);
   });
 
   $: topCount = sortedData.length <= 15 ? 3 : 5;
 
-  function getRowStyle(index) {
-      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
-      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
-      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
-      return index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50/50 hover:bg-blue-50';
-  }
-
-  function getRankIcon(index) {
-      if (index === 0) return '🏆';
-      if (index === 1) return '🥈';
-      if (index === 2) return '🥉';
-      if (index < topCount) return '⭐';
-      return `#${index + 1}`;
-  }
-
-  $: totals = reportData.reduce((acc, item) => {
+  $: totals = enrichedReportData.reduce((acc, item) => {
       acc.doanhThu += item.doanhThu || 0;
       acc.doanhThuQuyDoi += item.doanhThuQuyDoi || 0;
       acc.doanhThuTraGop += item.doanhThuTraGop || 0;
       acc.doanhThuQuyDoiChuaXuat += item.doanhThuQuyDoiChuaXuat || 0;
+      acc.dtqdCK += item.dtqdCK || 0;
+      acc.duKienSoCK += item.duKienSoCK || 0;
+      acc.gioCong += item.gioCong || 0;
       return acc;
-  }, { doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuQuyDoiChuaXuat: 0 });
+  }, { doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0, doanhThuQuyDoiChuaXuat: 0, dtqdCK: 0, duKienSoCK: 0, gioCong: 0 });
 
   $: totalPctQD = totals.doanhThu > 0 ? (totals.doanhThuQuyDoi / totals.doanhThu) - 1 : 0;
   $: totalPctTC = totals.doanhThu > 0 ? totals.doanhThuTraGop / totals.doanhThu : 0;
+  $: avgSupermarketDtTrenGc = totals.gioCong > 0 ? (totals.doanhThuQuyDoi / totals.gioCong) / 1000 : 0;
+  
+  $: totalTyLeDuKien = shopTargetQD > 0 ? (((totals.doanhThuQuyDoi / currentDay) * daysInMonth) / shopTargetQD) : 0;
 
-  function getCellClass(item, colKey) {
-      const isBoldCol = ['doanhThu', 'doanhThuQuyDoi', 'doanhThuTraGop', 'doanhThuQuyDoiChuaXuat', 'hieuQuaQuyDoi', 'tyLeTraCham'].includes(colKey);
-      let baseClass = isBoldCol ? 'font-bold text-gray-800' : 'text-gray-600';
+  $: averages = {
+      targetCaNhan: targetCaNhan,
+      tyLeDuKien: totalTyLeDuKien,
+      doanhThu: totals.doanhThu / employeeCount,
+      doanhThuQuyDoi: totals.doanhThuQuyDoi / employeeCount,
+      hieuQuaQuyDoi: totalPctQD,
+      dtqdCK: totals.dtqdCK / employeeCount,
+      duKienSoCK: totals.duKienSoCK / employeeCount,
+      doanhThuTraGop: totals.doanhThuTraGop / employeeCount,
+      tyLeTraCham: totalPctTC,
+      doanhThuQuyDoiChuaXuat: totals.doanhThuQuyDoiChuaXuat / employeeCount,
+      dtTrenGc: avgSupermarketDtTrenGc
+  };
 
-      const userTarget = $kpiStore.targets[item.maNV];
-      const targetSettings = userTarget || $kpiStore.globalSettings;
+  $: kpiTargets = $kpiStore.targets || {};
+  $: kpiGlobalSettings = $kpiStore.globalSettings || {};
 
-      if (!targetSettings || Object.keys(targetSettings).length === 0) {
-          return baseClass;
-      }
-
-      if (colKey === 'hieuQuaQuyDoi') {
-          const actual = item.hieuQuaQuyDoi;
-          const target = (targetSettings.phanTramQD || 0) / 100; 
-          const colorClass = getCompletionColor(actual, target);
-          return colorClass ? `${colorClass} font-bold` : baseClass;
-      }
-      
-      if (colKey === 'tyLeTraCham') {
-          const actual = item.tyLeTraCham;
-          const target = (targetSettings.phanTramTC || 0) / 100;
-          const colorClass = getCompletionColor(actual, target);
-          return colorClass ? `${colorClass} font-bold` : baseClass;
-      }
-
-      return baseClass;
-  }
-
-  function handleRowClick(employeeId) {
-      dispatch('viewDetail', { employeeId });
+  function handleBatchCapture(event) {
+      if (!event.detail) return;
+      let targetData = event.detail === 'top5' ? sortedData.slice(0, 5) : event.detail === 'bot5' ? sortedData.slice(-5) : sortedData;
+      batchCaptureService.captureBatch(RevenueDetailView, targetData.map(i => i.maNV), "DTLK_ChiTiet", (id) => ({ employeeId: id }));
   }
 </script>
 
-<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in" data-capture-group="revenue-table">
-    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-        <div class="flex items-center gap-2">
-            <div class="p-2 bg-blue-100 rounded-lg text-blue-600"><i data-feather="dollar-sign" class="w-5 h-5"></i></div>
-            <div>
-                <h3 class="font-bold text-gray-800 text-lg uppercase">Chi tiết Doanh Thu Lũy Kế</h3>
-                <p class="text-xs text-gray-500">Dữ liệu được cập nhật từ file YCX mới nhất</p>
-            </div>
-        </div>
-        <div class="flex items-center gap-3">
-            <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+<div class="space-y-4">
+    <ColumnConfig {columnSettings} on:toggle={handleToggleColumn} />
+    <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden animate-fade-in" data-capture-group="revenue-table">
+        <TableToolbar on:toggleMode={() => dispatch('toggleMode')} on:batchCapture={handleBatchCapture} />
+        <div class="overflow-x-auto">
             
-            <div class="flex items-center gap-2 ml-1 border-l border-gray-300 pl-4" title="Chuyển sang chế độ xem nhiều tháng">
-                <span class="text-xs font-semibold text-gray-500 cursor-pointer" on:click={() => dispatch('toggleMode')}>Xem nhiều tháng</span>
-                <button class="bg-gray-300 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
-                    <span class="translate-x-0 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-                </button>
-            </div>
+            <table class="min-w-full text-sm text-left border-collapse table-auto">
+                <TableHeader {visibleColumns} {sortKey} {sortDirection} on:sort={handleSort} />
+                <tbody class="divide-y divide-gray-200 bg-white">
+                    {#if sortedData.length === 0}
+                        <tr><td colspan={visibleColumns.length + 2} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
+                    {:else}
+                        {#each sortedData as item, index (item.maNV)}
+                            <TableRow 
+                                {item} {index} {visibleColumns} {topCount} {avgSupermarketDtTrenGc}
+                                {kpiTargets} {kpiGlobalSettings} {averages}
+                                on:viewDetail={(e) => dispatch('viewDetail', { employeeId: e.detail })} 
+                            />
+                        {/each}
+                    {/if}
+                </tbody>
+                <TableFooter {totals} {visibleColumns} {totalPctQD} {totalPctTC} {avgSupermarketDtTrenGc} {averages} {shopTargetQD} {totalTyLeDuKien} />
+            </table>
+            
         </div>
-    </div>
-
-    <div class="overflow-x-auto">
-        <table class="min-w-full text-sm text-left border-collapse">
-            <thead class="uppercase text-xs font-bold sticky top-0 z-10 shadow-sm">
-                <tr>
-                    {#each columns as col}
-                        <th class="px-4 py-3 transition select-none whitespace-nowrap {col.headerClass} {col.align === 'right' ? 'text-right' : (col.align === 'center' ? 'text-center' : 'text-left')} {col.key !== 'rank' ? 'cursor-pointer hover:bg-gray-200' : ''}" on:click={() => handleSort(col.key)}>
-                            <div class="flex items-center gap-1 {col.align === 'right' ? 'justify-end' : (col.align === 'center' ? 'justify-center' : '')}">
-                                {col.label}
-                                {#if sortKey === col.key}<span class="ml-1 text-blue-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
-                            </div>
-                        </th>
-                    {/each}
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                {#if sortedData.length === 0}
-                    <tr><td colspan={columns.length} class="p-12 text-center text-gray-400 italic bg-gray-50">Chưa có dữ liệu hiển thị.</td></tr>
-                {:else}
-                    {#each sortedData as item, index (item.maNV)}
-                        <tr class="transition-colors duration-150 group cursor-pointer {getRowStyle(index)}" on:click={() => handleRowClick(item.maNV)}>
-                            
-                            <td class="px-2 py-3 text-center border-r border-gray-200 font-bold {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}">
-                                {getRankIcon(index)}
-                            </td>
-
-                            <td class="px-4 py-3 font-semibold text-blue-700 whitespace-nowrap border-r border-gray-200 group-hover:text-blue-800 group-hover:underline">
-                                {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
-                            </td>
-                            <td class="px-4 py-3 text-right border-r border-gray-200 {getCellClass(item, 'doanhThu')}">{formatters.formatRevenue(item.doanhThu)}</td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'doanhThuQuyDoi')}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'hieuQuaQuyDoi')}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</td>
-                            <td class="px-4 py-3 text-right border-l border-gray-200 {getCellClass(item, 'doanhThuTraGop')}">{formatters.formatRevenue(item.doanhThuTraGop)}</td>
-                            <td class="px-4 py-3 text-right {getCellClass(item, 'tyLeTraCham')}">{formatters.formatPercentage(item.tyLeTraCham)}</td>
-                            
-                            <td class="px-4 py-3 text-right border-l border-gray-200 {getCellClass(item, 'doanhThuQuyDoiChuaXuat')}">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</td>
-                        </tr>
-                    {/each}
-                {/if}
-            </tbody>
-            <tfoot class="bg-gray-100 font-bold text-gray-900 border-t-2 border-gray-300 text-xs uppercase">
-                <tr>
-                    <td class="px-4 py-3 text-center tracking-wider" colspan="2">TỔNG CỘNG</td>
-                    
-                    <td class="px-4 py-3 text-right text-base">{formatters.formatRevenue(totals.doanhThu)}</td>
-                    <td class="px-4 py-3 text-right text-base text-blue-700">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</td>
-                    <td class="px-4 py-3 text-right text-base text-blue-700">{formatters.formatPercentage(totalPctQD)}</td>
-                    <td class="px-4 py-3 text-right text-base">{formatters.formatRevenue(totals.doanhThuTraGop)}</td>
-                    <td class="px-4 py-3 text-right text-base">{formatters.formatPercentage(totalPctTC)}</td>
-                    <td class="px-4 py-3 text-right text-base text-gray-600">{formatters.formatRevenue(totals.doanhThuQuyDoiChuaXuat)}</td>
-                </tr>
-            </tfoot>
-        </table>
     </div>
 </div>
-<style>.animate-fade-in { animation: fadeIn 0.4s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }</style>
+
+<style>
+    .animate-fade-in { animation: fadeIn 0.4s ease-out; } 
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
 <<< FILE_END: src/components/health-staff/RevenueTable.svelte
 
 >>> FILE_START: src/components/health-staff/competition/CompetitionCard.svelte
@@ -1817,6 +1826,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
     export let employeeId;
     export let allReportData = []; 
+    export let isGhostMode = false; // [TÍNH NĂNG MỚI]: Bật khi chạy Background Rendering
 
     const dispatch = createEventDispatcher();
     
@@ -1834,7 +1844,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
         summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
     };
 
-    // --- [ĐÃ PHẪU THUẬT] LOGIC TIẾN ĐỘ DỰ KIẾN ---
+    // --- [ĐÃ PHẪU THUẬT] TÊN FILE ĐỘNG CHO CHỤP NGẦM AN TOÀN ---
+    $: captureFileName = displayInfo.name ? `ThiDua_ChiTiet_${displayInfo.name}_${displayInfo.code}` : `ThiDua_ChiTiet_${employeeId}`;
+
+    // --- LOGIC TIẾN ĐỘ DỰ KIẾN ---
     let currentDay = 1;
     let daysInMonth = 30;
 
@@ -1957,11 +1970,15 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
-<div class="animate-fade-in pb-10 bg-slate-50 min-h-screen p-4 sm:p-6" data-capture-group="thidua-nhanvien-detail">
+<div class="animate-fade-in pb-10 {isGhostMode ? 'bg-white p-6' : 'bg-slate-50 min-h-screen p-4 sm:p-6'}" 
+     data-capture-group="thidua-nhanvien-detail"
+     data-capture-filename={captureFileName}>
   
+    {#if !isGhostMode}
     <button on:click={() => dispatch('back')} class="mb-4 flex items-center gap-2 text-slate-500 hover:text-blue-600 transition-colors font-bold text-sm capture-hide">
         <i data-feather="arrow-left" class="w-4 h-4"></i> QUAY LẠI BẢNG TỔNG HỢP
     </button>
+    {/if}
 
     {#if employee}
         <div class="bg-blue-50 border border-blue-200 rounded-2xl shadow-sm p-4 sm:p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1974,10 +1991,12 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                 </div>
             </div>
 
+            {#if !isGhostMode}
             <div class="bg-white p-1 rounded-xl border border-blue-100 shadow-sm flex items-center w-full md:w-auto shrink-0 capture-hide">
                 <button on:click={() => viewMode = 'rut_gon'} class="flex-1 md:flex-none px-4 py-2 text-sm font-bold rounded-lg transition-colors {viewMode === 'rut_gon' ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}">Rút gọn</button>
                 <button on:click={() => viewMode = 'chi_tiet'} class="flex-1 md:flex-none px-4 py-2 text-sm font-bold rounded-lg transition-colors {viewMode === 'chi_tiet' ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}">Chi tiết</button>
             </div>
+            {/if}
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 capture-kpi-grid">
@@ -2213,21 +2232,18 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       return tenGoc;
   }
 
-  // --- [ĐÃ PHẪU THUẬT] THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
+  // --- THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
   let currentDay = 1;
   let daysInMonth = 30;
 
   $: {
       const today = new Date();
       const d = today.getDate();
-      
       if (d === 1) {
-          // Vùng giáp hạt: Ngày mùng 1 đầu tháng -> Tự động dùng số ngày của tháng trước
           const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
           currentDay = lastMonth.getDate();
           daysInMonth = lastMonth.getDate();
       } else {
-          // Ngày thường: Tính tiến độ theo tháng hiện tại
           currentDay = Math.max(d - 1, 1);
           daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
       }
@@ -2237,41 +2253,32 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   let columnSettings = [];
   let sortKey = 'totalScore';
   let sortDirection = 'desc';
-
   let allEmployees = [];
-  
-  // --- KHỐI LOGIC: TARGET CÁ NHÂN (LINKED MAPPING) ---
   let targetRatio = 100;
   let categoryTargets = {};
-  
-  // 1. Lấy tỷ lệ % giao target từ Firebase
+
   $: if ($selectedWarehouse) {
       datasyncService.loadPersonalTargetRatio($selectedWarehouse)
         .then(ratio => targetRatio = ratio)
         .catch(() => targetRatio = 100);
   }
 
-  // 2. Tính tổng nhân viên hiện tại của Siêu Thị
   $: emps = $danhSachNhanVien || [];
-  $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
+  $: filteredEmps = $selectedWarehouse && $selectedWarehouse !== 'ALL' 
+        ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) 
+        : emps;
   $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
 
-  // 3. Tra cứu Target qua 'linkedEmpProgram'
   $: {
       const stMappedData = {};
       ($competitionData || []).forEach(item => {
           const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
-          
           let linkedEmpProg = '';
-          if (typeof luykeMap === 'object' && luykeMap !== null) {
-              linkedEmpProg = luykeMap.linkedEmpProgram;
-          }
-          
+          if (typeof luykeMap === 'object' && luykeMap !== null) linkedEmpProg = luykeMap.linkedEmpProgram;
           if (linkedEmpProg) {
               const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
               const isQty = item.type === 'soLuong';
               const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
-              
               stMappedData[linkedEmpProg] = pTarget;
           }
       });
@@ -2290,11 +2297,9 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       'bg-sky-100 text-sky-900 border-sky-200', 'bg-indigo-100 text-indigo-900 border-indigo-200',
       'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200', 'bg-rose-100 text-rose-900 border-rose-200'
   ];
-  function getHeaderColor(index) {
-      return headerColors[index % headerColors.length];
-  }
+  function getHeaderColor(index) { return headerColors[index % headerColors.length]; }
 
-  // --- REACTIVE PROCESSING ---
+  // --- REACTIVE PROCESSING: LEFT JOIN TỪ DSNV ---
   $: {
       if (reportData && reportData.length > 0) {
           const infoMap = {};
@@ -2314,26 +2319,67 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               });
           }
 
-          const mappedReportData = reportData.map(item => {
-             let rawCode = item.maNV;
-             if (!rawCode && item.name && /^\d+$/.test(item.name)) rawCode = item.name;
-             const lookupCode = String(rawCode || '').trim();
-             const info = infoMap[lookupCode];
-   
-             let realName = item.hoTen || item.name;
-             let realDept = item.boPhan;
+          let targetEmps = $danhSachNhanVien || [];
+          if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
+              targetEmps = targetEmps.filter(e => String(e.ma_kho || e.maKho) === $selectedWarehouse);
+          }
 
-             if (info) {
-                 if (info.name) realName = info.name;
-                 if (!realDept || realDept === 'Chưa phân loại' || realDept === lookupCode) realDept = info.dept;
-             }
-             if (realName && realName.includes('-')) {
-                  const parts = realName.split('-');
-                  if (parts.length > 1 && /\d/.test(parts[parts.length-1])) realName = parts[0].trim();
-             }
-             return { ...item, maNV: rawCode || item.maNV, hoTen: realName, boPhan: realDept || 'Chưa phân loại' };
+          let finalEmployees = [];
+          targetEmps.forEach(emp => {
+              const empCode = String(emp.ma_nv || emp.maNV || '').trim();
+              const empKho = String(emp.ma_kho || emp.maKho || '').trim();
+              
+              const matchingReports = (reportData || []).filter(r => String(r.maNV).trim() === empCode);
+              let matchedReport = null;
+              if (matchingReports.length > 0) {
+                  matchedReport = matchingReports.find(r => String(r.maKho).trim() === empKho);
+                  if (!matchedReport) matchedReport = matchingReports[0]; 
+              }
+
+              if (matchedReport) {
+                  finalEmployees.push({
+                      ...matchedReport,
+                      maNV: empCode,
+                      maKho: empKho || matchedReport.maKho || 'N/A',
+                      hoTen: emp.ten_nv || emp.hoTen || matchedReport.hoTen,
+                      boPhan: emp.vi_tri || emp.boPhan || matchedReport.boPhan
+                  });
+              } else {
+                  finalEmployees.push({
+                      maNV: empCode,
+                      maKho: empKho || 'N/A',
+                      hoTen: emp.ten_nv || emp.hoTen,
+                      boPhan: emp.vi_tri || emp.boPhan || 'Chưa phân loại',
+                      competitions: [],
+                      completedCount: 0
+                  });
+              }
           });
 
+          (reportData || []).forEach(r => {
+              const rCode = String(r.maNV).trim();
+              const rKho = String(r.maKho).trim();
+              const exists = finalEmployees.find(e => String(e.maNV) === rCode && (String(e.maKho) === rKho || $selectedWarehouse === 'ALL'));
+              
+              if (!exists && (!$selectedWarehouse || $selectedWarehouse === 'ALL' || rKho === $selectedWarehouse)) {
+                  let realName = r.hoTen || r.name;
+                  let realDept = r.boPhan;
+                  const info = infoMap[rCode];
+                  if (info) {
+                      if (info.name) realName = info.name;
+                      if (!realDept || realDept === 'Chưa phân loại' || realDept === rCode) realDept = info.dept;
+                  }
+                  if (realName && realName.includes('-')) {
+                       const parts = realName.split('-');
+                       if (parts.length > 1 && /\d/.test(parts[parts.length-1])) realName = parts[0].trim();
+                  }
+
+                  finalEmployees.push({
+                      ...r, maNV: rCode, maKho: rKho || 'N/A', hoTen: realName, boPhan: realDept || 'Chưa phân loại'
+                  });
+              }
+          });
+          
           let savedSettings = settingsService.loadPastedCompetitionViewSettings();
           if (!savedSettings || savedSettings.length === 0) savedSettings = settingsService.loadPastedCompetitionViewSettings();
           
@@ -2341,7 +2387,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
           }));
 
-          allEmployees = [...mappedReportData];
+          allEmployees = finalEmployees;
       } else {
           allEmployees = [];
       }
@@ -2349,7 +2395,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
   $: visibleColumns = columnSettings.filter(col => col.visible);
 
-  // --- SORT LOGIC ---
   function handleSort(key) {
       if (sortKey === key) {
           sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -2361,62 +2406,83 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
   $: sortedEmployees = [...allEmployees].sort((a, b) => {
       let valA, valB;
+      const getScore = (emp) => {
+          let score = 0;
+          (emp.competitions || []).forEach(comp => {
+              const val = comp.giaTri || 0;
+              const pTarget = categoryTargets[comp.tenGoc] || 0;
+              const projectedVal = (val / currentDay) * daysInMonth;
+              if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) score++;
+          });
+          return score;
+      };
+
       if (sortKey.startsWith('comp_')) {
             const sortCol = columnSettings.find(c => c.id === sortKey);
             if (!sortCol) return 0;
-            valA = a.competitions.find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
-            valB = b.competitions.find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
-            return sortDirection === 'asc' ? valA - valB : valB - valA;
-
+            valA = (a.competitions || []).find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
+            valB = (b.competitions || []).find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
       } else if (sortKey === 'totalScore') {
-            const getScore = (emp) => {
-                let score = 0;
-                emp.competitions.forEach(comp => {
-                    const val = comp.giaTri || 0;
-                    const pTarget = categoryTargets[comp.tenGoc] || 0;
-                    
-                    // --- ÁP DỤNG SỐ DỰ KIẾN VÀO BẢNG CHÂN LÝ ---
-                    const projectedVal = (val / currentDay) * daysInMonth;
-                    
-                    if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) {
-                        score++;
-                    }
-                });
-                return score;
-            };
-            valA = getScore(a);
-            valB = getScore(b);
-            return sortDirection === 'asc' ? valA - valB : valB - valA;
+            valA = getScore(a); valB = getScore(b);
       } else {
-            valA = a[sortKey] || '';
-            valB = b[sortKey] || '';
-            return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            valA = a[sortKey] || ''; valB = b[sortKey] || '';
+      }
+
+      if ($selectedWarehouse === 'ALL') {
+          const khoA = String(a.maKho || '').toUpperCase();
+          const khoB = String(b.maKho || '').toUpperCase();
+          if (khoA !== khoB) return khoA.localeCompare(khoB);
+      }
+
+      if (sortKey.startsWith('comp_') || sortKey === 'totalScore') {
+          return sortDirection === 'asc' ? valA - valB : valB - valA;
+      } else {
+          return sortDirection === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
       }
   });
 
-  $: topCount = sortedEmployees.length <= 15 ? 3 : 5;
-  function getRowStyle(index) {
-      if (index === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
-      if (index === 1) return 'bg-slate-100 hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50/60 hover:bg-orange-100';
-      if (index < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
-      return index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-slate-50/50 hover:bg-gray-100';
+  $: processedEmployees = (() => {
+      if ($selectedWarehouse === 'ALL') {
+          let currentKho = null;
+          let currentRank = 0;
+          return sortedEmployees.map(emp => {
+              if (emp.maKho !== currentKho) {
+                  currentKho = emp.maKho;
+                  currentRank = 0;
+              }
+              const result = { ...emp, _displayRank: currentRank };
+              currentRank++;
+              return result;
+          });
+      } else {
+          return sortedEmployees.map((emp, i) => ({ ...emp, _displayRank: i }));
+      }
+  })();
+
+  $: topCount = processedEmployees.length <= 15 ? 3 : 5;
+
+  function getRowStyle(rank) {
+      if (rank === 0) return 'bg-yellow-50/80 hover:bg-yellow-100';
+      if (rank === 1) return 'bg-slate-100 hover:bg-slate-200'; 
+      if (rank === 2) return 'bg-orange-50/60 hover:bg-orange-100';
+      if (rank < topCount) return 'bg-blue-50/50 hover:bg-blue-100'; 
+      return rank % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-slate-50/50 hover:bg-gray-100';
   }
 
-  function getStickyClass(index) {
-      if (index === 0) return 'bg-yellow-50 group-hover:bg-yellow-100';
-      if (index === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
-      if (index === 2) return 'bg-orange-50 group-hover:bg-orange-100';
-      if (index < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
-      return index % 2 === 0 ? 'bg-white group-hover:bg-gray-50' : 'bg-slate-50 group-hover:bg-gray-100';
+  function getStickyClass(rank) {
+      if (rank === 0) return 'bg-yellow-50 group-hover:bg-yellow-100';
+      if (rank === 1) return 'bg-slate-100 group-hover:bg-slate-200'; 
+      if (rank === 2) return 'bg-orange-50 group-hover:bg-orange-100';
+      if (rank < topCount) return 'bg-blue-50 group-hover:bg-blue-100'; 
+      return rank % 2 === 0 ? 'bg-white group-hover:bg-gray-50' : 'bg-slate-50 group-hover:bg-gray-100';
   }
 
-  function getRankIcon(index) {
-      if (index === 0) return '🏆';
-      if (index === 1) return '🥈';
-      if (index === 2) return '🥉';
-      if (index < topCount) return '⭐';
-      return `#${index + 1}`;
+  function getRankIcon(rank) {
+      if (rank === 0) return '🏆';
+      if (rank === 1) return '🥈';
+      if (rank === 2) return '🥉';
+      if (rank < topCount) return '⭐';
+      return `#${rank + 1}`;
   }
 
   function toggleColumn(col) {
@@ -2427,27 +2493,24 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
   function calculateTotal(col) {
       return allEmployees.reduce((sum, emp) => {
-          const comp = emp.competitions.find(c => c.tenGoc === col.tenGoc);
+          const comp = (emp.competitions || []).find(c => c.tenGoc === col.tenGoc);
           return sum + (comp?.giaTri || 0);
       }, 0);
   }
 
   function calculateTotalScore() {
       return allEmployees.reduce((total, item) => {
-          const score = item.competitions.reduce((acc, c) => {
+          const score = (item.competitions || []).reduce((acc, c) => {
               const val = c.giaTri || 0;
               const pTarget = categoryTargets[c.tenGoc] || 0;
               const projectedVal = (val / currentDay) * daysInMonth;
-              
               return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
           }, 0);
           return total + score;
       }, 0);
   }
 
-  afterUpdate(() => {
-    if (typeof feather !== 'undefined') feather.replace();
-  });
+  afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
 
 <div class="space-y-4 animate-fade-in">
@@ -2457,29 +2520,30 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
         </div>
     {:else}
         
-        <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <p class="text-xs font-bold text-gray-500 uppercase mb-2">Hiển thị cột:</p>
-            <div class="flex flex-wrap gap-2">
+        <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
+            <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                Cấu hình ẩn / hiện cột dữ liệu báo cáo
+            </summary>
+            <div class="flex flex-wrap gap-2 mt-2.5" on:click|stopPropagation>
                 {#each columnSettings as col}
                     <button 
                         type="button"
-                        class="px-3 py-1 rounded-full text-xs font-medium border transition-all select-none
-                                {col.visible ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
+                        class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
                         on:click={() => toggleColumn(col)}
                         title={col.loaiSoLieu}
                     >
-                        {col.label}
+                        {col.visible ? '✓ ' : '+ '} {col.label}
                     </button>
                 {/each}
             </div>
-        </div>
+        </details>
 
         <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden" data-capture-group="pasted-competition">
             <div class="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
                 <div>
                     <h3 class="text-lg font-bold text-purple-800 uppercase flex items-center gap-2">
-                        <i data-feather="award" class="w-5 h-5"></i>
-                        Thi Đua Lũy Kế
+                        <i data-feather="award" class="w-5 h-5"></i> Thi Đua Lũy Kế
                     </h3>
                     <p class="text-xs text-gray-500 mt-0.5 ml-7">Theo dõi tiến độ các chương trình thi đua</p>
                 </div>
@@ -2489,15 +2553,17 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                 <table class="w-full text-sm text-left border-separate border-spacing-0">
                     <thead class="text-xs uppercase font-bold text-gray-700 sticky top-0 z-20 shadow-sm">
                         <tr>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[50px] min-w-[50px] sticky left-0 z-30 px-1 py-2 text-center align-middle text-sm">Hạng</th>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky left-[50px] z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" on:click={() => handleSort('hoTen')}>Nhân viên</th>
-                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky left-[200px] z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" on:click={() => handleSort('totalScore')}>Đạt</th>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[50px] min-w-[50px] sticky px-1 py-2 text-center align-middle text-sm z-30" style="left: 0px;">Hạng</th>
+                            
+                            {#if $selectedWarehouse === 'ALL'}
+                                <th class="bg-gray-100 border-b border-r border-gray-200 w-[60px] min-w-[60px] sticky px-1 py-2 text-center align-middle text-sm z-30 font-bold text-purple-700" style="left: 50px;">Kho</th>
+                            {/if}
+                            
+                            <th class="bg-gray-100 border-b border-r border-gray-200 min-w-[150px] w-[150px] sticky z-30 px-2 py-2 cursor-pointer hover:bg-gray-200 transition select-none align-middle text-sm" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" on:click={() => handleSort('hoTen')}>Nhân viên</th>
+                            <th class="bg-gray-100 border-b border-r border-gray-200 w-[100px] min-w-[100px] sticky z-30 px-1 py-2 text-center cursor-pointer hover:bg-gray-200 transition select-none align-middle" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};" on:click={() => handleSort('totalScore')}>Đạt</th>
+                            
                             {#each visibleColumns as col, index}
-                                <th 
-                                    class="px-1 py-1 w-auto min-w-[60px] max-w-[90px] whitespace-normal break-words border-b border-r border-gray-200 {getHeaderColor(index)} align-middle cursor-pointer hover:opacity-80 transition select-none"
-                                    on:click={() => handleSort(col.id)}
-                                    title="{col.label} (Bấm để sắp xếp)"
-                                >
+                                <th class="px-1 py-1 w-auto min-w-[60px] max-w-[90px] whitespace-normal break-words border-b border-r border-gray-200 {getHeaderColor(index)} align-middle cursor-pointer hover:opacity-80 transition select-none" on:click={() => handleSort(col.id)} title="{col.label} (Bấm để sắp xếp)">
                                     <div class="text-[10px] font-bold leading-3 text-center whitespace-normal break-words min-h-[32px] flex items-center justify-center">
                                         {col.label}
                                     </div>
@@ -2507,41 +2573,44 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                     </thead>
                     
                     <tbody class="divide-y divide-gray-100">
-                        {#each sortedEmployees as item, index (item.maNV)}
-                            {@const score = item.competitions.reduce((acc, c) => {
+                        {#each processedEmployees as item, loopIndex (item.maNV + '_' + (item.maKho || '') + '_' + loopIndex)}
+                            {@const score = (item.competitions || []).reduce((acc, c) => {
                                 const val = c.giaTri || 0;
                                 const pTarget = categoryTargets[c.tenGoc] || 0;
                                 const projectedVal = (val / currentDay) * daysInMonth;
                                 return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
                             }, 0)}
                             
-                            <tr 
-                                class="transition-colors group cursor-pointer {getRowStyle(index)}"
-                                on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}
-                            >
-                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky left-0 transition-colors {getStickyClass(index)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'}">
-                                    {getRankIcon(index)}
+                            <tr class="transition-colors group cursor-pointer {getRowStyle(item._displayRank)}" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
+                                <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky transition-colors {getStickyClass(item._displayRank)} {item._displayRank <= 2 ? 'text-lg' : 'text-sm text-slate-400'}" style="left: 0px;">
+                                    {getRankIcon(item._displayRank)}
                                 </td>
-                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky left-[50px] z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(index)}" title="{item.hoTen} - {item.maNV}">
+                                
+                                {#if $selectedWarehouse === 'ALL'}
+                                    <td class="px-1 py-1.5 text-center font-bold border-r border-purple-200 text-purple-700 z-10 sticky text-[12px] uppercase transition-colors {getStickyClass(item._displayRank)}" style="left: 50px;">
+                                        {item.maKho}
+                                    </td>
+                                {/if}
+                                
+                                <td class="px-2 py-1.5 font-semibold text-blue-700 sticky z-10 border-r border-gray-200 whitespace-nowrap text-[13px] truncate max-w-[150px] transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '110px' : '50px'};" title="{item.hoTen} - {item.maNV}">
                                     {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                                 </td>
-                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky left-[200px] z-10 transition-colors {getStickyClass(index)}">
+                                
+                                <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky z-10 transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                     {score}
                                 </td>
 
                                 {#each visibleColumns as col}
-                                    {@const comp = item.competitions.find(c => c.tenGoc === col.tenGoc)}
+                                    {@const comp = (item.competitions || []).find(c => c.tenGoc === col.tenGoc)}
                                     {@const val = comp?.giaTri || 0}
                                     {@const pTarget = categoryTargets[col.tenGoc] || 0}
                                     {@const projectedVal = (val / currentDay) * daysInMonth}
-                                    
                                     {@const isBelow = pTarget > 0 && projectedVal < pTarget}
                                     {@const isNoTarget = pTarget === 0 && val === 0}
                                     {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
                                     {@const textColorClass = isBelow ? 'text-yellow-900' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
 
                                     <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
-                                    
                                         {#if val === 0}
                                             <span class="text-gray-300 font-normal">{isNoTarget ? '0' : '-'}</span>
                                         {:else}
@@ -2555,10 +2624,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                     
                     <tfoot class="text-xs uppercase sticky bottom-0 z-20 shadow-[0_-1px_2px_rgba(0,0,0,0.1)]">
                         <tr class="bg-indigo-50 text-indigo-800 font-semibold border-t-2 border-indigo-300">
-                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-indigo-100 border-r border-indigo-200 z-30 text-center text-[13px]">
+                            <td colspan={$selectedWarehouse === 'ALL' ? 3 : 2} class="px-2 py-2 sticky bg-indigo-100 border-r border-indigo-200 z-30 text-center text-[13px]" style="left: 0px;">
                                 TARGET CÁ NHÂN
                             </td>
-                            <td class="px-2 py-2 border-r border-indigo-200 bg-indigo-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-indigo-700">
+                            <td class="px-2 py-2 border-r border-indigo-200 bg-indigo-100 sticky z-30 text-center text-[13px] font-bold text-indigo-700" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                 -
                             </td>
                             {#each visibleColumns as col}
@@ -2570,10 +2639,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                         </tr>
 
                         <tr class="bg-yellow-50 text-yellow-800 font-semibold border-t border-gray-300">
-                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan={$selectedWarehouse === 'ALL' ? 3 : 2} class="px-2 py-2 sticky bg-yellow-100 border-r border-gray-300 z-30 text-center text-[13px]" style="left: 0px;">
                                 TRUNG BÌNH
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky left-[200px] z-30 text-center text-[13px] font-bold text-green-700">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-yellow-100 sticky z-30 text-center text-[13px] font-bold text-green-700" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                 {allEmployees.length > 0 ? formatters.formatNumber(calculateTotalScore() / allEmployees.length, 1) : 0}
                             </td>
                             {#each visibleColumns as col}
@@ -2584,10 +2653,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                         </tr>
 
                         <tr class="bg-gray-200 text-gray-900 font-bold border-t border-gray-300">
-                            <td colspan="2" class="px-2 py-2 sticky left-0 bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]">
+                            <td colspan={$selectedWarehouse === 'ALL' ? 3 : 2} class="px-2 py-2 sticky bg-gray-300 border-r border-gray-300 z-30 text-center text-[13px]" style="left: 0px;">
                                 TỔNG
                             </td>
-                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky left-[200px] z-30 text-center text-[13px]">
+                            <td class="px-2 py-2 border-r border-gray-300 bg-gray-300 sticky z-30 text-center text-[13px]" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
                                 {calculateTotalScore()}
                             </td>
                             {#each visibleColumns as col}
@@ -2607,18 +2676,13 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     .animate-fade-in { animation: fadeIn 0.4s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     .sticky { position: sticky; }
-    
     .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
-
     table { border-spacing: 0; }
-    .line-clamp-2 {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
+    
+    /* [SỬA ĐỔI] Thêm style ẩn icon mũi tên mặc định của thẻ details */
+    details > summary::-webkit-details-marker { display: none; }
 </style>
 <<< FILE_END: src/components/health-staff/competition/EmployeeView.svelte
 
@@ -2858,34 +2922,106 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
 >>> FILE_START: src/components/health-staff/competition/ProgramView.svelte
 <script>
+  import { modalState } from '../../../stores.js';
+  import { afterUpdate } from 'svelte';
   import FocusCompetitionTable from './FocusCompetitionTable.svelte';
 
   export let reportData = []; // Mảng kết quả tính toán từ service
+
+  // [CODEGENESIS]: Hàm xử lý gộp dòng dữ liệu nhân viên bán đa kho cho tab Lũy kế
+  function aggregateReportData(reportArray) {
+      if (!reportArray || !Array.isArray(reportArray)) return [];
+      return reportArray.map(item => {
+          const empData = item.employeeData || item.employeeResults || [];
+          const keyName = item.employeeData ? 'employeeData' : (item.employeeResults ? 'employeeResults' : '');
+          
+          if (!keyName || empData.length === 0) return item;
+          
+          const map = new Map();
+          empData.forEach(emp => {
+              const id = emp.maNV || emp.employeeId;
+              if (!id) return;
+              if (!map.has(id)) {
+                  map.set(id, { ...emp });
+              } else {
+                  const existing = map.get(id);
+                  Object.keys(emp).forEach(key => {
+                      if (typeof emp[key] === 'number' && key !== 'maNV' && key !== 'employeeId' && !key.toLowerCase().includes('tyle') && !key.toLowerCase().includes('percent') && !key.toLowerCase().includes('hoanthanh')) {
+                          existing[key] = (existing[key] || 0) + emp[key];
+                      }
+                  });
+              }
+          });
+          
+          const aggregatedEmpData = Array.from(map.values());
+          aggregatedEmpData.forEach(emp => {
+              if ('slNhomHang' in emp && 'slDacQuyen' in emp) {
+                  emp.tyLeSL = emp.slNhomHang > 0 ? (emp.slDacQuyen / emp.slNhomHang) : 0;
+              }
+              if ('dtNhomHang' in emp && 'dtDacQuyen' in emp) {
+                  emp.tyLeDT = emp.dtNhomHang > 0 ? (emp.dtDacQuyen / emp.dtNhomHang) : 0;
+              }
+              if ('target' in emp && 'actual' in emp) {
+                  emp.hoanThanh = emp.target > 0 ? (emp.actual / emp.target) : 0;
+              }
+              if ('target' in emp && 'revenue' in emp) {
+                  emp.hoanThanh = emp.target > 0 ? (emp.revenue / emp.target) : 0;
+              }
+          });
+          
+          return {
+              ...item,
+              [keyName]: aggregatedEmpData
+          };
+      });
+  }
+
+  $: aggregatedReportDataList = aggregateReportData(reportData);
+
+  afterUpdate(() => {
+      if (typeof window.feather !== 'undefined') window.feather.replace();
+  });
 </script>
 
-{#if reportData.length === 0}
-    <div class="p-12 text-center bg-white border-2 border-dashed border-gray-300 rounded-xl">
-        <p class="text-gray-500 font-medium">Không có dữ liệu chương trình thi đua.</p>
-        <p class="text-sm text-gray-400 mt-2">
-            Vui lòng kiểm tra:
-            1. Đã tạo chương trình trong "Thiết lập mục tiêu"?
-            2. Đã tải file YCX?
-            3. Có phát sinh doanh thu cho các nhóm hàng đã chọn?
-        </p>
+<div class="w-full flex flex-col">
+    
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl shadow-sm mb-6 border border-gray-200 gap-4">
+        <div class="flex flex-col">
+            <span class="text-xs font-bold text-indigo-500 uppercase tracking-wider">Chương trình thi đua Lũy Kế</span>
+            <span class="text-sm text-gray-500 font-medium">Tiêu chí cấu hình được áp dụng đồng bộ toàn hệ thống</span>
+        </div>
+        <button 
+            on:click={() => modalState.update(s => ({ ...s, activeModal: 'user-competition-modal', editingIndex: -1 }))}
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+        >
+            <i data-feather="plus-circle" class="w-4 h-4"></i> Thiết lập Thi Đua
+        </button>
     </div>
-{:else}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
-        {#each reportData as result (result.competition.id)}
-            <div 
-                class="h-full" 
-                data-capture-group="competition-program"
-                data-capture-filename="ThiDua_{result.competition.name || result.competition.id}"
-            >
-                <FocusCompetitionTable competitionResult={result} />
-            </div>
-        {/each}
-    </div>
-{/if}
+
+    {#if aggregatedReportDataList.length === 0}
+        <div class="p-12 text-center bg-white border-2 border-dashed border-gray-300 rounded-xl">
+            <p class="text-gray-500 font-medium">Không có dữ liệu chương trình thi đua.</p>
+            <p class="text-sm text-gray-400 mt-2">
+                Vui lòng kiểm tra:
+                1. Đã tạo chương trình trong nút "Thiết lập Thi Đua" ở góc trên?
+                2. Đã tải file YCX của tháng chưa?
+                3. Có phát sinh doanh thu cho các nhóm hàng đã chọn?
+            </p>
+        </div>
+    {:else}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
+            {#each aggregatedReportDataList as result (result.competition.id)}
+                <div 
+                    class="h-full" 
+                    data-capture-group="competition-program"
+                    data-capture-filename="ThiDua_{result.competition.name || result.competition.id}"
+                >
+                    <FocusCompetitionTable competitionResult={result} />
+                </div>
+            {/each}
+        </div>
+    {/if}
+</div>
 <<< FILE_END: src/components/health-staff/competition/ProgramView.svelte
 
 >>> FILE_START: src/components/health-staff/detail/CardFilter.svelte
@@ -4801,21 +4937,121 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 >>> FILE_START: src/components/health-staff/revenue/RevenueDetailView.svelte
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { masterReportData, ycxData, modalState } from '../../../stores.js';
+  import { 
+      masterReportData, 
+      ycxData, 
+      ycxDataThangTruoc, 
+      selectedWarehouse, 
+      luykeGoalSettings, 
+      modalState 
+  } from '../../../stores.js';
   import { reportService } from '../../../services/reportService.js';
   import { settingsService } from '../../../services/settings.service.js';
+  import { dataProcessing } from '../../../services/dataProcessing.js';
   import { formatters } from '../../../utils/formatters.js';
+  
   import DetailHeader from '../detail/DetailHeader.svelte';
   import RevenueKpiBoard from './RevenueKpiBoard.svelte';
   import DailyPerfChart from './DailyPerfChart.svelte';
   import RevenueTopGroups from './RevenueTopGroups.svelte';
 
   export let employeeId;
+  export let isGhostMode = false; // [TÍNH NĂNG MỚI]: Bật khi chạy Background Rendering
+
   const dispatch = createEventDispatcher();
 
   let detailData = null;
   let employeeData = null;
   let goals = {};
+  
+  // --- THIẾT LẬP THỜI GIAN ---
+  let currentDay = 1;
+  let daysInMonth = 30;
+  $: {
+      const today = new Date();
+      const d = today.getDate();
+      if (d === 1) {
+          const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+          currentDay = lastMonth.getDate(); 
+          daysInMonth = lastMonth.getDate();
+      } else {
+          currentDay = Math.max(d - 1, 1);
+          daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      }
+  }
+
+  // --- TÍNH TOÁN TARGET ---
+  $: currentGoals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
+  $: shopTargetQD = (parseFloat(currentGoals.doanhThuQD || 0) * 1000000);
+  $: employeeCount = $masterReportData.sknv ? $masterReportData.sknv.length : 1;
+  $: targetCaNhan = shopTargetQD / employeeCount;
+
+  // --- TÍNH TOÁN CÙNG KỲ ---
+  $: dtqdCK = (() => {
+      if (!$ycxDataThangTruoc || !employeeId) return 0;
+      const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
+      const today = new Date();
+      const targetDate = new Date(today.getFullYear(), today.getMonth() - (today.getDate() === 1 ? 2 : 1), 1);
+      const targetMonth = targetDate.getMonth();
+      const targetYear = targetDate.getFullYear();
+
+      let totalCK = 0;
+      $ycxDataThangTruoc.forEach(row => {
+          if (!row.ngayTao || !(row.ngayTao instanceof Date)) return;
+          if (row.ngayTao.getMonth() !== targetMonth || row.ngayTao.getFullYear() !== targetYear) return;
+
+          const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+          if (msnvMatch && msnvMatch[1].trim() === String(employeeId)) {
+              const isDaXuat = !row.trangThaiXuat || ['Đã xuất', 'Đã giao'].includes(row.trangThaiXuat.trim());
+              const isBaseValid = (row.trangThaiThuTien || '').trim() === 'Đã thu' &&
+                                  (row.trangThaiHuy || '').trim() === 'Chưa hủy' &&
+                                  (row.tinhTrangTra || '').trim() === 'Chưa trả';
+
+              if (hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) && isDaXuat && isBaseValid) {
+                  totalCK += (row.revenueQuyDoi || 0);
+              }
+          }
+      });
+      return totalCK;
+  })();
+
+  // --- TÍNH TOÁN TRẢ CHẬM ---
+  $: traChamStats = (() => {
+      let dtThucTC = 0;
+      let dtqdTC = 0;
+      if (!$ycxData || !employeeId) return { dtThucTC, dtqdTC };
+      const hinhThucXuatTraGop = dataProcessing.getHinhThucXuatTraGop();
+      
+      $ycxData.forEach(row => {
+          const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+          if (msnvMatch && msnvMatch[1].trim() === String(employeeId)) {
+              const isDaXuat = !row.trangThaiXuat || ['Đã xuất', 'Đã giao'].includes(row.trangThaiXuat.trim());
+              const isBaseValid = (row.trangThaiThuTien || '').trim() === 'Đã thu' &&
+                                  (row.trangThaiHuy || '').trim() === 'Chưa hủy' &&
+                                  (row.tinhTrangTra || '').trim() === 'Chưa trả';
+                                  
+              if (hinhThucXuatTraGop.has(row.hinhThucXuat) && isDaXuat && isBaseValid) {
+                  dtThucTC += parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                  dtqdTC += (row.revenueQuyDoi || 0);
+              }
+          }
+      });
+      return { dtThucTC, dtqdTC };
+  })();
+
+  // --- GỘP DỮ LIỆU ĐỂ TRUYỀN XUỐNG KPI BOARD ---
+  $: enrichedSummary = detailData ? {
+      ...detailData.summary,
+      targetCaNhan: targetCaNhan,
+      dtqdCK: dtqdCK,
+      duKienSoCK: ((detailData.summary.totalConvertedRevenue / currentDay) * daysInMonth) - dtqdCK,
+      tyLeHoanThanh: targetCaNhan > 0 ? ((detailData.summary.totalConvertedRevenue / currentDay) * daysInMonth) / targetCaNhan : 0,
+      dtThucTC: traChamStats.dtThucTC,
+      dtqdTC: traChamStats.dtqdTC,
+      tyLeTraCham: detailData.summary.totalRealRevenue > 0 ? traChamStats.dtThucTC / detailData.summary.totalRealRevenue : 0,
+      tyLeBanKem: detailData.summary.totalOrders > 0 ? detailData.summary.bundledOrderCount / detailData.summary.totalOrders : 0
+  } : null;
+
   $: if (employeeId && $ycxData.length > 0) {
       employeeData = $masterReportData.sknv.find(e => String(e.maNV) === String(employeeId));
       if (employeeData) {
@@ -4829,17 +5065,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       dispatch('back');
   }
 
-  function openUnexportedModal() {
-      if (detailData) {
-          modalState.update(s => ({ 
-              ...s, 
-              activeModal: 'unexported-detail-modal',
-              payload: { unexportedDetails: detailData.unexportedDetails || [] }
-          }));
-      }
-  }
+  // Đã bỏ openUnexportedModal theo yêu cầu
 
   function openOrdersModal() {
+      if (isGhostMode) return; // Khóa modal nếu đang chụp ẩn
       if (detailData) {
           modalState.update(s => ({ 
               ...s, 
@@ -4854,23 +5083,24 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 </script>
 
 <div 
-    class="animate-fade-in pb-10 max-w-7xl mx-auto"
+    class="animate-fade-in pb-10 max-w-7xl mx-auto {isGhostMode ? 'p-6 bg-white w-[1000px]' : ''}"
     data-capture-group="revenue-detail-mobile"
     data-capture-filename={employeeData ? `DTLK_ChiTiet_${employeeData.hoTen}_${employeeData.maNV}` : 'ChiTietNhanVien'}
 >
+    {#if !isGhostMode}
     <div class="mb-4 flex justify-between items-center">
         <button on:click={goBack} class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
             <i data-feather="chevron-left" class="w-4 h-4"></i> Quay lại bảng tổng hợp
         </button>
     </div>
+    {/if}
 
-    {#if employeeData && detailData}
+    {#if employeeData && enrichedSummary}
         <DetailHeader employee={employeeData} showStats={false} />
         
         <RevenueKpiBoard 
-            summary={detailData.summary} 
+            summary={enrichedSummary} 
             {goals} 
-            on:viewUnexported={openUnexportedModal}
             on:viewOrders={openOrdersModal}
         />
         
@@ -4903,55 +5133,137 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   export let goals = {};
 
   const dispatch = createEventDispatcher();
-
-  // Tính toán target
-  $: targetQD = (goals?.phanTramQD || 0);
-  $: isPositive = (summary.conversionRate * 100) >= targetQD;
 </script>
 
-<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-    <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
-        <div class="text-sm text-gray-500 font-medium uppercase">Tổng DT Thực</div>
-        <div class="text-xl font-bold text-blue-600 mt-1">{formatters.formatRevenue(summary.totalRealRevenue, 1)}</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+    
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm flex items-stretch justify-between min-h-[110px] hover:shadow-md transition-all hover:-translate-y-0.5">
+        <div class="flex flex-col justify-between items-start gap-3 w-2/3">
+            <div class="flex items-center gap-2">
+                <div style="width: 32px; height: 32px; min-width: 32px;" class="rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider text-blue-800">Doanh Thu QĐ</span>
+            </div>
+            <div class="text-[11px] font-semibold text-blue-700 bg-white/50 px-2 py-1 rounded flex items-center gap-3 whitespace-nowrap">
+                <span>DT Thực: <strong class="text-blue-900">{formatters.formatRevenue(summary.totalRealRevenue)}</strong></span>
+            </div>
+        </div>
+        <div class="w-1/3 flex items-center justify-end">
+            <span class="text-3xl xl:text-4xl font-black text-blue-700 drop-shadow-sm leading-none whitespace-nowrap">
+                {formatters.formatRevenue(summary.totalConvertedRevenue)}
+            </span>
+        </div>
     </div>
 
-    <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
-        <div class="text-sm text-gray-500 font-medium uppercase">Tổng DTQĐ</div>
-        <div class="text-xl font-bold text-purple-600 mt-1">{formatters.formatRevenue(summary.totalConvertedRevenue, 1)}</div>
+    <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 shadow-sm flex items-stretch justify-between min-h-[110px] hover:shadow-md transition-all hover:-translate-y-0.5">
+        <div class="flex flex-col justify-between items-start gap-3 w-1/2">
+            <div class="flex items-center gap-2">
+                <div style="width: 32px; height: 32px; min-width: 32px;" class="rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider text-purple-800">Tỷ Lệ Quy Đổi</span>
+            </div>
+        </div>
+        <div class="w-1/2 flex items-center justify-end">
+            <span class="text-3xl xl:text-4xl font-black text-purple-700 drop-shadow-sm leading-none whitespace-nowrap">
+                {formatters.formatPercentage(summary.conversionRate)}
+            </span>
+        </div>
     </div>
 
-    <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
-        <div class="text-sm text-gray-500 font-medium uppercase">Tỷ lệ QĐ</div>
-        <div class="text-xl font-bold mt-1 {isPositive ? 'text-green-600' : 'text-red-600'}">
-            {formatters.formatPercentage(summary.conversionRate)}
+    <div class="{summary.tyLeHoanThanh >= 1 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'} border rounded-xl p-4 shadow-sm flex items-stretch justify-between min-h-[110px] hover:shadow-md transition-all hover:-translate-y-0.5">
+        <div class="flex flex-col justify-between items-start gap-3 w-1/2">
+            <div class="flex items-center gap-2">
+                <div style="width: 32px; height: 32px; min-width: 32px;" class="rounded-lg {summary.tyLeHoanThanh >= 1 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-500'} flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider {summary.tyLeHoanThanh >= 1 ? 'text-emerald-800' : 'text-rose-800'}">% Target Dự Kiến</span>
+            </div>
+            <div class="text-[11px] font-semibold bg-white/50 px-2 py-1 rounded flex items-center gap-3 whitespace-nowrap {summary.tyLeHoanThanh >= 1 ? 'text-emerald-700' : 'text-rose-700'}">
+                <span>Mục tiêu NV: <strong class="{summary.tyLeHoanThanh >= 1 ? 'text-emerald-900' : 'text-rose-900'}">{formatters.formatRevenue(Math.round(summary.targetCaNhan))}</strong></span>
+            </div>
+        </div>
+        <div class="w-1/2 flex items-center justify-end">
+            <span class="text-4xl font-black drop-shadow-sm leading-none whitespace-nowrap {summary.tyLeHoanThanh >= 1 ? 'text-emerald-600' : 'text-rose-600'}">
+                {Math.round(summary.tyLeHoanThanh * 100)}%
+            </span>
+        </div>
+    </div>
+
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm flex items-stretch justify-between min-h-[110px] hover:shadow-md transition-all hover:-translate-y-0.5">
+        <div class="flex flex-col justify-between items-start gap-3 w-2/3">
+            <div class="flex items-center gap-2">
+                <div style="width: 32px; height: 32px; min-width: 32px;" class="rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Tỷ Lệ Trả Chậm</span>
+            </div>
+            <div class="text-[11px] font-semibold text-amber-700 bg-white/50 px-2 py-1 rounded flex flex-wrap items-center gap-3">
+                <span>DTQĐ: <strong class="text-amber-900">{formatters.formatRevenue(summary.dtqdTC)}</strong></span>
+                <span>Thực: <strong class="text-amber-900">{formatters.formatRevenue(summary.dtThucTC)}</strong></span>
+            </div>
+        </div>
+        <div class="w-1/3 flex items-center justify-end">
+            <span class="text-3xl xl:text-4xl font-black text-amber-600 drop-shadow-sm leading-none whitespace-nowrap">
+                {formatters.formatPercentage(summary.tyLeTraCham)}
+            </span>
+        </div>
+    </div>
+
+    <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 shadow-sm flex items-stretch justify-between min-h-[110px] hover:shadow-md transition-all hover:-translate-y-0.5">
+        <div class="flex flex-col justify-between items-start gap-3 w-1/2">
+            <div class="flex items-center gap-2">
+                <div style="width: 32px; height: 32px; min-width: 32px;" class="rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider text-indigo-800">Dự Kiến So CK</span>
+            </div>
+            <div class="text-[11px] font-semibold text-indigo-700 bg-white/50 px-2 py-1 rounded flex items-center gap-3 whitespace-nowrap">
+                <span>DTQĐ Cùng Kỳ: <strong class="text-indigo-900">{formatters.formatRevenue(summary.dtqdCK)}</strong></span>
+            </div>
+        </div>
+        <div class="w-1/2 flex items-center justify-end">
+            <span class="text-3xl xl:text-4xl font-black drop-shadow-sm leading-none whitespace-nowrap {summary.duKienSoCK >= 0 ? 'text-blue-600' : 'text-rose-500'}">
+                {summary.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(summary.duKienSoCK)}
+            </span>
         </div>
     </div>
 
     <div 
-        class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center cursor-pointer hover:bg-yellow-50 transition-colors hover:shadow-md"
-        on:click={() => dispatch('viewUnexported')}
-    >
-        <div class="text-sm text-gray-500 font-medium uppercase flex items-center justify-center gap-1">
-            DT Chưa Xuất <i data-feather="external-link" class="w-3 h-3"></i>
-        </div>
-        <div class="text-xl font-bold text-yellow-600 mt-1">{formatters.formatRevenue(summary.unexportedRevenue, 1)}</div>
-    </div>
-
-    <div 
-        class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center cursor-pointer hover:bg-blue-50 transition-colors hover:shadow-md"
+        class="bg-cyan-50 border border-cyan-200 rounded-xl p-4 shadow-sm flex items-stretch justify-between min-h-[110px] hover:shadow-md transition-all hover:-translate-y-0.5 cursor-pointer hover:bg-cyan-100/70"
         on:click={() => dispatch('viewOrders')}
     >
-        <div class="text-sm text-gray-500 font-medium uppercase flex items-center justify-center gap-1">
-            Tổng Đơn <i data-feather="external-link" class="w-3 h-3"></i>
+        <div class="flex flex-col justify-between items-start gap-3 w-2/3">
+            <div class="flex items-center gap-2">
+                <div style="width: 32px; height: 32px; min-width: 32px;" class="rounded-lg bg-cyan-100 flex items-center justify-center text-cyan-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg>
+                </div>
+                <span class="text-xs font-bold uppercase tracking-wider text-cyan-800">Tỷ Lệ Bán Kèm</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-cyan-600 opacity-60" style="width: 12px; height: 12px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </div>
+            <div class="text-[11px] font-semibold text-cyan-700 bg-white/50 px-2 py-1 rounded flex flex-wrap items-center gap-3">
+                <span>Tổng đơn: <strong class="text-cyan-900">{summary.totalOrders}</strong></span>
+                <span>>1 sp: <strong class="text-cyan-900">{summary.bundledOrderCount}</strong></span>
+            </div>
         </div>
-        <div class="text-xl font-bold text-gray-800 mt-1">{summary.totalOrders}</div>
-    </div>
-
-    <div class="bg-white p-4 rounded-lg shadow border border-gray-100 text-center">
-        <div class="text-sm text-gray-500 font-medium uppercase">Đơn Bán Kèm</div>
-        <div class="text-xl font-bold text-gray-800 mt-1">{summary.bundledOrderCount}</div>
+        <div class="w-1/3 flex items-center justify-end">
+            <span class="text-3xl xl:text-4xl font-black text-cyan-600 drop-shadow-sm leading-none whitespace-nowrap">
+                {formatters.formatPercentage(summary.tyLeBanKem)}
+            </span>
+        </div>
     </div>
 </div>
+
+<style>
+    /* ==========================================================================
+       OVERRIDE CAPTURE LOGIC
+       ========================================================================== */
+    :global(.capture-container *) { 
+        transition: none !important;
+        animation: none !important; 
+    }
+</style>
 <<< FILE_END: src/components/health-staff/revenue/RevenueKpiBoard.svelte
 
 >>> FILE_START: src/components/health-staff/revenue/RevenueTopGroups.svelte
@@ -5053,6 +5365,271 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     </div>
 </div>
 <<< FILE_END: src/components/health-staff/revenue/RevenueTopGroups.svelte
+
+>>> FILE_START: src/components/health-staff/revenue/table/ColumnConfig.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    export let columnSettings = [];
+    const dispatch = createEventDispatcher();
+</script>
+
+<details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mt-4 capture-hide" style="cursor: pointer;">
+    <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+        Cấu hình ẩn / hiện cột dữ liệu báo cáo
+    </summary>
+    <div class="flex flex-wrap gap-2 mt-2.5" on:click|stopPropagation>
+        {#each columnSettings as col}
+            <button 
+                type="button"
+                class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all select-none {col.visible ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}"
+                on:click={() => dispatch('toggle', col.key)}
+            >
+                {col.visible ? '✓ ' : '+ '} {col.label}
+            </button>
+        {/each}
+    </div>
+</details>
+
+<style>
+    details > summary::-webkit-details-marker { display: none; }
+</style>
+<<< FILE_END: src/components/health-staff/revenue/table/ColumnConfig.svelte
+
+>>> FILE_START: src/components/health-staff/revenue/table/TableFooter.svelte
+<script>
+    import { formatters } from '../../../../utils/formatters.js';
+    import { revenueTableUtils } from '../../../../utils/revenue-table.utils.js';
+
+    export let totals;
+    export let visibleColumns = [];
+    export let totalPctQD;
+    export let totalPctTC;
+    export let avgSupermarketDtTrenGc;
+    export let averages;
+    
+    export let shopTargetQD = 0;
+    export let totalTyLeDuKien = 0;
+</script>
+
+<tfoot class="font-bold border-t-[3px] border-gray-400 text-sm uppercase">
+    <tr class="bg-gray-50 border-b border-gray-300 text-gray-600 text-xs">
+        <td class="px-3 py-3 text-center tracking-wider border-r border-gray-300 overflow-hidden whitespace-nowrap text-ellipsis" colspan="2" style="width: 205px; min-width: 205px; max-width: 205px;">TRUNG BÌNH</td>
+        {#each visibleColumns as col}
+            <td class="px-2 py-3 text-right overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-30" style="width: 90px; min-width: 90px; max-width: 90px;">
+                {#if col.key === 'targetCaNhan'}
+                    <span class="text-gray-700 font-bold">{formatters.formatRevenue(Math.round(averages.targetCaNhan))}</span>
+                {:else if col.key === 'tyLeDuKien'}
+                    <span class="text-gray-800 font-bold">{Math.round(averages.tyLeDuKien * 100)}%</span>
+                {:else if col.key === 'doanhThu'}
+                    {formatters.formatRevenue(averages.doanhThu)}
+                {:else if col.key === 'doanhThuQuyDoi'}
+                    <span class="text-sky-700">{formatters.formatRevenue(averages.doanhThuQuyDoi)}</span>
+                {:else if col.key === 'hieuQuaQuyDoi'}
+                    <span class="text-sky-700">{formatters.formatPercentage(averages.hieuQuaQuyDoi)}</span>
+                {:else if col.key === 'dtqdCK'}
+                    <span class="text-indigo-800">{formatters.formatRevenue(averages.dtqdCK)}</span>
+                {:else if col.key === 'duKienSoCK'}
+                    <span class="{averages.duKienSoCK >= 0 ? 'text-blue-600' : 'text-red-500'}">
+                        {averages.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(averages.duKienSoCK)}
+                    </span>
+                {:else if col.key === 'doanhThuTraGop'}
+                    {formatters.formatRevenue(averages.doanhThuTraGop)}
+                {:else if col.key === 'tyLeTraCham'}
+                    {formatters.formatPercentage(averages.tyLeTraCham)}
+                {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
+                    <span class="text-gray-600">{formatters.formatRevenue(averages.doanhThuQuyDoiChuaXuat)}</span>
+                {:else if col.key === 'dtTrenGc'}
+                    <span class="text-emerald-700">{averages.dtTrenGc > 0 ? Math.round(averages.dtTrenGc).toLocaleString('vi-VN') : '-'}</span>
+                {/if}
+            </td>
+        {/each}
+    </tr>
+
+    <tr class="text-gray-900">
+        <td class="px-3 py-4 text-center tracking-wider bg-gray-100 border-r border-gray-300 overflow-hidden whitespace-nowrap text-ellipsis" colspan="2" style="width: 205px; min-width: 205px; max-width: 205px;">TỔNG CỘNG</td>
+        {#each visibleColumns as col}
+            <td class="px-2 py-4 text-right overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupHeaderClass(col).replace('border-gray-200', 'border-gray-300')} bg-opacity-50" style="width: 90px; min-width: 90px; max-width: 90px;">
+                {#if col.key === 'targetCaNhan'}
+                    <span class="text-gray-900 font-bold">{formatters.formatRevenue(Math.round(shopTargetQD))}</span>
+                {:else if col.key === 'tyLeDuKien'}
+                    <span class="text-gray-900 font-black">{Math.round(totalTyLeDuKien * 100)}%</span>
+                {:else if col.key === 'doanhThu'}
+                    {formatters.formatRevenue(totals.doanhThu)}
+                {:else if col.key === 'doanhThuQuyDoi'}
+                    <span class="text-sky-800">{formatters.formatRevenue(totals.doanhThuQuyDoi)}</span>
+                {:else if col.key === 'hieuQuaQuyDoi'}
+                    <span class="text-sky-800">{formatters.formatPercentage(totalPctQD)}</span>
+                {:else if col.key === 'dtqdCK'}
+                    <span class="text-indigo-900">{formatters.formatRevenue(totals.dtqdCK)}</span>
+                {:else if col.key === 'duKienSoCK'}
+                    <span class="{totals.duKienSoCK >= 0 ? 'text-blue-700' : 'text-red-600'}">
+                        {totals.duKienSoCK > 0 ? '+' : ''}{formatters.formatRevenue(totals.duKienSoCK)}
+                    </span>
+                {:else if col.key === 'doanhThuTraGop'}
+                    {formatters.formatRevenue(totals.doanhThuTraGop)}
+                {:else if col.key === 'tyLeTraCham'}
+                    {formatters.formatPercentage(totalPctTC)}
+                {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
+                    <span class="text-gray-700">{formatters.formatRevenue(totals.doanhThuQuyDoiChuaXuat)}</span>
+                {:else if col.key === 'dtTrenGc'}
+                    <span class="text-emerald-800">{totals.gioCong > 0 ? Math.round(avgSupermarketDtTrenGc).toLocaleString('vi-VN') : '-'}</span>
+                {/if}
+            </td>
+        {/each}
+    </tr>
+</tfoot>
+<<< FILE_END: src/components/health-staff/revenue/table/TableFooter.svelte
+
+>>> FILE_START: src/components/health-staff/revenue/table/TableHeader.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    import { revenueTableUtils } from '../../../../utils/revenue-table.utils.js';
+    export let visibleColumns = [];
+    export let sortKey = '';
+    export let sortDirection = 'desc';
+
+    const dispatch = createEventDispatcher();
+</script>
+
+<thead class="uppercase text-[11px] font-bold sticky top-0 z-10 shadow-sm align-middle">
+    <tr>
+        <th class="px-1 py-3 transition select-none bg-gray-100 text-gray-700 text-center border-r border-gray-200 overflow-hidden" style="width: 45px; min-width: 45px; max-width: 45px;">Hạng</th>
+        
+        <th class="px-3 py-3 transition select-none bg-gray-100 text-gray-700 text-left cursor-pointer hover:bg-gray-200 border-r border-gray-200 overflow-hidden whitespace-nowrap text-ellipsis" style="width: 160px; min-width: 160px; max-width: 160px;"
+            on:click={() => dispatch('sort', 'hoTen')}>
+            <div class="flex items-center justify-start gap-1.5 w-full">
+                <span class="truncate">Nhân viên</span>
+                {#if sortKey === 'hoTen'}<span class="text-blue-600 font-black text-[10px] flex-shrink-0">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+            </div>
+        </th>
+        
+        {#each visibleColumns as col}
+            {@const isTargetGroup = col.group === 'mt'}
+            {@const mtBgClass = isTargetGroup ? '!bg-emerald-100 !text-emerald-800' : ''}
+            
+            <th class="px-1 py-2 transition select-none text-center cursor-pointer hover:brightness-95 {revenueTableUtils.getGroupHeaderClass(col)} {mtBgClass} overflow-hidden" style="width: 90px; min-width: 90px; max-width: 90px;"
+                on:click={() => dispatch('sort', col.key)}>
+                <div class="flex flex-row items-center justify-center w-full h-full gap-1">
+                    <span class="whitespace-normal break-words leading-tight w-full truncate">{col.label}</span>
+                    {#if sortKey === col.key}
+                        <span class="{isTargetGroup ? 'text-emerald-600' : 'text-blue-600'} font-black flex-shrink-0 text-[10px] mt-0.5">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                    {/if}
+                </div>
+            </th>
+        {/each}
+    </tr>
+</thead>
+<<< FILE_END: src/components/health-staff/revenue/table/TableHeader.svelte
+
+>>> FILE_START: src/components/health-staff/revenue/table/TableRow.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    import { formatters } from '../../../../utils/formatters.js';
+    import { revenueTableUtils } from '../../../../utils/revenue-table.utils.js';
+
+    export let item;
+    export let index;
+    export let visibleColumns = [];
+    export let topCount;
+    export let avgSupermarketDtTrenGc;
+    export let kpiTargets;
+    export let kpiGlobalSettings;
+    export let averages;
+
+    const dispatch = createEventDispatcher();
+    $: userTarget = kpiTargets[item.maNV];
+</script>
+
+<tr class="group cursor-pointer hover:bg-gray-50/50" on:click={() => dispatch('viewDetail', item.maNV)}>
+    <td class="px-1 py-3 text-center border-r border-gray-200 font-bold bg-white group-hover:bg-gray-50 overflow-hidden whitespace-nowrap {index <= 2 ? 'text-xl' : 'text-sm text-slate-400'}" style="width: 45px; min-width: 45px; max-width: 45px;">
+        {revenueTableUtils.getRankIcon(index, topCount)}
+    </td>
+    <td class="px-3 py-3 font-semibold text-blue-700 border-r border-gray-200 bg-white group-hover:bg-gray-50 group-hover:text-blue-800 overflow-hidden whitespace-nowrap text-ellipsis" style="width: 160px; min-width: 160px; max-width: 160px;">
+        {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
+    </td>
+    
+    {#each visibleColumns as col}
+        {@const isBelowAvg = averages && averages[col.key] !== undefined && item[col.key] < averages[col.key]}
+        {@const redClass = isBelowAvg ? '!text-red-600 !font-bold' : ''}
+
+        <td class="px-2 py-3 text-right text-sm overflow-hidden whitespace-nowrap text-ellipsis {revenueTableUtils.getGroupBodyClass(col)}" style="width: 90px; min-width: 90px; max-width: 90px;">
+            {#if col.key === 'targetCaNhan'}
+                <span class="font-bold text-gray-700">{formatters.formatRevenue(Math.round(item.targetCaNhan))}</span>
+            {:else if col.key === 'tyLeDuKien'}
+                {@const isBelow100 = item.tyLeDuKien < 1}
+                {@const isBelowAvgItem = averages && averages.tyLeDuKien !== undefined && item.tyLeDuKien < averages.tyLeDuKien}
+                <!-- [PHẪU THUẬT LOGIC]: Tách 3 sắc thái màu cho cột Tỷ Lệ -->
+                {@const tyLeColorClass = isBelowAvgItem ? 'text-red-600 font-bold' : (isBelow100 ? 'text-red-400 font-semibold' : 'text-gray-800 font-bold')}
+                <span class="{tyLeColorClass}">{Math.round(item.tyLeDuKien * 100)}%</span>
+            {:else if col.key === 'doanhThu'}
+                <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThu', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThu)}</span>
+            {:else if col.key === 'doanhThuQuyDoi'}
+                <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThuQuyDoi', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThuQuyDoi)}</span>
+            {:else if col.key === 'hieuQuaQuyDoi'}
+                <span class="{revenueTableUtils.getCellTextClass(item, 'hieuQuaQuyDoi', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatPercentage(item.hieuQuaQuyDoi)}</span>
+            {:else if col.key === 'dtqdCK'}
+                <span class="font-bold {isBelowAvg ? 'text-red-600' : 'text-indigo-700'}">{formatters.formatRevenue(item.dtqdCK)}</span>
+            {:else if col.key === 'duKienSoCK'}
+                <span class="font-bold {isBelowAvg ? 'text-red-600' : (item.duKienSoCK >= 0 ? 'text-blue-600' : 'text-red-500')}">
+                    {item.duKienSoCK > 0 && !isBelowAvg ? '+' : ''}{formatters.formatRevenue(item.duKienSoCK)}
+                </span>
+            {:else if col.key === 'doanhThuTraGop'}
+                <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThuTraGop', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThuTraGop)}</span>
+            {:else if col.key === 'tyLeTraCham'}
+                <span class="{revenueTableUtils.getCellTextClass(item, 'tyLeTraCham', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatPercentage(item.tyLeTraCham)}</span>
+            {:else if col.key === 'doanhThuQuyDoiChuaXuat'}
+                <span class="{revenueTableUtils.getCellTextClass(item, 'doanhThuQuyDoiChuaXuat', userTarget, kpiGlobalSettings)} {redClass}">{formatters.formatRevenue(item.doanhThuQuyDoiChuaXuat)}</span>
+            {:else if col.key === 'dtTrenGc'}
+                {@const roundedVal = Math.round(item.dtTrenGc)}
+                <span class="font-bold {isBelowAvg ? 'text-red-600 bg-red-50 px-1 py-0.5 rounded border border-red-100' : 'text-emerald-700'}">
+                    {item.dtTrenGc > 0 ? roundedVal.toLocaleString('vi-VN') : '-'}
+                </span>
+            {/if}
+        </td>
+    {/each}
+</tr>
+<<< FILE_END: src/components/health-staff/revenue/table/TableRow.svelte
+
+>>> FILE_START: src/components/health-staff/revenue/table/TableToolbar.svelte
+<script>
+    import { createEventDispatcher } from 'svelte';
+    const dispatch = createEventDispatcher();
+</script>
+
+<div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+    <div class="flex items-center gap-2">
+        <div class="p-2 bg-blue-100 rounded-lg text-blue-600"><i data-feather="dollar-sign" class="w-5 h-5"></i></div>
+        <div>
+            <h3 class="font-bold text-gray-800 text-lg uppercase">Chi tiết Doanh Thu Lũy Kế</h3>
+            <p class="text-xs text-gray-500">Doanh thu nhân viên được tính theo doanh thu tạo trong tháng</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-3">
+        <span class="text-xs font-bold bg-blue-100 text-blue-700 px-3 py-1 rounded-full shadow-sm">Đơn vị: Triệu</span>
+        
+        <div class="flex items-center gap-2 ml-1 border-l border-gray-300 pl-4" title="Chuyển sang chế độ xem nhiều tháng">
+            <span class="text-xs font-semibold text-gray-500 cursor-pointer" on:click={() => dispatch('toggleMode')}>Xem nhiều tháng</span>
+            <button class="bg-gray-300 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={() => dispatch('toggleMode')}>
+                <span class="translate-x-0 pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+            </button>
+        </div>
+
+        <div class="relative flex items-center border-l border-gray-300 pl-4 ml-1">
+            <div class="absolute left-6 text-blue-600 pointer-events-none flex items-center justify-center">
+                <i data-feather="camera" class="w-4 h-4"></i>
+            </div>
+            <select class="text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm py-1.5 pl-8 pr-6 focus:outline-none focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                    on:change={(e) => { dispatch('batchCapture', e.target.value); e.target.value = ''; }}>
+                <option value="" disabled selected>Chụp Hàng Loạt</option>
+                <option value="top5">Chụp Top 5 NV</option>
+                <option value="bot5">Chụp Bot 5 NV</option>
+                <option value="all">Chụp Tất Cả</option>
+            </select>
+        </div>
+    </div>
+</div>
+<<< FILE_END: src/components/health-staff/revenue/table/TableToolbar.svelte
 
 >>> FILE_START: src/components/health-staff/shared/EvaluationBadge.svelte
 <script>
@@ -5650,9 +6227,13 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   let processedReport = [];
   let isMultiMonthMode = false;
 
+  // [PHẪU THUẬT LOGIC]: Rút Target QĐ từ Store để bơm xuống RevenueTable
+  $: currentGoals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};
+  $: shopTargetQD = (parseFloat(currentGoals.doanhThuQD || 0) * 1000000);
   // [PHẪU THUẬT 2]: Gộp 2 luồng YCX, Lọc đúng Kho, Bỏ qua lọc ngày để bảo toàn các tháng cũ
   $: combinedMultiMonthData = [...($ycxData || []), ...($ycxDataThangTruoc || [])].filter(item => {
-      if ($selectedWarehouse) {
+      // [FIX] Nếu chọn ALL thì không lọc
+      if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
           const wh = item.maKhoTao || item.maKho || item['Mã kho tạo'] || item['Kho tạo'] || item.ma_kho;
           if (wh && String(wh).trim() !== String($selectedWarehouse).trim()) return false;
       }
@@ -5669,7 +6250,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       const dt = parseUniversalDate(dateVal); 
       return dt ? new Date(dt).getMonth() + '-' + new Date(dt).getFullYear() : ''; 
   }).filter(Boolean)).size;
-  
+
   // State Bộ lọc ngày
   let selectedStartDate = '';
   let selectedEndDate = '';
@@ -5744,7 +6325,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - days + 1);
-      
       const pad = (n) => (n < 10 ? '0' + n : n);
       selectedEndDate = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
       selectedStartDate = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
@@ -5777,6 +6357,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       // Quét toàn bộ key trong object, tìm mọi thứ tương đồng với "Ngày tạo"
       for (const key of Object.keys(item)) {
           const normKey = key.toLowerCase().replace(/[\s_]/g, ''); 
+        
           if (normKey === 'ngàytạo' || normKey === 'ngaytao' || normKey === 'createdate' || key.includes('Ngày tạo')) {
               dateVal = item[key];
               break;
@@ -5818,7 +6399,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 
   $: {
       let rawData = $masterReportData.sknv || [];
-      if ($selectedWarehouse) rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
+      // [FIX] Bỏ qua thao tác lọc theo mã kho nếu lựa chọn là ALL
+      if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
+          rawData = rawData.filter(nv => nv.maKho === $selectedWarehouse);
+      }
       processedReport = sknvService.processReportData(rawData);
   }
 
@@ -5857,7 +6441,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                         value={$selectedWarehouse}
                         on:change={handleWarehouseChange}
                     >
-                        <option value="">-- Toàn bộ --</option>
+                        <option value="ALL">-- Toàn bộ --</option>
                         {#each $warehouseList as kho}
                             <option value={kho}>{kho}</option>
                         {/each}
@@ -5961,14 +6545,20 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
                             
                             {#if !isMultiMonthMode}
                                 <div id="revenue-report-container-lk">
-                                    <RevenueTable reportData={processedReport} on:viewDetail={handleEmployeeClick} on:toggleMode={() => isMultiMonthMode = true} />
+                                    <RevenueTable 
+    reportData={processedReport} 
+    shopTargetQD={shopTargetQD}
+    on:viewDetail={handleEmployeeClick} 
+    on:toggleMode={() => isMultiMonthMode = true} 
+/>
                                 </div>
                             {:else}
                                 {#if combinedMultiMonthData.length > 0 && uniqueMonthsCount <= 1}
-                                     <div class="mb-4 mt-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700 flex items-center gap-2">
+                                    <div class="mb-4 mt-6 p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700 flex items-center gap-2">
                                         <i data-feather="alert-triangle" class="w-4 h-4"></i>
-                                        <b>Lưu ý:</b> Dữ liệu hiện tại chỉ có 1 tháng. Hãy vào tab <b class="text-indigo-600">Cập nhật dữ liệu</b> tải lên dạng "Gộp file" ở ô <b>YCX Lũy kế tháng trước</b> để biểu đồ này phát huy tác dụng.
-                                     </div>
+                                        <b>Lưu ý:</b> Dữ liệu hiện tại chỉ có 1 tháng.
+                                        Hãy vào tab <b class="text-indigo-600">Cập nhật dữ liệu</b> tải lên dạng "Gộp file" ở ô <b>YCX Lũy kế tháng trước</b> để biểu đồ này phát huy tác dụng.
+                                    </div>
                                 {/if}
 
                                 <div id="revenue-multi-month-container-lk">

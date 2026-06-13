@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_04_ADMIN.txt
-GENERATED AT: 5/13/2026, 7:07:23 PM
+GENERATED AT: 6/12/2026, 1:52:43 PM
 
 
 >>> FILE_START: src/components/admin/AdminCalculation.svelte
@@ -2806,7 +2806,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
 <script>
   /* global feather */
   import { onMount, onDestroy } from 'svelte';
-  
   import { 
       warehouseList,
       selectedWarehouse,
@@ -2817,10 +2816,9 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       clusterSummaryData,
       currentUser
   } from '../stores.js';
-  
   import { dataService } from '../services/dataService.js';
   import { clusterService } from '../services/cluster.service.js';
-  import { datasyncService } from '../services/datasync.service.js'; 
+  import { datasyncService } from '../services/datasync.service.js';
   import { storageService } from '../services/storage.service.js'; 
   import { luykeParser } from '../services/processing/parsers/luyke.parser.js'; 
 
@@ -2858,6 +2856,23 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       currentClusterCode = '';
   }
 
+  let lastDsnvTimestamp = 0;
+  $: if ($fileSyncState && $fileSyncState['saved_danhsachnv']) {
+      const currentTs = $fileSyncState['saved_danhsachnv'].timestamp;
+      const status = $fileSyncState['saved_danhsachnv'].status;
+      
+      if (currentTs && currentTs !== lastDsnvTimestamp) {
+          lastDsnvTimestamp = currentTs;
+          
+          const currentWh = $selectedWarehouse || 'ALL';
+
+          if ((status === 'cached' || status === 'synced') && currentWh === 'ALL' && !isSyncing) {
+              if (!$selectedWarehouse) selectedWarehouse.set('ALL'); 
+              setTimeout(() => { triggerSync('ALL'); }, 500); 
+          }
+      }
+  }
+
   function checkClusterStatus(employees) {
       const clusters = [...new Set(employees.map(e => e.maCum || e.clusterId).filter(c => c))];
       const warehouses = [...new Set(employees.map(e => e.maKho || e.storeId).filter(w => w))];
@@ -2883,26 +2898,22 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   async function handlePasteClusterSummary(event) {
       const text = event.detail;
       if (!text) return;
-
+      const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
+      const isolatedKey = `cluster_summary_data_${targetClusterId}`;
       fileSyncState.update(s => ({
           ...s,
-          'cluster_summary_data': { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
+          [isolatedKey]: { status: 'uploading', message: 'Đang trích xuất & lưu Cloud...' }
       }));
-
       try {
           const parsedData = luykeParser.parseClusterSummaryData(text);
           clusterSummaryData.set(parsedData);
-          localStorage.setItem('cluster_summary_data', text);
+          localStorage.setItem(isolatedKey, text);
           const count = Object.keys(parsedData).length;
           const now = Date.now();
-
-          // [PHẪU THUẬT LOGIC]: Tự động sinh ID cụm theo quyền quản lý hiện tại
-          const targetClusterId = currentClusterCode ? `CLUSTER_${currentClusterCode}` : 'CLUSTER_UNKNOWN';
 
           const blob = new Blob([text], { type: 'text/plain' });
           const path = `warehouse_data/${targetClusterId}/cluster_summary_data_${now}.txt`;
           const downloadUrl = await storageService.uploadFileToStorage(blob, path);
-
           const metaToSave = {
               downloadURL: downloadUrl,
               fileName: 'du_lieu_dan_cum.txt',
@@ -2913,25 +2924,22 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
               updatedBy: $currentUser?.email || 'Tôi'
           };
 
-          // [PHẪU THUẬT LOGIC]: Lưu chính xác vào Document của Cụm này, không đè lên ALL
           await datasyncService.saveWarehouseMetadata(targetClusterId, 'cluster_summary_data', metaToSave);
           localStorage.setItem(`_meta_${targetClusterId}_cluster_summary_data`, JSON.stringify(metaToSave));
-
           fileSyncState.update(s => ({
               ...s,
-              'cluster_summary_data': { 
+              [isolatedKey]: { 
                   status: 'synced', 
                   message: `✓ Đã đồng bộ (${count} dòng)`, 
                   metadata: metaToSave 
               }
           }));
           notificationStore.set({ message: '✅ Đã trích xuất và đồng bộ Báo cáo Cụm!', type: 'success' });
-          
       } catch (error) {
           console.error(error);
           fileSyncState.update(s => ({
               ...s,
-              'cluster_summary_data': { status: 'error', message: `Lỗi: ${error.message}` }
+              [isolatedKey]: { status: 'error', message: `Lỗi: ${error.message}` }
           }));
           notificationStore.set({ message: error.message || 'Lỗi xử lý dữ liệu cụm!', type: 'error' });
       }
@@ -2954,7 +2962,6 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       const payload = event.detail;
       const text = payload.text || payload; 
       const kho = payload.kho || currentClusterCode;
-
       if (kho) {
           try {
               clusterService.processCumulativeInput(text, kho);
@@ -2978,25 +2985,44 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
   onMount(async () => {
     if (typeof feather !== 'undefined') feather.replace();
 
-    const savedClusterText = localStorage.getItem('cluster_summary_data');
-    if (savedClusterText) {
+    let savedClusterText = null;
+    let restoreMeta = null;
+    let isolatedKeyToLoad = null;
+
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('cluster_summary_data_CLUSTER_')) {
+            isolatedKeyToLoad = k;
+            savedClusterText = localStorage.getItem(k);
+        } else if (k && k.startsWith('_meta_CLUSTER_') && k.endsWith('_cluster_summary_data')) {
+            try { 
+                restoreMeta = JSON.parse(localStorage.getItem(k)); 
+                if (!isolatedKeyToLoad && !savedClusterText) {
+                     const match = k.match(/_meta_(CLUSTER_\w+)_/);
+                     if (match) isolatedKeyToLoad = `cluster_summary_data_${match[1]}`;
+                }
+            } catch(e){}
+        }
+    }
+
+    if (!savedClusterText) {
+        savedClusterText = localStorage.getItem('cluster_summary_data');
+        if (savedClusterText) {
+             isolatedKeyToLoad = isolatedKeyToLoad || 'cluster_summary_data_CLUSTER_UNKNOWN'; 
+             localStorage.setItem(isolatedKeyToLoad, savedClusterText);
+             localStorage.removeItem('cluster_summary_data'); 
+        }
+    }
+
+    if (savedClusterText && isolatedKeyToLoad) {
         try {
             const parsedData = luykeParser.parseClusterSummaryData(savedClusterText);
             clusterSummaryData.set(parsedData);
             const count = Object.keys(parsedData).length;
             
-            // [PHẪU THUẬT LOGIC]: Tự động dò tìm Meta của cụm trên LocalStorage (vì ID cụm có thể là bất kỳ)
-            let restoreMeta = null;
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
-                if (k && k.startsWith('_meta_CLUSTER_') && k.endsWith('_cluster_summary_data')) {
-                    try { restoreMeta = JSON.parse(localStorage.getItem(k)); break; } catch(e){}
-                }
-            }
-            
             fileSyncState.update(s => ({
                 ...s,
-                'cluster_summary_data': { 
+                [isolatedKeyToLoad]: { 
                     status: 'synced', 
                     message: `✓ Đã đồng bộ (${count} dòng)`,
                     metadata: restoreMeta
@@ -3010,8 +3036,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
     const savedWh = localStorage.getItem('selectedWarehouse');
     if (savedWh) {
         selectedWarehouse.set(savedWh);
-        await dataService.loadWarehouseSettings(savedWh); 
-
+        await dataService.loadWarehouseSettings(savedWh);
         dsnvUnsubscribe = danhSachNhanVien.subscribe(async (data) => {
             if (data && data.length > 0) {
                 checkClusterStatus(data);
@@ -3034,25 +3059,25 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
       isSyncing = true;
       try {
           if (warehouse === 'ALL') {
-              const validWarehouses = $warehouseList.filter(k => k && k !== 'ALL');
+              const syncPromises = [];
               
+              // 1. Quét ALL (Đẩy thẳng lên mảng chờ)
+              syncPromises.push(dataService.syncDownFromCloud('ALL'));
+              
+              // 2. Bắn tín hiệu để đánh thức ô Báo Cáo Cụm
+              const targetCluster = (isClusterMode && currentClusterCode) ? currentClusterCode : 'UNKNOWN';
+              syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${targetCluster}`));
+              
+              // 3. Quét các kho con
+              const validWarehouses = $warehouseList.filter(k => k && k !== 'ALL');
               if (validWarehouses.length > 0) {
-                  const syncPromises = [];
-                  
-                  syncPromises.push(dataService.syncDownFromCloud('ALL'));
-                  
-                  // [PHẪU THUẬT LOGIC]: Gọi chính xác ID Cụm để đồng bộ (nếu người dùng thuộc về 1 Cụm)
-                  if (isClusterMode && currentClusterCode) {
-                      syncPromises.push(dataService.syncDownFromCloud(`CLUSTER_${currentClusterCode}`));
-                  }
-                  
                   validWarehouses.forEach(kho => {
                       syncPromises.push(dataService.syncDownFromCloud(kho));
                       syncPromises.push(dataService.loadWarehouseSettings(kho));
                   });
-                  
-                  await Promise.all(syncPromises);
               }
+              
+              await Promise.all(syncPromises);
           } else {
               await Promise.all([
                   dataService.syncDownFromCloud(warehouse),
@@ -3061,10 +3086,10 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
           }
           notificationStore.set({ message: 'Đồng bộ thành công!', type: 'success' });
       } catch (error) {
-            console.error("SYNC ERROR:", error);
-            notificationStore.set({ message: 'Đồng bộ bị lỗi!', type: 'error' });
+          console.error("SYNC ERROR:", error);
+          notificationStore.set({ message: 'Đồng bộ bị lỗi!', type: 'error' });
       } finally {
-            isSyncing = false;
+          isSyncing = false;
       }
   }
 
@@ -3135,7 +3160,7 @@ GENERATED AT: 5/13/2026, 7:07:23 PM
         
         <ProductivityDataBlock />
     </div>
-    
+   
     <MonthlyDataBlock />
 
     <TourGuide bind:isActive={isTourActive} steps={dataTourSteps} />
