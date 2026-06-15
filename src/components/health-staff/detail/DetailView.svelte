@@ -1,6 +1,7 @@
 <script>
   import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
-  import { masterReportData, selectedWarehouse, warehouseCustomMetrics } from '../../../stores.js';
+  // [GENESIS SURGERY]: Import thêm modalState để gọi Siêu Modal từ xa
+  import { masterReportData, selectedWarehouse, warehouseCustomMetrics, modalState } from '../../../stores.js';
   import { sknvService } from '../../../services/sknv.service.js';
   import { datasyncService } from '../../../services/datasync.service.js';
   
@@ -8,9 +9,6 @@
   import MetricGrid from './MetricGrid.svelte';
   import DetailTableQDC from './DetailTableQDC.svelte';
   import DetailTableCategory from './DetailTableCategory.svelte';
-  
-  import AddEfficiencyColumnModal from '../../modals/AddEfficiencyColumnModal.svelte';
-  import AddMetricModal from '../../modals/AddMetricModal.svelte';
 
   export let employeeId;
   const dispatch = createEventDispatcher();
@@ -27,10 +25,6 @@
       'Năng suất': { above: 0, total: 0 },
       'Đơn giá': { above: 0, total: 0 }
   };
-  // State quản lý hiển thị Modal
-  let isEffModalOpen = false;
-  let isMetricModalOpen = false;
-  let itemToEdit = null;
   
   // [KHÔI PHỤC] Logic cũ giữ nguyên
   $: totalAbove = Object.values(kpiCounts).reduce((sum, item) => sum + item.above, 0);
@@ -107,15 +101,12 @@
       }
   }
 
+  // [GENESIS SURGERY]: Bắn cờ vào Store để gọi Siêu Modal
   function handleEditMetric(event) {
       const metricItem = event.detail;
       if (metricItem && metricItem.rawConfig) {
-          itemToEdit = metricItem.rawConfig;
-          if (metricItem.rawConfig.type === 'UNIT_PRICE') {
-              isMetricModalOpen = true;
-          } else {
-              isEffModalOpen = true;
-          }
+          const modalType = metricItem.rawConfig.type === 'UNIT_PRICE' ? 'add-metric-modal' : 'add-efficiency-modal';
+          modalState.update(s => ({ ...s, activeModal: modalType, payload: metricItem.rawConfig }));
       }
   }
 
@@ -130,32 +121,6 @@
               await datasyncService.saveCustomMetrics($selectedWarehouse, newMetrics);
           }
       }
-  }
-
-  async function handleSaveMetric(event) {
-      const savedMetric = event.detail;
-      let currentMetrics = [...$warehouseCustomMetrics]; 
-      
-      const existingIndex = currentMetrics.findIndex(m => m.id === savedMetric.id);
-      if (existingIndex >= 0) {
-          currentMetrics[existingIndex] = savedMetric;
-      } else {
-          currentMetrics = [...currentMetrics, savedMetric];
-      }
-      
-      // Cập nhật Store và Lưu Cloud
-      warehouseCustomMetrics.set(currentMetrics);
-      if ($selectedWarehouse) {
-          await datasyncService.saveCustomMetrics($selectedWarehouse, currentMetrics);
-      }
-      
-      itemToEdit = null;
-  }
-
-  function handleCloseModal() {
-      isEffModalOpen = false;
-      isMetricModalOpen = false;
-      itemToEdit = null;
   }
 
   function goBack() { dispatch('back'); }
@@ -189,7 +154,7 @@
                     title="Hiệu quả khai thác" icon="award" colorClass="sknv-header-orange" 
                     data={detailStats.hieuQua || []} 
                     allowAdd={true}
-                    on:add={() => { itemToEdit = null; isEffModalOpen = true; }} 
+                    on:add={() => modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }))} 
                     on:edit={handleEditMetric}
                     on:delete={handleDeleteMetric}
                     on:updateCount={handleCountUpdate} 
@@ -206,7 +171,7 @@
                     title="Đơn giá" icon="tag" colorClass="sknv-header-yellow" 
                     data={detailStats.donGia || []}
                     allowAdd={true}
-                    on:add={() => { itemToEdit = null; isMetricModalOpen = true; }} 
+                    on:add={() => modalState.update(s => ({ ...s, activeModal: 'add-metric-modal', payload: null }))} 
                     on:edit={handleEditMetric}
                     on:delete={handleDeleteMetric}
                     on:updateCount={handleCountUpdate} 
@@ -225,20 +190,6 @@
         </div>
     {/if}
 </div>
-
-<AddEfficiencyColumnModal 
-    isOpen={isEffModalOpen} 
-    editItem={itemToEdit} 
-    on:close={handleCloseModal}
-    on:save={handleSaveMetric}
-/>
-
-<AddMetricModal
-    isOpen={isMetricModalOpen}
-    editItem={itemToEdit}
-    on:close={handleCloseModal}
-    on:save={handleSaveMetric}
-/>
 
 <style>
     :global(.sknv-header-blue) { background-color: #2563eb; }
