@@ -96,7 +96,7 @@
     {:else}
         <div class="overflow-x-auto flex-grow custom-scrollbar relative">
             <table class="min-w-full text-sm border-collapse border-0">
-                <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
+<thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
                     <tr>
                         <SortableTh 
                             key="hoTen" 
@@ -123,8 +123,8 @@
                                 key={col.id || 'head_fallback_' + index} 
                                 label={col.header} 
                                 align="right" 
-                                style="color: {hexColor};"
-                                className="bg-gray-50 border-r border-b border-gray-200 min-w-[100px]" 
+                                themeColor={hexColor}
+                                className="border-r border-b border-gray-200 min-w-[100px] bg-white" 
                                 {sortKey} {sortDirection} 
                                 on:sort={handleSort} 
                             />
