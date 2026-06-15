@@ -50,12 +50,12 @@
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
   import UserSpecialProgramModal from './components/modals/UserSpecialProgramModal.svelte';
   import ComposerModal from './components/modals/composer/ComposerModal.svelte';
-  import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
-  import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
-  import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
   import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
+
+  // [GENESIS SURGERY] Import Siêu Modal Hợp Nhất
+  import UnifiedConfigModal from './components/modals/UnifiedConfigModal.svelte';
 
   // [GENESIS IMPORT] Import cửa sổ Xem trước Ảnh
   import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
@@ -251,6 +251,25 @@
       }
   }
 
+  // [GENESIS SURGERY] Bộ chuyển mạch cho UnifiedConfigModal
+  function handleUnifiedSave(event) {
+      const { type, payload } = event.detail;
+      const activeModal = get(modalState).activeModal;
+      
+      // Giả lập lại event cũ để gọi đúng các hàm lưu đã có sẵn của bạn
+      const fakeEvent = { detail: payload };
+
+      if (type === 'INDICATOR' || activeModal === 'add-efficiency-modal' || activeModal === 'add-metric-modal') {
+          handleSaveEffConfig(fakeEvent);
+      } else if (activeModal === 'add-performance-table-modal' || get(activeTab) === 'declaration-section') {
+          handleSavePerformanceTable(fakeEvent);
+      } else {
+          handleSaveCustomTable(fakeEvent);
+      }
+      
+      closeModal();
+  }
+
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
   
   $: {
@@ -306,27 +325,12 @@
     />
 {/if}
 
-<AddRevenueTableModal 
-    isOpen={$modalState.activeModal === 'add-revenue-table-modal'} 
+<UnifiedConfigModal 
+    isOpen={['add-revenue-table-modal', 'add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
     editItem={$modalState.payload}
+    isSystem={$modalState.isSystem || $activeTab === 'declaration-section'}
     on:close={closeModal}
-    on:save={handleSaveCustomTable}
-/>
-
-<AddPerformanceTableModal
-    isOpen={$modalState.activeModal === 'add-performance-table-modal'}
-    editItem={$modalState.payload}
-    isSystem={$modalState.isSystem || false}
-    on:close={closeModal}
-    on:save={handleSavePerformanceTable}
-/>
-
-<AddEfficiencyColumnModal 
-    isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
-    editItem={$modalState.payload}
-    isAdmin={$activeTab === 'declaration-section'}
-    on:close={closeModal}
-    on:save={handleSaveEffConfig}
+    on:save={handleUnifiedSave}
 />
 
 {#if $isDemoMode}
