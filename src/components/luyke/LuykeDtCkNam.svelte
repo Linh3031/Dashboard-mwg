@@ -29,11 +29,23 @@
     let showSsgMonthsDropdown = false;
     $: data2026All = ($ycxDataThangTruoc || []).concat($ycxData || []);
 
-    // Biến cho SSG Calendar
-    let targetGrowthPct = 0.15; 
+// Biến cho SSG Calendar (Mặc định 40%)
+    let targetGrowthPct = 0.40; 
     let calendarGrid = [];
     let ssgKpiTotals = { dt25: 0, qd25: 0, tc25: 0, dt26: 0, qd26: 0, tc26: 0, currentDay: 1, daysInMonth: 30, isCurrentMonth: false };
     
+    // Đọc trạng thái đã lưu khi component vừa chạy
+    if (typeof localStorage !== 'undefined') {
+        const savedGrowth = localStorage.getItem('dtck_ssg_target_growth');
+        if (savedGrowth !== null) targetGrowthPct = parseFloat(savedGrowth);
+    }
+
+    // Tự động lưu lại mỗi khi người dùng kéo thanh trượt
+    $: {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('dtck_ssg_target_growth', targetGrowthPct.toString());
+        }
+    }
     // Toggles Popover
     let showViewToggles = false;
     let showCalendar = true;

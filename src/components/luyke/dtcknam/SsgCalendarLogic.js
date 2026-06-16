@@ -95,14 +95,20 @@ export function generateCalendarData(data2025, data2026, month, year2026, target
     processData(data2025, map25, true);
     processData(data2026, map26, false);
 
-    // MỤC TIÊU: Tính trên DOANH THU THỰC
-    const targetRev2026 = totals.dt25 * (1 + targetGrowthPct); 
-    const remainingTarget = Math.max(0, targetRev2026 - totals.dt26);
+    // --- TÍNH TOÁN CẢ 2 MỤC TIÊU (THỰC & QUY ĐỔI) ---
+    const targetRev2026_dt = totals.dt25 * (1 + targetGrowthPct); 
+    const targetRev2026_qd = totals.qd25 * (1 + targetGrowthPct); 
+    
+    const remainingTarget_dt = Math.max(0, targetRev2026_dt - totals.dt26);
+    const remainingTarget_qd = Math.max(0, targetRev2026_qd - totals.qd26);
 
     // Tính tổng lịch sử năm 2025 của các ngày chưa tới để chia trọng số phân bổ
-    let sum2025Future = 0; let numFutureDays = 0;
+    let sum2025Future_dt = 0; 
+    let sum2025Future_qd = 0;
+    let numFutureDays = 0;
     for (let i = currentDay + 1; i <= daysInMonth; i++) {
-        sum2025Future += (map25.get(i)?.dt || 0); 
+        sum2025Future_dt += (map25.get(i)?.dt || 0); 
+        sum2025Future_qd += (map25.get(i)?.qd || 0); 
         numFutureDays++;
     }
 
@@ -115,11 +121,17 @@ export function generateCalendarData(data2025, data2026, month, year2026, target
         const d25 = map25.get(i) || { dt: 0, qd: 0 };
         const d26 = map26.get(i) || { dt: 0, qd: 0 };
         
-        let dailyTarget = 0;
+        let targetDt = 0;
+        let targetQd = 0;
+
         if (isFuture) {
-            dailyTarget = (sum2025Future > 0) 
-                ? remainingTarget * (d25.dt / sum2025Future) 
-                : (numFutureDays > 0 ? remainingTarget / numFutureDays : 0);
+            targetDt = (sum2025Future_dt > 0) 
+                ? remainingTarget_dt * (d25.dt / sum2025Future_dt) 
+                : (numFutureDays > 0 ? remainingTarget_dt / numFutureDays : 0);
+                
+            targetQd = (sum2025Future_qd > 0) 
+                ? remainingTarget_qd * (d25.qd / sum2025Future_qd) 
+                : (numFutureDays > 0 ? remainingTarget_qd / numFutureDays : 0);
         }
 
         daysArray.push({
@@ -127,7 +139,8 @@ export function generateCalendarData(data2025, data2026, month, year2026, target
             lunar: lunarUtils.getLunarDate(i, month, year2026).display,
             rev25: d25.dt, revQd25: d25.qd,
             rev26: d26.dt, revQd26: d26.qd,
-            target: dailyTarget,
+            targetDt: targetDt, 
+            targetQd: targetQd, 
             growthVal: d26.dt - d25.dt, 
             growthPct: d25.dt > 0 ? (d26.dt - d25.dt) / d25.dt : 0
         });

@@ -136,12 +136,12 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Doanh thu theo Tuần (ĐVT: Triệu) <span class="text-indigo-600">{warehouseTitle}</span></h4>
+        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Doanh thu theo Tuần 2025 (ĐVT: Triệu) <span class="text-indigo-600">{warehouseTitle}</span></h4>
         <div class="relative h-[250px] w-full"><canvas id="dt-ck-weekly-chart"></canvas></div>
     </div>
     
     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <h4 class="text-sm font-bold text-gray-700 mb-1 text-center">Tăng trưởng Doanh thu theo Ngày <span class="text-indigo-600">{warehouseTitle}</span></h4>
+        <h4 class="text-sm font-bold text-gray-700 mb-1 text-center">Biểu đồ Doanh thu theo Ngày 2025 <span class="text-indigo-600">{warehouseTitle}</span></h4>
         
         <div class="text-xs text-gray-500 text-center mb-3 font-medium flex justify-center gap-4">
             <div>TB Ngày Thực: <span class="text-sky-600 font-black">{formatters.formatNumber(avgActualValue, 1)}M</span></div>

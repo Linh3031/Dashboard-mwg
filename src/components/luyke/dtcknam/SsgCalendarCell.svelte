@@ -5,7 +5,7 @@
 
     const fmt = (n) => formatters.formatNumber(Math.round((n || 0) / 100000) / 10, 1);
     
-    // Nếu hôm nay có dữ liệu 2026, kiểm tra xem nó có rớt đài so với 2025 không
+    // Nếu hôm nay có dữ liệu 2026, kiểm tra xem nó có rớt đài so với 2025 không (Dùng doanh thu thực để xét đỏ)
     $: isNegativeDay = !data.isFuture && data.growthVal < 0;
 </script>
 
@@ -21,9 +21,25 @@
 
         <div class="flex-1 p-1.5 flex flex-col justify-center gap-1">
             {#if data.isFuture}
-                <div class="text-center py-2">
-                    <p class="text-[9px] font-bold text-indigo-500 uppercase">Mục tiêu (Tr)</p>
-                    <p class="text-lg font-black text-indigo-700">{fmt(data.target)}</p>
+                <div class="text-center py-2 flex flex-col items-center justify-center h-full">
+                    <p class="text-[9px] font-bold text-indigo-500 uppercase mb-1">Mục tiêu (Tr)</p>
+                    <div class="flex items-center justify-center gap-1.5 w-full px-1">
+                        {#if toggles.showThuc}
+                            <span class="text-lg font-black text-blue-700" title="Mục tiêu DT Thực">{fmt(data.targetDt)}</span>
+                        {/if}
+                        
+                        {#if toggles.showThuc && toggles.showQd}
+                            <span class="text-gray-300 font-light">|</span>
+                        {/if}
+                        
+                        {#if toggles.showQd}
+                            <span class="text-lg font-black text-emerald-600" title="Mục tiêu DT Quy đổi">{fmt(data.targetQd)}</span>
+                        {/if}
+                        
+                        {#if !toggles.showThuc && !toggles.showQd}
+                            <span class="text-lg font-black text-blue-700">{fmt(data.targetDt)}</span>
+                        {/if}
+                    </div>
                 </div>
             {:else}
                 {#if toggles.show2025}
