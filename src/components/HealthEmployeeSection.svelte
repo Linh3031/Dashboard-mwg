@@ -26,6 +26,9 @@
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
   import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
   import InstallmentView from './health-staff/installment/InstallmentView.svelte';
+  
+  // [NEW] Import tab Xu Hướng Ngày
+  import DailyTrendTab from './health-staff/daily-trend/DailyTrendTab.svelte';
 
   export let activeTab;
   let activeSubTab = 'sknv';
@@ -67,7 +70,7 @@
       { id: 'doanhthu', label: 'Doanh thu LK', icon: 'dollar-sign', title: 'DoanhThuLuyKe' },
       { id: 'thunhap', label: 'Thu nhập', icon: 'briefcase', title: 'ThuNhapNhanVien' },
       { id: 'hieuqua', label: 'Hiệu quả NV LK', icon: 'bar-chart-2', title: 'HieuQuaKhaiThac' },
-      { id: 'nganhhang', label: 'DT ngành hàng', icon: 'layers', title: 'DoanhThuNganhHang' },
+      { id: 'daily-trend', label: 'Xu hướng ngày', icon: 'trending-up', title: 'XuHuongHieuQuaTheoNgay' }, // [NEW] Thêm tab mới
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' },
       { id: 'tragop', label: 'Trả chậm', icon: 'credit-card', title: 'ThongKeTraCham' }
   ];
@@ -390,6 +393,11 @@
                         <div id="efficiency-report-container">
                             <PerformanceView reportData={processedReport} />
                         </div>
+                    </div>
+
+                {:else if activeSubTab === 'daily-trend'}
+                    <div id="subtab-daily-trend" class="sub-tab-content animate-fade-in">
+                        <DailyTrendTab />
                     </div>
 
                 {:else if activeSubTab === 'nganhhang'}

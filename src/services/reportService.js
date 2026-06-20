@@ -6,10 +6,12 @@ import { masterReportLogic } from './reports/master.report.js';
 import { competitionReportLogic } from './reports/competition.report.js';
 import { detailReportLogic } from './reports/detail.report.js';
 import { generalReportLogic } from './reports/general.report.js';
+import { dailyTrendProcessor } from './processing/logic/dailyTrend.processor.js';
 
 export const reportService = {
     ...masterReportLogic,
     ...competitionReportLogic,
     ...detailReportLogic,
+    ...dailyTrendProcessor,
     ...generalReportLogic
 };

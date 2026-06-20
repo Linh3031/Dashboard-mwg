@@ -149,16 +149,6 @@
                         <span>Hiệu quả NV Real</span>
                     </button>
 
-                      <button 
-                        class="sub-tab-btn {activeSubTabId === 'subtab-realtime-nganh-hang' ? 'active' : ''}" 
-                        data-target="subtab-realtime-nganh-hang"
-                        data-title="NganhHangRealtime"
-                        on:click={handleSubTabClick}
-                    >
-                        <i data-feather="layers"></i>
-                        <span>Ngành hàng Real</span>
-                    </button>
-
                     <button 
                         class="sub-tab-btn {activeSubTabId === 'subtab-realtime-hang-ban' ? 'active' : ''}" 
                         data-target="subtab-realtime-hang-ban"
