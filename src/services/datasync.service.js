@@ -143,6 +143,37 @@ export const datasyncService = {
         const khoRef = doc(db, "warehouseData", kho);
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; } catch(e) { return []; }
     },
+    async saveDailyTrendConfigs(kho, configs) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                dailyTrendConfigs: configs,
+                dailyTrendConfigsUpdatedAt: serverTimestamp(),
+                dailyTrendConfigsUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) {
+            console.error("[DataSync] Lỗi lưu cấu hình Xu Hướng Ngày:", error);
+            throw error;
+        }
+    },
+    
+    async loadDailyTrendConfigs(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists() && docSnap.data().dailyTrendConfigs) {
+                return docSnap.data().dailyTrendConfigs;
+            }
+            return [];
+        } catch (error) {
+            console.error("[DataSync] Lỗi tải cấu hình Xu Hướng Ngày:", error);
+            return [];
+        }
+    },
 
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();

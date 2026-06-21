@@ -108,6 +108,7 @@ export const qdcConfigStore = writable([]);
 export const warehouseCustomMetrics = writable([]);
 export const customRevenueTables = writable([]);
 export const customPerformanceTables = writable([]);
+export const dailyTrendConfigs = writable([]);
 
 // --- [LOGGING SECTION] QUẢN LÝ MỤC TIÊU (KPI) ---
 let savedKpi = null;

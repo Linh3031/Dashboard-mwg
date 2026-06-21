@@ -1,13 +1,11 @@
 import { formatters } from '../../../utils/formatters.js';
-import { helpers } from '../helpers.js'; // [SỬA LỖI CRASH] Gọi trực tiếp helper, tránh vòng lặp Import
+import { helpers } from '../helpers.js'; 
 
-// Helper chuẩn hóa chuỗi
 const normalizeStr = (str) => {
     if (!str) return '';
     return str.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "");
 };
 
-// Helper bóc tách ID tuyệt đối để đồng bộ với cơ chế của hệ thống gốc
 const extractId = (str) => {
     if (!str) return 'unknown';
     const match = String(str).trim().match(/^(\d+)\s*[-–]/);
@@ -69,25 +67,17 @@ export const dailyTrendProcessor = {
         empList.forEach(emp => { matrixData[emp.maNV] = {}; });
         
         let activeMetricCfg = settings.viewMode === 'METRIC' ? allMetricsConfig.find(m => m.id === settings.metricId) : null;
-        
-        // [SỬA LỖI] Ép về chữ thường (lowercase) để so sánh 100% không trật
         const validHTX = helpers.getHinhThucXuatTinhDoanhThu();
         const validHTXLower = new Set(Array.from(validHTX).map(s => s.toLowerCase()));
 
         for (let i = 0; i < ycxData.length; i++) {
             const row = ycxData[i];
 
-            // BỘ LỌC 1: TRẠNG THÁI ĐƠN HÀNG (So sánh tuyệt đối)
             const trangThaiHuy = String(row.trangThaiHuy || row['Trạng thái hủy'] || '').trim().toLowerCase();
-            if (trangThaiHuy === 'đã hủy' || trangThaiHuy === 'hủy') {
-                continue; 
-            }
+            if (trangThaiHuy === 'đã hủy' || trangThaiHuy === 'hủy') continue; 
 
-            // BỘ LỌC 2: HÌNH THỨC XUẤT
             const htxRaw = String(row.hinhThucXuat || row['Hình thức xuất'] || '').trim().toLowerCase();
-            if (settings.viewMode !== 'RAW' && !validHTXLower.has(htxRaw)) {
-                continue; 
-            }
+            if (settings.viewMode !== 'RAW' && !validHTXLower.has(htxRaw)) continue; 
 
             if (settings.warehouse && settings.warehouse !== 'ALL') {
                 const wh = row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'];
@@ -122,12 +112,8 @@ export const dailyTrendProcessor = {
             
             if (!matrixData[empId][dateStr]) {
                 matrixData[empId][dateStr] = { 
-                    doanhThuTheoNganhHang: {}, 
-                    doanhThuTheoNhomHang: {}, 
-                    totalRevenue: 0, 
-                    totalQuantity: 0,
-                    traGopRevenue: 0,
-                    rawRows: []
+                    doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, 
+                    totalRevenue: 0, totalQuantity: 0, traGopRevenue: 0, rawRows: []
                 };
             }
             const cell = matrixData[empId][dateStr];
@@ -191,31 +177,33 @@ export const dailyTrendProcessor = {
                         if (!checkArrayMatch(settings.filters.nganhHang, row.nganhHang)) isMatch = false;
                         if (!checkArrayMatch(settings.filters.nhomHang, row.nhomHang)) isMatch = false;
                         if (!checkArrayMatch(settings.filters.nhaSanXuat, row.nhaSanXuat)) isMatch = false;
-                        if (settings.filters.tenSanPham && !normalizeStr(row.tenSanPham).includes(normalizeStr(settings.filters.tenSanPham))) isMatch = false;
+                        if (!checkArrayMatch(settings.filters.tenSanPham, row.tenSanPham)) isMatch = false;
 
                         if (isMatch) {
                             const quantity = parseInt(row.soLuong || 0);
                             let revenue = parseFloat(String(row.thanhTien || 0).replace(/[^0-9.-]+/g, "")) || 0;
-                            cellRawSum += (settings.rawType === 'quantity' ? quantity : revenue);
+                            
+                            // [SỬA LỖI]: Bổ sung Doanh thu Quy Đổi vào cấu hình RAW
+                            let hs = heSoMap[extractId(row.nhomHang)] !== undefined ? heSoMap[extractId(row.nhomHang)] : 1;
+                            const htxStr = String(row.hinhThucXuat || row['Hình thức xuất'] || '').toLowerCase();
+                            if (htxStr.includes('trả') || htxStr.includes('chậm')) hs += 0.3;
+
+                            if (settings.rawType === 'quantity') cellRawSum += quantity;
+                            else if (settings.rawType === 'revenueQuyDoi') cellRawSum += (revenue * hs);
+                            else cellRawSum += revenue;
                         }
                     });
                     rawValue = cellRawSum;
                 } 
-                else if (settings.metricId === 'DTTL') {
-                    rawValue = cellBucket.totalRevenue;
-                }
-                else if (settings.metricId === 'SL') {
-                    rawValue = cellBucket.totalQuantity;
-                }
+                else if (settings.metricId === 'DTTL') { rawValue = cellBucket.totalRevenue; }
+                else if (settings.metricId === 'SL') { rawValue = cellBucket.totalQuantity; }
                 else if (settings.metricId === 'TY_LE_QUY_DOI') {
                     let totalDTQD = 0;
                     Object.values(cellBucket.doanhThuTheoNhomHang).forEach(b => totalDTQD += b.revenueQuyDoi);
-                    num = totalDTQD;
-                    den = cellBucket.totalRevenue;
+                    num = totalDTQD; den = cellBucket.totalRevenue;
                 }
                 else if (settings.metricId === 'TY_LE_TRA_CHAM') {
-                    num = cellBucket.traGopRevenue;
-                    den = cellBucket.totalRevenue;
+                    num = cellBucket.traGopRevenue; den = cellBucket.totalRevenue;
                 }
                 else if (activeMetricCfg) {
                     const metricType = activeMetricCfg.percentMetric || activeMetricCfg.typeA || activeMetricCfg.type || 'DTTL';
@@ -226,15 +214,10 @@ export const dailyTrendProcessor = {
                     const calcValue = (groupList, type, mode) => {
                         let total = 0;
                         if (!Array.isArray(groupList)) return 0;
-                        
                         groupList.forEach(targetId => {
                             if (!targetId) return;
                             const cleanTargetId = extractId(targetId); 
-
-                            const bucketToScan = (mode === 'category') 
-                                ? cellBucket.doanhThuTheoNganhHang 
-                                : cellBucket.doanhThuTheoNhomHang;
-
+                            const bucketToScan = (mode === 'category') ? cellBucket.doanhThuTheoNganhHang : cellBucket.doanhThuTheoNhomHang;
                             const bucketVal = bucketToScan[cleanTargetId];
                             if (bucketVal) {
                                 if (type === 'SL') total += bucketVal.quantity || 0;
@@ -244,7 +227,6 @@ export const dailyTrendProcessor = {
                         });
                         return total;
                     };
-
                     num = calcValue(activeMetricCfg.groupA, metricType, modeA);
                     den = calcValue(activeMetricCfg.groupB, denType, modeB);
                 }
@@ -252,8 +234,7 @@ export const dailyTrendProcessor = {
                 if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
                     val = rawValue;
                     displayStr = val > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(val) : formatters.formatRevenue(val, 1)) : '-';
-                    rowRaw += val; 
-                    colTotals[dStr] = colTotals[dStr] || { raw: 0 }; colTotals[dStr].raw += val;
+                    rowRaw += val; colTotals[dStr] = colTotals[dStr] || { raw: 0 }; colTotals[dStr].raw += val;
                 } else if (settings.metricId === 'TY_LE_QUY_DOI') {
                     val = den > 0 ? (num / den) - 1 : 0;
                     displayStr = den > 0 ? formatters.formatPercentage(val, 1) : '-';
