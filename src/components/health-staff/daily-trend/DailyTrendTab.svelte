@@ -4,8 +4,8 @@
     import { datasyncService } from '../../../services/datasync.service.js';
     
     import DailyTrendPivotGrid from './DailyTrendPivotGrid.svelte';
-    import AddDailyTrendModal from '../../modals/AddDailyTrendModal.svelte';
-
+    import AddDailyTrendModal from '../../modals/dailytrend/AddDailyTrendModal.svelte';
+    
     let isLoading = true;
     let lastLoadedWarehouse = '';
 
@@ -57,6 +57,26 @@
     function openEditModal(tableConfig) {
         modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: tableConfig }));
     }
+
+    // --- BỘ MÀU CHUYÊN NGHIỆP CHO TIÊU ĐỀ CARD (CARD HEADER THEMES) ---
+    const CARD_THEMES = [
+        { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-800', dot: 'bg-slate-500', badgeBg: 'bg-slate-200', badgeText: 'text-slate-700' },
+        { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', dot: 'bg-blue-500', badgeBg: 'bg-blue-100', badgeText: 'text-blue-700' },
+        { bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-800', dot: 'bg-teal-500', badgeBg: 'bg-teal-100', badgeText: 'text-teal-700' },
+        { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-800', dot: 'bg-indigo-500', badgeBg: 'bg-indigo-100', badgeText: 'text-indigo-700' },
+        { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', dot: 'bg-emerald-500', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700' },
+        { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', dot: 'bg-purple-500', badgeBg: 'bg-purple-100', badgeText: 'text-purple-700' }
+    ];
+
+    function getCardTheme(config) {
+        if (!config || !config.id) return CARD_THEMES[0];
+        const str = String(config.id);
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return CARD_THEMES[Math.abs(hash) % CARD_THEMES.length];
+    }
 </script>
 
 <div class="flex flex-col gap-5 min-h-[500px]">
@@ -105,12 +125,13 @@
     {:else}
         <div class="flex flex-col gap-6 pb-10">
             {#each visibleTables as tableConfig (tableConfig.id)}
+                {@const theme = getCardTheme(tableConfig)}
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in relative group">
-                    <div class="px-5 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                    <div class="px-5 py-3 border-b {theme.border} {theme.bg} flex justify-between items-center transition-colors">
                         <div class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-blue-500"></span>
-                            <h3 class="font-bold text-gray-800 text-sm uppercase tracking-wide">{tableConfig.title}</h3>
-                            <span class="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded ml-2">Cập nhật lúc {new Date().getHours()}:{new Date().getMinutes().toString().padStart(2, '0')}</span>
+                            <span class="w-3 h-3 rounded-full {theme.dot}"></span>
+                            <h3 class="font-bold {theme.text} text-sm uppercase tracking-wide">{tableConfig.title}</h3>
+                            <span class="text-[10px] font-bold {theme.badgeBg} {theme.badgeText} px-2 py-0.5 rounded ml-2">Cập nhật lúc {new Date().getHours()}:{new Date().getMinutes().toString().padStart(2, '0')}</span>
                         </div>
                         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button class="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors" on:click={() => openEditModal(tableConfig)} title="Sửa bảng này">

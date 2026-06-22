@@ -165,8 +165,12 @@ export const dailyTrendProcessor = {
                 
                 let val = 0, displayStr = '-', num = 0, den = 0, rawValue = 0;
 
+                // [UPDATE 1]: Tính toán riêng rẽ Doanh Thu / Số Lượng cho Đơn giá Ma Trận
                 if (settings.viewMode === 'RAW') {
                     let cellRawSum = 0;
+                    let cellTempRev = 0; 
+                    let cellTempQty = 0;
+
                     const checkArrayMatch = (filterArray, rowValue) => {
                         if (!filterArray || filterArray.length === 0) return true;
                         return filterArray.some(f => normalizeStr(rowValue).includes(normalizeStr(f)));
@@ -183,17 +187,28 @@ export const dailyTrendProcessor = {
                             const quantity = parseInt(row.soLuong || 0);
                             let revenue = parseFloat(String(row.thanhTien || 0).replace(/[^0-9.-]+/g, "")) || 0;
                             
-                            // [SỬA LỖI]: Bổ sung Doanh thu Quy Đổi vào cấu hình RAW
                             let hs = heSoMap[extractId(row.nhomHang)] !== undefined ? heSoMap[extractId(row.nhomHang)] : 1;
                             const htxStr = String(row.hinhThucXuat || row['Hình thức xuất'] || '').toLowerCase();
                             if (htxStr.includes('trả') || htxStr.includes('chậm')) hs += 0.3;
 
                             if (settings.rawType === 'quantity') cellRawSum += quantity;
                             else if (settings.rawType === 'revenueQuyDoi') cellRawSum += (revenue * hs);
+                            else if (settings.rawType === 'unitPrice') {
+                                cellTempRev += revenue;
+                                cellTempQty += quantity;
+                            }
                             else cellRawSum += revenue;
                         }
                     });
-                    rawValue = cellRawSum;
+
+                    // Chốt Tỷ lệ cho Đơn giá
+                    if (settings.rawType === 'unitPrice') {
+                        num = cellTempRev;
+                        den = cellTempQty;
+                        rawValue = den > 0 ? num / den : 0;
+                    } else {
+                        rawValue = cellRawSum;
+                    }
                 } 
                 else if (settings.metricId === 'DTTL') { rawValue = cellBucket.totalRevenue; }
                 else if (settings.metricId === 'SL') { rawValue = cellBucket.totalQuantity; }
@@ -231,10 +246,19 @@ export const dailyTrendProcessor = {
                     den = calcValue(activeMetricCfg.groupB, denType, modeB);
                 }
 
-                if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+                // [UPDATE 2]: Format cho Đơn giá trên từng Cell lưới
+                if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') {
+                    val = rawValue; 
+                    displayStr = val > 0 ? formatters.formatRevenue(val, 1) : '-';
+                    rowNum += num; rowDen += den; 
+                    colTotals[dStr] = colTotals[dStr] || { raw: 0, num: 0, den: 0 }; 
+                    colTotals[dStr].num += num; colTotals[dStr].den += den;
+                } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
                     val = rawValue;
                     displayStr = val > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(val) : formatters.formatRevenue(val, 1)) : '-';
-                    rowRaw += val; colTotals[dStr] = colTotals[dStr] || { raw: 0 }; colTotals[dStr].raw += val;
+                    rowRaw += val; 
+                    colTotals[dStr] = colTotals[dStr] || { raw: 0, num: 0, den: 0 }; 
+                    colTotals[dStr].raw += val;
                 } else if (settings.metricId === 'TY_LE_QUY_DOI') {
                     val = den > 0 ? (num / den) - 1 : 0;
                     displayStr = den > 0 ? formatters.formatPercentage(val, 1) : '-';
@@ -251,8 +275,12 @@ export const dailyTrendProcessor = {
 
             grandRaw += rowRaw; grandNum += rowNum; grandDen += rowDen;
             
+            // [UPDATE 3]: Tính Cột TỔNG HỢP (Hàng ngang của nhân viên)
             let sumVal = 0, sumDisplay = '-';
-            if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+            if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') { 
+                sumVal = rowDen > 0 ? rowNum / rowDen : 0;
+                sumDisplay = sumVal > 0 ? formatters.formatRevenue(sumVal, 1) : '-';
+            } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
                 sumVal = rowRaw;
                 sumDisplay = sumVal > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(sumVal) : formatters.formatRevenue(sumVal, 1)) : '-';
             } else if (settings.metricId === 'TY_LE_QUY_DOI') {
@@ -266,8 +294,12 @@ export const dailyTrendProcessor = {
             return { ...emp, cells: rowCells, summaryValue: sumVal, summaryDisplay: sumDisplay };
         });
 
+        // [UPDATE 4]: Tính Dòng TỔNG HỢP DƯỚI CÙNG (Cột dọc theo từng ngày)
         Object.keys(colTotals).forEach(dStr => {
-            if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+            if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') { 
+                colTotals[dStr].value = colTotals[dStr].den > 0 ? colTotals[dStr].num / colTotals[dStr].den : 0;
+                colTotals[dStr].display = colTotals[dStr].value > 0 ? formatters.formatRevenue(colTotals[dStr].value, 1) : '-';
+            } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
                 colTotals[dStr].value = colTotals[dStr].raw;
                 colTotals[dStr].display = colTotals[dStr].raw > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(colTotals[dStr].raw) : formatters.formatRevenue(colTotals[dStr].raw, 1)) : '-';
             } else if (settings.metricId === 'TY_LE_QUY_DOI') {
@@ -279,8 +311,12 @@ export const dailyTrendProcessor = {
             }
         });
 
+        // [UPDATE 5]: Tính Ô TỔNG CỦA TỔNG (Góc dưới cùng bên phải)
         let grandVal = 0, grandDisplay = '-';
-        if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+        if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') { 
+            grandVal = grandDen > 0 ? grandNum / grandDen : 0;
+            grandDisplay = grandVal > 0 ? formatters.formatRevenue(grandVal, 1) : '-';
+        } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
             grandVal = grandRaw;
             grandDisplay = grandVal > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(grandVal) : formatters.formatRevenue(grandVal, 1)) : '-';
         } else if (settings.metricId === 'TY_LE_QUY_DOI') {
