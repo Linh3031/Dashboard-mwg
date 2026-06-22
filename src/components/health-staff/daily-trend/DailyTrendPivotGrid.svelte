@@ -127,7 +127,7 @@
         if (isPercentage) return (actualAvg * 100).toFixed(1) + '%';
         if (isQuantity) return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(actualAvg);
         
-        return new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(actualAvg / 1000);
+        return new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(actualAvg / 1000000);
     }
 
     function formatGrandAverage(matrix, config) {
