@@ -1,9 +1,9 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { get } from 'svelte/store'; // [PHẪU THUẬT] Import get để hút dữ liệu
+  import { get } from 'svelte/store'; 
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
-  import { kpiStore, realtimeYCXData } from '../../../stores.js'; // [PHẪU THUẬT] Bổ sung realtimeYCXData
+  import { kpiStore, realtimeYCXData } from '../../../stores.js'; 
   import { getCompletionColor } from '../../../utils/kpi.utils.js';
 
   import { batchCaptureService } from '../../../services/batchCapture.service.js';
@@ -100,7 +100,6 @@
       return `#${index + 1}`;
   }
 
-  // [LOGIC MỚI] XỬ LÝ CHỤP HÀNG LOẠT (Truyền thẳng Object + Dữ liệu YCX)
   function handleBatchCapture(event) {
       const mode = event.target.value;
       if (!mode) return;
@@ -110,17 +109,16 @@
       else if (mode === 'bot5') targetData = flatSortedData.slice(-5);
       else if (mode === 'all') targetData = flatSortedData;
 
-      // Hút thẳng dữ liệu từ Store để đề phòng Svelte cắt đứt kết nối khi render ngầm
       const currentYcx = get(realtimeYCXData);
 
       batchCaptureService.captureBatch(
           EmployeeDetail, 
           targetData, 
           "DT_Realtime", 
-          (empObj) => ({ employee: empObj, injectedYcxData: currentYcx }) // Bơm thẳng vào dạ dày Component
+          (empObj) => ({ employee: empObj, injectedYcxData: currentYcx }) 
       );
 
-      event.target.value = ""; // Reset dropdown
+      event.target.value = ""; 
   }
 </script>
 
@@ -148,7 +146,7 @@
   </div>
 
   <div class="flex flex-col gap-8">
-    {#each departmentOrder as deptName}
+    {#each departmentOrder as deptName, dIndex}
       {#if groupedData[deptName]}
         {@const deptTotal = groupedData[deptName].length}
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -160,8 +158,8 @@
             <table class="min-w-full text-sm text-left text-gray-600 table-bordered">
               <thead class="text-xs text-slate-800 uppercase bg-slate-200 font-bold sticky top-0 z-20 shadow-sm">
                 <tr>
-                  <th class="px-2 py-3 text-center sticky left-0 bg-slate-200 z-30 select-none border-r border-slate-300 min-w-[50px] whitespace-nowrap">
-                    Hạng
+                  <th class="p-0 text-center sticky left-0 bg-slate-200 z-30 select-none border-r border-slate-300 whitespace-nowrap">
+                    <div class="w-[50px] max-w-[50px] overflow-hidden mx-auto py-3">Hạng</div>
                   </th>
                   
                   <th class="px-4 py-3 cursor-pointer hover:bg-slate-300 transition sticky left-[50px] bg-slate-200 z-30 select-none border-r border-slate-300 min-w-[160px] whitespace-nowrap" on:click={() => handleSort('hoTen')}>
@@ -202,8 +200,10 @@
                   
                   <tr class="transition cursor-pointer interactive-row group {getRowStyle(index, deptTotal)}" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
                     
-                    <td class="px-2 py-3 text-center font-bold sticky left-0 z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'} whitespace-nowrap">
-                        {getRankIcon(index, deptTotal)}
+                    <td class="p-0 text-center font-bold sticky left-0 z-10 border-r border-gray-200 transition-colors {getStickyClass(index, deptTotal)} {index <= 2 ? 'text-lg' : 'text-sm text-slate-400'} whitespace-nowrap">
+                        <div class="w-[50px] max-w-[50px] overflow-hidden mx-auto py-3">
+                           {getRankIcon(index, deptTotal)}
+                        </div>
                     </td>
 
                     <td class="px-4 py-3 font-semibold text-blue-600 sticky left-[50px] z-10 border-r border-gray-200 transition-colors whitespace-nowrap {getStickyClass(index, deptTotal)}">
@@ -219,29 +219,29 @@
                   </tr>
                 {/each}
               </tbody>
+
+              {#if dIndex === departmentOrder.length - 1}
+              <tfoot class="bg-gray-100 font-bold text-gray-900 text-xs uppercase border-t-[3px] border-gray-300">
+                <tr>
+                  <td class="p-0 border-r border-gray-300 text-center tracking-wider whitespace-nowrap sticky left-0 z-20 bg-gray-100">
+                      <div class="w-[50px] max-w-[50px] overflow-hidden mx-auto py-3 text-gray-900">TỔNG</div>
+                  </td>
+                  <td class="px-4 py-3 border-r border-gray-300 text-center tracking-wider min-w-[160px] whitespace-nowrap sticky left-[50px] z-20 bg-gray-100">CỘNG</td>
+                  
+                  <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThu)}</td>
+                  <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
+                  <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctQD)}</td>
+                  <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuTraGop)}</td>
+                  <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctTC)}</td>
+                  <td class="px-3 py-3 pr-6 text-right text-base text-gray-600 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoiChuaXuat)}</td>
+                </tr>
+              </tfoot>
+              {/if}
+
             </table>
           </div>
         </div>
       {/if}
     {/each}
-    
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden -mt-4 z-10 relative">
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm text-left font-bold uppercase">
-          <tfoot class="bg-gray-100 font-bold text-gray-900 text-xs uppercase">
-            <tr>
-              <td class="px-4 py-3 border-r border-gray-300 text-center tracking-wider min-w-[210px] whitespace-nowrap" colspan="2">TỔNG CỘNG</td>
-              <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThu)}</td>
-              <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoi)}</td>
-              <td class="px-3 py-3 text-right text-base text-blue-700 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctQD)}</td>
-              <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuTraGop)}</td>
-              <td class="px-3 py-3 text-right text-base min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatPercentage(totalPctTC)}</td>
-              <td class="px-3 py-3 pr-6 text-right text-base text-gray-600 min-w-[95px] max-w-[110px] whitespace-nowrap">{formatters.formatRevenue(totalStats.doanhThuQuyDoiChuaXuat)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-
   </div>
 </div>
