@@ -40,7 +40,6 @@
         const gap = (d.bestRank - rankCutoff);
         return gap >= 10;
     });
-
 </script>
 
 <div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition" data-capture-filename="Thi_Dua_Luy_Ke_Vung">
@@ -61,7 +60,6 @@
                 <h2 class="text-3xl font-black text-white mb-1 tracking-tight leading-tight">{safeData.sieuThi}</h2>
                 <div class="flex items-center flex-wrap gap-4 text-blue-100 mt-2 text-sm font-medium">
                     <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="box" class="w-4 h-4"></i> Thi đua: {safeData.soNganhHang} NH</span>
-  
                     <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="check-circle" class="w-4 h-4 text-green-400"></i> Đang đạt: {safeData.soNganhHangDat} NH</span>
                     
                     {#if listCoGiai.length > 0}
@@ -125,7 +123,7 @@
                         <i data-feather="trending-up" class="w-5 h-5 text-yellow-600"></i>
                         <h3 class="font-bold text-yellow-800 uppercase text-lg">Tiềm Năng Sắp Có Giải ({listTiemNang.length})</h3>
                     </div>
-                   
+                    
                     {#if safeData.tongThuongTiemNang > 0}
                         <span class="text-green-600 font-bold text-base bg-white px-3 py-0.5 rounded-full border border-green-200 shadow-sm whitespace-nowrap">
                             + {formatMoney(safeData.tongThuongTiemNang)}
@@ -213,8 +211,10 @@
 
     /* BẢO VỆ CHUẨN MỰC CHỤP ẢNH HTML2CANVAS */
     :global(.capture-container) .tdv-root {
-        width: 1100px !important;
-        max-width: 1100px !important;
+        /* [PHẪU THUẬT]: Nâng lên 1200px để đồng bộ với không gian Lũy Kế */
+        width: 1200px !important;
+        max-width: 1200px !important;
+        min-width: 1200px !important;
         margin: 0 auto !important; 
         background-color: white;
         border: none !important;
@@ -232,11 +232,11 @@
         -webkit-line-clamp: 2 !important;
         -webkit-box-orient: vertical !important;
         white-space: normal !important;
-        height: 44px !important;
+        /* [PHẪU THUẬT]: Giải phóng chiều cao bị kìm kẹp */
+        height: auto !important;
     }
-    
-    :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
-    :global(.capture-container) .tdv-root .money-large { font-size: 36px !important; }
+
+    /* [PHẪU THUẬT]: Đã xóa bỏ các thuộc tính ép font-size cưỡng bức (h2, .money-large) */
 
     /* [FIX 2] Xử lý SVG Icon lơ lửng khi chụp ảnh - ĐÃ KHÓA SCOPE VÀO .tdv-root */
     :global(.capture-container .tdv-root svg) {
