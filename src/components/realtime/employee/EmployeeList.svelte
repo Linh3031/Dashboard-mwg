@@ -253,7 +253,7 @@
         display: none !important;
     }
 
-    /* 2. ÁO GIÁP BẢO VỆ HTML2CANVAS (Y hệt MultiMonth) */
+    /* 2. ÁO GIÁP BẢO VỆ HTML2CANVAS */
     :global(.capture-container [data-capture-group="realtime-revenue-table"]) {
         width: fit-content !important;
         min-width: fit-content !important;
@@ -263,7 +263,7 @@
         overflow: visible !important;
     }
 
-    /* 3. Mở khóa các thẻ div bao quanh (Tránh việc Tailwind cắt xén nội dung) */
+    /* 3. Mở khóa div bao quanh */
     :global(.capture-container [data-capture-group="realtime-revenue-table"] .bg-white.rounded-xl),
     :global(.capture-container [data-capture-group="realtime-revenue-table"] .overflow-x-auto) {
         width: max-content !important;
@@ -272,7 +272,7 @@
         overflow: visible !important;
     }
 
-    /* 4. Mở khóa bảng: Bỏ fixed, ép max-content để tự động vừa chữ */
+    /* 4. Định dạng Bảng */
     :global(.capture-container [data-capture-group="realtime-revenue-table"] table) {
         width: max-content !important;
         min-width: max-content !important;
@@ -282,25 +282,43 @@
         overflow: visible !important;
     }
 
-    /* 5. Khóa cứng 2 cột đầu tiên y như bảng Lũy Kế */
+    /* 5. Khóa cứng 2 cột đầu tiên (Gọt cho gọn lại 1 xíu so với bản cũ) */
     :global(.capture-container [data-capture-group="realtime-revenue-table"] table th:nth-child(1)),
     :global(.capture-container [data-capture-group="realtime-revenue-table"] table td:nth-child(1)) { 
-        width: 50px !important; 
-        min-width: 50px !important;
-        max-width: 50px !important;
+        width: 45px !important; 
+        min-width: 45px !important;
+        max-width: 45px !important;
     } 
     :global(.capture-container [data-capture-group="realtime-revenue-table"] table th:nth-child(2)),
     :global(.capture-container [data-capture-group="realtime-revenue-table"] table td:nth-child(2)) { 
-        width: 180px !important; 
-        min-width: 180px !important;
-        max-width: 180px !important;
+        width: 175px !important; 
+        min-width: 175px !important;
+        max-width: 175px !important;
     } 
 
-    /* 6. Cho phép các cột sau tự giãn theo một dòng (Không rớt chữ) */
+    /* ========================================================
+       6. [PHẪU THUẬT ÉP MỎNG]: Thu gọn chiều cao dòng, tăng size chữ
+       ======================================================== */
+    
+    /* Gọt bớt header */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] th) {
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+    }
+
+    /* Gọt sạch padding của các ô dữ liệu, trả height về tự động */
     :global(.capture-container [data-capture-group="realtime-revenue-table"] td) {
         white-space: nowrap !important;
-        height: 40px !important;
-        padding-top: 6px !important;
-        padding-bottom: 6px !important;
+        height: auto !important; /* Xóa bỏ giới hạn 40px cũ */
+        padding-top: 4px !important; /* Gọt cực mỏng khoảng cách trên/dưới */
+        padding-bottom: 4px !important;
+        font-size: 13.5px !important; /* Tăng nhẹ font chữ để chữ to rõ và cân đối hơn */
+    }
+
+    /* Vô hiệu hóa triệt để class py-3 (padding 12px) của Tailwind nằm trong các thẻ div (như icon Hạng) */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] td > div) {
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
+        height: auto !important;
     }
 </style>
