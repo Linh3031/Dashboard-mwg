@@ -21,6 +21,31 @@
       return Math.round(val / 1000000).toLocaleString('vi-VN');
   };
 
+  // --- [PHẪU THUẬT] HỆ MÀU PASTEL THANH LỊCH ---
+  function getMonthHeaderColor(index) {
+      const colors = [
+          'bg-blue-100 text-blue-800 border-blue-200',
+          'bg-emerald-100 text-emerald-800 border-emerald-200',
+          'bg-amber-100 text-amber-800 border-amber-200',
+          'bg-purple-100 text-purple-800 border-purple-200',
+          'bg-rose-100 text-rose-800 border-rose-200',
+          'bg-cyan-100 text-cyan-800 border-cyan-200'
+      ];
+      return colors[index % colors.length];
+  }
+
+  function getMonthSubHeaderColor(index) {
+      const colors = [
+          'bg-blue-50 text-blue-900',
+          'bg-emerald-50 text-emerald-900',
+          'bg-amber-50 text-amber-900',
+          'bg-purple-50 text-purple-900',
+          'bg-rose-50 text-rose-900',
+          'bg-cyan-50 text-cyan-900'
+      ];
+      return colors[index % colors.length];
+  }
+
   // [SURGICAL LOGIC]: Nhờ Context Passing, hàm này giờ chạy siêu tốc, render tức thì
   $: calculatedResult = multiMonthReportLogic.generateMultiMonthReport(rawData, $danhSachNhanVien);
 
@@ -31,7 +56,6 @@
       
       if (newMonthsStr !== oldMonthsStr) {
           allMonths = calculatedResult.allMonths;
-          // Khởi tạo selectedMonths lần đầu hoặc reset nếu tập dữ liệu gốc đổi
           selectedMonths = [...allMonths];
       }
   }
@@ -57,6 +81,7 @@
               totalDtqd += emp.months[m].dtqd;
           }
       });
+      
       return { ...emp, totalDt, totalDtqd };
   }).filter(emp => emp.totalDtqd > 0);
 
@@ -68,13 +93,14 @@
       };
       uniqueMonths.forEach(m => {
           stats.total.months[m] = { dtqd: 0, dt: 0, tyle: 0 };
-     
+          
           groupedData.forEach(item => {
               if (item.months[m]) {
                   stats.total.months[m].dtqd += item.months[m].dtqd;
                   stats.total.months[m].dt += item.months[m].dt;
               }
           });
+          
           stats.avg.months[m] = stats.total.months[m].dtqd / count;
           stats.total.months[m].tyle = stats.total.months[m].dt > 0 ? (stats.total.months[m].dtqd / stats.total.months[m].dt) - 1 : 0;
       });
@@ -91,6 +117,7 @@
       else if (sortKey.startsWith('month_')) {
           const [_, m, type] = sortKey.split('_');
           const aM = a.months[m] || {dtqd: 0, dt: 0};
+          
           const bM = b.months[m] || {dtqd: 0, dt: 0};
           valA = type === 'dtqd' ? aM.dtqd : (aM.dt > 0 ? aM.dtqd/aM.dt : -1);
           valB = type === 'dtqd' ? bM.dtqd : (bM.dt > 0 ? bM.dtqd/bM.dt : -1);
@@ -126,7 +153,7 @@
   }
 </script>
 
-<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in">
+<div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden mt-6 animate-fade-in" data-capture-group="multi-month-table">
     <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-indigo-50">
         <div class="flex items-center gap-2">
             <div class="p-2 bg-indigo-100 rounded-lg text-indigo-600"><i data-feather="layers" class="w-5 h-5"></i></div>
@@ -172,25 +199,34 @@
     <div class="overflow-x-auto custom-scrollbar">
         <table class="min-w-full text-sm text-left border-collapse" style="min-width: {350 + uniqueMonths.length * 160}px">
             <thead class="uppercase text-xs sticky top-0 z-30 shadow-sm">
-                <tr class="bg-slate-50 border-b border-gray-200 text-slate-500">
-                    <th rowspan="2" class="px-2 py-3 text-center w-[56px] border-r border-gray-200 sticky left-0 z-40 bg-slate-50 font-bold">Hạng</th>
-                    <th rowspan="2" class="px-4 py-3 text-left w-[180px] border-r border-gray-200 sticky left-[56px] z-40 bg-slate-50 font-bold cursor-pointer" on:click={() => handleSort('hoTen')}>
-                        Nhân viên {#if sortKey === 'hoTen'}<span class="text-indigo-500">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
-                    </th>
-                    <th rowspan="2" class="px-4 py-3 text-right border-r border-gray-200 sticky left-[236px] z-40 bg-indigo-50 font-black text-indigo-900 cursor-pointer" on:click={() => handleSort('total')}>
-                        Tổng DTQĐ {#if sortKey === 'total'}<span class="text-indigo-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
-                    </th>
-                    {#each uniqueMonths as month}
-                        <th colspan="2" class="px-4 py-2 text-center border-r border-gray-200 border-l-2 border-l-slate-300 font-bold text-slate-600">Tháng {month}</th>
+                
+                <tr class="bg-slate-50">
+                    <th class="px-2 pt-4 pb-0 text-center w-[56px] border-r border-gray-200 sticky left-0 z-40 bg-slate-50 font-bold border-b-0"></th>
+                    <th class="px-4 pt-4 pb-0 text-left w-[180px] border-r border-gray-200 sticky left-[56px] z-40 bg-slate-50 font-bold border-b-0"></th>
+                    <th class="px-4 pt-4 pb-0 text-right border-r border-gray-200 sticky left-[236px] z-40 bg-indigo-50 border-b-0 w-[100px]"></th>
+                    
+                    {#each uniqueMonths as month, mIndex}
+                        <th colspan="2" class="px-4 py-2 text-center border-r border-gray-200 border-l-2 border-l-white font-bold {getMonthHeaderColor(mIndex)}">
+                            Tháng {month}
+                        </th>
                     {/each}
                 </tr>
+
                 <tr class="bg-white border-b border-gray-200">
-                    {#each uniqueMonths as month}
-                        <th class="px-3 py-2 text-right text-slate-600 border-r border-gray-100 border-l-2 border-l-slate-300 cursor-pointer" on:click={() => handleSort(`month_${month}_dtqd`)}>
-                            DT QĐ {#if sortKey === `month_${month}_dtqd`}<span class="text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+                    <th class="px-2 pt-0 pb-4 text-center w-[56px] border-r border-gray-200 sticky left-0 z-40 bg-slate-50 font-bold align-top">Hạng</th>
+                    <th class="px-4 pt-0 pb-4 text-left w-[180px] border-r border-gray-200 sticky left-[56px] z-40 bg-slate-50 font-bold cursor-pointer align-top" on:click={() => handleSort('hoTen')}>
+                        Nhân viên {#if sortKey === 'hoTen'}<span class="text-indigo-500">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+                    </th>
+                    <th class="px-4 pt-0 pb-4 text-right border-r border-gray-200 sticky left-[236px] z-40 bg-indigo-50 font-black text-indigo-900 cursor-pointer align-top w-[100px]" on:click={() => handleSort('total')}>
+                        Tổng DTQĐ {#if sortKey === 'total'}<span class="text-indigo-600">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+                    </th>
+                    
+                    {#each uniqueMonths as month, mIndex}
+                        <th class="px-3 py-2 text-right border-r border-white border-l-2 border-l-white cursor-pointer {getMonthSubHeaderColor(mIndex)}" on:click={() => handleSort(`month_${month}_dtqd`)}>
+                            DT QĐ {#if sortKey === `month_${month}_dtqd`}<span class="text-indigo-600 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                         </th>
-                        <th class="px-3 py-2 text-right text-slate-400 border-r border-gray-200 cursor-pointer" on:click={() => handleSort(`month_${month}_tyle`)}>
-                            % QĐ {#if sortKey === `month_${month}_tyle`}<span class="text-indigo-500 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
+                        <th class="px-3 py-2 text-right border-r border-gray-200 cursor-pointer {getMonthSubHeaderColor(mIndex)}" on:click={() => handleSort(`month_${month}_tyle`)}>
+                            % QĐ {#if sortKey === `month_${month}_tyle`}<span class="text-indigo-600 text-[10px]">{sortDirection === 'asc' ? '▲' : '▼'}</span>{/if}
                         </th>
                     {/each}
                 </tr>
@@ -207,7 +243,7 @@
                             <td class="px-4 py-3 font-semibold text-slate-700 truncate border-r border-gray-100 sticky left-[56px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.03)] {getRowStyle(index)}">
                                 {formatters.getShortEmployeeName(item.hoTen, item.maNV)}
                             </td>
-                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 sticky left-[236px] z-20 bg-indigo-50/40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                            <td class="px-4 py-3 text-right font-black text-indigo-700 border-r border-gray-100 sticky left-[236px] z-20 bg-indigo-50/40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] w-[100px]">
                                 {formatRevenueNoDecimal(item.totalDtqd)}
                             </td>
                             
@@ -221,7 +257,7 @@
                                 <td class="px-3 py-3 text-right font-bold border-r border-gray-100 border-l-2 border-l-slate-200 {isDtqdBelowAvg ? 'bg-red-50 text-red-500' : 'text-gray-800'}">
                                     {mData.dtqd > 0 ? formatRevenueNoDecimal(mData.dtqd) : '-'}
                                 </td>
-                                <td class="px-3 py-3 text-right text-xs border-r border-gray-100 font-medium {isTyleBelowAvg ? 'bg-red-50 text-red-400' : 'text-slate-400'}">
+                                <td class="px-3 py-3 text-right text-xs border-r border-gray-100 font-medium {isTyleBelowAvg ? 'bg-red-50 text-red-400' : 'text-slate-500'}">
                                     {mData.dtqd > 0 ? formatters.formatPercentage(tyle) : '-'}
                                 </td>
                             {/each}
@@ -261,4 +297,44 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* [PHẪU THUẬT]: ÁO GIÁP BẢO VỆ HTML2CANVAS VÀ ÉP CỨNG CHIỀU RỘNG CỘT CỐ ĐỊNH */
+    :global(.capture-container [data-capture-group="multi-month-table"]) {
+        width: fit-content !important;
+        min-width: fit-content !important;
+        max-width: fit-content !important;
+        margin: 0 auto !important;
+        background-color: white !important;
+    }
+    :global(.capture-container [data-capture-group="multi-month-table"] table) {
+        width: max-content !important;
+        min-width: max-content !important;
+        max-width: max-content !important;
+        table-layout: auto !important;
+        background-color: #ffffff !important;
+    }
+
+    /* CỘT 1: HẠNG */
+    :global(.capture-container [data-capture-group="multi-month-table"] table thead th:nth-child(1)),
+    :global(.capture-container [data-capture-group="multi-month-table"] table tbody td:nth-child(1)) {
+        width: 56px !important;
+        min-width: 56px !important;
+        max-width: 56px !important;
+    }
+
+    /* CỘT 2: NHÂN VIÊN */
+    :global(.capture-container [data-capture-group="multi-month-table"] table thead th:nth-child(2)),
+    :global(.capture-container [data-capture-group="multi-month-table"] table tbody td:nth-child(2)) {
+        width: 180px !important;
+        min-width: 180px !important;
+        max-width: 180px !important;
+    }
+
+    /* CỘT 3: TỔNG DTQĐ - CHỐNG PHÌNH TO MÀ KHÔNG ẢNH HƯỞNG FOOTER */
+    :global(.capture-container [data-capture-group="multi-month-table"] table thead th:nth-child(3)),
+    :global(.capture-container [data-capture-group="multi-month-table"] table tbody td:nth-child(3)) {
+        width: 100px !important;
+        min-width: 100px !important;
+        max-width: 100px !important;
+    }
 </style>
