@@ -122,9 +122,10 @@
   }
 </script>
 
-<div class="space-y-6" data-capture-group="revenue-detail-mobile">
+<!-- [SURGICAL LOGIC]: Tiêm data-capture-filename="DT NV Real" vào thẻ cha để ép tên ảnh -->
+<div class="space-y-6" id="realtime-revenue-table-wrapper" data-capture-group="realtime-revenue-table" data-capture-filename="DT NV Real">
 
-  <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+  <div class="action-toolbar flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
       <div class="text-sm font-bold text-gray-700 flex items-center gap-2">
           <i data-feather="list" class="w-4 h-4"></i> Danh sách theo bộ phận
       </div>
@@ -245,3 +246,61 @@
     {/each}
   </div>
 </div>
+
+<style>
+    /* 1. Tàng hình toolbar */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] .action-toolbar) {
+        display: none !important;
+    }
+
+    /* 2. ÁO GIÁP BẢO VỆ HTML2CANVAS (Y hệt MultiMonth) */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"]) {
+        width: fit-content !important;
+        min-width: fit-content !important;
+        max-width: fit-content !important;
+        margin: 0 auto !important;
+        background-color: transparent !important;
+        overflow: visible !important;
+    }
+
+    /* 3. Mở khóa các thẻ div bao quanh (Tránh việc Tailwind cắt xén nội dung) */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] .bg-white.rounded-xl),
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] .overflow-x-auto) {
+        width: max-content !important;
+        min-width: max-content !important;
+        max-width: max-content !important;
+        overflow: visible !important;
+    }
+
+    /* 4. Mở khóa bảng: Bỏ fixed, ép max-content để tự động vừa chữ */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] table) {
+        width: max-content !important;
+        min-width: max-content !important;
+        max-width: max-content !important;
+        table-layout: auto !important;
+        background-color: #ffffff !important;
+        overflow: visible !important;
+    }
+
+    /* 5. Khóa cứng 2 cột đầu tiên y như bảng Lũy Kế */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] table th:nth-child(1)),
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] table td:nth-child(1)) { 
+        width: 50px !important; 
+        min-width: 50px !important;
+        max-width: 50px !important;
+    } 
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] table th:nth-child(2)),
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] table td:nth-child(2)) { 
+        width: 180px !important; 
+        min-width: 180px !important;
+        max-width: 180px !important;
+    } 
+
+    /* 6. Cho phép các cột sau tự giãn theo một dòng (Không rớt chữ) */
+    :global(.capture-container [data-capture-group="realtime-revenue-table"] td) {
+        white-space: nowrap !important;
+        height: 40px !important;
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+    }
+</style>
