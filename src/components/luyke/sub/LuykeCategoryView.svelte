@@ -9,10 +9,8 @@
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
     import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
     import { inventoryHelper } from '../inventory/InventoryLogic.js';
-
     export let data = [];
     export let selectedWarehouse = '';
-
     const AVAILABLE_DIMENSIONS = [
         { id: 'nganhHang', label: 'Ngành hàng', default: true },
         { id: 'nhomHang', label: 'Nhóm hàng', default: true },
@@ -20,7 +18,6 @@
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
@@ -45,6 +42,10 @@
     let hasInventoryData = false;
     const PRESET_DAYS = [3, 5, 7, 10];
 
+    // [PHẪU THUẬT LOGIC]: Khai báo các cấu hình ngày chạy Run Rate thực tế từ dữ liệu
+    let elapsedDays = 1;
+    let daysInMonth = 30;
+
     let columnSettings = [
         { id: 'quantity', label: 'Số lượng (SL)', visible: true },
         { id: 'revenue', label: 'Doanh thu thực', visible: true },
@@ -57,7 +58,6 @@
         if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
         return true;
     });
-
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) {
@@ -92,7 +92,6 @@
         if (!val) return 0;
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
-
     const isValidRow = (row) => {
         return (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
                (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
@@ -108,10 +107,28 @@
              return formatters.getShortEmployeeName(val, maNVMatch ? maNVMatch[1] : '');
         }
         if (!val) return '(Trống)';
-        
-        // [PHẪU THUẬT LOGIC]: Trả về chuỗi nguyên bản (raw string) cho tất cả các Dimension.
-        // Điều này chặn việc gọi hàm cleanCategoryName(), giúp bảo toàn nguyên vẹn ID ở đầu chuỗi (giống SSG).
         return String(val).trim();
+    };
+
+    // [PHẪU THUẬT LOGIC]: Hàm chuẩn hóa ngày đa năng giải quyết định dạng Excel Serial Date và chuỗi thô
+    const getRowDate = (row) => {
+        const d = row.ngayTao || row.ngay_tao || row.NgayTao || row['Ngày tạo'] || row.ngayXuat || row.ngay_xuat || row.NgayXuat || row.ngayChungTu;
+        if (!d) return null;
+        if (d instanceof Date && !isNaN(d)) return d;
+        if (!isNaN(d) && Number(d) > 30000 && Number(d) < 60000) {
+            const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+            return new Date(excelEpoch.getTime() + Number(d) * 86400000);
+        }
+        const str = String(d).trim();
+        const parts = str.split(/[-/ ]/);
+        if (parts.length >= 3) {
+            if (parts[0].length === 4) {
+                return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            } else {
+                return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            }
+        }
+        return null;
     };
 
     function calculateData() {
@@ -120,14 +137,39 @@
         warnings = [];
         if (!data || data.length === 0) return;
 
-        let processedData = dateFilter.from || dateFilter.to ? filterDataByDate(data, dateFilter.from, dateFilter.to) : data;
+        // [PHẪU THUẬT LOGIC]: Xác định mốc thời gian thực tế dựa trên ngày lớn nhất có trong dữ liệu tải lên
+        let referenceDate = new Date();
+        let computedElapsedDays = Math.max(1, referenceDate.getDate() - 1);
+        let computedDaysInMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
+
+        let maxRowDate = null;
+        data.forEach(row => {
+            const rd = getRowDate(row);
+            if (rd && (!maxRowDate || rd > maxRowDate)) {
+                maxRowDate = rd;
+            }
+        });
+
+        if (maxRowDate) {
+            referenceDate = maxRowDate;
+            computedElapsedDays = maxRowDate.getDate();
+            computedDaysInMonth = new Date(maxRowDate.getFullYear(), maxRowDate.getMonth() + 1, 0).getDate();
+        }
+
+        elapsedDays = computedElapsedDays;
+        daysInMonth = computedDaysInMonth;
+
+        // Xác định chuỗi Tháng/Năm đích của kỳ trước cần so sánh (lùi 1 tháng từ dữ liệu hiện tại)
+        let prevMonthDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
+        const targetPrevMonthStr = `${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}/${prevMonthDate.getFullYear()}`;
+
+        let processedData = dateFilter.from || dateFilter.to ?
+            filterDataByDate(data, dateFilter.from, dateFilter.to) : data;
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
         let rootMap = new Map();
-
         const processRowIntoTree = (row, isCK = false) => {
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) || !isValidRow(row)) return;
-
             if (Object.keys(currentFilters).length > 0) {
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
                     if (selectedValues !== undefined && !selectedValues.includes(getDimensionValue(row, key))) return;
@@ -152,7 +194,6 @@
             }
 
             let currentLevel = rootMap;
-
             activeDimensionIds.forEach((dimId, index) => {
                 const key = getDimensionValue(row, dimId);
                 const stableId = `${index}_${key}`;
@@ -174,7 +215,19 @@
         };
 
         processedData.forEach(row => processRowIntoTree(row, false));
-        if (isCompareMode && $ycxDataThangTruoc?.length > 0) $ycxDataThangTruoc.forEach(row => processRowIntoTree(row, true));
+        
+        // [PHẪU THUẬT LOGIC]: Đặt màng lọc chặn đứng tình trạng cộng dồn đa tháng của tệp dữ liệu cùng kỳ
+        if (isCompareMode && $ycxDataThangTruoc?.length > 0) {
+            $ycxDataThangTruoc.forEach(row => {
+                const rd = getRowDate(row);
+                if (rd) {
+                    const rowMonthStr = `${String(rd.getMonth() + 1).padStart(2, '0')}/${rd.getFullYear()}`;
+                    if (rowMonthStr === targetPrevMonthStr) {
+                        processRowIntoTree(row, true);
+                    }
+                }
+            });
+        }
 
         const convertMapToArray = (map) => Array.from(map.values()).map(item => {
             const newItem = { ...item };
@@ -182,9 +235,9 @@
                 newItem.children = convertMapToArray(newItem.children);
                 newItem.children.sort((a, b) => b.revenue - a.revenue);
             } else delete newItem.children;
+       
             return newItem;
         }).sort((a, b) => b.revenue - a.revenue);
-
         let finalTree = convertMapToArray(rootMap);
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
@@ -219,7 +272,7 @@
                     if (filterValues !== undefined && !filterValues.includes(getDimensionValue(row, filterKey))) { isValid = false; break; }
                 }
                 if (isValid) {
-                    const val = getDimensionValue(row, targetDim.id);
+                     const val = getDimensionValue(row, targetDim.id);
                     if (val && val !== '(Trống)') uniqueValues.add(val);
                 }
             });
@@ -245,7 +298,6 @@
     }
 
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
-
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
         if (isVelocityMode) { velocityDays = getCurrentMinusOne();
@@ -271,7 +323,7 @@
         <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
             <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
-                <input type="date" bind:value={dateFilter.from} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
+                 <input type="date" bind:value={dateFilter.from} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
                 <span class="mx-2 text-gray-400">➝</span>
                 <input type="date" bind:value={dateFilter.to} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
             </div>
@@ -280,7 +332,7 @@
         <div class="w-px h-10 bg-gray-200 mx-2"></div>
 
         <div class="flex items-center gap-3 h-full pb-1">
-            <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
+             <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
             <button class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={toggleVelocityMode}>
                 <span class="{isVelocityMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
             </button>
@@ -297,13 +349,12 @@
         {#if isVelocityMode}
             <div class="flex items-center gap-2 h-full pb-1 animate-fade-in border-l border-gray-200 pl-4 ml-2">
                 <button on:click={() => velocityDays = getCurrentMinusOne()} class="px-3 py-1 text-xs font-bold rounded border bg-green-50 text-green-700 border-green-200 hover:bg-green-100">Hiện tại ({getCurrentMinusOne()})</button>
-                <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
+                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
                     <input type="number" min="1" class="w-10 text-sm font-bold text-center outline-none text-orange-700" bind:value={velocityDays} />
                 </div>
-            </div>
-            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={(e) => { alertDays = e.detail.alertDays;
-if(inventoryIndex) calculateData(); }} />
+             </div>
+            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={(e) => { alertDays = e.detail.alertDays; if(inventoryIndex) calculateData(); }} />
         {/if}
     </div>
 
@@ -326,7 +377,7 @@ if(inventoryIndex) calculateData(); }} />
 
     <LuykeCategoryTreeTable 
         data={treeData} 
-        {totalMetrics}
+         {totalMetrics}
         allDimensions={displayedDimensions} 
         activeIds={activeDimensionIds}
         {filterOptions}
@@ -334,6 +385,8 @@ if(inventoryIndex) calculateData(); }} />
         {isVelocityMode} 
         {isCompareMode}
         {columnSettings}
+        {elapsedDays}
+        {daysInMonth}
         bind:sortKey
         bind:sortDirection
         bind:expandedRows={expandedRows}
@@ -342,12 +395,13 @@ if(inventoryIndex) calculateData(); }} />
             const { key, selected } = e.detail; 
             if (selected === undefined) { const nf = {...currentFilters}; delete nf[key]; currentFilters = nf; } 
             else currentFilters = {...currentFilters, [key]: selected};
-        }}
+         }}
         hasInventoryData={hasInventoryData}
     />
 </div>
 
 <style>
-  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+  .animate-fade-in { animation: fadeIn 0.3s ease-out;
+ }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
