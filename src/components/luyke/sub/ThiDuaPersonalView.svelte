@@ -54,25 +54,32 @@
 </script>
 
 <div class="mb-5 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-xl p-4 flex flex-col md:flex-row flex-nowrap justify-between items-center shadow-sm gap-4">
-    <div class="flex items-center gap-3 min-w-0 capture-target-header-left">
+    <!-- Cụm Tiêu đề (Bên trái - Chiếm không gian còn lại) -->
+    <div class="flex items-center gap-3 min-w-0 flex-grow capture-target-header-left">
         <div class="bg-indigo-600 w-8 h-8 rounded-lg text-white shadow-md flex items-center justify-center shrink-0 capture-target-icon-box">
             <i data-feather="target" class="w-4 h-4"></i>
         </div>
         <div class="capture-target-text-group">
-            <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title">
-                Target thi đua NV Tháng {currentMonthStr}
+            <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title truncate">
+                Target thi đua NV Tháng {currentMonthStr} <span class="text-indigo-300 mx-1">|</span> <span class="text-orange-600">{sortedData.length} Chương trình</span>
             </div>
             <p class="text-[11px] sm:text-xs text-indigo-600/80 mt-0.5 font-medium truncate capture-target-sub">Chia đều cho tổng nhân sự.</p>
         </div>
     </div>
     
-    <div class="flex-grow flex flex-col items-center justify-center px-4 py-2 rounded-lg border border-indigo-100/50 capture-hide">
+    <!-- Cụm Tổng nhân sự (Chuyển vào giữa) -->
+    <div class="text-center bg-white px-4 py-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center shrink-0 min-w-[100px]">
+        <span class="text-[9px] uppercase font-bold text-gray-400">Tổng nhân sự</span>
+        <span class="text-2xl font-black text-indigo-700 leading-none">{totalEmployees} <span class="text-xs font-bold text-gray-500">NV</span></span>
+    </div>
+
+    <!-- Cụm Slider (Dời sang bên phải) -->
+    <div class="flex flex-col items-end justify-center px-4 py-2 rounded-lg bg-white border border-indigo-200 shadow-sm shrink-0 capture-hide">
         <div class="flex items-center gap-2 text-indigo-800 mb-1">
             <i data-feather="crosshair" class="w-3.5 h-3.5"></i>
             <span class="text-[10px] font-black uppercase tracking-wider">Mục tiêu hoàn thành (%)</span>
         </div>
-        <div class="flex items-center gap-2 w-full max-w-[250px]">
-            <!-- [PHẪU THUẬT LOGIC]: Nâng max từ 200 lên 500 -->
+        <div class="flex items-center gap-2 w-full max-w-[200px]">
             <input 
                 type="range" 
                 min="50" max="500" step="5"
@@ -90,11 +97,6 @@
                 <span class="absolute right-0.5 top-0.5 text-[9px] text-gray-400 font-bold">%</span>
             </div>
         </div>
-    </div>
-
-    <div class="text-center bg-white px-4 py-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center shrink-0 min-w-[100px]">
-        <span class="text-[9px] uppercase font-bold text-gray-400">Tổng nhân sự</span>
-        <span class="text-2xl font-black text-indigo-700 leading-none">{totalEmployees} <span class="text-xs font-bold text-gray-500">NV</span></span>
     </div>
 </div>
 
