@@ -1,8 +1,9 @@
 <script>
     import { modalState, pastedThiDuaReportData, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
     import { formatters } from '../../utils/formatters.js';
-    import { afterUpdate } from 'svelte';
+    import { afterUpdate, onDestroy } from 'svelte';
     import { captureService } from '../../services/capture.service.js';
+    import { datasyncService } from '../../services/datasync.service.js'; // [PHẪU THUẬT LOGIC]: Bơm service để sync Cloud
 
     $: isOpen = $modalState.activeModal === 'st-emp-competition-modal';
     $: payload = $modalState.payload || {};
@@ -13,6 +14,31 @@
     let currentEmployeeCount = 1;
     let currentPersonalTarget = 0;
     
+    // [PHẪU THUẬT LOGIC]: Khai báo state và timeout cho thanh trượt
+    let targetRatio = 100;
+    let saveTimeout;
+
+    // Load tỷ lệ Target ngay khi mở Modal hoặc đổi kho
+    $: if (isOpen && $selectedWarehouse) {
+        datasyncService.loadPersonalTargetRatio($selectedWarehouse).then(ratio => {
+            targetRatio = ratio;
+        });
+    }
+
+    // Cơ chế Debounce chống spam request khi kéo Slider
+    function handleSliderChange() {
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+            if ($selectedWarehouse) {
+                await datasyncService.savePersonalTargetRatio($selectedWarehouse, targetRatio);
+            }
+        }, 500);
+    }
+
+    onDestroy(() => {
+        clearTimeout(saveTimeout);
+    });
+
     let captureNode;
 
     // 1. Logic xử lý Data (Tính Target & Lấy Lũy kế Thực tế)
@@ -25,7 +51,9 @@
         }
         
         currentEmployeeCount = validEmployees.length > 0 ? validEmployees.length : 1; 
-        currentPersonalTarget = Math.round(totalTarget / currentEmployeeCount);
+        
+        // [PHẪU THUẬT LOGIC]: Công thức mới nhận tỷ lệ phần trăm từ targetRatio
+        currentPersonalTarget = Math.round((totalTarget * (targetRatio / 100)) / currentEmployeeCount);
 
         if (!$pastedThiDuaReportData || $pastedThiDuaReportData.length === 0) return [];
 
@@ -74,7 +102,6 @@
                 }
 
                 if (currentPersonalTarget > 0 || luyKe > 0) {
-                    // [FIXED] Chặt bỏ phần mã nhân viên bị dính vào đuôi tên từ file data dán
                     let rawHoTen = emp.hoTen || emp.name || emp.ten || 'Chưa cập nhật';
                     let cleanHoTen = rawHoTen.split(' - ')[0].trim();
                     results.push({
@@ -157,6 +184,32 @@
                    <button on:click={close} class="p-2 hover:bg-slate-200 rounded-full transition-colors" title="Đóng">
                        <i data-feather="x" class="w-5 h-5 text-slate-500"></i>
                    </button>
+               </div>
+           </div>
+
+           <!-- [PHẪU THUẬT LOGIC]: Chèn Toolbar điều khiển Target Ratio -->
+           <div class="px-6 py-2.5 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center capture-hide">
+               <div class="flex items-center gap-2 text-slate-600">
+                   <i data-feather="crosshair" class="w-3.5 h-3.5"></i>
+                   <span class="text-[10px] font-bold uppercase tracking-wider">Mục tiêu hoàn thành (%)</span>
+               </div>
+               <div class="flex items-center gap-3 w-full max-w-[250px]">
+                   <input 
+                       type="range" 
+                       min="50" max="500" step="5"
+                       bind:value={targetRatio}
+                       on:input={handleSliderChange}
+                       class="flex-grow h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                   >
+                   <div class="relative flex-shrink-0">
+                       <input 
+                           type="number" 
+                           bind:value={targetRatio}
+                           on:input={handleSliderChange}
+                           class="w-14 py-0.5 px-1 text-center font-bold text-blue-700 bg-white border border-blue-200 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none shadow-sm"
+                       >
+                       <span class="absolute right-0.5 top-0.5 text-[9px] text-gray-400 font-bold">%</span>
+                   </div>
                </div>
            </div>
            
