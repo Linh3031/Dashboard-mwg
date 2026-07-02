@@ -79,7 +79,7 @@
 
 <div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
     {#if $selectedWarehouse && $selectedWarehouse !== 'ALL'}
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6 {viewType === 'personal_target' ? 'capture-hide' : ''}">
             {@render flatKpiCard('Tổng Chương trình', summary.total, `DT: <strong class="text-blue-600">${summary.revenueTotal}</strong> • SL: <strong class="text-orange-600">${summary.quantityTotal}</strong>`, 'layers', 'text-gray-700', 0, 'bg-gray-100')}
             {@render flatKpiCard('Tỷ lệ Đạt', formatters.formatPercentage(summary.overallRate / 100), `Đã đạt: <strong class="${getRateColor(summary.overallRate)}">${summary.achieved}</strong> / ${summary.total}`, 'target', getRateColor(summary.overallRate), summary.overallRate, 'bg-green-50')}
             {@render flatKpiCard('Thi đua Doanh thu', `${summary.revenueAchieved}/${summary.revenueTotal}`, `Tỷ lệ đạt: <strong>${summary.revenueTotal > 0 ? formatters.formatPercentage(summary.revenueAchieved / summary.revenueTotal) : '0%'}</strong>`, 'dollar-sign', 'text-blue-600', summary.revenueTotal > 0 ? (summary.revenueAchieved / summary.revenueTotal) * 100 : 0, 'bg-blue-50')}
@@ -151,11 +151,18 @@
         padding: 20px !important; 
     }
 
-    :global(.capture-container .luyke-dashboard-container .grid:not(.personal-target-grid):not(.luyke-thidua-multi-columns)) { 
+    /* --- [SURGICAL STRIKE - V2]: Sức mạnh tuyệt đối --- */
+    :global(.capture-container .luyke-dashboard-container .capture-hide) {
+        display: none !important;
+    }
+
+    /* Đã vá lỗi CSS Specificity: Dùng :not(.capture-hide) để luật này tha mạng cho thẻ đang bị ẩn */
+    :global(.capture-container .luyke-dashboard-container .grid:not(.personal-target-grid):not(.luyke-thidua-multi-columns):not(.capture-hide)) { 
         display: grid !important;
         grid-template-columns: repeat(4, minmax(0, 1fr)) !important; 
         gap: 16px !important; 
     }
+    
     :global(.capture-container .luyke-dashboard-container .personal-target-grid) {
         display: grid !important;
         grid-template-columns: repeat(3, minmax(0, 1fr)) !important;

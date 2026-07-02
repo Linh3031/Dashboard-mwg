@@ -47,6 +47,10 @@
     });
 
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+
+    // [PHẪU THUẬT LOGIC]: Lấy tháng/năm hiện tại
+    const today = new Date();
+    const currentMonthStr = `${today.getMonth() + 1}/${today.getFullYear()}`;
 </script>
 
 <div class="mb-5 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-xl p-4 flex flex-col md:flex-row flex-nowrap justify-between items-center shadow-sm gap-4">
@@ -56,7 +60,7 @@
         </div>
         <div class="capture-target-text-group">
             <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title">
-                Target cá nhân
+                Target thi đua NV Tháng {currentMonthStr}
             </div>
             <p class="text-[11px] sm:text-xs text-indigo-600/80 mt-0.5 font-medium truncate capture-target-sub">Chia đều cho tổng nhân sự.</p>
         </div>
@@ -68,9 +72,10 @@
             <span class="text-[10px] font-black uppercase tracking-wider">Mục tiêu hoàn thành (%)</span>
         </div>
         <div class="flex items-center gap-2 w-full max-w-[250px]">
+            <!-- [PHẪU THUẬT LOGIC]: Nâng max từ 200 lên 500 -->
             <input 
                 type="range" 
-                min="50" max="200" step="5"
+                min="50" max="500" step="5"
                 bind:value={targetRatio}
                 on:input={handleSliderChange}
                 class="flex-grow h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
