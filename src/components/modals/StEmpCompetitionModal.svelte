@@ -1,9 +1,8 @@
 <script>
     import { modalState, pastedThiDuaReportData, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
     import { formatters } from '../../utils/formatters.js';
-    import { afterUpdate, onDestroy } from 'svelte';
+    import { afterUpdate } from 'svelte';
     import { captureService } from '../../services/capture.service.js';
-    import { datasyncService } from '../../services/datasync.service.js'; // [PHẪU THUẬT LOGIC]: Bơm service để sync Cloud
 
     $: isOpen = $modalState.activeModal === 'st-emp-competition-modal';
     $: payload = $modalState.payload || {};
@@ -14,34 +13,26 @@
     let currentEmployeeCount = 1;
     let currentPersonalTarget = 0;
     
-    // [PHẪU THUẬT LOGIC]: Khai báo state và timeout cho thanh trượt
+    // [PHẪU THUẬT LOGIC]: Thanh trượt Modal biến thành Sandbox (Chỉ tính toán local)
     let targetRatio = 100;
-    let saveTimeout;
 
-    // Load tỷ lệ Target ngay khi mở Modal hoặc đổi kho
+    // Khi mở Modal, "mượn" tỷ lệ gốc đang lưu trong Cache (do màn hình ngoài nạp)
     $: if (isOpen && $selectedWarehouse) {
-        datasyncService.loadPersonalTargetRatio($selectedWarehouse).then(ratio => {
-            targetRatio = ratio;
-        });
+        const cacheKey = `targetRatio_${$selectedWarehouse}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+            targetRatio = parseInt(cached, 10);
+        } else {
+            targetRatio = 100;
+        }
     }
 
-    // Cơ chế Debounce chống spam request khi kéo Slider
-    function handleSliderChange() {
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(async () => {
-            if ($selectedWarehouse) {
-                await datasyncService.savePersonalTargetRatio($selectedWarehouse, targetRatio);
-            }
-        }, 500);
-    }
-
-    onDestroy(() => {
-        clearTimeout(saveTimeout);
-    });
+    // Không cần hàm handleSliderChange gọi Firebase nữa.
+    // bind:value={targetRatio} ở HTML bên dưới đã đủ để Svelte tự tính toán lại UI tức thì.
 
     let captureNode;
 
-    // 1. Logic xử lý Data (Tính Target & Lấy Lũy kế Thực tế)
+    // Logic xử lý Data (Tính Target & Lấy Lũy kế Thực tế)
     $: employeeList = (() => {
         if (!isOpen || !targetProgram) return [];
 
@@ -51,8 +42,6 @@
         }
         
         currentEmployeeCount = validEmployees.length > 0 ? validEmployees.length : 1; 
-        
-        // [PHẪU THUẬT LOGIC]: Công thức mới nhận tỷ lệ phần trăm từ targetRatio
         currentPersonalTarget = Math.round((totalTarget * (targetRatio / 100)) / currentEmployeeCount);
 
         if (!$pastedThiDuaReportData || $pastedThiDuaReportData.length === 0) return [];
@@ -117,11 +106,9 @@
         return results.sort((a, b) => b.tyLe - a.tyLe);
     })();
 
-    // 2. Phân tách danh sách theo UI/Gamification
     $: topCount = employeeList.length <= 15 ? 3 : 5;
     $: topPerformers = employeeList.slice(0, topCount);
     $: restOfList = employeeList.slice(topCount);
-    // Tự động chia 2 hoặc 3 cột cho danh sách còn lại
     $: gridClass = employeeList.length <= 10 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
     function close() {
@@ -130,16 +117,11 @@
 
     async function handleCapture() {
         if (!captureNode) return;
-        
-        // preset-mobile-portrait ép chiều rộng 480px (giao diện điện thoại)
-        // capture-layout-container giúp tương thích với engine mở rộng chiều cao
         const presetClasses = 'preset-mobile-portrait capture-layout-container';
         const fileName = `ThiDua_${displayTitle}`;
-        
         await captureService.captureAndDownload(captureNode, fileName, presetClasses);
     }
 
-    // Style cho các thẻ Compact (Danh sách dưới)
     function getCompactRowColor(tyLe) {
         if (tyLe >= 100) return 'bg-emerald-50 text-emerald-800 border-emerald-100';
         if (tyLe >= 80) return 'bg-blue-50 text-blue-800 border-blue-100';
@@ -147,7 +129,6 @@
         return 'bg-red-50 text-red-800 border-red-100';
     }
 
-    // Style cho thẻ Vinh Danh Top (Danh sách trên)
     function getRankStyle(index) {
         if (index === 0) return { bg: 'bg-gradient-to-br from-yellow-100 to-yellow-50 border-yellow-300 shadow-sm', text: 'text-yellow-700', icon: '🏆', rankText: 'text-yellow-600' };
         if (index === 1) return { bg: 'bg-gradient-to-br from-slate-200 to-slate-100 border-slate-300 shadow-sm', text: 'text-slate-700', icon: '🥈', rankText: 'text-slate-500' };
@@ -187,25 +168,23 @@
                </div>
            </div>
 
-           <!-- [PHẪU THUẬT LOGIC]: Chèn Toolbar điều khiển Target Ratio -->
+           <!-- [PHẪU THUẬT LOGIC]: Toolbar điều khiển Sandbox -->
            <div class="px-6 py-2.5 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center capture-hide">
                <div class="flex items-center gap-2 text-slate-600">
                    <i data-feather="crosshair" class="w-3.5 h-3.5"></i>
-                   <span class="text-[10px] font-bold uppercase tracking-wider">Mục tiêu hoàn thành (%)</span>
+                   <span class="text-[10px] font-bold uppercase tracking-wider">Mục tiêu hoàn thành (%) - Xem thử nghiệm</span>
                </div>
                <div class="flex items-center gap-3 w-full max-w-[250px]">
                    <input 
                        type="range" 
                        min="50" max="500" step="5"
                        bind:value={targetRatio}
-                       on:input={handleSliderChange}
                        class="flex-grow h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
                    >
                    <div class="relative flex-shrink-0">
                        <input 
                            type="number" 
                            bind:value={targetRatio}
-                           on:input={handleSliderChange}
                            class="w-14 py-0.5 px-1 text-center font-bold text-blue-700 bg-white border border-blue-200 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none shadow-sm"
                        >
                        <span class="absolute right-0.5 top-0.5 text-[9px] text-gray-400 font-bold">%</span>
@@ -299,38 +278,9 @@
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-    /* --- GHI ĐÈ CSS ĐỂ CHỤP FULL NỘI DUNG (ĐÃ THÊM MỎ NEO st-emp-capture-node ĐỂ CHỐNG LỖI CHÉO) --- */
-    :global(.capture-container .st-emp-capture-node.max-h-\[90vh\]) {
-        max-height: none !important;
-        height: auto !important;
-    }
-    :global(.capture-container .st-emp-capture-node .overflow-y-auto),
-    :global(.capture-container .st-emp-capture-node .overflow-hidden),
-    :global(.capture-container .st-emp-capture-node.overflow-hidden) {
-        overflow: visible !important; /* Mở khóa toàn bộ cuộn */
-    }
-
-    /* --- [FIX] SỬA LỖI BỊ XÉN ĐÁY CHỮ VÀ SỐ --- */
-    /* 1. Nới lỏng khoảng cách dòng đang bị ép sát (leading-none, leading-tight) */
-    :global(.capture-container .st-emp-capture-node .leading-none), 
-    :global(.capture-container .st-emp-capture-node .leading-tight) {
-        line-height: 1.3 !important; 
-        padding-bottom: 2px !important;
-    }
-    
-    /* 2. Tắt chế độ truncate (cắt chữ thêm dấu 3 chấm) làm ẩn mất đuôi chữ */
-    :global(.capture-container .st-emp-capture-node .truncate) {
-        overflow: visible !important; 
-        white-space: normal !important; 
-        word-break: break-word !important;
-    }
-    
-    /* 3. Bơm thêm một chút đệm (padding) cho phần trăm và số liệu để nét vẽ không bị chạm đáy */
-    :global(.capture-container .st-emp-capture-node .text-2xl),
-    :global(.capture-container .st-emp-capture-node .text-base),
-    :global(.capture-container .st-emp-capture-node .text-\[11px\]),
-    :global(.capture-container .st-emp-capture-node .text-\[10px\]) {
-        padding-bottom: 3px !important;
-        display: block !important;
-    }
+    :global(.capture-container .st-emp-capture-node.max-h-\[90vh\]) { max-height: none !important; height: auto !important; }
+    :global(.capture-container .st-emp-capture-node .overflow-y-auto), :global(.capture-container .st-emp-capture-node .overflow-hidden), :global(.capture-container .st-emp-capture-node.overflow-hidden) { overflow: visible !important; }
+    :global(.capture-container .st-emp-capture-node .leading-none), :global(.capture-container .st-emp-capture-node .leading-tight) { line-height: 1.3 !important; padding-bottom: 2px !important; }
+    :global(.capture-container .st-emp-capture-node .truncate) { overflow: visible !important; white-space: normal !important; word-break: break-word !important; }
+    :global(.capture-container .st-emp-capture-node .text-2xl), :global(.capture-container .st-emp-capture-node .text-base), :global(.capture-container .st-emp-capture-node .text-\[11px\]), :global(.capture-container .st-emp-capture-node .text-\[10px\]) { padding-bottom: 3px !important; display: block !important; }
 </style>
