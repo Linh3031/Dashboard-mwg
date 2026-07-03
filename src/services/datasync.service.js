@@ -1,4 +1,3 @@
-// src/services/datasync.service.js
 import { doc, setDoc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"; 
 import { 
     firebaseStore, 
@@ -84,6 +83,38 @@ export const datasyncService = {
             }
             return 100;
         } catch (e) { return 100; }
+    },
+
+    // [PHẪU THUẬT LOGIC]: Tối ưu hóa đọc 1 lần toàn bộ Tỷ lệ Global & Từng ngành hàng
+    async loadAllTargetRatios(kho) {
+        const db = getDB();
+        if (!db || !kho) return { global: 100, categories: {} };
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                return {
+                    global: data.personalTargetRatio !== undefined ? data.personalTargetRatio : 100,
+                    categories: data.categoryTargetRatios || {}
+                };
+            }
+            return { global: 100, categories: {} };
+        } catch (e) { return { global: 100, categories: {} }; }
+    },
+
+    // [PHẪU THUẬT LOGIC]: Lưu tỉ lệ riêng cho từng ngành hàng vào cấu trúc con
+    async saveCategoryTargetRatio(kho, category, ratio) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                [`categoryTargetRatios.${category}`]: ratio,
+                categoryTargetRatiosUpdatedAt: serverTimestamp(),
+                categoryTargetRatiosUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) { console.error(error); }
     },
 
     async saveQdcConfig(kho, config) {
@@ -350,8 +381,14 @@ export const datasyncService = {
                 }
             });
 
-            let targetRatio = 100;
-            try { targetRatio = await this.loadPersonalTargetRatio(wh) || 100; } catch(e){}
+            // [PHẪU THUẬT LOGIC]: Tải cả Target chung và riêng để đồng bộ xuống Mobile
+            let globalRatio = 100;
+            let catRatios = {};
+            try {
+                const ratios = await this.loadAllTargetRatios(wh);
+                globalRatio = ratios.global || 100;
+                catRatios = ratios.categories || {};
+            } catch(e){}
 
             const getWarehouseEmpCount = (empWh) => {
                 const filtered = allEmps.filter(e => String(e.maKho || e.MAKHO || '').trim() === String(empWh).trim());
@@ -380,7 +417,9 @@ export const datasyncService = {
                     const luykeMap = luykeNameMaps && luykeNameMaps[item.name]; 
                     let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
                     if (linkedEmpProg) {
-                        const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100); 
+                        // [PHẪU THUẬT LOGIC]: Bắt lấy Target Ratio riêng biệt cho ngành hàng này
+                        const specificRatio = catRatios[item.name] || globalRatio;
+                        const rawTarget = (parseFloat(item.target) || 0) * (specificRatio / 100); 
                         const isQty = item.type === 'soLuong'; 
                         const pTarget = (isQty ? Math.ceil(rawTarget / storeEmpCount) : Math.round(rawTarget / storeEmpCount)); 
                         stMappedData[linkedEmpProg] = pTarget; 

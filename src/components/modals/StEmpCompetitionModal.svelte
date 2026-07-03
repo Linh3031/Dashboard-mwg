@@ -3,6 +3,7 @@
     import { formatters } from '../../utils/formatters.js';
     import { afterUpdate } from 'svelte';
     import { captureService } from '../../services/capture.service.js';
+    import { datasyncService } from '../../services/datasync.service.js';
 
     $: isOpen = $modalState.activeModal === 'st-emp-competition-modal';
     $: payload = $modalState.payload || {};
@@ -13,22 +14,33 @@
     let currentEmployeeCount = 1;
     let currentPersonalTarget = 0;
     
-    // [PHẪU THUẬT LOGIC]: Thanh trượt Modal biến thành Sandbox (Chỉ tính toán local)
+    // [PHẪU THUẬT LOGIC]: Sandbox Variables & Ổ khóa chống giật
     let targetRatio = 100;
+    let initialRatio = 100;
+    let isInitialized = false;
 
-    // Khi mở Modal, "mượn" tỷ lệ gốc đang lưu trong Cache (do màn hình ngoài nạp)
-    $: if (isOpen && $selectedWarehouse) {
-        const cacheKey = `targetRatio_${$selectedWarehouse}`;
-        const cached = sessionStorage.getItem(cacheKey);
-        if (cached) {
-            targetRatio = parseInt(cached, 10);
-        } else {
-            targetRatio = 100;
+    // Chỉ "bốc" dữ liệu từ Local Storage ĐÚNG 1 LẦN khi mở Modal
+    $: if (isOpen && $selectedWarehouse && targetProgram) {
+        if (!isInitialized) {
+            const cacheKey = `allTargetRatios_${$selectedWarehouse}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            let gRatio = 100;
+            let cRatios = {};
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    gRatio = parsed.global || 100;
+                    cRatios = parsed.categories || {};
+                } catch(e) {}
+            }
+            
+            targetRatio = Number(cRatios[targetProgram]) || Number(gRatio) || 100;
+            initialRatio = targetRatio; // Chốt mốc để so sánh (Dirty Check)
+            isInitialized = true; // Khóa lại, kéo thanh trượt sẽ không bị chạy lại block này
         }
+    } else if (!isOpen) {
+        isInitialized = false; // Reset khóa khi đóng cửa
     }
-
-    // Không cần hàm handleSliderChange gọi Firebase nữa.
-    // bind:value={targetRatio} ở HTML bên dưới đã đủ để Svelte tự tính toán lại UI tức thì.
 
     let captureNode;
 
@@ -42,7 +54,7 @@
         }
         
         currentEmployeeCount = validEmployees.length > 0 ? validEmployees.length : 1; 
-        currentPersonalTarget = Math.round((totalTarget * (targetRatio / 100)) / currentEmployeeCount);
+        currentPersonalTarget = Math.round((totalTarget * ((Number(targetRatio) || 100) / 100)) / currentEmployeeCount);
 
         if (!$pastedThiDuaReportData || $pastedThiDuaReportData.length === 0) return [];
 
@@ -111,7 +123,28 @@
     $: restOfList = employeeList.slice(topCount);
     $: gridClass = employeeList.length <= 10 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
 
+    // [PHẪU THUẬT LOGIC]: Chốt sổ (Dirty Check) trước khi Đóng
     function close() {
+        const currentRatio = Number(targetRatio);
+        if (currentRatio !== initialRatio && !isNaN(currentRatio)) {
+            // 1. Chỉ lưu lên Cloud khi khác biệt
+            datasyncService.saveCategoryTargetRatio($selectedWarehouse, targetProgram, currentRatio);
+            
+            // 2. TỰ ĐỘNG CẬP NHẬT SESSION STORAGE TẠI ĐÂY
+            const cacheKey = `allTargetRatios_${$selectedWarehouse}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            let parsed = { global: 100, categories: {} };
+            if (cached) {
+                try { parsed = JSON.parse(cached); } catch(e) {}
+            }
+            parsed.categories[targetProgram] = currentRatio;
+            sessionStorage.setItem(cacheKey, JSON.stringify(parsed));
+
+            // 3. Phóng điện tín (Event) đề phòng trường hợp tab Target Cá Nhân đang được mở
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('sync-category-ratio', { detail: { category: targetProgram, ratio: currentRatio } }));
+            }
+        }
         modalState.update(s => ({ ...s, activeModal: null, payload: null }));
     }
 
@@ -168,11 +201,11 @@
                </div>
            </div>
 
-           <!-- [PHẪU THUẬT LOGIC]: Toolbar điều khiển Sandbox -->
+           <!-- Sandbox Toolbar (Lưu vào Cache/Cloud ngay khi đóng) -->
            <div class="px-6 py-2.5 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center capture-hide">
                <div class="flex items-center gap-2 text-slate-600">
                    <i data-feather="crosshair" class="w-3.5 h-3.5"></i>
-                   <span class="text-[10px] font-bold uppercase tracking-wider">Mục tiêu hoàn thành (%) - Xem thử nghiệm</span>
+                   <span class="text-[10px] font-bold uppercase tracking-wider">Mục tiêu riêng (%) - Cập nhật khi đóng</span>
                </div>
                <div class="flex items-center gap-3 w-full max-w-[250px]">
                    <input 
