@@ -85,7 +85,6 @@ export const datasyncService = {
         } catch (e) { return 100; }
     },
 
-    // [PHẪU THUẬT LOGIC]: Tối ưu hóa đọc 1 lần toàn bộ Tỷ lệ Global & Từng ngành hàng
     async loadAllTargetRatios(kho) {
         const db = getDB();
         if (!db || !kho) return { global: 100, categories: {} };
@@ -103,7 +102,6 @@ export const datasyncService = {
         } catch (e) { return { global: 100, categories: {} }; }
     },
 
-    // [PHẪU THUẬT LOGIC]: Lưu tỉ lệ riêng cho từng ngành hàng vào cấu trúc con
     async saveCategoryTargetRatio(kho, category, ratio) {
         const db = getDB();
         if (!db || !kho) return;
@@ -262,8 +260,24 @@ export const datasyncService = {
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
+        
         try {
             if (multiModeKeys.includes(key)) {
+                if (metadata.isDeleted) {
+                    const dataToSave = { 
+                        [key]: { 
+                            files: [], 
+                            isDeleted: true, 
+                            isMulti: true, 
+                            timestamp: Date.now(), 
+                            updatedAt: serverTimestamp(), 
+                            updatedBy: getCurrentUserEmail() 
+                        } 
+                    };
+                    await setDoc(khoRef, dataToSave, { merge: true });
+                    return; 
+                }
+
                 const docSnap = await getDoc(khoRef);
                 let existingFiles = [];
                 if (docSnap.exists() && docSnap.data()[key]) {
@@ -271,6 +285,7 @@ export const datasyncService = {
                     if (Array.isArray(existingData.files)) existingFiles = existingData.files;
                     else if (existingData.downloadURL) existingFiles = [existingData];
                 }
+                
                 if (metadata.uploadedMonths && metadata.uploadedMonths.length > 0) {
                     existingFiles = existingFiles.filter(f => {
                         if (!f.uploadedMonths) return f.fileName !== metadata.fileName;
@@ -279,11 +294,32 @@ export const datasyncService = {
                 } else {
                     existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
                 }
+                
                 existingFiles.push({ ...metadata, updatedAt: new Date().toISOString(), updatedBy: getCurrentUserEmail() });
-                const dataToSave = { [key]: { files: existingFiles, isMulti: true, timestamp: Date.now(), updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
+                
+                // [PHẪU THUẬT LOGIC]: Tẩy trắng cờ isDeleted (Ép isDeleted: false) để Firebase không hợp nhất với cờ rác cũ
+                const dataToSave = { 
+                    [key]: { 
+                        files: existingFiles, 
+                        isMulti: true, 
+                        isDeleted: false, // Chốt tẩy trắng
+                        timestamp: Date.now(), 
+                        updatedAt: serverTimestamp(), 
+                        updatedBy: getCurrentUserEmail() 
+                    } 
+                };
                 await setDoc(khoRef, dataToSave, { merge: true });
+                
             } else {
-                const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
+                // [PHẪU THUẬT LOGIC]: Chốt tẩy trắng cho cả chế độ file đơn
+                const dataToSave = { 
+                    [key]: { 
+                        ...metadata, 
+                        isDeleted: metadata.isDeleted || false, 
+                        updatedAt: serverTimestamp(), 
+                        updatedBy: getCurrentUserEmail() 
+                    } 
+                };
                 await setDoc(khoRef, dataToSave, { merge: true });
             }
         } catch (error) { throw error; }
@@ -381,7 +417,6 @@ export const datasyncService = {
                 }
             });
 
-            // [PHẪU THUẬT LOGIC]: Tải cả Target chung và riêng để đồng bộ xuống Mobile
             let globalRatio = 100;
             let catRatios = {};
             try {
@@ -417,7 +452,6 @@ export const datasyncService = {
                     const luykeMap = luykeNameMaps && luykeNameMaps[item.name]; 
                     let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
                     if (linkedEmpProg) {
-                        // [PHẪU THUẬT LOGIC]: Bắt lấy Target Ratio riêng biệt cho ngành hàng này
                         const specificRatio = catRatios[item.name] || globalRatio;
                         const rawTarget = (parseFloat(item.target) || 0) * (specificRatio / 100); 
                         const isQty = item.type === 'soLuong'; 
