@@ -3,7 +3,8 @@
     const dispatch = createEventDispatcher();
 
     export let tableName = '';
-    export let mainColumn = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], type: 'group', metrics: { sl: false, dt: true, dtqd: false } };
+    // [Surgical Insert]: Bổ sung showSL: false cho Cột Tổng (mainColumn)
+    export let mainColumn = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], type: 'DT', metrics: { sl: false, dt: true, dtqd: false }, showSL: false };
     export let subColumns = [];
     
     export let activeContext = 'main'; 
@@ -13,13 +14,14 @@
         subColumns = [...subColumns, {
             id: `col_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
             header: `Cột ${subColumns.length + 1}`,
-            color: '#3b82f6', // Khôi phục mã Hex mặc định
+            color: '#3b82f6',
             type: 'DT',
             items: [],
             numerator: [],
             denominator: [],
             percentMetric: 'DT',
-            target: 0 // Mục tiêu áp dụng cho mọi cột
+            target: 0,
+            showSL: false // Mặc định ẩn cột SL
         }];
         setContext('sub_items', subColumns.length - 1);
     }
@@ -60,7 +62,10 @@
                 class="p-3 cursor-pointer transition-all border-l-4 {activeContext === 'main' ? 'bg-orange-50/50 border-orange-500' : 'bg-white border-transparent hover:bg-gray-50'}"
                 on:click={() => setContext('main')}
             >
-                <div class="font-bold text-sm text-gray-800 truncate">{mainColumn.header}</div>
+                <div class="flex items-center gap-1.5 mb-1">
+                    <span class="font-bold text-sm text-gray-800 truncate">{mainColumn.header}</span>
+                    {#if mainColumn.showSL}<span class="px-1.5 py-0.5 text-[8px] bg-orange-200 text-orange-800 font-bold rounded uppercase ml-1">Kép</span>{/if}
+                </div>
                 <div class="text-[10px] text-gray-500 mt-1">{mainColumn.items?.length || 0} mục đã chọn</div>
             </div>
         {/if}
@@ -82,6 +87,7 @@
                         <div class="flex items-center gap-1.5 mb-1">
                             <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: {col.color || '#3b82f6'}"></span>
                             <span class="font-bold text-sm text-gray-800 truncate">{col.header || `Cột ${i+1}`}</span>
+                            {#if col.showSL}<span class="px-1.5 py-0.5 text-[8px] bg-gray-200 text-gray-600 font-bold rounded uppercase ml-1">Kép</span>{/if}
                         </div>
                         <div class="text-[10px] text-gray-500 font-medium">
                             {col.type === 'PERCENT' ? 'Tỷ lệ %' : (col.type === 'SL' ? 'Số lượng' : (col.type === 'DTQD' ? 'DTQĐ' : 'Doanh thu'))}

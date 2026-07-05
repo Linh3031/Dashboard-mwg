@@ -19,7 +19,7 @@
 
     // --- STATE BẢNG ---
     let tabName = '';
-    let tabMainCol = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], itemType: 'group', type: 'DT' };
+    let tabMainCol = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], itemType: 'group', type: 'DT', showSL: false };
     let tabSubCols = [];
     let tabActiveContext = 'main';
     let tabActiveSubIndex = 0;
@@ -47,7 +47,7 @@
             if (editItem && editItem.mainColumn && Object.keys(editItem.mainColumn).length > 0) {
                 tabMainCol = { ...editItem.mainColumn, show: true };
             } else {
-                tabMainCol = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], itemType: 'group', type: 'DT' };
+                tabMainCol = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], itemType: 'group', type: 'DT', showSL: false };
             }
 
             let rawCols = editItem?.subColumns ? editItem.subColumns : (editItem?.columns ? editItem.columns : []);
@@ -56,7 +56,8 @@
                 type: c.type || 'DT',
                 color: c.color || '#3b82f6',
                 target: c.target || 0,
-                percentMetric: c.percentMetric || 'DT'
+                percentMetric: c.percentMetric || 'DT',
+                showSL: c.showSL || false
             }));
             
             tabActiveContext = tabMainCol.show ? 'main' : (tabSubCols.length > 0 ? 'sub_items' : 'main');
@@ -109,12 +110,21 @@
         }
     }
 
+    // [Surgical Logic]: Clone Object/Array để Svelte nhận biết sự thay đổi và cập nhật UI ngay lập tức
     function updateActiveCol(key, value) {
-        if (tabActiveContext === 'main') tabMainCol[key] = value;
-        else {
+        if (tabActiveContext === 'main') {
+            tabMainCol[key] = value;
+            if (key === 'type' && (value === 'SL' || value === 'PERCENT')) tabMainCol['showSL'] = false;
+            tabMainCol = { ...tabMainCol };
+        } else {
             tabSubCols[tabActiveSubIndex][key] = value;
             if (key === 'type' && value === 'PERCENT') tabActiveContext = 'sub_num';
             else if (key === 'type' && value !== 'PERCENT') tabActiveContext = 'sub_items';
+            
+            if (key === 'type' && (value === 'SL' || value === 'PERCENT')) {
+                tabSubCols[tabActiveSubIndex]['showSL'] = false;
+            }
+            tabSubCols = [...tabSubCols];
         }
     }
 
@@ -125,13 +135,16 @@
         
         if (tabActiveContext === 'main') {
             tabMainCol.items = [...sourceCol.items];
-            tabMainCol = tabMainCol;
+            tabMainCol = { ...tabMainCol };
         } else if (tabActiveContext === 'sub_items') {
             tabSubCols[tabActiveSubIndex].items = [...sourceCol.items];
+            tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_num') {
             tabSubCols[tabActiveSubIndex].numerator = [...sourceCol.items];
+            tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_den') {
             tabSubCols[tabActiveSubIndex].denominator = [...sourceCol.items];
+            tabSubCols = [...tabSubCols];
         }
     }
 
@@ -275,6 +288,17 @@
                                             <div class="w-full h-full pointer-events-none" style="background-color: {activeColumn.color || '#3b82f6'}"></div>
                                         </div>
                                     </div>
+                                {/if}
+
+                                <!-- [Surgical Edit]: Mang khối này ra ngoài để áp dụng cho CẢ CỘT TỔNG và CỘT CON -->
+                                {#if activeColumn.type === 'DT' || activeColumn.type === 'DTQD'}
+                                <div class="w-24 pl-2 border-l border-gray-200">
+                                    <label class="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">Hiển thị kép</label>
+                                    <label class="flex items-center gap-1.5 cursor-pointer h-[28px]">
+                                        <input type="checkbox" checked={activeColumn.showSL} on:change={(e) => updateActiveCol('showSL', e.target.checked)} class="w-4 h-4 text-blue-600 rounded cursor-pointer">
+                                        <span class="text-xs font-bold text-gray-700">Hiện SL</span>
+                                    </label>
+                                </div>
                                 {/if}
                             </div>
                         </div>

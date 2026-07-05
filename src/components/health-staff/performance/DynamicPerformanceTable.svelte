@@ -17,8 +17,30 @@
     $: tableData = processedResult.processedData;
     $: totals = processedResult.totals;
 
-    $: sortedData = dynamicTableProcessor.sortTableData(tableData, sortKey, sortDirection);
+    // Biến phản ứng kiểm tra cấu hình chia cột
+    $: hasSplit = config?.mainColumn?.showSL || config?.columns?.some(c => c.showSL) || false;
+
+    // Chặn hàm sort của processor, viết lại sort cục bộ để bắt được logic _sl
+    $: sortedData = customSort(tableData, sortKey, sortDirection);
     
+    function customSort(data, key, dir) {
+        return [...data].sort((a, b) => {
+            if (key === 'hoTen') {
+                return dir === 'asc' ? a.hoTen.localeCompare(b.hoTen) : b.hoTen.localeCompare(a.hoTen);
+            }
+            let valA = 0, valB = 0;
+            if (key.endsWith('_sl')) { 
+                const baseKey = key.replace('_sl', '');
+                valA = a.cells[baseKey]?.sl ?? (baseKey === 'mainValue' ? a.mainValue_sl : 0) ?? 0;
+                valB = b.cells[baseKey]?.sl ?? (baseKey === 'mainValue' ? b.mainValue_sl : 0) ?? 0;
+            } else {
+                valA = a.cells[key]?.value ?? a[key] ?? 0;
+                valB = b.cells[key]?.value ?? b[key] ?? 0;
+            }
+            return dir === 'asc' ? valA - valB : valB - valA;
+        });
+    }
+
     function handleSort(event) {
         const key = event.detail;
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
@@ -40,33 +62,23 @@
         return formatters.formatRevenue(value);
     }
 
-    // [FIX LỖI TRẦM TRỌNG MÀU DỮ LIỆU]: Trả về đúng màu chuẩn
     function getValueColor(cell) {
         if (!cell || !cell.config) return '';
-        
         const targetVal = cell.config.target || 0; 
         
-        // CỘT TỶ LỆ (%): Mặc định màu Đỏ. Chỉ xanh nếu đạt mục tiêu
         if (cell.config.type === 'PERCENT') {
             const currentVal = cell.value * 100;
-            if (targetVal > 0) {
-                return currentVal >= targetVal ? 'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
-            }
-            return 'text-red-600 font-bold'; // Tỷ lệ mặc định là ĐỎ
+            if (targetVal > 0) return currentVal >= targetVal ? 'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
+            return 'text-red-600 font-bold'; 
         }
         
-        // CỘT SỐ LƯỢNG / DOANH THU: Xử lý mục tiêu (nếu có)
         if (targetVal > 0) {
-            // Doanh thu nhập vào là /1000, Số lượng nhập vào là số nguyên
             const compareVal = cell.config.type === 'SL' ? cell.value : cell.value / 1000;
-            if (compareVal < targetVal) {
-                return 'text-red-600 font-semibold bg-red-50'; // Rớt mục tiêu -> ĐỎ
-            }
+            if (compareVal < targetVal) return 'text-red-600 font-semibold bg-red-50';
         }
 
-        // MẶC ĐỊNH SỐ LIỆU
-        if (cell.config.type === 'SL') return 'text-gray-800 font-semibold'; // Số lượng mặc định ĐEN
-        return 'text-blue-700 font-semibold'; // Doanh thu mặc định XANH
+        if (cell.config.type === 'SL') return 'text-gray-800 font-semibold'; 
+        return 'text-blue-700 font-semibold'; 
     }
 </script>
 
@@ -96,40 +108,108 @@
     {:else}
         <div class="overflow-x-auto flex-grow custom-scrollbar relative">
             <table class="min-w-full text-sm border-collapse border-0">
-<thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
+                <thead class="bg-gray-50 text-xs uppercase text-gray-600 font-bold sticky top-0 z-20 shadow-sm">
                     <tr>
                         <SortableTh 
                             key="hoTen" 
                             label="Nhân viên" 
-                            className="sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 min-w-[150px]" 
+                            className="sticky left-0 z-30 bg-gray-100 border-r border-gray-300 min-w-[150px] {hasSplit ? 'border-b-0 pb-0' : 'border-b'}" 
                             {sortKey} {sortDirection} 
                             on:sort={handleSort} 
                         />
                        
                         {#if config.mainColumn}
-                            <SortableTh 
-                                key="mainValue" 
-                                label={config.mainColumn.header || 'Tổng cộng'} 
-                                align="right"
-                                className="bg-orange-50 text-orange-800 border-r border-b border-gray-300 min-w-[100px]" 
-                                {sortKey} {sortDirection} 
-                                on:sort={handleSort} 
-                            />
+                            {#if config.mainColumn.showSL}
+                                <th colspan="2" class="px-2 py-2 text-center border-r border-b border-gray-300 font-bold uppercase bg-orange-50 text-orange-800 align-middle">
+                                    {config.mainColumn.header || 'Tổng cộng'}
+                                </th>
+                            {:else}
+                                <SortableTh 
+                                    key="mainValue" 
+                                    label={config.mainColumn.header || 'Tổng cộng'} 
+                                    align="right"
+                                    className="bg-orange-50 text-orange-800 border-r border-gray-300 min-w-[100px] {hasSplit ? 'border-b-0 pb-0' : 'border-b'}" 
+                                    {sortKey} {sortDirection} 
+                                    on:sort={handleSort} 
+                                />
+                            {/if}
                         {/if}
 
                         {#each config.columns as col, index (col.id || 'head_fallback_' + index)}
                             {@const hexColor = col.color || '#3b82f6'}
-                            <SortableTh 
-                                key={col.id || 'head_fallback_' + index} 
-                                label={col.header} 
-                                align="right" 
-                                themeColor={hexColor}
-                                className="border-r border-b border-gray-200 min-w-[100px] bg-white" 
-                                {sortKey} {sortDirection} 
-                                on:sort={handleSort} 
-                            />
+                            {#if col.showSL}
+                                <th colspan="2" class="px-2 py-2 text-center border-r border-b border-gray-300 font-bold uppercase align-middle" style="color: {hexColor}; background-color: {hexColor}1a;">
+                                    {col.header}
+                                </th>
+                            {:else}
+                                <SortableTh 
+                                    key={col.id || 'head_fallback_' + index} 
+                                    label={col.header} 
+                                    align="right" 
+                                    themeColor={hexColor}
+                                    className="border-r border-gray-200 min-w-[100px] bg-white {hasSplit ? 'border-b-0 pb-0' : 'border-b'}" 
+                                    {sortKey} {sortDirection} 
+                                    on:sort={handleSort} 
+                                />
+                            {/if}
                         {/each}
                     </tr>
+                    
+                    {#if hasSplit}
+                    <tr>
+                        <th class="sticky left-0 z-30 bg-gray-100 border-r border-b border-gray-300 min-w-[150px] border-t-0 pt-0"></th>
+                        
+                        {#if config.mainColumn}
+                            {#if config.mainColumn.showSL}
+                                <SortableTh 
+                                    key="mainValue_sl" 
+                                    label="SL" 
+                                    align="right"
+                                    className="bg-orange-50 text-orange-800 border-r border-b border-gray-300 min-w-[70px]" 
+                                    {sortKey} {sortDirection} 
+                                    on:sort={handleSort} 
+                                />
+                                <SortableTh 
+                                    key="mainValue" 
+                                    label={config.mainColumn.type === 'DTQD' ? 'DTQĐ' : 'DT'} 
+                                    align="right"
+                                    className="bg-orange-50 text-orange-800 border-r border-b border-gray-300 min-w-[90px]" 
+                                    {sortKey} {sortDirection} 
+                                    on:sort={handleSort} 
+                                />
+                            {:else}
+                                <th class="bg-orange-50 border-r border-b border-gray-300 min-w-[100px] border-t-0 pt-0"></th>
+                            {/if}
+                        {/if}
+
+                        {#each config.columns as col, index (col.id || 'subhead_fallback_' + index)}
+                            {@const hexColor = col.color || '#3b82f6'}
+                            {#if col.showSL}
+                                <SortableTh 
+                                    key={(col.id || 'head_fallback_' + index) + '_sl'} 
+                                    label="SL" 
+                                    align="right" 
+                                    themeColor={hexColor}
+                                    className="border-r border-b border-gray-200 min-w-[70px] bg-white" 
+                                    {sortKey} {sortDirection} 
+                                    on:sort={handleSort} 
+                                />
+                                <SortableTh 
+                                    key={col.id || 'head_fallback_' + index} 
+                                    label={col.type === 'DTQD' ? 'DTQĐ' : 'DT'} 
+                                    align="right" 
+                                    themeColor={hexColor}
+                                    className="border-r border-b border-gray-200 min-w-[90px] bg-white" 
+                                    {sortKey} {sortDirection} 
+                                    on:sort={handleSort} 
+                                />
+                            {:else}
+                                <!-- [Surgical Fix]: Đồng bộ màu nền background-color cho thẻ lấp khoảng trống -->
+                                <th class="border-r border-b border-gray-200 min-w-[100px] border-t-0 pt-0" style="background-color: {hexColor}1a;"></th>
+                            {/if}
+                        {/each}
+                    </tr>
+                    {/if}
                 </thead>
 
                 <tbody class="divide-y divide-gray-100">
@@ -142,16 +222,34 @@
                             </td>
 
                             {#if config.mainColumn}
-                                <td class="px-2 py-2 text-right border-r border-b border-gray-300 bg-orange-50/30 font-bold text-orange-700 group-hover:bg-orange-50">
-                                    {formatMainValue(row.mainValue, config.mainColumn.type)}
-                                </td>
+                                {#if config.mainColumn.showSL}
+                                    <td class="px-2 py-2 text-right border-r border-b border-gray-300 bg-orange-50/30 text-gray-800 font-semibold group-hover:bg-orange-50">
+                                        {row.mainValue_sl !== undefined ? formatters.formatNumber(row.mainValue_sl) : '-'}
+                                    </td>
+                                    <td class="px-2 py-2 text-right border-r border-b border-gray-300 bg-orange-50/30 font-bold text-orange-700 group-hover:bg-orange-50">
+                                        {formatMainValue(row.mainValue, config.mainColumn.type)}
+                                    </td>
+                                {:else}
+                                    <td class="px-2 py-2 text-right border-r border-b border-gray-300 bg-orange-50/30 font-bold text-orange-700 group-hover:bg-orange-50">
+                                        {formatMainValue(row.mainValue, config.mainColumn.type)}
+                                    </td>
+                                {/if}
                             {/if}
 
                             {#each config.columns as col, index (col.id || 'body_fallback_' + index)}
                                 {@const cell = row.cells[col.id || 'body_fallback_' + index]}
-                                <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell)}">
-                                    {cell ? cell.display : '-'}
-                                </td>
+                                {#if col.showSL}
+                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b text-gray-800 font-semibold">
+                                        {cell && cell.sl !== undefined ? formatters.formatNumber(cell.sl) : '-'}
+                                    </td>
+                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell)}">
+                                        {cell ? cell.display : '-'}
+                                    </td>
+                                {:else}
+                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell)}">
+                                        {cell ? cell.display : '-'}
+                                    </td>
+                                {/if}
                             {/each}
                         </tr>
                     {/each}
@@ -162,15 +260,34 @@
                         <td class="px-3 py-2 sticky left-0 bg-gray-200 z-30 border-r border-gray-300">TỔNG</td>
   
                         {#if config.mainColumn}
-                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-orange-100 text-orange-800">
-                                {formatMainValue(totals.mainValue, config.mainColumn.type)}
-                            </td>
+                            {#if config.mainColumn.showSL}
+                                <td class="px-2 py-2 text-right border-r border-gray-300 bg-orange-100 text-gray-800">
+                                    {totals.mainValue_sl !== undefined ? formatters.formatNumber(totals.mainValue_sl) : '-'}
+                                </td>
+                                <td class="px-2 py-2 text-right border-r border-gray-300 bg-orange-100 text-orange-800">
+                                    {formatMainValue(totals.mainValue, config.mainColumn.type)}
+                                </td>
+                            {:else}
+                                <td class="px-2 py-2 text-right border-r border-gray-300 bg-orange-100 text-orange-800">
+                                    {formatMainValue(totals.mainValue, config.mainColumn.type)}
+                                </td>
+                            {/if}
                         {/if}
 
                         {#each config.columns as col, index (col.id || 'foot_fallback_' + index)}
-                            <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100" style="color: {col.color || '#3b82f6'}">
-                                {totals.cells[col.id || 'foot_fallback_' + index]?.display || '-'}
-                            </td>
+                            {@const cell = totals.cells[col.id || 'foot_fallback_' + index]}
+                            {#if col.showSL}
+                                <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100" style="color: {col.color || '#3b82f6'}">
+                                    {cell && cell.sl !== undefined ? formatters.formatNumber(cell.sl) : '-'}
+                                </td>
+                                <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100" style="color: {col.color || '#3b82f6'}">
+                                    {cell ? cell.display : '-'}
+                                </td>
+                            {:else}
+                                <td class="px-2 py-2 text-right border-r border-gray-300 bg-gray-100" style="color: {col.color || '#3b82f6'}">
+                                    {cell ? cell.display : '-'}
+                                </td>
+                            {/if}
                         {/each}
                     </tr>
                 </tfoot>
