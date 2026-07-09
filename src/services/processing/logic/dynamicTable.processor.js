@@ -4,7 +4,6 @@ import { formatters } from '../../../utils/formatters.js';
 import { parseIdentity } from '../../../utils.js';
 import { macroCategoryConfig, macroProductGroupConfig } from '../../../stores.js';
 
-// Helper: Làm sạch và ép kiểu số an toàn
 const getSafeNumber = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
@@ -15,188 +14,160 @@ const getSafeNumber = (value) => {
     return 0;
 };
 
-const getValueFromMultiKeys = (obj, keys) => {
-    if (!obj) return 0;
-    for (const key of keys) {
-        if (obj[key] !== undefined && obj[key] !== null) {
-            return getSafeNumber(obj[key]);
-        }
-    }
-    return 0;
-};
-
 export const dynamicTableProcessor = {
     findItemData(employee, targetId) {
         if (!employee || !targetId) return null;
         const parsed = parseIdentity(targetId);
         const searchKey = (parsed.id !== 'unknown' ? parsed.id : targetId).toString().trim();
-        if (employee.doanhThuTheoNhomHang && employee.doanhThuTheoNhomHang[searchKey]) {
-            return employee.doanhThuTheoNhomHang[searchKey];
-        }
-        if (employee.doanhThuTheoNganhHang && employee.doanhThuTheoNganhHang[searchKey]) {
-            return employee.doanhThuTheoNganhHang[searchKey];
-        }
-        return null;
+        
+        const nh = employee.doanhThuTheoNhomHang?.[searchKey];
+        const ng = employee.doanhThuTheoNganhHang?.[searchKey];
+        const sp = employee.doanhThuTheoMaSanPham?.[searchKey];
+
+        if (sp && (sp.quantity > 0 || sp.revenue > 0)) return sp;
+        if (nh && (nh.quantity > 0 || nh.revenue > 0)) return nh;
+        if (ng && (ng.quantity > 0 || ng.revenue > 0)) return ng;
+        
+        return sp || nh || ng || null;
     },
 
-    /**
-     * Tính tổng giá trị (CÓ LOG CHI TIẾT)
-     * @param logger: Mảng để lưu log truy vết
-     */
-    calculateGroupValue(employee, items, type = 'DT', logger = null) {
-        if (!items || items.length === 0) return 0;
+    processTableData(sourceData, tableConfig) {
+        if (!sourceData || !tableConfig) return { processedData: [], totals: {} };
 
-        const macroCats = get(macroCategoryConfig) || [];
-        const macroGroups = get(macroProductGroupConfig) || [];
+        const { columns = [], subColumns = [] } = tableConfig;
+        const mainColumn = columns.find(c => c.id === 'mainValue') || { show: false, items: [], type: 'DT' };
+        
+        const usedSubColumns = (subColumns && subColumns.length > 0) 
+            ? subColumns 
+            : columns.filter(c => c.id !== 'mainValue');
 
-        let total = 0;
-        const processedIds = new Set();
+        const $macroCategoryConfig = get(macroCategoryConfig) || [];
+        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
 
-        const processId = (id) => {
-            const safeId = id ? id.toString().trim() : '';
-            if (!safeId || processedIds.has(safeId)) return;
+        const calculateGroupValue = (employee, items, type) => {
+            let totalVal = 0, totalSL = 0, totalDTQD = 0;
             
-            // 1. Check Macro Category
-            const macroCat = macroCats.find(m => m.id == safeId || m.name === safeId);
-            if (macroCat && macroCat.items) {
-                processedIds.add(safeId);
-                if (logger) logger.push(`   📂 [MACRO CAT] ${safeId}:`);
-                macroCat.items.forEach(childId => processId(childId));
-                return;
-            }
-
-            // 2. Check Macro Product Group
-            const macroGroup = macroGroups.find(m => m.id == safeId || m.name === safeId);
-            if (macroGroup && macroGroup.items) {
-                processedIds.add(safeId);
-                if (logger) logger.push(`   📂 [MACRO GROUP] ${safeId}:`);
-                macroGroup.items.forEach(childId => processId(childId));
-                return;
-            }
-
-            // 3. Raw ID
-            const data = this.findItemData(employee, safeId);
-            let val = 0;
-            if (data) {
-                processedIds.add(safeId);
-                if (type === 'SL') {
-                    val = getValueFromMultiKeys(data, ['quantity', 'soLuong', 'sl', 'count']);
-                } else if (type === 'DTQD') {
-                    val = getValueFromMultiKeys(data, ['revenueQuyDoi', 'doanhThuQuyDoi', 'dtqd']);
-                } else {
-                    val = getValueFromMultiKeys(data, ['revenue', 'doanhThu', 'thanhTien', 'totalPrice', 'dt']);
-                }
+            items.forEach(rawId => {
+                const parsedId = parseIdentity(rawId).id;
                 
-                total += val;
-                
-                // Chỉ log những mục có giá trị để đỡ rối
-                if (logger && val !== 0) {
-                    logger.push(`      🔹 ${safeId} (${type}): ${formatters.formatNumber(val)}`);
+                const macroCat = $macroCategoryConfig.find(m => m.name === rawId);
+                if (macroCat && macroCat.items) {
+                    macroCat.items.forEach(subId => {
+                        const data = this.findItemData(employee, subId);
+                        if (data) {
+                            totalVal += data.revenue || 0;
+                            totalSL += data.quantity || 0;
+                            totalDTQD += data.revenueQuyDoi || 0;
+                        }
+                    });
+                    return;
                 }
-            }
+
+                const macroGrp = $macroProductGroupConfig.find(m => m.name === rawId);
+                if (macroGrp && macroGrp.items) {
+                    macroGrp.items.forEach(subId => {
+                        const data = this.findItemData(employee, subId);
+                        if (data) {
+                            totalVal += data.revenue || 0;
+                            totalSL += data.quantity || 0;
+                            totalDTQD += data.revenueQuyDoi || 0;
+                        }
+                    });
+                    return;
+                }
+
+                const targetId = parsedId !== 'unknown' ? parsedId : rawId;
+                const data = this.findItemData(employee, targetId);
+
+                if (data) {
+                    totalVal += data.revenue || 0;
+                    totalSL += data.quantity || 0;
+                    totalDTQD += data.revenueQuyDoi || 0;
+                }
+            });
+
+            return {
+                val: type === 'SL' ? totalSL : (type === 'DTQD' ? totalDTQD : totalVal),
+                sl: totalSL,
+                dtqd: totalDTQD
+            };
         };
 
-        items.forEach(id => processId(id));
-        return total;
-    },
-
-    processTableData(reportData, config) {
-        if (!reportData || !config) return { processedData: [], totals: {} };
-
-        const mainColConfig = config.mainColumn ? { ...config.mainColumn, id: 'mainValue', isMain: true } : null;
-        const subColsConfig = config.subColumns || [];
-        const effectiveSubCols = config.columns || subColsConfig;
-        
-        const allColumnsToProcess = mainColConfig ? [mainColConfig, ...effectiveSubCols] : [...effectiveSubCols];
-
-        const totalRow = {
-            maNV: 'TOTAL',
-            hoTen: 'TỔNG CỘNG',
-            isTotal: true,
+        const totalRow = { 
+            hoTen: 'Tổng cộng', 
+            isTotal: true, 
+            mainValue: 0, mainValue_sl: 0, mainValue_dtqd: 0, 
             cells: {} 
         };
+        
+        usedSubColumns.forEach(col => {
+            totalRow.cells[col.id] = { val: 0, sl: 0, dtqd: 0, num: 0, den: 0, type: col.type };
+        });
 
-        const processedData = reportData.map(employee => {
+        const processedData = sourceData.map(employee => {
             const row = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
-                mucTieu: employee.mucTieu || {},
+                mainValue: 0, mainValue_sl: 0, mainValue_dtqd: 0,
                 cells: {}
             };
-
+            
             let hasAnyData = false;
 
-            allColumnsToProcess.forEach(col => {
-                const colId = col.id || col.header;
-                const cellData = { sl: 0, dt: 0, dtqd: 0, value: 0, display: '', config: col };
+            if (mainColumn.show && mainColumn.items && mainColumn.items.length > 0) {
+                const result = calculateGroupValue(employee, mainColumn.items, mainColumn.type);
+                row.mainValue = result.val;
+                row.mainValue_sl = result.sl;
+                row.mainValue_dtqd = result.dtqd;
+                if (result.val > 0 || result.sl > 0) hasAnyData = true;
+            } else {
+                row.mainValue = employee.doanhThu || 0;
+                row.mainValue_sl = employee.tongSoLuong || 0;
+                row.mainValue_dtqd = employee.doanhThuQuyDoi || 0;
+                if (row.mainValue > 0) hasAnyData = true;
+            }
 
+            usedSubColumns.forEach(col => {
+                let cellData = { val: 0, sl: 0, dtqd: 0, num: 0, den: 0, type: col.type, display: '0', value: 0 };
+                
                 if (col.type === 'PERCENT') {
-                    // Logic % (Bảng hiệu quả)
+                    const numType = col.percentMetric || col.typeA || 'DT';
+                    const denType = col.percentMetric || col.typeB || 'DT';
                     
-                    // --- 🔍 TRACE DEBUG START ---
-                    let traceLog = [];
-                    // Chỉ debug cho một vài nhân viên mẫu để đỡ spam
-                    const isTargetDebug = employee.hoTen.includes('Tú Phương') || employee.hoTen.includes('Tien'); 
+                    const numRes = calculateGroupValue(employee, col.numerator || [], numType);
+                    const denRes = calculateGroupValue(employee, col.denominator || [], denType);
                     
-                    // [LOGIC MỚI] Lấy loại Metric từ cấu hình (Ưu tiên percentMetric -> mặc định DT)
-                    const metricType = col.percentMetric || 'DT';
-
-                    const numVal = this.calculateGroupValue(employee, col.numerator, metricType, isTargetDebug ? traceLog : null);
-                    // Mẫu số dùng chung loại Metric với Tử số (trừ khi có config riêng typeB - mà hiện tại UI chưa hỗ trợ separate config nên cứ dùng chung)
-                    const denVal = this.calculateGroupValue(employee, col.denominator, metricType, isTargetDebug ? traceLog : null);
-
-                    if (isTargetDebug) { 
-                         // Điều kiện lọc log: In ra nếu có mẫu số > 0 để kiểm tra
-                         if (denVal > 0) {
-                             console.groupCollapsed(`🕵️ [TRACE] ${employee.hoTen} - ${col.header} (% ${metricType})`);
-                             console.log(`%c Tử số (${metricType}): ${formatters.formatNumber(numVal)}`, 'color: green');
-                             console.log(`%c Mẫu số (${metricType}): ${formatters.formatNumber(denVal)}`, 'color: red; font-weight: bold');
-                             console.log(`👇 CHI TIẾT CÁC MÓN CỘNG VÀO:`);
-                             traceLog.forEach(log => console.log(log));
-                             console.groupEnd();
-                         }
-                    }
-                    // --- TRACE DEBUG END ---
-
-                    const val = denVal > 0 ? numVal / denVal : 0;
+                    cellData.num = numRes.val;
+                    cellData.den = denRes.val;
+                    
+                    const val = cellData.den > 0 ? cellData.num / cellData.den : 0;
                     cellData.value = val;
                     cellData.display = formatters.formatPercentage(val);
                     
-                    if (numVal > 0 || denVal > 0) hasAnyData = true;
-
-                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { num: 0, den: 0, type: 'PERCENT' };
-                    totalRow.cells[colId].num += numVal;
-                    totalRow.cells[colId].den += denVal;
+                    totalRow.cells[col.id].num += cellData.num;
+                    totalRow.cells[col.id].den += cellData.den;
+                    if (cellData.num > 0 || cellData.den > 0) hasAnyData = true;
 
                 } else {
-                    // Logic Cột thường (DT, SL, DTQD)
-                    cellData.sl = this.calculateGroupValue(employee, col.items, 'SL');
-                    cellData.dt = this.calculateGroupValue(employee, col.items, 'DT');
-                    cellData.dtqd = this.calculateGroupValue(employee, col.items, 'DTQD');
+                    const result = calculateGroupValue(employee, col.items || [], col.type);
+                    cellData.val = result.val;
+                    cellData.sl = result.sl;
+                    cellData.dtqd = result.dtqd;
+                    cellData.value = result.val;
+                    
+                    if (col.type === 'SL') cellData.display = formatters.formatNumber(result.val);
+                    else cellData.display = formatters.formatRevenue(result.val);
 
-                    if (col.type === 'SL') {
-                        cellData.value = cellData.sl;
-                        cellData.display = formatters.formatNumber(cellData.sl);
-                    } else if (col.type === 'DTQD') {
-                        cellData.value = cellData.dtqd;
-                        cellData.display = formatters.formatRevenue(cellData.dtqd);
-                    } else {
-                        cellData.value = cellData.dt;
-                        cellData.display = formatters.formatRevenue(cellData.dt);
-                    }
-
-                    if (cellData.value > 0 || cellData.sl > 0 || cellData.dt > 0 || cellData.dtqd > 0) hasAnyData = true;
-
-                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { sl: 0, dt: 0, dtqd: 0, val: 0, type: col.type || 'DT' };
-                    totalRow.cells[colId].sl += cellData.sl;
-                    totalRow.cells[colId].dt += cellData.dt;
-                    totalRow.cells[colId].dtqd += cellData.dtqd;
-                    totalRow.cells[colId].val += cellData.value;
+                    totalRow.cells[col.id].val += result.val;
+                    totalRow.cells[col.id].sl += result.sl;
+                    totalRow.cells[col.id].dtqd += result.dtqd;
+                    if (result.val > 0 || result.sl > 0) hasAnyData = true;
                 }
 
-                row.cells[colId] = cellData;
-                if (col.isMain) {
-                    row.mainValue = cellData.value;
+                row.cells[col.id] = cellData;
+                
+                if (mainColumn.show && col.id === 'mainValue') {
+                    row.mainValue = cellData.val;
                     row.mainValue_sl = cellData.sl;
                     row.mainValue_dtqd = cellData.dtqd;
                 }

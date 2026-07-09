@@ -20,7 +20,7 @@
         // CASE 1: Store First - Nếu đã có data đúng kho, không tải lại
         if ($customPerformanceTables.length > 0 && lastLoadedWarehouse === kho) {
              console.log(`[PerformanceView] Dùng Cache Store cho kho: ${kho}`);
-             isLoading = false; // [FIX] Tắt loading nếu dùng cache
+             isLoading = false; 
              return;
         }
         // CASE 2: Fetch
@@ -29,7 +29,6 @@
 
     async function loadData(kho) {
         isLoading = true;
-        // [FIX] Luôn bật loading khi bắt đầu tải
         try {
             // 1. Load System Tables (Admin)
             const sysTables = await adminService.loadSystemPerformanceTables();
@@ -49,7 +48,6 @@
             console.error("[PerformanceView] Lỗi tải dữ liệu:", e);
         } finally {
             isLoading = false;
-            // [FIX] Đảm bảo luôn tắt loading khi xong
         }
     }
 
@@ -59,6 +57,21 @@
             const newItems = items.map(t => t.id === tableId ? { ...t, isVisible: !t.isVisible } : t);
             
             // Save preference for System tables
+            const hiddenIds = newItems.filter(t => t.isSystem && !t.isVisible).map(t => t.id);
+            localStorage.setItem('hiddenPerformanceTableIds', JSON.stringify(hiddenIds));
+            
+            return newItems;
+        });
+    }
+
+    // --- SURGICAL LOGIC: Bật/Tắt Tất Cả ---
+    $: isAllVisible = $customPerformanceTables.length > 0 && $customPerformanceTables.every(t => t.isVisible);
+
+    function toggleAllVisibility() {
+        const targetState = !isAllVisible;
+        customPerformanceTables.update(items => {
+            const newItems = items.map(t => ({ ...t, isVisible: targetState }));
+            
             const hiddenIds = newItems.filter(t => t.isSystem && !t.isVisible).map(t => t.id);
             localStorage.setItem('hiddenPerformanceTableIds', JSON.stringify(hiddenIds));
             
@@ -123,6 +136,21 @@
                 Bảng hiển thị:
             </div>
             
+            <!-- SURGICAL FIX: Nút Hiện/Ẩn Tất Cả -->
+            <button 
+                class="px-2 py-1 mr-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-[10px] font-bold border border-gray-300 transition-colors flex items-center gap-1"
+                on:click={toggleAllVisibility}
+                title={isAllVisible ? "Ẩn tất cả bảng" : "Hiện tất cả bảng"}
+            >
+                {#if isAllVisible}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                    Ẩn tất cả
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    Hiện tất cả
+                {/if}
+            </button>
+
             {#each $customPerformanceTables as table}
                 <button 
                     class="px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 flex items-center gap-1.5 select-none
@@ -159,8 +187,11 @@
             </button>
         </div>
     {:else if visibleTables.length === 0}
-        <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
-             <p class="text-gray-500 font-medium">Bạn đã ẩn tất cả các bảng. Vui lòng bật lại trên thanh công cụ.</p>
+        <div class="p-12 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed flex flex-col items-center">
+             <p class="text-gray-500 font-medium mb-3">Bạn đã ẩn tất cả các bảng. Vui lòng bật lại trên thanh công cụ.</p>
+             <button class="px-4 py-1.5 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200" on:click={toggleAllVisibility}>
+                 Hiện tất cả các bảng
+             </button>
         </div>
     {:else}
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-10">

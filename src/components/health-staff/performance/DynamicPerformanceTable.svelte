@@ -62,23 +62,32 @@
         return formatters.formatRevenue(value);
     }
 
-    function getValueColor(cell) {
-        if (!cell || !cell.config) return '';
-        const targetVal = cell.config.target || 0; 
+    // [SURGICAL FIX] Khôi phục toàn vẹn hệ thống quy tắc màu sắc nguyên tử
+    function getValueColor(cell, colConfig) {
+        if (!colConfig) return '';
         
-        if (cell.config.type === 'PERCENT') {
-            const currentVal = cell.value * 100;
-            if (targetVal > 0) return currentVal >= targetVal ? 'text-blue-600 font-bold' : 'text-red-600 font-bold bg-red-50';
-            return 'text-red-600 font-bold'; 
-        }
+        const type = colConfig.type || 'DT';
+        const targetVal = colConfig.target || 0;
+        const hasData = cell !== undefined && cell !== null;
         
-        if (targetVal > 0) {
-            const compareVal = cell.config.type === 'SL' ? cell.value : cell.value / 1000;
-            if (compareVal < targetVal) return 'text-red-600 font-semibold bg-red-50';
+        // 1. Kiểm tra dưới mục tiêu (Cảnh báo ưu tiên cao nhất)
+        if (targetVal > 0 && hasData) {
+            let compareVal = cell.value;
+            if (type === 'PERCENT') {
+                compareVal = cell.value * 100;
+            } else if (type === 'DT' || type === 'DTQD') {
+                compareVal = cell.value / 1000;
+            }
+            
+            if (compareVal < targetVal) {
+                return 'text-red-600 font-bold bg-red-50'; // Dưới mục tiêu -> Chữ đỏ, Nền đỏ nhạt
+            }
         }
 
-        if (cell.config.type === 'SL') return 'text-gray-800 font-semibold'; 
-        return 'text-blue-700 font-semibold'; 
+        // 2. Màu mặc định theo phân loại dữ liệu gốc
+        if (type === 'PERCENT') return 'text-red-600 font-bold';       // Tỷ lệ -> Màu đỏ
+        if (type === 'SL') return 'text-gray-800 font-semibold';       // Số lượng -> Màu đen (Xám đậm)
+        return 'text-blue-700 font-semibold';                          // Doanh thu -> Màu xanh dương
     }
 </script>
 
@@ -204,7 +213,6 @@
                                     on:sort={handleSort} 
                                 />
                             {:else}
-                                <!-- [Surgical Fix]: Đồng bộ màu nền background-color cho thẻ lấp khoảng trống -->
                                 <th class="border-r border-b border-gray-200 min-w-[100px] border-t-0 pt-0" style="background-color: {hexColor}1a;"></th>
                             {/if}
                         {/each}
@@ -242,11 +250,11 @@
                                     <td class="px-2 py-2 text-right border-r border-gray-200 border-b text-gray-800 font-semibold">
                                         {cell && cell.sl !== undefined ? formatters.formatNumber(cell.sl) : '-'}
                                     </td>
-                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell)}">
+                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell, col)}">
                                         {cell ? cell.display : '-'}
                                     </td>
                                 {:else}
-                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell)}">
+                                    <td class="px-2 py-2 text-right border-r border-gray-200 border-b {getValueColor(cell, col)}">
                                         {cell ? cell.display : '-'}
                                     </td>
                                 {/if}

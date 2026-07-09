@@ -110,7 +110,6 @@
         }
     }
 
-    // [Surgical Logic]: Clone Object/Array để Svelte nhận biết sự thay đổi và cập nhật UI ngay lập tức
     function updateActiveCol(key, value) {
         if (tabActiveContext === 'main') {
             tabMainCol[key] = value;
@@ -141,9 +140,17 @@
             tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_num') {
             tabSubCols[tabActiveSubIndex].numerator = [...sourceCol.items];
+            // [SURGICAL FIX]: Tự động kế thừa hệ quy chiếu của cột được nạp
+            if (sourceCol.type === 'SL' || sourceCol.type === 'DTQD' || sourceCol.type === 'DT') {
+                tabSubCols[tabActiveSubIndex].percentMetric = sourceCol.type;
+            }
             tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_den') {
             tabSubCols[tabActiveSubIndex].denominator = [...sourceCol.items];
+            // [SURGICAL FIX]: Tự động kế thừa hệ quy chiếu của cột được nạp
+            if (sourceCol.type === 'SL' || sourceCol.type === 'DTQD' || sourceCol.type === 'DT') {
+                tabSubCols[tabActiveSubIndex].percentMetric = sourceCol.type;
+            }
             tabSubCols = [...tabSubCols];
         }
     }
@@ -290,7 +297,6 @@
                                     </div>
                                 {/if}
 
-                                <!-- [Surgical Edit]: Mang khối này ra ngoài để áp dụng cho CẢ CỘT TỔNG và CỘT CON -->
                                 {#if activeColumn.type === 'DT' || activeColumn.type === 'DTQD'}
                                 <div class="w-24 pl-2 border-l border-gray-200">
                                     <label class="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">Hiển thị kép</label>

@@ -1,3 +1,4 @@
+// src/services/reports/master/salesProcessor.js
 import { config } from '../../../config.js';
 import * as utils from '../../../utils.js';
 import { normalize } from './utils.js';
@@ -13,7 +14,6 @@ const parseMoney = (value) => {
 const normalizeStr = (val) => (val || "").trim();
 
 export const salesProcessor = {
-    // [SURGICAL OPTIMIZATION]: Nhận context để tránh gọi config lại hàng nghìn lần
     evaluateTransaction(row, context = null) {
         const hinhThucXuatTinhDoanhThu = context?.hinhThucXuatTinhDoanhThu || dataProcessing.getHinhThucXuatTinhDoanhThu();
         const hinhThucXuatTraGop = context?.hinhThucXuatTraGop || dataProcessing.getHinhThucXuatTraGop();
@@ -58,7 +58,7 @@ export const salesProcessor = {
             doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
             doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
             doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
-            doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, tongSoLuong: 0, qdc: {},
+            doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, doanhThuTheoMaSanPham: {}, tongSoLuong: 0, qdc: {},
             dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
             dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0, dtMayGiat: 0, slMayGiat: 0, 
             dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
@@ -76,7 +76,6 @@ export const salesProcessor = {
         const data = this.createEmptySalesData();
         const PG = config.PRODUCT_GROUPS;
 
-        // [XÂY DỰNG NGỮ CẢNH] 1 lần duy nhất
         const context = {
             hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
             hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
@@ -84,8 +83,8 @@ export const salesProcessor = {
         };
 
         if (sourceData && Array.isArray(sourceData)) {
-            sourceData.forEach(row => {
-                const evalResult = this.evaluateTransaction(row, context); // Truyền context vào
+            sourceData.forEach((row, index) => {
+                const evalResult = this.evaluateTransaction(row, context); 
 
                 if (evalResult.isValid && evalResult.empId === String(employee.maNV)) {
                     if (evalResult.isDaXuat) {
@@ -95,6 +94,12 @@ export const salesProcessor = {
                         
                         const nhomIdObj = row.maNhomHang ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } : parseIdentity(row.nhomHang);
                         const nganhIdObj = row.maNganhHang ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } : parseIdentity(row.nganhHang);
+
+                        const nhomHangCode = String(nhomIdObj.id).trim();
+
+                        const rawMaSP = row.maSanPham || row.MA_SAN_PHAM || row['Mã sản phẩm'] || '';
+                        const rawTenSP = row.tenSanPham || row.TEN_SAN_PHAM || row['Tên sản phẩm'] || rawMaSP;
+                        const spIdObj = { id: String(rawMaSP).trim(), name: String(rawTenSP).trim() };
 
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
@@ -109,16 +114,13 @@ export const salesProcessor = {
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
+                        if (spIdObj.id) trackMetric(data.doanhThuTheoMaSanPham, spIdObj, spIdObj.name);
 
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += revenueQuyDoi;
                         data.tongSoLuong += soLuong;
 
-                        if (evalResult.isTraGop) {
-                            data.doanhThuTraGop += thanhTien;
-                        }
-
-                        const nhomHangCode = String(nhomIdObj.id).trim();
+                        if (evalResult.isTraGop) { data.doanhThuTraGop += thanhTien; }
                         
                         if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { data.dtICT += thanhTien; }
                         if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || (PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode))) { data.dtCE += thanhTien; }

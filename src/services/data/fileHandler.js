@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { 
     selectedWarehouse, currentUser, realtimeYCXData, 
     categoryStructure, brandList, specialProductList,
-    warehouseList 
+    warehouseList, virtualProductList // [NEW] Thêm store mới
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
@@ -272,6 +272,23 @@ export const fileHandler = {
             const { success, normalizedData, error } = dataProcessing.normalizeSpecialProductData(rawData);
             if (!success) throw new Error(error);
             specialProductList.set(normalizedData);
+            event.target.value = null;
+            return { success: true, count: normalizedData.length };
+        } catch (err) { throw err; }
+    },
+
+    // [NEW] Xử lý tải file Sản phẩm đặc thù (Gói bảo dưỡng, combo...)
+    async handleVirtualProductFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        try {
+            const workbook = await _handleFileRead(file);
+            const sheetName = workbook.SheetNames[0];
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+            const { success, normalizedData, error } = dataProcessing.normalizeVirtualProductData(rawData);
+            if (!success) throw new Error(error);
+            
+            virtualProductList.set(normalizedData);
             event.target.value = null;
             return { success: true, count: normalizedData.length };
         } catch (err) { throw err; }

@@ -10,7 +10,8 @@ import {
     efficiencyConfig,
     qdcConfigStore,
     competitionNameMappings,
-    luykeNameMappings // [NEW] Import store mới
+    luykeNameMappings, 
+    virtualProductList // [NEW] Import store Sản phẩm đặc thù
 } from '../../stores.js';
 import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
 
@@ -72,7 +73,7 @@ export const categoryService = {
                 "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping", 
                 "groupNameMapping", "brandNameMapping", "efficiencyConfig", 
                 "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList",
-                "luykeNameMappings" // [NEW] Thêm file cấu hình thi đua siêu thị vào tiến trình tải lúc khởi động
+                "luykeNameMappings", "virtualProductList" // [NEW] Thêm file cấu hình SP Đặc thù vào tiến trình tải
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
@@ -87,7 +88,8 @@ export const categoryService = {
             competitionNameMappings.set(safeGet(results[7], {}));
             categoryStructure.set(safeGet(results[8]));
             brandList.set(safeGet(results[9]));
-            luykeNameMappings.set(safeGet(results[10], {})); // [NEW] Nạp dữ liệu vào store
+            luykeNameMappings.set(safeGet(results[10], {})); 
+            virtualProductList.set(safeGet(results[11])); // [NEW] Nạp dữ liệu vào store SP Đặc thù
 
             console.log("[declarations.category] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -185,7 +187,6 @@ export const categoryService = {
         }
     },
 
-    // [NEW] Lưu và tải mapping riêng biệt cho Thi đua Siêu thị
     async saveLuykeNameMappings(mappings) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
@@ -241,6 +242,38 @@ export const categoryService = {
             }
             return [];
         } catch (error) { console.error("Error loading SPĐQ:", error); return []; }
+    },
+
+    // --- VIRTUAL PRODUCTS (SẢN PHẨM ĐẶC THÙ) [NEW] ---
+    async saveVirtualProductList(products) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "virtualProductList");
+            await setDoc(docRef, { data: sanitizeForFirestore(products) });
+            notify('Đã lưu Danh sách Sản phẩm Đặc thù thành công!', 'success');
+        } catch (error) { 
+            console.error("Error saving virtual products:", error); 
+            notify('Lỗi lưu SP Đặc thù.', 'error'); 
+        }
+    },
+
+    async loadVirtualProductList() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "virtualProductList");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.data || d.products || [];
+            }
+            return [];
+        } catch (error) { 
+            console.error("Error loading Virtual Products:", error);
+            return []; 
+        }
     },
 
     async loadGlobalSpecialPrograms() {

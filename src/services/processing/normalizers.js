@@ -78,6 +78,31 @@ export const normalizers = {
         return { success: true, normalizedData: [...new Set(normalizedData)].sort() };
     },
 
+    normalizeVirtualProductData(rawData) {
+        if (!rawData || rawData.length === 0) {
+            return { success: false, error: 'File rỗng.', normalizedData: [] };
+        }
+        const header = Object.keys(rawData[0] || {});
+        const maSpCol = helpers.findColumnName(header, ['mã sản phẩm', 'masanpham', 'mã sp', 'ma sp']);
+        const tenSpCol = helpers.findColumnName(header, ['tên sản phẩm', 'tensanpham', 'tên sp', 'ten sp']);
+        const nhomHangCol = helpers.findColumnName(header, ['nhóm hàng', 'nhom hang']);
+
+        if (!maSpCol || !tenSpCol) {
+            return { success: false, error: `File thiếu cột Mã SP hoặc Tên SP.`, normalizedData: [] };
+        }
+
+        const normalizedData = rawData
+            .map(row => ({
+                maSanPham: String(row[maSpCol] || '').trim(),
+                tenSanPham: String(row[tenSpCol] || '').trim(),
+                nhomHang: String(row[nhomHangCol] || '').trim(), 
+                display: `${String(row[maSpCol] || '').trim()} - ${String(row[tenSpCol] || '').trim()}`
+            }))
+            .filter(item => item.maSanPham && item.tenSanPham);
+
+        return { success: true, normalizedData };
+    },
+
     normalizeData(rawData, fileType) {
         const mapping = config.COLUMN_MAPPINGS[fileType];
         if (!mapping) {

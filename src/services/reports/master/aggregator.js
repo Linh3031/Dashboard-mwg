@@ -1,23 +1,21 @@
 // src/services/reports/master/aggregator.js
 import { get } from 'svelte/store';
-import { efficiencyConfig, warehouseCustomMetrics } from '../../../stores.js';
+import { efficiencyConfig, warehouseCustomMetrics, macroProductGroupConfig, macroCategoryConfig } from '../../../stores.js';
 import { normalize } from './utils.js';
+import { parseIdentity } from '../../../utils.js';
 
 export const aggregator = {
     aggregateReport(reportData) {
         if (!reportData || reportData.length === 0) return {};
 
-        // Tính tổng hợp cho toàn siêu thị
         const supermarketReport = reportData.reduce((acc, curr) => {
-            // Cộng dồn tất cả các trường số
             for (const key in curr) {
                 if (typeof curr[key] === 'number') {
                     acc[key] = (acc[key] || 0) + curr[key];
                 }
             }
             
-            // Merge chi tiết Ngành hàng / Nhóm hàng
-            ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang'].forEach(dictKey => {
+            ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang', 'doanhThuTheoMaSanPham'].forEach(dictKey => {
                 if(curr[dictKey]) {
                     if(!acc[dictKey]) acc[dictKey] = {};
                     Object.entries(curr[dictKey]).forEach(([k, v]) => {
@@ -36,8 +34,8 @@ export const aggregator = {
 
         supermarketReport.nganhHangChiTiet = supermarketReport.doanhThuTheoNganhHang;
         supermarketReport.nhomHangChiTiet = supermarketReport.doanhThuTheoNhomHang;
+        supermarketReport.sanPhamChiTiet = supermarketReport.doanhThuTheoMaSanPham; 
 
-        // Tính lại % Tổng hợp Siêu thị
         const totalRevenue = supermarketReport.doanhThu || 1;
         supermarketReport.pctPhuKien = (supermarketReport.dtPhuKien || 0) / totalRevenue;
         supermarketReport.pctGiaDung = (supermarketReport.dtGiaDung || 0) / totalRevenue;
@@ -56,9 +54,10 @@ export const aggregator = {
             }
         }
 
-        // --- Tính lại Dynamic Metrics cho cấp Siêu thị ---
         const $efficiencyConfig = get(efficiencyConfig) || [];
         const $warehouseCustomMetrics = get(warehouseCustomMetrics) || [];
+        const $macroGrpCfg = get(macroProductGroupConfig) || []; 
+        const $macroCatCfg = get(macroCategoryConfig) || [];     
         const allMetricsConfig = [...$efficiencyConfig, ...$warehouseCustomMetrics];
 
         supermarketReport.dynamicMetrics = {};
@@ -75,21 +74,44 @@ export const aggregator = {
                         let total = 0;
                         if (!Array.isArray(groupList) || groupList.length === 0) return 0;
                         
+                        const resolvedIds = new Set();
+                        
+                        const addCleanId = (rawId) => {
+                            if (!rawId) return;
+                            const parsed = parseIdentity(rawId);
+                            const cleanId = (parsed.id !== 'unknown' ? parsed.id : rawId).toString().trim();
+                            if (cleanId) resolvedIds.add(cleanId);
+                        };
+
                         groupList.forEach(rawName => {
-                            if(!rawName) return;
-                            const cleanCfgName = normalize(rawName);
-                             const scanBucket = (bucket) => {
-                                for (const [k, v] of Object.entries(bucket)) {
-                                    if (normalize(k).includes(cleanCfgName)) {
-                                        if(valueType==='SL') total+=v.quantity;
-                                        else if(valueType==='DTQD') total+=v.revenueQuyDoi;
-                                        else total+=v.revenue;
-                                    }
-                                }
-                            };
-                            scanBucket(supermarketReport.doanhThuTheoNganhHang);
-                            scanBucket(supermarketReport.doanhThuTheoNhomHang);
+                            const macroGrp = $macroGrpCfg.find(m => m.name === rawName);
+                            const macroCat = $macroCatCfg.find(m => m.name === rawName);
+                            
+                            if (macroGrp && macroGrp.items) {
+                                macroGrp.items.forEach(subId => addCleanId(subId));
+                            } else if (macroCat && macroCat.items) {
+                                macroCat.items.forEach(subId => addCleanId(subId));
+                            } else {
+                                addCleanId(rawName);
+                            }
                         });
+
+                        resolvedIds.forEach(targetId => {
+                            // CẤM QUÉT THEO CHUỖI, CHỈ TÌM CHÍNH XÁC ID TRONG NHÓM VÀ NGÀNH
+                            const nh = supermarketReport.doanhThuTheoNhomHang?.[targetId];
+                            const ng = supermarketReport.doanhThuTheoNganhHang?.[targetId];
+
+                            let foundData = null;
+                            if (nh && (nh.quantity > 0 || nh.revenue > 0)) foundData = nh;
+                            else if (ng && (ng.quantity > 0 || ng.revenue > 0)) foundData = ng;
+
+                            if (foundData) {
+                                if (valueType === 'SL') total += foundData.quantity;
+                                else if (valueType === 'DTQD') total += foundData.revenueQuyDoi;
+                                else total += foundData.revenue;
+                            }
+                        });
+
                         return total;
                     };
 
@@ -101,7 +123,7 @@ export const aggregator = {
                         target: cfg.target, 
                         label: cfg.label
                     };
-                } catch(e) {}
+                } catch(e) { console.error("Aggregator Metric Error:", e); }
             });
         }
 

@@ -24,6 +24,7 @@ export const dataProcessing = {
     normalizeCategoryStructureData: normalizers.normalizeCategoryStructureData,
     normalizeSpecialProductData: normalizers.normalizeSpecialProductData,
     normalizeBrandData: normalizers.normalizeBrandData,
+    normalizeVirtualProductData: normalizers.normalizeVirtualProductData,
 
     // --- Parsers ---
     processThuongERP: parsers.processThuongERP,

@@ -1,79 +1,80 @@
 // src/services/reports/master/metricsProcessor.js
 import { get } from 'svelte/store';
-import { efficiencyConfig, warehouseCustomMetrics } from '../../../stores.js';
+import { efficiencyConfig, macroProductGroupConfig, macroCategoryConfig } from '../../../stores.js';
 import { normalize } from './utils.js';
+import { parseIdentity } from '../../../utils.js';
 
 export const metricsProcessor = {
-    calculateDynamicMetrics(data, goalSettings) {
+    calculateDynamicMetrics(salesData, goalSettings) {
+        const metrics = {};
         const $efficiencyConfig = get(efficiencyConfig) || [];
-        const $warehouseCustomMetrics = get(warehouseCustomMetrics) || [];
-        
-        // Gộp cấu hình
-        const allMetricsConfig = [...$efficiencyConfig, ...$warehouseCustomMetrics];
-        
-        const dynamicMetrics = {};
+        const $macroGrpCfg = get(macroProductGroupConfig) || []; 
+        const $macroCatCfg = get(macroCategoryConfig) || []; 
 
-        if (allMetricsConfig && Array.isArray(allMetricsConfig)) {
-            allMetricsConfig.forEach(cfg => {
-                try {
-                    if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
+        if (!$efficiencyConfig.length) return metrics;
 
-                    // [LOGIC FIX] Ưu tiên lấy percentMetric (từ Modal mới) -> typeA -> type -> mặc định DTTL
-                    // Điều này đảm bảo khi bạn chọn "Số lượng" ở Modal, code sẽ tính theo SL
-                    const metricType = cfg.percentMetric || cfg.typeA || cfg.type || 'DTTL';
-                    
-                    const numType = metricType; 
-                    const denType = cfg.typeB || metricType; // Nếu mẫu số không cấu hình riêng thì dùng chung loại
+        $efficiencyConfig.forEach(cfg => {
+            try {
+                if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
 
-                    const modeA = cfg.modeA || 'group';
-                    const modeB = cfg.modeB || (cfg.modeA === 'category' ? 'category' : 'group'); 
+                const numType = cfg.typeA || 'DTTL';
+                const denType = cfg.typeB || 'DTTL';
 
-                    const calcValue = (groupList, type, mode) => {
-                        let total = 0;
-                        if (!Array.isArray(groupList)) return 0;
+                const calcGroupValue = (groupList, valueType) => {
+                    let total = 0;
+                    if (!Array.isArray(groupList) || groupList.length === 0) return 0;
+
+                    const resolvedIds = new Set();
+
+                    groupList.forEach(rawName => {
+                        if(!rawName) return;
+
+                        const macroGrp = $macroGrpCfg.find(m => m.name === rawName);
+                        const macroCat = $macroCatCfg.find(m => m.name === rawName);
                         
-                        groupList.forEach(targetId => {
-                            if (!targetId) return;
-                            const cleanTargetId = normalize(targetId); 
+                        if (macroGrp && macroGrp.items) {
+                            macroGrp.items.forEach(id => resolvedIds.add(id));
+                        } else if (macroCat && macroCat.items) {
+                            macroCat.items.forEach(id => resolvedIds.add(id));
+                        } else {
+                            resolvedIds.add(rawName);
+                        }
+                    });
 
-                            // Chọn thùng dữ liệu
-                            const bucketToScan = (mode === 'category') 
-                                ? data.doanhThuTheoNganhHang 
-                                : data.doanhThuTheoNhomHang;
+                    resolvedIds.forEach(targetId => {
+                        const parsed = parseIdentity(targetId);
+                        const searchKey = (parsed.id !== 'unknown' ? parsed.id : targetId).toString().trim();
 
-                            // Quét dữ liệu
-                            for (const [key, val] of Object.entries(bucketToScan)) {
-                                const cleanKey = normalize(key);
-                                
-                                if (cleanKey === cleanTargetId) {
-                                    let valueToAdd = 0;
-                                    // Logic lấy giá trị chính xác theo type
-                                    if (type === 'SL') valueToAdd = val.quantity || 0;
-                                    else if (type === 'DTQD') valueToAdd = val.revenueQuyDoi || 0;
-                                    else valueToAdd = val.revenue || 0; // Mặc định là DTTL
+                        // CHỈ TRUY XUẤT NHÓM HÀNG HOẶC NGÀNH HÀNG
+                        const nh = salesData.doanhThuTheoNhomHang?.[searchKey];
+                        const ng = salesData.doanhThuTheoNganhHang?.[searchKey];
 
-                                    total += valueToAdd;
-                                }
-                            }
-                        });
+                        let foundData = null;
+                        if (nh && (nh.quantity > 0 || nh.revenue > 0)) foundData = nh;
+                        else if (ng && (ng.quantity > 0 || ng.revenue > 0)) foundData = ng;
 
-                        return total;
-                    };
+                        if (foundData) {
+                            if(valueType === 'SL') total += foundData.quantity;
+                            else if(valueType === 'DTQD') total += foundData.revenueQuyDoi;
+                            else total += foundData.revenue;
+                        }
+                    });
+                    return total;
+                };
 
-                    // Tính toán
-                    const num = calcValue(cfg.groupA, numType, modeA);
-                    const den = calcValue(cfg.groupB, denType, modeB);
+                const numVal = calcGroupValue(cfg.groupA, numType);
+                const denVal = calcGroupValue(cfg.groupB, denType);
+                
+                metrics[cfg.id] = {
+                    value: denVal > 0 ? numVal / denVal : 0,
+                    target: cfg.target,
+                    label: cfg.label
+                };
+            } catch(e) {
+                console.error("Metric Processor Error:", e);
+            }
+        });
 
-                    dynamicMetrics[cfg.id] = {
-                        value: den > 0 ? num / den : 0, // Lưu dạng decimal (0.5) để component UI format sau
-                        target: goalSettings && goalSettings[cfg.id] ? parseFloat(goalSettings[cfg.id]) : (cfg.target || 0),
-                        label: cfg.label
-                    };
-                } catch (e) {
-                    console.error("Metric Calc Error:", e);
-                }
-            });
-        }
-        return dynamicMetrics;
+        return metrics;
     }
 };

@@ -92,6 +92,7 @@ export const thuongERPDataThangTruoc = writable([]);
 export const masterReportData = writable({ luyke: [], sknv: [], realtime: [] });
 export const competitionData = writable([]);
 export const declarations = writable({ hinhThucXuat: '', hinhThucXuatGop: '', heSoQuyDoi: '' });
+export const virtualProductList = writable([]); // Lưu danh sách Sản phẩm đặc thù
 export const categoryStructure = writable([]); 
 export const brandList = writable([]); 
 export const specialProductList = writable([]);
