@@ -224,7 +224,7 @@ export const fileHandler = {
             updateSyncState(saveKey, 'error', 'Chưa có file. Vui lòng tải file.', null);
             return { success: true };
         } catch (error) {
-            updateSyncState(saveKey, 'error', `Lỗi xóa file: ${error.message}`);
+            updateSyncState(syncKey, 'error', `Lỗi xóa file: ${error.message}`);
             return { success: false, message: error.message };
         }
     },
@@ -255,7 +255,8 @@ export const fileHandler = {
             if (!success) throw new Error(error);
             categoryStructure.set(normalizedData);
             
-            const brands = [...new Set(normalizedData.map(item => item.brand).filter(Boolean))].sort();
+            // [PHẪU THUẬT LOGIC]: Nhận diện toàn bộ các khả năng đặt tên của thuộc tính Hãng
+            const brands = [...new Set(normalizedData.map(item => item.nhaSanXuat || item.nhasanxuat || item.NhaSanXuat || item.brand || item.hang || item['Nhà sản xuất']).filter(Boolean))].sort();
             brandList.set(brands);
             event.target.value = null;
             return { success: true, count: normalizedData.length };
