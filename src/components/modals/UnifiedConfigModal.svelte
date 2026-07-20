@@ -1,6 +1,7 @@
 <script>
     import { createEventDispatcher } from 'svelte';
-    import { modalState, brandList, specialProductList } from '../../stores.js'; 
+    import { modalState, brandList, specialProductList, danhSachNhanVien, categoryStructure, macroCategoryConfig, macroProductGroupConfig } from '../../stores.js'; 
+    import { parseIdentity } from '../../utils.js';
     import UniversalCategorySelector from './UniversalCategorySelector.svelte';
     import IndicatorBuilder from './IndicatorBuilder.svelte';
     import TableBuilder from './TableBuilder.svelte';
@@ -98,25 +99,100 @@
         return [];
     })();
 
+    // --- [SURGICAL UPGRADE v3.3]: TỰ ĐỘNG LỌC HÃNG 360° VỚI RAW CODE EXTRACTION ---
     $: availableBrands = (() => {
         const allBrands = $brandList || [];
         if (!activeColumn || tabActiveContext === 'main' || configType === 'INDICATOR') return allBrands;
         
         const selectedGroups = selectorItems || [];
-        if (selectedGroups.length === 0 || !$specialProductList) return allBrands;
+        if (selectedGroups.length === 0) return allBrands;
         
-        const groupSet = new Set(selectedGroups.map(g => String(g).trim().toLowerCase()));
+        // Helper: Tách mã số thuần (Ví dụ: "1351 - Loa vi tính" -> "1351")
+        const extractCode = (str) => String(str || '').match(/^(\d+)/)?.[1] || String(str || '').trim().toLowerCase();
+
+        const targetIdsSet = new Set();
+        const $macroCatList = $macroCategoryConfig || [];
+        const $macroGrpList = $macroProductGroupConfig || [];
+
+        selectedGroups.forEach(rawId => {
+            const parsed = parseIdentity(rawId);
+            const parsedId = parsed.id !== 'unknown' ? parsed.id : String(rawId).trim();
+            
+            const macroCat = $macroCatList.find(m => m.name === rawId || m.name === parsedId);
+            if (macroCat && macroCat.items) {
+                macroCat.items.forEach(sub => {
+                    targetIdsSet.add(String(sub).trim().toLowerCase());
+                    targetIdsSet.add(extractCode(sub));
+                });
+            }
+
+            const macroGrp = $macroGrpList.find(m => m.name === rawId || m.name === parsedId);
+            if (macroGrp && macroGrp.items) {
+                macroGrp.items.forEach(sub => {
+                    targetIdsSet.add(String(sub).trim().toLowerCase());
+                    targetIdsSet.add(extractCode(sub));
+                });
+            }
+
+            targetIdsSet.add(String(parsedId).trim().toLowerCase());
+            targetIdsSet.add(String(rawId).trim().toLowerCase());
+            targetIdsSet.add(extractCode(rawId));
+        });
+
         const matchedBrands = new Set();
         
-        $specialProductList.forEach(sp => {
-            const nh = String(sp.nhomHang || '').trim().toLowerCase();
-            const br = String(sp.nhaSanXuat || sp.brand || '').trim();
-            if (groupSet.has(nh) && br) {
-                matchedBrands.add(br);
-            }
-        });
+        // 1. Quét từ Danh sách sản phẩm đặc biệt
+        if ($specialProductList && Array.isArray($specialProductList)) {
+            $specialProductList.forEach(sp => {
+                const nhRaw = sp.nhomHang || sp.maNhomHang || '';
+                const ngRaw = sp.nganhHang || sp.maNganhHang || '';
+                const nhCode = extractCode(nhRaw);
+                const ngCode = extractCode(ngRaw);
+                const br = String(sp.nhaSanXuat || sp.brand || sp['Hãng'] || sp['Hãng sản xuất'] || sp['TEN_HANG'] || '').trim();
+                
+                if ((targetIdsSet.has(nhCode) || targetIdsSet.has(ngCode) || targetIdsSet.has(String(nhRaw).trim().toLowerCase())) && br) {
+                    matchedBrands.add(br);
+                }
+            });
+        }
+
+        // 2. Quét từ Giao dịch thô thực tế của nhân viên (Loa vi tính, Tivi, Tủ lạnh, Máy giặt...)
+        if ($danhSachNhanVien && Array.isArray($danhSachNhanVien)) {
+            $danhSachNhanVien.forEach(emp => {
+                const txList = emp._rawSalesData || emp.rawSalesData || emp.transactions || emp.giaoDich || emp._rawSales || [];
+                if (Array.isArray(txList)) {
+                    txList.forEach(row => {
+                        const nhRaw = row.maNhomHang || row.nhomHang || row.maNhom || '';
+                        const ngRaw = row.maNganhHang || row.nganhHang || row.maNganh || '';
+                        const nhCode = extractCode(nhRaw);
+                        const ngCode = extractCode(ngRaw);
+                        const br = String(row.nhaSanXuat || row.brand || row['Hãng'] || row['Hãng sản xuất'] || row['NhaSanXuat'] || row['TEN_HANG'] || '').trim();
+                        
+                        if ((targetIdsSet.has(nhCode) || targetIdsSet.has(ngCode) || targetIdsSet.has(String(nhRaw).trim().toLowerCase())) && br) {
+                            matchedBrands.add(br);
+                        }
+                    });
+                }
+            });
+        }
+
+        // 3. Quét bổ sung từ cấu trúc danh mục hệ thống
+        if ($categoryStructure && Array.isArray($categoryStructure)) {
+            $categoryStructure.forEach(c => {
+                const nhRaw = c.nhomHang || c.maNhomHang || c.tenNhomHang || '';
+                const ngRaw = c.nganhHang || c.maNganhHang || c.tenNganhHang || '';
+                const nhCode = extractCode(nhRaw);
+                const ngCode = extractCode(ngRaw);
+                
+                if (targetIdsSet.has(nhCode) || targetIdsSet.has(ngCode) || targetIdsSet.has(String(nhRaw).trim().toLowerCase())) {
+                    const brs = c.nhaSanXuat || c.brand || c.brands || c.hang || c.hangSanXuat || c['Hãng'] || c.danhSachHang || [];
+                    if (Array.isArray(brs)) brs.forEach(b => { if(b) matchedBrands.add(String(b).trim()); });
+                    else if (typeof brs === 'string' && brs.trim()) matchedBrands.add(brs.trim());
+                }
+            });
+        }
         
-        return matchedBrands.size > 0 ? Array.from(matchedBrands).sort() : allBrands;
+        return matchedBrands.size > 0 ? Array.from(matchedBrands).sort((a, b) => a.localeCompare(b)) : allBrands;
     })();
 
     $: filteredBrands = availableBrands.filter(b => {
@@ -151,6 +227,7 @@
         updateActiveCol('brands', current.filter(b => !filteredBrands.includes(b)));
     }
 
+    // [SURGICAL FIX v3.3]: Tiêm lệnh gán lại mảng gốc để kích hoạt tính phản ứng Svelte 4 khi tích chọn nhóm hàng
     function handleSelectionChange(event) {
         const newArray = event.detail;
         if (configType === 'INDICATOR') {
@@ -158,13 +235,16 @@
             else indDenominator = newArray;
         } else {
             if (tabActiveContext === 'main') {
-                tabMainCol.items = newArray; tabMainCol.itemType = rightPanelMode;
+                tabMainCol.items = newArray; 
+                tabMainCol.itemType = rightPanelMode;
+                tabMainCol = { ...tabMainCol }; // <-- Kích hoạt Reactive
             } else {
                 const col = tabSubCols[tabActiveSubIndex];
                 if (col) {
                     if (tabActiveContext === 'sub_items') { col.items = newArray; col.itemType = rightPanelMode; } 
                     else if (tabActiveContext === 'sub_num') { col.numerator = newArray; col.numType = rightPanelMode; } 
                     else if (tabActiveContext === 'sub_den') { col.denominator = newArray; col.denType = rightPanelMode; }
+                    tabSubCols = [...tabSubCols]; // <-- Kích hoạt Reactive cho Cột Mới Thêm
                 }
             }
         }
@@ -226,7 +306,6 @@
         } else {
             if (!tabName.trim()) return alert('Vui lòng nhập tên bảng.');
             
-            // [SURGICAL VALIDATION]: Bắt buộc chọn ít nhất 1 Nhóm/Ngành hàng nếu bật Cột tổng gộp
             if (tabMainCol.show && (!tabMainCol.items || tabMainCol.items.length === 0)) {
                 return alert('⚠️ Lỗi Cấu Hình: Bạn đã bật "Cột Tổng Gộp" nhưng chưa chọn Nhóm hàng hoặc Ngành hàng nào.\n\nVui lòng chọn phạm vi dữ liệu hoặc tắt Cột tổng gộp nếu không sử dụng!');
             }
@@ -239,7 +318,6 @@
                 numerator: c.numerator || [], denominator: c.denominator || [], items: c.items || []
             }));
 
-            // [SURGICAL FIX]: Giữ nguyên thuộc tính show: true để processor nhận biết
             let finalMainCol = tabMainCol.show ? { ...tabMainCol, show: true } : null;
 
             payload = {
