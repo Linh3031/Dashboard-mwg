@@ -1,4 +1,5 @@
 /* src/services/processing/logic/dynamicTable.processor.js */
+// Version 3.1 - Atomic Integrity: Brand Filtering Support for Dynamic Tables with Normalized Brand Names
 import { get } from 'svelte/store';
 import { formatters } from '../../../utils/formatters.js';
 import { parseIdentity } from '../../../utils.js';
@@ -12,6 +13,12 @@ const getSafeNumber = (value) => {
         return parseFloat(cleanStr) || 0;
     }
     return 0;
+};
+
+const isBrandMatch = (rowBrand, targetBrands) => {
+    if (!targetBrands || !Array.isArray(targetBrands) || targetBrands.length === 0) return true;
+    const cleanRowBrand = String(rowBrand || 'Khác').trim().toLowerCase();
+    return targetBrands.some(b => String(b).trim().toLowerCase() === cleanRowBrand);
 };
 
 export const dynamicTableProcessor = {
@@ -44,47 +51,51 @@ export const dynamicTableProcessor = {
         const $macroCategoryConfig = get(macroCategoryConfig) || [];
         const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
 
-        const calculateGroupValue = (employee, items, type) => {
+        const calculateGroupValue = (employee, items, type, targetBrands = []) => {
             let totalVal = 0, totalSL = 0, totalDTQD = 0;
             
+            const targetIds = new Set();
             items.forEach(rawId => {
                 const parsedId = parseIdentity(rawId).id;
                 
                 const macroCat = $macroCategoryConfig.find(m => m.name === rawId);
                 if (macroCat && macroCat.items) {
-                    macroCat.items.forEach(subId => {
-                        const data = this.findItemData(employee, subId);
-                        if (data) {
-                            totalVal += data.revenue || 0;
-                            totalSL += data.quantity || 0;
-                            totalDTQD += data.revenueQuyDoi || 0;
-                        }
-                    });
+                    macroCat.items.forEach(subId => targetIds.add(subId));
                     return;
                 }
 
                 const macroGrp = $macroProductGroupConfig.find(m => m.name === rawId);
                 if (macroGrp && macroGrp.items) {
-                    macroGrp.items.forEach(subId => {
-                        const data = this.findItemData(employee, subId);
-                        if (data) {
-                            totalVal += data.revenue || 0;
-                            totalSL += data.quantity || 0;
-                            totalDTQD += data.revenueQuyDoi || 0;
-                        }
-                    });
+                    macroGrp.items.forEach(subId => targetIds.add(subId));
                     return;
                 }
 
-                const targetId = parsedId !== 'unknown' ? parsedId : rawId;
-                const data = this.findItemData(employee, targetId);
-
-                if (data) {
-                    totalVal += data.revenue || 0;
-                    totalSL += data.quantity || 0;
-                    totalDTQD += data.revenueQuyDoi || 0;
-                }
+                const finalId = parsedId !== 'unknown' ? parsedId : rawId;
+                targetIds.add(finalId);
             });
+
+            if (targetBrands && targetBrands.length > 0 && employee._rawSalesData && Array.isArray(employee._rawSalesData)) {
+                employee._rawSalesData.forEach(row => {
+                    const rowNhom = String(row.maNhomHang || '').trim();
+                    const rowNganh = String(row.maNganhHang || '').trim();
+                    const rowBrand = String(row.nhaSanXuat || row.brand || row['Hãng'] || row['Hãng sản xuất'] || row['NhaSanXuat'] || row['TEN_HANG'] || '').trim();
+
+                    if ((targetIds.has(rowNhom) || targetIds.has(rowNganh)) && isBrandMatch(rowBrand, targetBrands)) {
+                        totalVal += (row._thanhTien || 0);
+                        totalSL += (row._soLuong || 0);
+                        totalDTQD += (row._revenueQuyDoi || 0);
+                    }
+                });
+            } else {
+                targetIds.forEach(targetId => {
+                    const data = this.findItemData(employee, targetId);
+                    if (data) {
+                        totalVal += data.revenue || 0;
+                        totalSL += data.quantity || 0;
+                        totalDTQD += data.revenueQuyDoi || 0;
+                    }
+                });
+            }
 
             return {
                 val: type === 'SL' ? totalSL : (type === 'DTQD' ? totalDTQD : totalVal),
@@ -134,8 +145,8 @@ export const dynamicTableProcessor = {
                     const numType = col.percentMetric || col.typeA || 'DT';
                     const denType = col.percentMetric || col.typeB || 'DT';
                     
-                    const numRes = calculateGroupValue(employee, col.numerator || [], numType);
-                    const denRes = calculateGroupValue(employee, col.denominator || [], denType);
+                    const numRes = calculateGroupValue(employee, col.numerator || [], numType, col.brands);
+                    const denRes = calculateGroupValue(employee, col.denominator || [], denType, col.brands);
                     
                     cellData.num = numRes.val;
                     cellData.den = denRes.val;
@@ -149,7 +160,7 @@ export const dynamicTableProcessor = {
                     if (cellData.num > 0 || cellData.den > 0) hasAnyData = true;
 
                 } else {
-                    const result = calculateGroupValue(employee, col.items || [], col.type);
+                    const result = calculateGroupValue(employee, col.items || [], col.type, col.brands);
                     cellData.val = result.val;
                     cellData.sl = result.sl;
                     cellData.dtqd = result.dtqd;

@@ -1,6 +1,6 @@
 <script>
     import { createEventDispatcher } from 'svelte';
-    import { modalState } from '../../stores.js'; 
+    import { modalState, brandList, specialProductList } from '../../stores.js'; 
     import UniversalCategorySelector from './UniversalCategorySelector.svelte';
     import IndicatorBuilder from './IndicatorBuilder.svelte';
     import TableBuilder from './TableBuilder.svelte';
@@ -23,6 +23,10 @@
     let tabSubCols = [];
     let tabActiveContext = 'main';
     let tabActiveSubIndex = 0;
+
+    // --- [SURGICAL ADD]: STATE QUẢN LÝ TÌM KIẾM & LỌC HÃNG ---
+    let searchBrand = '';
+    let showSelectedBrandOnly = false;
 
     let wasOpen = false;
     $: if (isOpen && !wasOpen) { wasOpen = true; initData(); }
@@ -57,11 +61,14 @@
                 color: c.color || '#3b82f6',
                 target: c.target || 0,
                 percentMetric: c.percentMetric || 'DT',
-                showSL: c.showSL || false
+                showSL: c.showSL || false,
+                brands: c.brands || [] // [SURGICAL ADD]: Khôi phục danh sách Hãng cũ nếu có
             }));
             
             tabActiveContext = tabMainCol.show ? 'main' : (tabSubCols.length > 0 ? 'sub_items' : 'main');
             tabActiveSubIndex = 0;
+            searchBrand = '';
+            showSelectedBrandOnly = false;
         }
     }
 
@@ -90,6 +97,60 @@
         if (tabActiveContext === 'sub_den') return [...(col.denominator || [])];
         return [];
     })();
+
+    // --- [SURGICAL ADD]: LOGIC LỌC HÃNG THÔNG MINH THEO NGÀNH/NHÓM BÊN TRÁI ---
+    $: availableBrands = (() => {
+        const allBrands = $brandList || [];
+        if (!activeColumn || tabActiveContext === 'main' || configType === 'INDICATOR') return allBrands;
+        
+        const selectedGroups = selectorItems || [];
+        if (selectedGroups.length === 0 || !$specialProductList) return allBrands;
+        
+        const groupSet = new Set(selectedGroups.map(g => String(g).trim().toLowerCase()));
+        const matchedBrands = new Set();
+        
+        $specialProductList.forEach(sp => {
+            const nh = String(sp.nhomHang || '').trim().toLowerCase();
+            const br = String(sp.nhaSanXuat || sp.brand || '').trim();
+            if (groupSet.has(nh) && br) {
+                matchedBrands.add(br);
+            }
+        });
+        
+        return matchedBrands.size > 0 ? Array.from(matchedBrands).sort() : allBrands;
+    })();
+
+    $: filteredBrands = availableBrands.filter(b => {
+        const matchSearch = b.toLowerCase().includes(searchBrand.toLowerCase());
+        const matchSelected = !showSelectedBrandOnly || (activeColumn?.brands || []).includes(b);
+        return matchSearch && matchSelected;
+    }).sort((a, b) => {
+        const aSel = (activeColumn?.brands || []).includes(a);
+        const bSel = (activeColumn?.brands || []).includes(b);
+        if (aSel && !bSel) return -1;
+        if (!aSel && bSel) return 1;
+        return a.localeCompare(b);
+    });
+
+    function toggleBrandSelection(brand) {
+        if (!activeColumn || tabActiveContext === 'main') return;
+        const current = activeColumn.brands || [];
+        const next = current.includes(brand) ? current.filter(b => b !== brand) : [...current, brand];
+        updateActiveCol('brands', next);
+    }
+
+    function selectAllBrands() {
+        if (!activeColumn || tabActiveContext === 'main') return;
+        const current = activeColumn.brands || [];
+        const toAdd = filteredBrands.filter(b => !current.includes(b));
+        updateActiveCol('brands', [...current, ...toAdd]);
+    }
+
+    function deselectAllBrands() {
+        if (!activeColumn || tabActiveContext === 'main') return;
+        const current = activeColumn.brands || [];
+        updateActiveCol('brands', current.filter(b => !filteredBrands.includes(b)));
+    }
 
     function handleSelectionChange(event) {
         const newArray = event.detail;
@@ -137,17 +198,16 @@
             tabMainCol = { ...tabMainCol };
         } else if (tabActiveContext === 'sub_items') {
             tabSubCols[tabActiveSubIndex].items = [...sourceCol.items];
+            tabSubCols[tabActiveSubIndex].brands = [...(sourceCol.brands || [])]; // [SURGICAL ADD]: Nạp nhanh cả Hãng
             tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_num') {
             tabSubCols[tabActiveSubIndex].numerator = [...sourceCol.items];
-            // [SURGICAL FIX]: Tự động kế thừa hệ quy chiếu của cột được nạp
             if (sourceCol.type === 'SL' || sourceCol.type === 'DTQD' || sourceCol.type === 'DT') {
                 tabSubCols[tabActiveSubIndex].percentMetric = sourceCol.type;
             }
             tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_den') {
             tabSubCols[tabActiveSubIndex].denominator = [...sourceCol.items];
-            // [SURGICAL FIX]: Tự động kế thừa hệ quy chiếu của cột được nạp
             if (sourceCol.type === 'SL' || sourceCol.type === 'DTQD' || sourceCol.type === 'DT') {
                 tabSubCols[tabActiveSubIndex].percentMetric = sourceCol.type;
             }
@@ -171,6 +231,7 @@
                 ...c,
                 id: c.id || `col_${Date.now()}_${i}`,
                 targetId: c.targetId || null,
+                brands: c.brands || [], // [SURGICAL ADD]: Đóng gói danh sách Hãng vào payload
                 numerator: c.numerator || [], denominator: c.denominator || [], items: c.items || []
             }));
 
@@ -333,8 +394,74 @@
                                 {/if}
                             </div>
 
-                            <div class="flex-1 border border-gray-200 rounded-xl overflow-hidden min-h-0 shadow-inner">
-                                <UniversalCategorySelector bind:mode={rightPanelMode} selectedItems={selectorItems} on:selectionChange={handleSelectionChange} />
+                            <!-- --- [SURGICAL UPGRADE]: LƯỚI 50/50 TRỰC QUAN NGÀNH/NHÓM VÀ HÃNG --- -->
+                            <div class="flex-1 min-h-0 grid grid-cols-2 gap-3">
+                                <!-- NỬA TRÁI (50%): UniversalCategorySelector chuyên trách Ngành / Nhóm -->
+                                <div class="flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden shadow-inner min-h-0">
+                                    <div class="p-2 bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-700 flex items-center justify-between flex-shrink-0">
+                                        <span>📦 Phạm vi Ngành / Nhóm hàng:</span>
+                                        {#if tabActiveContext !== 'main' && (activeColumn.items || []).length === 0 && activeColumn.type !== 'PERCENT'}
+                                            <span class="text-[10px] font-normal text-amber-600 italic">Kế thừa từ Cột Tổng</span>
+                                        {/if}
+                                    </div>
+                                    <div class="flex-1 min-h-0">
+                                        <UniversalCategorySelector 
+                                            bind:mode={rightPanelMode} 
+                                            selectedItems={selectorItems} 
+                                            on:selectionChange={handleSelectionChange} 
+                                        />
+                                    </div>
+                                </div>
+
+                                <!-- NỬA PHẢI (50%): Danh sách Hãng xếp dọc, tự động lọc theo Ngành/Nhóm -->
+                                <div class="flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden shadow-inner min-h-0">
+                                    <div class="p-2 bg-gray-50 border-b border-gray-200 flex flex-col gap-1.5 flex-shrink-0">
+                                        <div class="flex items-center justify-between text-xs font-bold text-purple-800">
+                                            <span>🏷️ Danh sách Hãng ({availableBrands.length}):</span>
+                                            {#if tabActiveContext !== 'main' && activeColumn.type !== 'PERCENT'}
+                                                <div class="flex items-center gap-2 text-[10px] font-normal">
+                                                    <button type="button" on:click={selectAllBrands} class="text-blue-600 font-bold hover:underline">Chọn hết</button>
+                                                    <span class="text-gray-300">|</span>
+                                                    <button type="button" on:click={deselectAllBrands} class="text-red-500 font-bold hover:underline">Bỏ hết</button>
+                                                </div>
+                                            {/if}
+                                        </div>
+                                        {#if tabActiveContext !== 'main' && activeColumn.type !== 'PERCENT'}
+                                            <div class="flex items-center gap-1.5">
+                                                <div class="relative flex-1">
+                                                    <input type="text" bind:value={searchBrand} placeholder="🔍 Tìm hãng nhanh..." class="w-full pl-6 pr-2 py-1 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                                                    <svg class="w-3 h-3 text-gray-400 absolute left-2 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                                </div>
+                                                <label class="flex items-center gap-1 text-[10px] text-gray-600 cursor-pointer select-none whitespace-nowrap">
+                                                    <input type="checkbox" bind:checked={showSelectedBrandOnly} class="rounded text-purple-600" />
+                                                    <span>Đã chọn ({(activeColumn.brands || []).length})</span>
+                                                </label>
+                                            </div>
+                                        {/if}
+                                    </div>
+
+                                    <div class="flex-1 overflow-y-auto p-1.5 min-h-0 custom-scrollbar">
+                                        {#if tabActiveContext === 'main' || activeColumn.type === 'PERCENT'}
+                                            <div class="h-full flex items-center justify-center text-center text-gray-400 text-xs p-6">
+                                                {tabActiveContext === 'main' ? 'Cột Tổng tự động áp dụng cho toàn bộ các Hãng trong phạm vi Nhóm hàng đã chọn.' : 'Cột Tỷ lệ % áp dụng phép tính trên toàn cấu hình cột phụ được chọn.'}
+                                            </div>
+                                        {:else}
+                                            <div class="grid grid-cols-1 gap-1">
+                                                {#each filteredBrands as brand (brand)}
+                                                    {@const isSelected = (activeColumn.brands || []).includes(brand)}
+                                                    <button type="button" on:click={() => toggleBrandSelection(brand)} class="w-full flex items-center p-1.5 text-left rounded transition-colors text-[11px] {isSelected ? 'bg-purple-50 text-purple-900 font-bold border border-purple-200' : 'hover:bg-gray-100 text-gray-700 border border-transparent'}">
+                                                        <div class="mr-2 flex-shrink-0 w-3.5 h-3.5 border rounded flex items-center justify-center transition-colors {isSelected ? 'bg-purple-600 border-purple-600' : 'bg-white border-gray-400'}">
+                                                            {#if isSelected}<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>{/if}
+                                                        </div>
+                                                        <span class="truncate flex-1">{brand}</span>
+                                                    </button>
+                                                {:else}
+                                                    <div class="text-center text-gray-400 text-xs py-10">Không tìm thấy hãng nào.</div>
+                                                {/each}
+                                            </div>
+                                        {/if}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     {/if}

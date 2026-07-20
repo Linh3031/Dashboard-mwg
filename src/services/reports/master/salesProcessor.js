@@ -61,7 +61,8 @@ export const salesProcessor = {
             doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, doanhThuTheoMaSanPham: {}, tongSoLuong: 0, qdc: {},
             dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
             dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0, dtMayGiat: 0, slMayGiat: 0, 
-            dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
+            dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
+            _rawSalesData: []
         };
 
         if (PG && PG.QDC_GROUPS) {
@@ -168,6 +169,16 @@ export const salesProcessor = {
                                 data.qdc[key].dtqd += revenueQuyDoi;
                             }
                         }
+
+                        data._rawSalesData.push({
+                            maNhomHang: nhomHangCode,
+                            maNganhHang: String(nganhIdObj.id).trim(),
+                            maSanPham: spIdObj.id,
+                            nhaSanXuat: row.nhaSanXuat || row.brand || row['Hãng'] || row['Hãng sản xuất'] || row['NhaSanXuat'] || row['TEN_HANG'] || '',
+                            _soLuong: soLuong,
+                            _thanhTien: thanhTien,
+                            _revenueQuyDoi: revenueQuyDoi
+                        });
                     } else if (evalResult.isChuaXuat) {
                         data.doanhThuChuaXuat += evalResult.thanhTien;
                         data.doanhThuQuyDoiChuaXuat += evalResult.revenueQuyDoi;
