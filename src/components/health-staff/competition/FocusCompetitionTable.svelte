@@ -2,7 +2,8 @@
     import { createEventDispatcher } from 'svelte';
     import { formatters } from '../../../utils/formatters.js';
     import { datasyncService } from '../../../services/datasync.service.js';
-    import { selectedWarehouse, localCompetitionConfigs } from '../../../stores.js';
+    // [QUY TẮC 2]: Import bổ sung categoryStructure để tra cứu full tên nhóm hàng
+    import { selectedWarehouse, localCompetitionConfigs, categoryStructure } from '../../../stores.js';
   
     export let competitionResult;
     export let colorTheme = 'blue'; 
@@ -21,6 +22,31 @@
 
     $: allBrands = [...new Set(subColumns.flatMap(c => c.brands || competition.brands || []))];
     $: allGroups = competition.groups || mainColumn.items || [];
+
+    // [QUY TẮC 2]: Chuẩn hóa hiển thị full tên nhóm/ngành hàng từ store categoryStructure
+    $: displayGroups = allGroups.map(raw => {
+        const str = String(raw || '').trim();
+        if (!str) return '';
+        // Nếu chuỗi đã chứa tên đầy đủ (có dấu gạch ngang kèm text sau), giữ nguyên
+        if (str.includes(' - ') && !str.endsWith(' - ')) return str;
+        
+        // Đối chiếu với danh mục hệ thống để bóc tách full tên
+        const match = ($categoryStructure || []).find(c => {
+            const nh = String(c.nhomHang || c.maNhomHang || c.tenNhomHang || '').trim();
+            const ng = String(c.nganhHang || c.maNganhHang || c.tenNganhHang || '').trim();
+            const nhCode = nh.split(' - ')[0].trim();
+            const ngCode = ng.split(' - ')[0].trim();
+            return nhCode === str || nh === str || ngCode === str || ng === str;
+        });
+
+        if (match) {
+            const nh = String(match.nhomHang || match.maNhomHang || match.tenNhomHang || '').trim();
+            const ng = String(match.nganhHang || match.maNganhHang || match.tenNganhHang || '').trim();
+            if (nh.startsWith(`${str} -`) || nh === str) return nh;
+            if (ng.startsWith(`${str} -`) || ng === str) return ng;
+        }
+        return str;
+    }).filter(Boolean);
   
     const themeStyles = {
         blue:    { headerBg: 'bg-[#e0f2fe]', titleText: 'text-[#0369a1]', border: 'border-[#bae6fd]' },
@@ -133,7 +159,8 @@
             </div>
             <div class="text-[11px] text-gray-700 mt-1 font-medium space-y-0.5">
                 <p>🏷️ <span class="text-gray-500">Hãng:</span> <span class="font-bold">{allBrands.join(', ') || 'Tất cả'}</span></p>
-                <p>📦 <span class="text-gray-500">Nhóm:</span> <span class="font-bold">{allGroups.join(', ') || 'Toàn bộ'}</span></p>
+                <!-- [QUY TẮC 2]: Thay thế allGroups thành displayGroups để hiển thị full tên nhóm hàng -->
+                <p>📦 <span class="text-gray-500">Nhóm:</span> <span class="font-bold">{displayGroups.join(', ') || 'Toàn bộ'}</span></p>
             </div>
         </div>
         

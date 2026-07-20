@@ -100,9 +100,9 @@ export const helpers = {
         return heSoMap;
     },
 
-    // [CODEGENESIS] Cổng giao tiếp an toàn cho các báo cáo Lũy kế, Realtime
-    getHeSoForCategory: (nhomHangRaw, mapHeSo) => {
-        const safeKey = extractKey(nhomHangRaw);
+    // [CODEGENESIS v3.1] Phẫu thuật: Chuyển sang nhận cột Ngành hàng (nganhHangRaw) để tra cứu
+    getHeSoForCategory: (nganhHangRaw, mapHeSo) => {
+        const safeKey = extractKey(nganhHangRaw);
         return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;
     },
 

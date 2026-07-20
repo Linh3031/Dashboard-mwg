@@ -45,7 +45,10 @@ export const salesProcessor = {
 
         const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
         const soLuong = parseInt(String(row.soLuong || row.SO_LUONG || "0"), 10) || 0;
-        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+        
+        // [PHẪU THUẬT LOGIC v3.1]: Đổi từ row.nhomHang sang lấy theo row.nganhHang
+        const heSo = heSoQuyDoi[row.nganhHang] || 1;
+        
         const revenueQuyDoi = row.revenueQuyDoi !== undefined ? parseMoney(row.revenueQuyDoi) : (thanhTien * heSo);
         const isTraGop = hinhThucXuatTraGop.has(htx);
 
