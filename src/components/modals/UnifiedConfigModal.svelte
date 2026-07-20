@@ -24,7 +24,7 @@
     let tabActiveContext = 'main';
     let tabActiveSubIndex = 0;
 
-    // --- [SURGICAL ADD]: STATE QUẢN LÝ TÌM KIẾM & LỌC HÃNG ---
+    // --- STATE QUẢN LÝ TÌM KIẾM & LỌC HÃNG ---
     let searchBrand = '';
     let showSelectedBrandOnly = false;
 
@@ -62,7 +62,7 @@
                 target: c.target || 0,
                 percentMetric: c.percentMetric || 'DT',
                 showSL: c.showSL || false,
-                brands: c.brands || [] // [SURGICAL ADD]: Khôi phục danh sách Hãng cũ nếu có
+                brands: c.brands || [] 
             }));
             
             tabActiveContext = tabMainCol.show ? 'main' : (tabSubCols.length > 0 ? 'sub_items' : 'main');
@@ -98,7 +98,6 @@
         return [];
     })();
 
-    // --- [SURGICAL ADD]: LOGIC LỌC HÃNG THÔNG MINH THEO NGÀNH/NHÓM BÊN TRÁI ---
     $: availableBrands = (() => {
         const allBrands = $brandList || [];
         if (!activeColumn || tabActiveContext === 'main' || configType === 'INDICATOR') return allBrands;
@@ -198,7 +197,7 @@
             tabMainCol = { ...tabMainCol };
         } else if (tabActiveContext === 'sub_items') {
             tabSubCols[tabActiveSubIndex].items = [...sourceCol.items];
-            tabSubCols[tabActiveSubIndex].brands = [...(sourceCol.brands || [])]; // [SURGICAL ADD]: Nạp nhanh cả Hãng
+            tabSubCols[tabActiveSubIndex].brands = [...(sourceCol.brands || [])]; 
             tabSubCols = [...tabSubCols];
         } else if (tabActiveContext === 'sub_num') {
             tabSubCols[tabActiveSubIndex].numerator = [...sourceCol.items];
@@ -227,16 +226,21 @@
         } else {
             if (!tabName.trim()) return alert('Vui lòng nhập tên bảng.');
             
+            // [SURGICAL VALIDATION]: Bắt buộc chọn ít nhất 1 Nhóm/Ngành hàng nếu bật Cột tổng gộp
+            if (tabMainCol.show && (!tabMainCol.items || tabMainCol.items.length === 0)) {
+                return alert('⚠️ Lỗi Cấu Hình: Bạn đã bật "Cột Tổng Gộp" nhưng chưa chọn Nhóm hàng hoặc Ngành hàng nào.\n\nVui lòng chọn phạm vi dữ liệu hoặc tắt Cột tổng gộp nếu không sử dụng!');
+            }
+            
             let processedCols = tabSubCols.map((c, i) => ({
                 ...c,
                 id: c.id || `col_${Date.now()}_${i}`,
                 targetId: c.targetId || null,
-                brands: c.brands || [], // [SURGICAL ADD]: Đóng gói danh sách Hãng vào payload
+                brands: c.brands || [], 
                 numerator: c.numerator || [], denominator: c.denominator || [], items: c.items || []
             }));
 
-            let finalMainCol = tabMainCol.show ? { ...tabMainCol } : null;
-            if (finalMainCol) delete finalMainCol.show;
+            // [SURGICAL FIX]: Giữ nguyên thuộc tính show: true để processor nhận biết
+            let finalMainCol = tabMainCol.show ? { ...tabMainCol, show: true } : null;
 
             payload = {
                 id: editItem?.id || editItem?.tableId || `table_${Date.now()}`,
@@ -394,9 +398,7 @@
                                 {/if}
                             </div>
 
-                            <!-- --- [SURGICAL UPGRADE]: LƯỚI 50/50 TRỰC QUAN NGÀNH/NHÓM VÀ HÃNG --- -->
                             <div class="flex-1 min-h-0 grid grid-cols-2 gap-3">
-                                <!-- NỬA TRÁI (50%): UniversalCategorySelector chuyên trách Ngành / Nhóm -->
                                 <div class="flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden shadow-inner min-h-0">
                                     <div class="p-2 bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-700 flex items-center justify-between flex-shrink-0">
                                         <span>📦 Phạm vi Ngành / Nhóm hàng:</span>
@@ -413,7 +415,6 @@
                                     </div>
                                 </div>
 
-                                <!-- NỬA PHẢI (50%): Danh sách Hãng xếp dọc, tự động lọc theo Ngành/Nhóm -->
                                 <div class="flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden shadow-inner min-h-0">
                                     <div class="p-2 bg-gray-50 border-b border-gray-200 flex flex-col gap-1.5 flex-shrink-0">
                                         <div class="flex items-center justify-between text-xs font-bold text-purple-800">

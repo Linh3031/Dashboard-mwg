@@ -1,5 +1,5 @@
 /* src/services/processing/logic/dynamicTable.processor.js */
-// Version 3.1 - Atomic Integrity: Brand Filtering Support for Dynamic Tables with Normalized Brand Names
+// Version 3.2 - Atomic Integrity: Main Column & Brand Filtering Support for Dynamic Tables
 import { get } from 'svelte/store';
 import { formatters } from '../../../utils/formatters.js';
 import { parseIdentity } from '../../../utils.js';
@@ -41,8 +41,11 @@ export const dynamicTableProcessor = {
     processTableData(sourceData, tableConfig) {
         if (!sourceData || !tableConfig) return { processedData: [], totals: {} };
 
-        const { columns = [], subColumns = [] } = tableConfig;
-        const mainColumn = columns.find(c => c.id === 'mainValue') || { show: false, items: [], type: 'DT' };
+        const { columns = [], subColumns = [], mainColumn: configMainCol } = tableConfig;
+        
+        // [SURGICAL FIX]: Lấy đúng cấu hình Cột Tổng từ tableConfig, đảm bảo không rơi vào fallback sai
+        const rawMain = configMainCol || columns.find(c => c.id === 'mainValue');
+        const mainColumn = (rawMain && (rawMain.show !== false)) ? { ...rawMain, show: true } : { show: false, items: [], type: 'DT' };
         
         const usedSubColumns = (subColumns && subColumns.length > 0) 
             ? subColumns 
@@ -125,13 +128,15 @@ export const dynamicTableProcessor = {
             
             let hasAnyData = false;
 
+            // [SURGICAL FIX]: Tôn trọng tuyệt đối Nhóm hàng và Loại dữ liệu khi bật Cột tổng gộp
             if (mainColumn.show && mainColumn.items && mainColumn.items.length > 0) {
-                const result = calculateGroupValue(employee, mainColumn.items, mainColumn.type);
+                const result = calculateGroupValue(employee, mainColumn.items, mainColumn.type, mainColumn.brands || []);
                 row.mainValue = result.val;
                 row.mainValue_sl = result.sl;
                 row.mainValue_dtqd = result.dtqd;
                 if (result.val > 0 || result.sl > 0) hasAnyData = true;
-            } else {
+            } else if (!mainColumn.show) {
+                // Chỉ gán doanh thu thực tổng toàn siêu thị khi Cột tổng gộp bị tắt
                 row.mainValue = employee.doanhThu || 0;
                 row.mainValue_sl = employee.tongSoLuong || 0;
                 row.mainValue_dtqd = employee.doanhThuQuyDoi || 0;
@@ -184,7 +189,14 @@ export const dynamicTableProcessor = {
                 }
             });
 
-            return hasAnyData ? row : null;
+            // [SURGICAL FIX]: Cộng dồn chính xác số liệu vào dòng Tổng cộng (totalRow)
+            if (hasAnyData) {
+                totalRow.mainValue += (row.mainValue || 0);
+                totalRow.mainValue_sl += (row.mainValue_sl || 0);
+                totalRow.mainValue_dtqd += (row.mainValue_dtqd || 0);
+                return row;
+            }
+            return null;
         }).filter(Boolean);
 
         Object.keys(totalRow.cells).forEach(key => {
