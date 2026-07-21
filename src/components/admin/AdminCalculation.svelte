@@ -11,7 +11,7 @@
     // --- LOGIC QUẢN LÝ HỆ SỐ QUY ĐỔI (TREE-VIEW & OVERRIDE CHUẨN EXCEL) ---
     let rawHeSoMap = {}; // Lưu trữ map hệ số thô từ Cloud/Database
     let treeData = [];   // Cây cấu trúc: Lấy 100% từ Excel ($categoryStructure)
-    let extraItems = []; // Danh sách các dòng do Admin CHỦ ĐỘNG bấm nút Thêm dòng ngoại lệ
+    let extraItems = []; // Danh sách các dòng do Admin CHỦ ĐỘNG bấm nút Thêm dòng bổ sung
     let searchTerm = '';
     
     // Biến lưu trạng thái mở rộng (expand) của các Ngành hàng
@@ -59,7 +59,7 @@
         return map;
     }
 
-    // [PHẪU THUẬT v3.2]: Xây dựng cây DỰA 100% VÀO EXCEL CẤU TRÚC ($categoryStructure)
+    // [PHẪU THUẬT v3.3]: Xây dựng cây DỰA 100% VÀO EXCEL CẤU TRÚC ($categoryStructure)
     function buildTreeData() {
         const catMap = new Map();
         const knownKeys = new Set();
@@ -118,7 +118,7 @@
         }));
 
         // [KHÔNG SÁNG TẠO VÔ LẬP TRƯỜNG]: Loại bỏ hoàn toàn tính năng tự động hút mã lạ từ DB cũ lên bảng.
-        // extraItems chỉ chứa những dòng do chính Admin bấm nút Thêm dòng ngoại lệ (nếu đã tạo trước đó ở session hiện tại).
+        // extraItems chỉ chứa những dòng do chính Admin bấm nút Thêm dòng bổ sung (nếu đã tạo trước đó ở session hiện tại).
         extraItems = extraItems.filter(item => item.name && item.name.trim());
     }
 
@@ -151,7 +151,7 @@
         expandedCategories = { ...expandedCategories };
     }
 
-    // Admin chủ động bấm thêm dòng ngoại lệ
+    // Admin chủ động bấm thêm dòng bổ sung (được đưa lên TOP 1 bảng để thao tác tức thì)
     function addExtraItem() {
         extraItems = [{ id: generateId(), name: '', valueDisplay: '1' }, ...extraItems];
         searchTerm = '';
@@ -238,7 +238,7 @@
                 });
             });
 
-            // 2. Gom các mục Khai báo bổ sung / Ngoại lệ (do Admin CHỦ ĐỘNG gõ thêm tay)
+            // 2. Gom các mục Khai báo bổ sung / Đặc thù (do Admin CHỦ ĐỘNG gõ thêm tay)
             extraItems.forEach(item => {
                 if (item.name && item.name.trim()) {
                     let numStr = (item.valueDisplay || '1').toString().replace(',', '.');
@@ -306,9 +306,9 @@
                     />
                 </div>
                 
-                <button on:click={addExtraItem} class="bg-slate-200 text-slate-700 px-3 md:px-4 py-2 rounded-lg hover:bg-slate-300 flex items-center gap-2 font-bold transition shadow-sm whitespace-nowrap" title="Chỉ dùng khi cần thêm thủ công mã lạ không có trong Excel">
+                <button on:click={addExtraItem} class="bg-slate-200 text-slate-700 px-3 md:px-4 py-2 rounded-lg hover:bg-slate-300 flex items-center gap-2 font-bold transition shadow-sm whitespace-nowrap" title="Chỉ dùng khi cần khai báo bổ sung mã mới chưa có trong Excel">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
-                    <span class="hidden sm:inline">Thêm dòng ngoại lệ</span>
+                    <span class="hidden sm:inline">+ Thêm dòng bổ sung</span>
                 </button>
                 
                 <button on:click={saveDeclarations} disabled={isSaving} class="bg-green-600 text-white px-4 md:px-6 py-2 rounded-lg hover:bg-green-700 font-bold transition shadow-sm flex items-center gap-2 disabled:opacity-50 whitespace-nowrap">
@@ -339,7 +339,43 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    <!-- KHU VỰC 1: CÂY NGÀNH HÀNG VÀ NHÓM HÀNG CHUẨN EXCEL CẤU TRÚC -->
+                    <!-- KHU VỰC 1: KHAI BÁO BỔ SUNG / ĐẶC THÙ (ĐƯỢC ĐƯA LÊN TOP 1 ĐỂ THAO TÁC NGAY) -->
+                    {#if extraItems.length > 0}
+                        <tr class="bg-slate-200/80 font-bold text-slate-700 border-b border-slate-300">
+                            <td colspan="3" class="px-6 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1 text-amber-800">
+                                <span>⭐ Khai báo bổ sung (Mã mới / mã ảo chưa có trong Excel)</span>
+                            </td>
+                        </tr>
+                        {#each filteredExtra as item (item.id)}
+                            <tr class="hover:bg-amber-50 transition-colors bg-amber-50/20">
+                                <td class="px-6 py-2">
+                                    <input 
+                                        type="text" 
+                                        value={item.name} 
+                                        on:input={(e) => { item.name = e.target.value; }} 
+                                        class="w-full bg-transparent border-none focus:ring-0 font-bold text-slate-700" 
+                                        placeholder="Nhập tên mã hàng mới / mã khuyến mãi ảo..." 
+                                    />
+                                </td>
+                                <td class="px-6 py-2">
+                                    <input 
+                                        type="text" 
+                                        value={item.valueDisplay} 
+                                        on:input={(e) => handleCatValueInput(item, e)} 
+                                        class="w-full bg-white border border-amber-300 rounded px-2 py-1 text-sm font-bold text-amber-800 text-center focus:ring-2 focus:ring-amber-500" 
+                                    />
+                                </td>
+                                <td class="px-6 py-2 text-right">
+                                    <button on:click={() => removeExtraItem(item.id)} class="text-slate-400 hover:text-red-500 p-1 transition" title="Xóa dòng này">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        {/each}
+                        <tr class="bg-slate-300/40 h-2 border-t-2 border-slate-300"><td colspan="3"></td></tr>
+                    {/if}
+
+                    <!-- KHU VỰC 2: CÂY NGÀNH HÀNG VÀ NHÓM HÀNG CHUẨN EXCEL CẤU TRÚC -->
                     {#each filteredTree as cat (cat.id)}
                         <!-- Dòng Ngành Hàng Cha -->
                         <tr class="bg-slate-100/70 hover:bg-slate-200/60 font-bold transition-colors cursor-pointer select-none" on:click={() => toggleExpand(cat.id)}>
@@ -406,41 +442,6 @@
                             {/each}
                         {/if}
                     {/each}
-
-                    <!-- KHU VỰC 2: KHAI BÁO BỔ SUNG / ĐẶC THÙ (CHỈ HIỆN KHI ADMIN CHỦ ĐỘNG BẤM NÚT THÊM DÒNG) -->
-                    {#if extraItems.length > 0}
-                        <tr class="bg-slate-200/80 font-bold text-slate-700 border-t-2 border-slate-300">
-                            <td colspan="3" class="px-6 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1 text-amber-800">
-                                <span>⭐ Khai báo bổ sung / Đặc thù (Do Admin chủ động thêm tay)</span>
-                            </td>
-                        </tr>
-                        {#each filteredExtra as item (item.id)}
-                            <tr class="hover:bg-amber-50 transition-colors bg-amber-50/20">
-                                <td class="px-6 py-2">
-                                    <input 
-                                        type="text" 
-                                        value={item.name} 
-                                        on:input={(e) => { item.name = e.target.value; }} 
-                                        class="w-full bg-transparent border-none focus:ring-0 font-bold text-slate-700" 
-                                        placeholder="Nhập tên nhóm / mã hàng đặc thù..." 
-                                    />
-                                </td>
-                                <td class="px-6 py-2">
-                                    <input 
-                                        type="text" 
-                                        value={item.valueDisplay} 
-                                        on:input={(e) => handleCatValueInput(item, e)} 
-                                        class="w-full bg-white border border-amber-300 rounded px-2 py-1 text-sm font-bold text-amber-800 text-center focus:ring-2 focus:ring-amber-500" 
-                                    />
-                                </td>
-                                <td class="px-6 py-2 text-right">
-                                    <button on:click={() => removeExtraItem(item.id)} class="text-slate-400 hover:text-red-500 p-1 transition" title="Xóa dòng này">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                                    </button>
-                                </td>
-                            </tr>
-                        {/each}
-                    {/if}
 
                     {#if filteredTree.length === 0 && filteredExtra.length === 0}
                         <tr>
