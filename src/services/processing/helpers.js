@@ -26,11 +26,20 @@ const extractKey = (str) => {
 };
 
 export const helpers = {
+    // [PHẪU THUẬT v3.5 - SURGICAL FIX]: Đảo ngược vòng lặp, duyệt theo thứ tự ưu tiên của aliases
+    // Giúp từ khóa 'giá bán_1' (đứng đầu config) luôn đánh bại từ khóa 'giá bán' (đứng sau trong Excel)
     findColumnName(header, aliases) {
-        for (const colName of header) {
-            const processedColName = normalizeStr(colName);
-            if (aliases.map(a => normalizeStr(a)).includes(processedColName)) {
-                return colName;
+        if (!header || !Array.isArray(header) || !aliases || !Array.isArray(aliases)) return null;
+        
+        // Chuẩn hóa header 1 lần để tối ưu hiệu năng
+        const normalizedHeader = header.map(col => ({ original: col, norm: normalizeStr(col) }));
+        
+        // Duyệt theo thứ tự ưu tiên của từ khóa cấu hình (từ khóa nào xếp trước tìm trước)
+        for (const alias of aliases) {
+            const normAlias = normalizeStr(alias);
+            const found = normalizedHeader.find(h => h.norm === normAlias);
+            if (found) {
+                return found.original; // Tìm thấy cột ưu tiên cao nhất -> Trả về ngay lập tức!
             }
         }
         return null;
@@ -100,7 +109,7 @@ export const helpers = {
         return heSoMap;
     },
 
-    // [CODEGENESIS v3.1] Phẫu thuật: Chuyển sang nhận cột Ngành hàng (nganhHangRaw) để tra cứu
+    // [CODEGENESIS v3.1]: Nhận cột Ngành hàng (nganhHangRaw) để tra cứu
     getHeSoForCategory: (nganhHangRaw, mapHeSo) => {
         const safeKey = extractKey(nganhHangRaw);
         return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;
