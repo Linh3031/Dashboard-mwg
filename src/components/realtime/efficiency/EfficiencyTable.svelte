@@ -1,11 +1,11 @@
 <script>
   // File: src/components/realtime/efficiency/EfficiencyTable.svelte
-  // [VERSION FIXED: Deduplication + Safe Indexing]
+  // [VERSION FIXED: Deduplication + Safe Indexing + Safe String Fallback]
   import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
   import { formatters } from '../../../utils/formatters.js';
 
-  export let items = []; // Các item cố định (thường là rỗng từ SummaryTab)
-  export let dynamicItems = []; // List hỗn hợp (Admin + User) gây trùng
+  export let items = []; 
+  export let dynamicItems = []; 
   export let supermarketData = {}; 
   export let goals = {};
   
@@ -57,20 +57,15 @@
       });
 
       // 2. Xử lý Dynamic Items (Admin + User)
-      // Dùng Map để đảm bảo mỗi ID chỉ xuất hiện 1 lần.
-      // Nếu trùng, item sau sẽ ghi đè item trước (thường ưu tiên config của User nếu nó nằm sau trong mảng)
       (dynamicItems || []).forEach(cfg => {
           const metric = supermarketData.dynamicMetrics?.[cfg.id];
-          // Kiểm tra xem ID này đã có trong map chưa
           const existing = uniqueMap.get(cfg.id);
 
           uniqueMap.set(cfg.id, {
-              ...existing, // Giữ lại thuộc tính cũ
+              ...existing, 
               id: cfg.id,
               label: cfg.label,
-              // Lấy giá trị thực tế từ report
               value: metric ? metric.value : (existing?.value || 0),
-              // Ưu tiên target trong Goals (User setting) -> rồi đến config
               target: goals?.[cfg.id] || cfg.target || existing?.target || 0,
               isDynamic: true,
               rawConfig: cfg
@@ -81,7 +76,9 @@
   })();
   // ----------------------------------------
 
-  $: filterList = displayItems.filter(item => item.label.toLowerCase().includes(filterSearch.toLowerCase()));
+  // [ATOMIC FIX]: Bảo vệ thuộc tính label bằng fallback chuỗi rỗng trước khi toLowerCase()
+  $: filterList = displayItems.filter(item => (item.label || '').toLowerCase().includes((filterSearch || '').toLowerCase()));
+  
   $: visibleItems = displayItems.filter(item => !hiddenIds.has(item.id));
 
   function toggleVisibility(id) {
@@ -146,7 +143,7 @@
                         {#each filterList as item, index (index)}
                             <div class="filter-item" on:click={() => toggleVisibility(item.id)}>
                                 <input type="checkbox" checked={!hiddenIds.has(item.id)} /> 
-                                <label>{item.label}</label>
+                                <label>{item.label || 'Chỉ số không tên'}</label>
                             </div>
                         {/each}
                     </div>
@@ -178,7 +175,7 @@
             
             <div class="eff-content-compact">
                 <div class="eff-row-top">
-                    <span class="eff-label-text">{item.label}</span>
+                    <span class="eff-label-text">{item.label || 'Chỉ số không tên'}</span>
                     <div class="flex items-center gap-2">
                         {#if item.target > 0}
                              <span class="text-[10px] text-gray-400 font-medium whitespace-nowrap">- Mục tiêu : {item.target}%</span>
