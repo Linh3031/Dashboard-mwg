@@ -150,12 +150,6 @@ export const normalizers = {
             return { normalizedData: [], success: false, missingColumns };
         }
 
-        // [LOGIC PREP]
-        let heSoMap = {};
-        if (fileType === 'ycx') {
-            heSoMap = helpers.getHeSoQuyDoi(); 
-        }
-
         const normalizedData = rawData.map((row, index) => {
             const newRow = {};
             for (const key in foundMapping) {
@@ -178,29 +172,29 @@ export const normalizers = {
                 }
             }
 
-            // --- [NEW LOGIC FIXED] TÍNH TOÁN DOANH THU QUY ĐỔI ---
+            // --- [PHẪU THUẬT LOGIC]: XÓA BỎ VIỆC TÍNH TOÁN DOANH THU QUY ĐỔI Ở ĐÂY ---
+            // Trả normalizer về đúng chức năng: Chỉ làm sạch và chuẩn hóa kiểu dữ liệu.
+            // Mọi logic tính toán quy đổi, trả góp, hệ số 2 cấp (Kế thừa Ngành) 
+            // SẼ ĐƯỢC CHUYỂN GIAO TOÀN BỘ CHO salesProcessor.js XỬ LÝ THEO THỜI GIAN THỰC.
             if (fileType === 'ycx') {
-                // 1. Chuẩn hóa doanh thu thực
-                let revenue = 0;
+                // Chỉ chuẩn hóa doanh thu thực
                 if (newRow.thanhTien) {
-                    revenue = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
+                    newRow.thanhTien = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
+                } else {
+                    newRow.thanhTien = 0;
                 }
-                newRow.revenue = revenue; 
-
-                // 2. Xác định Hệ số gốc (Base Rate) - [VÁ LỖI CỰC MẠNH: DÙNG GET HỆ SỐ FOR CATEGORY]
-                const productKey = String(newRow.nhomHang || '');
-                const baseRate = helpers.getHeSoForCategory(productKey, heSoMap);
-
-                // 3. Xác định thưởng Trả Góp (Bonus Rate)
-                const exportModeRaw = String(newRow.hinhThucXuat || '');
-                const exportModeLower = exportModeRaw.toLowerCase();
                 
-                const isInstallment = exportModeLower.includes('trả góp') || exportModeLower.includes('trả chậm');
-                const bonusRate = isInstallment ? 0.3 : 0;
+                // Chuẩn hóa số lượng
+                if (newRow.soLuong) {
+                    newRow.soLuong = parseInt(String(newRow.soLuong).replace(/,/g, ''), 10) || 0;
+                } else {
+                    newRow.soLuong = 0;
+                }
 
-                // 4. Tính toán
-                newRow.heSoQuyDoi = baseRate + bonusRate; 
-                newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
+                // Xóa SẠCH các trường tính toán bị kẹt cứng (nếu có)
+                delete newRow.revenue;
+                delete newRow.heSoQuyDoi;
+                delete newRow.revenueQuyDoi;
             }
             // ------------------------------------------------------------------
 

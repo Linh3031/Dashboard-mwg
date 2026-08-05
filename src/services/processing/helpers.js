@@ -97,15 +97,9 @@ export const helpers = {
             });
         }
 
-        // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
-        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI || {};
-        Object.entries(defaultData).forEach(([key, value]) => {
-             const safeKey = extractKey(key);
-             if (heSoMap[safeKey] === undefined) {
-                 heSoMap[safeKey] = value;
-             }
-        });
-
+        // [PHẪU THUẬT LOGIC]: Đã triệt tiêu Ưu tiên 3 (Dữ liệu cứng).
+        // Chỉ trả về heSoMap lấy từ Firebase. Mọi mã không có trong map 
+        // sẽ tự động được gán = 1 ở khâu tính toán cuối cùng.
         return heSoMap;
     },
 
