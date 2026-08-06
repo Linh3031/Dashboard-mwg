@@ -26,6 +26,8 @@ export const salesProcessor = {
         const trangThaiXuat = normalizeStr(row.trangThaiXuat || row.TRANG_THAI_XUAT);
 
         const isBaseValid = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả';
+        
+        // [PHẪU THUẬT LOGIC]: Vì hinhThucXuatTinhDoanhThu giờ là Map, ta dùng .has() vẫn hợp lệ
         const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(htx);
 
         if (!isBaseValid || !isDoanhThuHTX) {
@@ -46,32 +48,34 @@ export const salesProcessor = {
         const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
         const soLuong = parseInt(String(row.soLuong || row.SO_LUONG || "0"), 10) || 0;
         
-        // --- PHẪU THUẬT LOGIC v3.3: DÒ TÌM ĐA CẤP (CASCADE FALLBACK) CHUẨN XÁC ---
         let heSo = 1;
         
-        // Trích xuất ID từ cột Excel để đi so với kho lưu trữ (heSoQuyDoi)
         const nhomKey = row.maNhomHang ? String(row.maNhomHang).trim() : parseIdentity(row.nhomHang).id;
         const nganhKey = row.maNganhHang ? String(row.maNganhHang).trim() : parseIdentity(row.nganhHang).id;
         
-        // Ưu tiên 1: Tra hệ số riêng của Nhóm Hàng
         if (heSoQuyDoi[nhomKey] !== undefined) {
             heSo = heSoQuyDoi[nhomKey];
-        } 
-        // Ưu tiên 2: Tra hệ số chung của Ngành Hàng
-        else if (heSoQuyDoi[nganhKey] !== undefined) {
+        } else if (heSoQuyDoi[nganhKey] !== undefined) {
             heSo = heSoQuyDoi[nganhKey];
         }
-        // Fallback: Mặc định bằng 1 nếu cả Nhóm và Ngành không có cấu hình.
-        // -------------------------------------------------------------------------
         
-const revenueQuyDoi = thanhTien * heSo;
+        // --- [PHẪU THUẬT LOGIC]: CỘNG HỆ SỐ ĐỘNG TỪ GIAO DIỆN ADMIN ---
+        const heSoThuong = hinhThucXuatTinhDoanhThu.get(htx) || 0;
+        heSo += heSoThuong;
+
         const isTraGop = hinhThucXuatTraGop.has(htx);
+        if (isTraGop) {
+            const heSoGop = hinhThucXuatTraGop.get(htx) || 0;
+            heSo += heSoGop;
+        }
+        // -------------------------------------------------------------
+
+        const revenueQuyDoi = thanhTien * heSo;
 
         return { isValid: true, empId, isDaXuat, isChuaXuat, isTraGop, thanhTien, soLuong, revenueQuyDoi };
     },
 
     createEmptySalesData() {
-        // [PHẪU THUẬT LOGIC]: Xóa sạch rác, chỉ giữ lại các chỉ số cốt lõi và mảng thống kê động
         let data = {
             doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
             doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
@@ -109,7 +113,6 @@ const revenueQuyDoi = thanhTien * heSo;
                         const rawTenSP = row.tenSanPham || row.TEN_SAN_PHAM || row['Tên sản phẩm'] || rawMaSP;
                         const spIdObj = { id: String(rawMaSP).trim(), name: String(rawTenSP).trim() };
 
-                        // Thu thập dữ liệu vào Dictionary tự do
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
                             const key = String(idObj.id).trim();
@@ -125,14 +128,11 @@ const revenueQuyDoi = thanhTien * heSo;
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
                         if (spIdObj.id) trackMetric(data.doanhThuTheoMaSanPham, spIdObj, spIdObj.name);
 
-                        // Cộng dồn tổng
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += revenueQuyDoi;
                         data.tongSoLuong += soLuong;
 
                         if (evalResult.isTraGop) { data.doanhThuTraGop += thanhTien; }
-                        
-                        // [PHẪU THUẬT LOGIC]: Loại bỏ hoàn toàn vòng lặp check nhóm QDC, ICT, CE...
                         
                         data._rawSalesData.push({
                             maNhomHang: nhomHangCode,
@@ -157,8 +157,6 @@ const revenueQuyDoi = thanhTien * heSo;
     },
 
     calculateStaticRatios(data) {
-        // [PHẪU THUẬT LOGIC]: Xóa bỏ việc tính tĩnh các PCT ngành hàng cứng. 
-        // Thay vào đó chỉ giữ lại những tỷ lệ cơ bản của dòng tiền.
         return {
             hieuQuaQuyDoi: data.doanhThu > 0 ? (data.doanhThuQuyDoi / data.doanhThu) - 1 : 0,
             tyLeTraCham: data.doanhThu > 0 ? data.doanhThuTraGop / data.doanhThu : 0

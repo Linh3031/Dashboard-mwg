@@ -1,6 +1,7 @@
 // src/components/luyke/dtcknam/DtCkNamLogic.js
 import { formatters } from '../../../utils/formatters.js';
 import { dataProcessing } from '../../../services/dataProcessing.js';
+import { parseIdentity } from '../../../utils.js'; // [PHẪU THUẬT LOGIC]
 
 export const AVAILABLE_DIMENSIONS = [
     { id: 'nganhHang', label: 'Ngành hàng', default: true },
@@ -79,6 +80,7 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     }
 
     const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu ? dataProcessing.getHinhThucXuatTinhDoanhThu() : new Set();
+    const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi(); // [PHẪU THUẬT LOGIC]
     
     let metrics = { actualRev: 0, convertedRev: 0, traChamRev: 0 };
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0 };
@@ -144,11 +146,29 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
         
         const qty = parseMoney(row[keyMap.soLuong]);
         const rev = parseMoney(row[keyMap.revenue]);
-        const revQDRaw = row[keyMap.revenueQuyDoi];
-        const revQD = revQDRaw !== undefined && revQDRaw !== '' ? parseMoney(revQDRaw) : rev;
         
         const htxRaw = String(row[keyMap.hinhThucXuat] || '').toLowerCase();
         const isTraGop = htxRaw.includes('trả góp') || htxRaw.includes('trả chậm');
+        
+        // --- [PHẪU THUẬT LOGIC v3.7]: ÁP DỤNG DÒ HỆ SỐ 2 CẤP THỜI GIAN THỰC ---
+        const nhomRaw = row[keyMap.nhomHang] || '';
+        const nganhRaw = row[keyMap.nganhHang] || '';
+        const maNhom = row.maNhomHang || row.MA_NHOM_HANG || '';
+        const maNganh = row.maNganhHang || row.MA_NGANH_HANG || '';
+
+        const nhomKey = maNhom ? String(maNhom).trim() : parseIdentity(nhomRaw).id;
+        const nganhKey = maNganh ? String(maNganh).trim() : parseIdentity(nganhRaw).id;
+
+        let heSo = 1;
+        if (heSoQuyDoiMap[nhomKey] !== undefined) {
+            heSo = heSoQuyDoiMap[nhomKey];
+        } else if (heSoQuyDoiMap[nganhKey] !== undefined) {
+            heSo = heSoQuyDoiMap[nganhKey];
+        }
+        if (isTraGop) heSo += 0.3;
+
+        const revQD = rev * heSo;
+        // -------------------------------------------------------------------------
         
         metrics.actualRev += rev; 
         metrics.convertedRev += revQD;

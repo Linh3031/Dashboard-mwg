@@ -1,10 +1,9 @@
 // src/services/reports/general.report.js
-// Version 1.1 - Fix missing import helpers and apply fuzzy match for heSoQuyDoi
+// Version 1.2 - Fixed 2-Level Category Lookup for Unexported Revenue (Chưa Xuất)
 import { get } from 'svelte/store';
 import * as utils from '../../utils.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { employeeMaNVMap } from '../../stores.js';
-// [HOTFIX] Thêm dòng import này để file hiểu 'helpers' là gì!
 import { helpers } from '../processing/helpers.js'; 
 
 export const generalReportLogic = {
@@ -73,11 +72,24 @@ export const generalReportLogic = {
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 
-                // [HOTFIX] Đã map đúng hàm getHeSoForCategory qua helpers
-                const heSo = helpers.getHeSoForCategory(row.nhomHang, heSoQuyDoi);
+                // --- [PHẪU THUẬT LOGIC v3.7]: DÒ HỆ SỐ 2 CẤP CHO BÁO CÁO CHƯA XUẤT ---
+                const nhomRaw = row.nhomHang || '';
+                const nganhRaw = row.nganhHang || '';
+                const maNhom = row.maNhomHang || row.MA_NHOM_HANG || '';
+                const maNganh = row.maNganhHang || row.MA_NGANH_HANG || '';
+
+                const nhomKey = maNhom ? String(maNhom).trim() : utils.parseIdentity(nhomRaw).id;
+                const nganhKey = maNganh ? String(maNganh).trim() : utils.parseIdentity(nganhRaw).id;
+
+                let heSo = 1;
+                if (heSoQuyDoi[nhomKey] !== undefined) {
+                    heSo = heSoQuyDoi[nhomKey];
+                } else if (heSoQuyDoi[nganhKey] !== undefined) {
+                    heSo = heSoQuyDoi[nganhKey];
+                }
                 
-                // [FIX] Dùng revenueQuyDoi từ normalizer
-                const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
+                const revenueQuyDoi = thanhTien * heSo;
+                // -------------------------------------------------------------------------
 
                 if (!report[nganhHangName]) {
                     report[nganhHangName] = {
@@ -90,7 +102,7 @@ export const generalReportLogic = {
 
                 report[nganhHangName].soLuong += soLuong;
                 report[nganhHangName].doanhThuThuc += thanhTien;
-                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
+                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; 
             }
         });
 
@@ -118,11 +130,24 @@ export const generalReportLogic = {
 
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 
-                // [HOTFIX] Đã map đúng hàm getHeSoForCategory qua helpers
-                const heSo = helpers.getHeSoForCategory(row.nhomHang, heSoQuyDoi);
+                // --- [PHẪU THUẬT LOGIC v3.7]: DÒ HỆ SỐ 2 CẤP CHO BÁO CÁO CHƯA XUẤT ---
+                const nhomRaw = row.nhomHang || '';
+                const nganhRaw = row.nganhHang || '';
+                const maNhom = row.maNhomHang || row.MA_NHOM_HANG || '';
+                const maNganh = row.maNganhHang || row.MA_NGANH_HANG || '';
+
+                const nhomKey = maNhom ? String(maNhom).trim() : utils.parseIdentity(nhomRaw).id;
+                const nganhKey = maNganh ? String(maNganh).trim() : utils.parseIdentity(nganhRaw).id;
+
+                let heSo = 1;
+                if (heSoQuyDoi[nhomKey] !== undefined) {
+                    heSo = heSoQuyDoi[nhomKey];
+                } else if (heSoQuyDoi[nganhKey] !== undefined) {
+                    heSo = heSoQuyDoi[nganhKey];
+                }
                 
-                // [FIX] Dùng revenueQuyDoi từ normalizer
-                const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
+                const revenueQuyDoi = thanhTien * heSo;
+                // -------------------------------------------------------------------------
 
                 if (!report[nganhHangName]) {
                     report[nganhHangName] = {
@@ -135,7 +160,7 @@ export const generalReportLogic = {
 
                 report[nganhHangName].soLuong += soLuong;
                 report[nganhHangName].doanhThuThuc += thanhTien;
-                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi; // [UPDATED]
+                report[nganhHangName].doanhThuQuyDoi += revenueQuyDoi;
             }
         });
 

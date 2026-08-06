@@ -2,6 +2,7 @@
 
 <script>
     import { dataProcessing } from '../../../services/dataProcessing.js';
+    import { parseIdentity } from '../../../utils.js'; // [PHẪU THUẬT LOGIC]
     export let data2025 = [];
     export let data2026 = [];
     export let ssgMonths = [];
@@ -118,6 +119,7 @@
 
     function runHeavyCalculation() {
         const validHTX = dataProcessing.getHinhThucXuatTinhDoanhThu();
+        const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi(); // [PHẪU THUẬT LOGIC]
         const map = new Map();
         kpiTotals = { dt25: 0, dtqd25: 0, sl25: 0, dt26: 0, dtqd26: 0, sl26: 0 };
         const cache25 = buildColumnCache(data2025 && data2025.length > 0 ? data2025[0] : null);
@@ -181,8 +183,28 @@
             let soLuong = parseMoney(row[mapping.soLuong]);
             let thanhTien = parseMoney(row[mapping.thanhTien]);
             
-            const rawQd = row[mapping.revenueQuyDoi];
-            let revenueQuyDoi = (rawQd !== undefined && rawQd !== '') ? parseMoney(rawQd) : thanhTien;
+            // --- [PHẪU THUẬT LOGIC v3.7]: ÁP DỤNG DÒ HỆ SỐ 2 CẤP THỜI GIAN THỰC ---
+            const htxRaw = String(row[mapping.htx] || '').toLowerCase();
+            const isTraGop = htxRaw.includes('trả góp') || htxRaw.includes('trả chậm');
+
+            const nhomRaw = row[mapping.nhomHang] !== undefined ? String(row[mapping.nhomHang]).trim() : '';
+            const nganhRaw = row[mapping.nganhHang] !== undefined ? String(row[mapping.nganhHang]).trim() : '';
+            const maNhom = row.maNhomHang || row.MA_NHOM_HANG || '';
+            const maNganh = row.maNganhHang || row.MA_NGANH_HANG || '';
+
+            const nhomKey = maNhom ? String(maNhom).trim() : parseIdentity(nhomRaw).id;
+            const nganhKey = maNganh ? String(maNganh).trim() : parseIdentity(nganhRaw).id;
+
+            let heSo = 1;
+            if (heSoQuyDoiMap[nhomKey] !== undefined) {
+                heSo = heSoQuyDoiMap[nhomKey];
+            } else if (heSoQuyDoiMap[nganhKey] !== undefined) {
+                heSo = heSoQuyDoiMap[nganhKey];
+            }
+            if (isTraGop) heSo += 0.3;
+
+            let revenueQuyDoi = thanhTien * heSo;
+            // -------------------------------------------------------------------------
             
             if (!is2025 && monthNum === partialMonth) {
                 soLuong *= projFactor;

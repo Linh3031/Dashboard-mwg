@@ -4,14 +4,17 @@
     import { adminService } from '../../services/admin.service.js';
     import { parseIdentity } from '../../utils.js';
 
-    let ycxValue = '';
-    let ycxGopValue = '';
+    // --- [PHẪU THUẬT LOGIC]: NÂNG CẤP STRING THÀNH MẢNG OBJECT ---
+    let ycxItems = []; 
+    let ycxGopItems = [];
+    // -----------------------------------------------------------
+
     let isSaving = false;
 
     // --- LOGIC QUẢN LÝ HỆ SỐ QUY ĐỔI (TREE-VIEW & OVERRIDE CHUẨN EXCEL) ---
-    let rawHeSoMap = {}; // Lưu trữ map hệ số thô từ Cloud/Database
-    let treeData = [];   // Cây cấu trúc: Lấy 100% từ Excel ($categoryStructure)
-    let extraItems = []; // Danh sách các dòng do Admin CHỦ ĐỘNG bấm nút Thêm dòng bổ sung
+    let rawHeSoMap = {}; 
+    let treeData = [];   
+    let extraItems = []; 
     let searchTerm = '';
     
     // Biến lưu trạng thái mở rộng (expand) của các Ngành hàng
@@ -19,15 +22,38 @@
 
     const generateId = () => Math.random().toString(36).substr(2, 9);
 
+    // --- HÀM HELPER: PARSE STRING CŨ THÀNH MẢNG OBJECT ---
+    function parseYcxString(rawString, defaultHeSo = 0) {
+        if (!rawString) return [];
+        return rawString.split(/[\n;]/).map(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return null;
+            
+            // Xử lý chuỗi format mới: "Tên HTX, 0.3"
+            const lastComma = trimmed.lastIndexOf(',');
+            if (lastComma > -1) {
+                const name = trimmed.substring(0, lastComma).trim();
+                const numStr = trimmed.substring(lastComma + 1).trim();
+                // Hỗ trợ cả dấu phẩy tiếng Việt
+                const val = parseFloat(numStr.replace(',', '.')) || 0;
+                return { id: generateId(), name, valueDisplay: val.toString().replace('.', ',') };
+            }
+            
+            // Fallback cho chuỗi cũ không có hệ số
+            return { id: generateId(), name: trimmed, valueDisplay: defaultHeSo.toString().replace('.', ',') };
+        }).filter(Boolean);
+    }
+
     onMount(async () => {
         try {
             const data = await adminService.loadDeclarationsFromFirestore();
             if (data) {
                 declarations.set(data);
-                ycxValue = data.hinhThucXuat || data.ycx || '';
-                ycxGopValue = data.hinhThucXuatGop || data.ycxGop || '';
                 
-                // Parse chuỗi hệ số thành Map { id/name: value }
+                // Parse dữ liệu String cũ lên Giao diện Bảng mới
+                ycxItems = parseYcxString(data.hinhThucXuat || data.ycx || '', 0);
+                ycxGopItems = parseYcxString(data.hinhThucXuatGop || data.ycxGop || '', 0.3);
+                
                 rawHeSoMap = parseHeSoToMap(data.heSoQuyDoi || data.heSo || '');
                 buildTreeData();
             }
@@ -59,7 +85,6 @@
         return map;
     }
 
-    // [PHẪU THUẬT v3.3]: Xây dựng cây DỰA 100% VÀO EXCEL CẤU TRÚC ($categoryStructure)
     function buildTreeData() {
         const catMap = new Map();
         const knownKeys = new Set();
@@ -93,10 +118,8 @@
                 const currentCatVal = parseFloat(catObj.valueDisplay.replace(',', '.')) || 1;
 
                 if (!catObj.childrenMap.has(nhomRaw)) {
-                    // Tìm xem trong DB cũ có lưu giá trị cho nhóm này không
                     let storedChildVal = rawHeSoMap[nhomRaw] !== undefined ? rawHeSoMap[nhomRaw] : (rawHeSoMap[nhomId] !== undefined ? rawHeSoMap[nhomId] : undefined);
                     
-                    // [CHỐT LOGIC QUAN TRỌNG]: Nếu giá trị con BẰNG Y HỆT Ngành cha -> Tự động chuyển về "Kế thừa" (không bị Ngoại lệ oan)
                     let isOverride = storedChildVal !== undefined && storedChildVal !== currentCatVal;
                     let displayVal = isOverride ? storedChildVal.toString().replace('.', ',') : '';
 
@@ -117,8 +140,6 @@
             children: Array.from(cat.childrenMap.values())
         }));
 
-        // [KHÔNG SÁNG TẠO VÔ LẬP TRƯỜNG]: Loại bỏ hoàn toàn tính năng tự động hút mã lạ từ DB cũ lên bảng.
-        // extraItems chỉ chứa những dòng do chính Admin bấm nút Thêm dòng bổ sung (nếu đã tạo trước đó ở session hiện tại).
         extraItems = extraItems.filter(item => item.name && item.name.trim());
     }
 
@@ -151,7 +172,6 @@
         expandedCategories = { ...expandedCategories };
     }
 
-    // Admin chủ động bấm thêm dòng bổ sung (được đưa lên TOP 1 bảng để thao tác tức thì)
     function addExtraItem() {
         extraItems = [{ id: generateId(), name: '', valueDisplay: '1' }, ...extraItems];
         searchTerm = '';
@@ -161,18 +181,38 @@
         extraItems = extraItems.filter(item => item.id !== id);
     }
 
-    // Khi gõ vào ô Ngành hàng cha -> cập nhật giá trị cha và đồng bộ trạng thái kế thừa của con
-    function handleCatValueInput(cat, event) {
+    // --- CÁC HÀM CRUD CHO HTX MỚI ---
+    function addYcxItem(listType) {
+        if (listType === 'thuong') {
+            ycxItems = [{ id: generateId(), name: '', valueDisplay: '0' }, ...ycxItems];
+        } else {
+            ycxGopItems = [{ id: generateId(), name: '', valueDisplay: '0,3' }, ...ycxGopItems];
+        }
+    }
+
+    function removeYcxItem(listType, id) {
+        if (listType === 'thuong') {
+            ycxItems = ycxItems.filter(i => i.id !== id);
+        } else {
+            ycxGopItems = ycxGopItems.filter(i => i.id !== id);
+        }
+    }
+    // ---------------------------------
+
+    function handleInputVal(item, event) {
         let val = event.target.value;
         if (val.includes('.')) {
-            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.\nVí dụ: 1,85");
+            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.");
             val = val.replace(/\./g, ',');
             event.target.value = val;
         }
-        cat.valueDisplay = val;
+        item.valueDisplay = val;
+    }
+
+    function handleCatValueInput(cat, event) {
+        handleInputVal(cat, event);
         
-        // Nếu thay đổi hệ số cha, kiểm tra lại con: đứa nào bằng số mới của cha thì cho về Kế thừa
-        const newCatNum = parseFloat(val.replace(',', '.')) || 1;
+        const newCatNum = parseFloat(cat.valueDisplay.replace(',', '.')) || 1;
         cat.children.forEach(child => {
             if (child.isOverride) {
                 const childNum = parseFloat(child.valueDisplay.replace(',', '.')) || 1;
@@ -186,30 +226,22 @@
         treeData = [...treeData];
     }
 
-    // Khi gõ vào ô Nhóm con -> kích hoạt chế độ Ghi đè (Override), nếu số gõ giống hệt cha -> tự động về Kế thừa
     function handleChildValueInput(child, cat, event) {
-        let val = event.target.value;
-        if (val.includes('.')) {
-            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.\nVí dụ: 1,92");
-            val = val.replace(/\./g, ',');
-            event.target.value = val;
-        }
+        handleInputVal(child, event);
         
-        const childNum = parseFloat(val.replace(',', '.'));
+        const childNum = parseFloat(child.valueDisplay.replace(',', '.'));
         const catNum = parseFloat(cat.valueDisplay.replace(',', '.'));
 
-        if (val.trim() === '' || (!isNaN(childNum) && childNum === catNum)) {
+        if (child.valueDisplay.trim() === '' || (!isNaN(childNum) && childNum === catNum)) {
             child.isOverride = false;
             child.valueDisplay = '';
         } else {
-            child.valueDisplay = val;
             child.isOverride = true;
         }
         
         treeData = [...treeData];
     }
 
-    // Xóa ghi đè cho nhóm con -> quay lại kế thừa cha
     function resetChildOverride(child) {
         child.valueDisplay = '';
         child.isOverride = false;
@@ -221,7 +253,6 @@
         try {
             const lines = [];
 
-            // 1. Gom các Ngành cha và Nhóm con bị ghi đè Ngoại lệ
             treeData.forEach(cat => {
                 if (cat.name && cat.name.trim()) {
                     let numStr = (cat.valueDisplay || '1').toString().replace(',', '.');
@@ -238,7 +269,6 @@
                 });
             });
 
-            // 2. Gom các mục Khai báo bổ sung / Đặc thù (do Admin CHỦ ĐỘNG gõ thêm tay)
             extraItems.forEach(item => {
                 if (item.name && item.name.trim()) {
                     let numStr = (item.valueDisplay || '1').toString().replace(',', '.');
@@ -249,22 +279,33 @@
 
             const heSoString = lines.join('\n');
 
-            // [FIX CRITICAL] Đóng gói cả Key cũ và Key mới để vỗ về Firebase
+            // --- [PHẪU THUẬT LOGIC]: ĐÓNG GÓI PAYLOAD HTX LẠI THÀNH STRING CHUẨN ---
+            const formatYcx = (itemsArr) => {
+                return itemsArr.filter(i => i.name.trim()).map(i => {
+                    let numStr = (i.valueDisplay || '0').toString().replace(',', '.');
+                    if (isNaN(parseFloat(numStr))) numStr = '0';
+                    return `${i.name.trim()},${numStr}`;
+                }).join('\n');
+            };
+
+            const ycxStr = formatYcx(ycxItems);
+            const ycxGopStr = formatYcx(ycxGopItems);
+            // ---------------------------------------------------------------------
+
             const payload = {
-                ycx: ycxValue || '',
-                ycxGop: ycxGopValue || '',
-                heSo: heSoString || '',
-                hinhThucXuat: ycxValue || '',
-                hinhThucXuatGop: ycxGopValue || '',
-                heSoQuyDoi: heSoString || ''
+                ycx: ycxStr,
+                ycxGop: ycxGopStr,
+                heSo: heSoString,
+                hinhThucXuat: ycxStr,
+                hinhThucXuatGop: ycxGopStr,
+                heSoQuyDoi: heSoString
             };
 
             await adminService.saveDeclarationsToFirestore(payload);
             declarations.set(payload);
             
-            // Cập nhật lại map cục bộ sau khi lưu thành công
             rawHeSoMap = parseHeSoToMap(heSoString);
-            alert("✅ Đã lưu cấu hình Hệ số quy đổi theo Ngành hàng thành công!");
+            alert("✅ Đã lưu cấu hình Hệ thống thành công!");
         } catch (error) {
             console.error("Lưu thất bại:", error);
             alert("❌ Lưu thất bại: " + error.message);
@@ -275,18 +316,69 @@
 </script>
 
 <div class="space-y-6 max-w-6xl mx-auto p-4">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <label class="block text-sm font-bold text-slate-700 mb-2">Hình thức xuất tính DT</label>
-            <textarea bind:value={ycxValue} rows="4" class="w-full p-3 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Cửa hàng bán, Xuất khuyến mãi..."></textarea>
+    <!-- KHU VỰC BẢNG HTX MỚI (THAY THẾ TEXTAREA) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        
+        <!-- Bảng HTX Thường -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col max-h-[400px]">
+            <div class="p-3 bg-blue-50 border-b border-blue-100 flex justify-between items-center sticky top-0 z-10">
+                <div>
+                    <h3 class="font-bold text-blue-900">Hình thức xuất tính DT</h3>
+                    <p class="text-[11px] text-blue-700 mt-0.5">Xác định đơn hàng nào được tính doanh thu</p>
+                </div>
+                <button on:click={() => addYcxItem('thuong')} class="bg-white text-blue-700 px-3 py-1.5 rounded text-xs font-bold border border-blue-200 hover:bg-blue-100 transition shadow-sm">+ Thêm</button>
+            </div>
+            <div class="overflow-y-auto custom-scrollbar flex-grow p-3 bg-slate-50">
+                {#if ycxItems.length === 0}
+                    <div class="text-center py-6 text-slate-400 text-sm italic">Chưa có dữ liệu</div>
+                {/if}
+                <div class="space-y-2">
+                    {#each ycxItems as item (item.id)}
+                        <div class="flex items-center gap-2 bg-white p-2 rounded border border-slate-200 shadow-sm hover:border-blue-300 transition group">
+                            <input type="text" bind:value={item.name} class="flex-grow bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700 p-1" placeholder="VD: Xuất bán hàng tại siêu thị" />
+                            <div class="flex items-center gap-1 w-24 flex-shrink-0 bg-slate-50 rounded border border-slate-200 px-1">
+                                <span class="text-[10px] font-bold text-slate-400 pl-1">+</span>
+                                <input type="text" value={item.valueDisplay} on:input={(e) => handleInputVal(item, e)} class="w-full bg-transparent border-none text-right focus:ring-0 text-sm font-bold text-blue-700 p-1" title="Hệ số cộng thêm (Thường là 0)" />
+                            </div>
+                            <button on:click={() => removeYcxItem('thuong', item.id)} class="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                        </div>
+                    {/each}
+                </div>
+            </div>
         </div>
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <label class="block text-sm font-bold text-slate-700 mb-2">Hình thức xuất Trả góp</label>
-            <textarea bind:value={ycxGopValue} rows="4" class="w-full p-3 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Xuất bán trả góp..."></textarea>
+
+        <!-- Bảng HTX Trả Góp -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col max-h-[400px]">
+            <div class="p-3 bg-amber-50 border-b border-amber-100 flex justify-between items-center sticky top-0 z-10">
+                <div>
+                    <h3 class="font-bold text-amber-900">Hình thức xuất Trả Góp</h3>
+                    <p class="text-[11px] text-amber-700 mt-0.5">Xác định đơn hàng nào được cộng hệ số Trả góp</p>
+                </div>
+                <button on:click={() => addYcxItem('gop')} class="bg-white text-amber-700 px-3 py-1.5 rounded text-xs font-bold border border-amber-200 hover:bg-amber-100 transition shadow-sm">+ Thêm</button>
+            </div>
+            <div class="overflow-y-auto custom-scrollbar flex-grow p-3 bg-slate-50">
+                {#if ycxGopItems.length === 0}
+                    <div class="text-center py-6 text-slate-400 text-sm italic">Chưa có dữ liệu</div>
+                {/if}
+                <div class="space-y-2">
+                    {#each ycxGopItems as item (item.id)}
+                        <div class="flex items-center gap-2 bg-white p-2 rounded border border-slate-200 shadow-sm hover:border-amber-300 transition group">
+                            <input type="text" bind:value={item.name} class="flex-grow bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700 p-1" placeholder="VD: Xuất bán trả góp tại siêu thị" />
+                            <div class="flex items-center gap-1 w-24 flex-shrink-0 bg-slate-50 rounded border border-slate-200 px-1">
+                                <span class="text-[10px] font-bold text-slate-400 pl-1">+</span>
+                                <input type="text" value={item.valueDisplay} on:input={(e) => handleInputVal(item, e)} class="w-full bg-transparent border-none text-right focus:ring-0 text-sm font-bold text-amber-600 p-1" title="Hệ số cộng thêm (Thường là 0,3)" />
+                            </div>
+                            <button on:click={() => removeYcxItem('gop', item.id)} class="text-slate-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                        </div>
+                    {/each}
+                </div>
+            </div>
         </div>
+
     </div>
 
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <!-- KHU VỰC QUẢN LÝ NGÀNH HÀNG -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
         <div class="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <h3 class="font-bold text-slate-800">Hệ số quy đổi Ngành Hàng (Kế thừa & Ngoại lệ)</h3>
@@ -339,7 +431,6 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    <!-- KHU VỰC 1: KHAI BÁO BỔ SUNG / ĐẶC THÙ (ĐƯỢC ĐƯA LÊN TOP 1 ĐỂ THAO TÁC NGAY) -->
                     {#if extraItems.length > 0}
                         <tr class="bg-slate-200/80 font-bold text-slate-700 border-b border-slate-300">
                             <td colspan="3" class="px-6 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1 text-amber-800">
@@ -375,9 +466,7 @@
                         <tr class="bg-slate-300/40 h-2 border-t-2 border-slate-300"><td colspan="3"></td></tr>
                     {/if}
 
-                    <!-- KHU VỰC 2: CÂY NGÀNH HÀNG VÀ NHÓM HÀNG CHUẨN EXCEL CẤU TRÚC -->
                     {#each filteredTree as cat (cat.id)}
-                        <!-- Dòng Ngành Hàng Cha -->
                         <tr class="bg-slate-100/70 hover:bg-slate-200/60 font-bold transition-colors cursor-pointer select-none" on:click={() => toggleExpand(cat.id)}>
                             <td class="px-6 py-3 flex items-center gap-2 text-slate-800">
                                 <span class="text-xs text-slate-400 w-4 inline-block transition-transform transform {expandedCategories[cat.id] ? 'rotate-90 text-blue-600' : ''}">▶</span>
@@ -394,7 +483,6 @@
                                     value={cat.valueDisplay} 
                                     on:input={(e) => handleCatValueInput(cat, e)} 
                                     class="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-extrabold text-blue-700 text-center focus:ring-2 focus:ring-blue-500 shadow-inner" 
-                                    title="Hệ số chung cho toàn bộ ngành này"
                                 />
                             </td>
                             <td class="px-6 py-2 text-right text-xs text-slate-500 font-normal">
@@ -402,7 +490,6 @@
                             </td>
                         </tr>
 
-                        <!-- Các Dòng Nhóm Hàng Con (Khi được mở rộng) -->
                         {#if expandedCategories[cat.id]}
                             {#each cat.children as child (child.id)}
                                 <tr class="hover:bg-blue-50/50 transition-colors {child.isOverride ? 'bg-amber-50/40' : ''}">
@@ -418,13 +505,11 @@
                                                 on:input={(e) => handleChildValueInput(child, cat, e)} 
                                                 class="w-full border rounded px-2 py-1 text-sm text-center transition-all {child.isOverride ? 'bg-amber-100 border-amber-400 font-bold text-amber-900 shadow-sm' : 'bg-slate-50/50 border-slate-200 text-slate-400 italic'}" 
                                                 placeholder={cat.valueDisplay}
-                                                title={child.isOverride ? "Đang ghi đè hệ số riêng" : "Đang kế thừa hệ số từ Ngành cha"}
                                             />
                                             {#if child.isOverride}
                                                 <button 
                                                     on:click={() => resetChildOverride(child)} 
                                                     class="absolute right-1 text-amber-600 hover:text-red-600 p-1 text-xs font-bold"
-                                                    title="Xóa ngoại lệ, quay lại kế thừa cha"
                                                 >
                                                     ↺
                                                 </button>
@@ -445,7 +530,7 @@
 
                     {#if filteredTree.length === 0 && filteredExtra.length === 0}
                         <tr>
-                            <td colspan="3" class="px-6 py-10 text-center text-slate-400 italic">Không tìm thấy Ngành hàng hay Nhóm hàng nào (Hãy kiểm tra tab Nạp dữ liệu cấu trúc)</td>
+                            <td colspan="3" class="px-6 py-10 text-center text-slate-400 italic">Không tìm thấy Ngành hàng hay Nhóm hàng nào</td>
                         </tr>
                     {/if}
                 </tbody>
@@ -454,7 +539,6 @@
         
         <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-sm text-slate-500">
             <span>Hiển thị: <b>{treeData.length}</b> Ngành hàng chuẩn Excel | <b>{extraItems.length}</b> mục bổ sung</span>
-            <span class="italic text-xs">* Mẹo: Click vào Ngành hàng để xem/sửa Nhóm con bên trong</span>
         </div>
     </div>
 </div>

@@ -3,68 +3,78 @@ import { get } from 'svelte/store';
 import { config } from '../../config.js';
 import { declarations, efficiencyConfig } from '../../stores.js';
 
-// [CODEGENESIS] Hàm vũ khí: Chuẩn hóa chuỗi (Xóa dấu tiếng Việt, viết thường, xóa khoảng trắng)
 const normalizeStr = (str) => {
     if (!str) return '';
     return str.toString()
         .toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Xóa dấu
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
         .trim();
 };
 
-// [PHẪU THUẬT LOGIC]: Bóc tách ID - Dùng ID làm chìa khóa tuyệt đối an toàn
 const extractKey = (str) => {
     if (!str) return 'unknown';
     const rawStr = str.toString().trim();
-    // Quét tìm cụm số đứng trước dấu gạch ngang (VD: "1273 - Máy tính" -> bóc ra "1273")
     const match = rawStr.match(/^(\d+)\s*[-–]/);
-    if (match) {
-        return match[1]; 
-    }
-    // Fallback: Nếu không có mã số (VD: "Phụ kiện"), trả về chuỗi chuẩn hóa
+    if (match) return match[1]; 
     return normalizeStr(rawStr);
 };
 
 export const helpers = {
-    // [PHẪU THUẬT v3.5 - SURGICAL FIX]: Đảo ngược vòng lặp, duyệt theo thứ tự ưu tiên của aliases
-    // Giúp từ khóa 'giá bán_1' (đứng đầu config) luôn đánh bại từ khóa 'giá bán' (đứng sau trong Excel)
     findColumnName(header, aliases) {
         if (!header || !Array.isArray(header) || !aliases || !Array.isArray(aliases)) return null;
-        
-        // Chuẩn hóa header 1 lần để tối ưu hiệu năng
         const normalizedHeader = header.map(col => ({ original: col, norm: normalizeStr(col) }));
-        
-        // Duyệt theo thứ tự ưu tiên của từ khóa cấu hình (từ khóa nào xếp trước tìm trước)
         for (const alias of aliases) {
             const normAlias = normalizeStr(alias);
             const found = normalizedHeader.find(h => h.norm === normAlias);
-            if (found) {
-                return found.original; // Tìm thấy cột ưu tiên cao nhất -> Trả về ngay lập tức!
-            }
+            if (found) return found.original; 
         }
         return null;
     },
 
+    // --- [PHẪU THUẬT LOGIC]: ĐỔI TỪ KIỂU SET SANG KIỂU MAP ĐỂ LƯU HỆ SỐ ---
     getHinhThucXuatTinhDoanhThu: () => {
         const declarationData = get(declarations).hinhThucXuat;
+        const map = new Map();
         if (declarationData) {
-            return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
+            declarationData.split('\n').forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+                const lastComma = trimmed.lastIndexOf(',');
+                if (lastComma > -1) {
+                    const name = trimmed.substring(0, lastComma).trim();
+                    const heSo = parseFloat(trimmed.substring(lastComma + 1).trim().replace(',', '.')) || 0;
+                    map.set(name, heSo);
+                } else {
+                    map.set(trimmed, 0); // Mặc định hệ số cộng thêm là 0
+                }
+            });
         }
-        return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU || []);
+        return map;
     },
 
     getHinhThucXuatTraGop: () => {
         const declarationData = get(declarations).hinhThucXuatGop;
+        const map = new Map();
         if (declarationData) {
-            return new Set(declarationData.split(/[,;\n]/).map(l => l.trim()).filter(Boolean));
+            declarationData.split('\n').forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+                const lastComma = trimmed.lastIndexOf(',');
+                if (lastComma > -1) {
+                    const name = trimmed.substring(0, lastComma).trim();
+                    const heSo = parseFloat(trimmed.substring(lastComma + 1).trim().replace(',', '.')) || 0;
+                    map.set(name, heSo);
+                } else {
+                    map.set(trimmed, 0.3); // Mặc định fallback là 0.3 nếu data cũ chưa có cấu trúc dấu phẩy
+                }
+            });
         }
-        return new Set(config.DEFAULT_DATA.HINH_THUC_XUAT_TRA_GOP || []);
+        return map;
     },
+    // ----------------------------------------------------------------------
 
     getHeSoQuyDoi: () => {
         const heSoMap = {};
-        
-        // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
         const dynamicConfig = get(efficiencyConfig);
         if (dynamicConfig && dynamicConfig.length > 0) {
             dynamicConfig.forEach(item => {
@@ -74,7 +84,6 @@ export const helpers = {
             });
         }
 
-        // ƯU TIÊN 2: Lấy từ Khai báo Text
         const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
@@ -82,28 +91,17 @@ export const helpers = {
                 if (lastCommaIndex > -1) {
                     const rawKey = line.substring(0, lastCommaIndex);
                     const rawVal = line.substring(lastCommaIndex + 1);
-                    
-                    // SỬ DỤNG ID LÀM CHÌA KHÓA LƯU TRỮ
                     const safeKey = extractKey(rawKey);
-                    // Đề phòng trường hợp gõ nhầm dấu phẩy thập phân
                     const value = parseFloat(rawVal.trim().replace(',', '.')); 
-                    
                     if (safeKey && !isNaN(value)) {
-                         if (heSoMap[safeKey] === undefined) {
-                             heSoMap[safeKey] = value;
-                         }
+                         if (heSoMap[safeKey] === undefined) heSoMap[safeKey] = value;
                     }
                 }
             });
         }
-
-        // [PHẪU THUẬT LOGIC]: Đã triệt tiêu Ưu tiên 3 (Dữ liệu cứng).
-        // Chỉ trả về heSoMap lấy từ Firebase. Mọi mã không có trong map 
-        // sẽ tự động được gán = 1 ở khâu tính toán cuối cùng.
         return heSoMap;
     },
 
-    // [CODEGENESIS v3.1]: Nhận cột Ngành hàng (nganhHangRaw) để tra cứu
     getHeSoForCategory: (nganhHangRaw, mapHeSo) => {
         const safeKey = extractKey(nganhHangRaw);
         return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;

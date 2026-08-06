@@ -1,7 +1,7 @@
 <script>
     import { onMount } from 'svelte';
     import { realtimeYCXData } from '../../../stores.js';
-    import { cleanCategoryName } from '../../../utils.js';
+    import { cleanCategoryName, parseIdentity } from '../../../utils.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
     import { formatters } from '../../../utils/formatters.js';
     import BrandTable from './BrandTable.svelte';
@@ -148,12 +148,28 @@
             const quantity = parseInt(getVal(row, 'soLuong') || 0);
             const revenue = parseMoney(getVal(row, 'thanhTien')); 
 
-            const nhomHang = getVal(row, 'nhomHang');
-            let heSo = heSoQuyDoiMap[nhomHang] || 1;
+            // --- [PHẪU THUẬT LOGIC v3.6]: DÒ TÌM HỆ SỐ 2 CẤP VÀ LOẠI BỎ RÁC TỪ NORMALIZER ---
+            const nhomRaw = getVal(row, 'nhomHang');
+            const nganhRaw = getVal(row, 'nganhHang');
+            const maNhom = getVal(row, 'maNhomHang');
+            const maNganh = getVal(row, 'maNganhHang');
+            
+            const nhomKey = maNhom ? String(maNhom).trim() : parseIdentity(nhomRaw).id;
+            const nganhKey = maNganh ? String(maNganh).trim() : parseIdentity(nganhRaw).id;
+            
+            let heSo = 1;
+            if (heSoQuyDoiMap[nhomKey] !== undefined) {
+                heSo = heSoQuyDoiMap[nhomKey];
+            } else if (heSoQuyDoiMap[nganhKey] !== undefined) {
+                heSo = heSoQuyDoiMap[nganhKey];
+            }
+            // -------------------------------------------------------------------------
+
             const isTraGop = htx.toLowerCase().includes('trả góp') || htx.toLowerCase().includes('trả chậm');
             if (isTraGop) heSo += 0.3;
-            const rawRevQD = getVal(row, 'revenueQuyDoi') || getVal(row, 'doanhThuQuyDoi');
-            const revenueQD = rawRevQD !== '' ? parseMoney(rawRevQD) : (revenue * heSo);
+            
+            // Ép buộc tính on-the-fly, tuyệt đối không dùng giá trị lưu tạm
+            const revenueQD = revenue * heSo;
 
             totalMetrics.quantity += quantity;
             totalMetrics.revenue += revenue;
