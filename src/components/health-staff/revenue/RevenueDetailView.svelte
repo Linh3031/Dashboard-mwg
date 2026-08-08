@@ -60,8 +60,11 @@
 
       let totalCK = 0;
       $ycxDataThangTruoc.forEach(row => {
-          if (!row.ngayTao || !(row.ngayTao instanceof Date)) return;
-          if (row.ngayTao.getMonth() !== targetMonth || row.ngayTao.getFullYear() !== targetYear) return;
+          // [PHẪU THUẬT LOGIC]: Chuyển đổi an toàn chuỗi từ Cache về Date Object
+          let nDate = row.ngayTao;
+          if (typeof nDate === 'string' || typeof nDate === 'number') nDate = new Date(nDate);
+          if (!nDate || !(nDate instanceof Date) || isNaN(nDate.getTime())) return;
+          if (nDate.getMonth() !== targetMonth || nDate.getFullYear() !== targetYear) return;
 
           const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
           if (msnvMatch && msnvMatch[1].trim() === String(employeeId)) {
@@ -127,8 +130,6 @@
   function goBack() { 
       dispatch('back');
   }
-
-  // Đã bỏ openUnexportedModal theo yêu cầu
 
   function openOrdersModal() {
       if (isGhostMode) return; // Khóa modal nếu đang chụp ẩn

@@ -201,6 +201,15 @@ export const normalizers = {
                 // 4. Tính toán
                 newRow.heSoQuyDoi = baseRate + bonusRate; 
                 newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
+                
+                // --- BẮT ĐẦU CHÈN LOG 2 (Chỉ log 5 dòng đầu cho đỡ lag máy) ---
+                if (index < 5) {
+                    console.log(`🕵️ [DEBUG 2 - TÍNH DÒNG YCX #${index}]`);
+                    console.log(`- Sản phẩm: ${newRow.tenSanPham} (Nganh: ${productKey})`);
+                    console.log(`- DT Thực: ${revenue} | Hệ số gốc: ${baseRate} | Thưởng Góp: ${bonusRate}`);
+                    console.log(`=> Tổng Hệ số: ${newRow.heSoQuyDoi} | DT Quy Đổi Tính Ra: ${newRow.revenueQuyDoi}`);
+                }
+                // --- KẾT THÚC CHÈN LOG 2 ---
             }
             // ------------------------------------------------------------------
 

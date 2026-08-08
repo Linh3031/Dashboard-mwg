@@ -106,6 +106,16 @@ export const helpers = {
              }
         });
 
+        // --- BẮT ĐẦU CHÈN LOG 1 ---
+        console.log("🕵️ [DEBUG 1 - HỆ SỐ CỐT LÕI]");
+        console.log("- Dữ liệu từ bảng Admin mới (efficiencyConfig):", get(efficiencyConfig));
+        console.log("- Dữ liệu từ Khai báo Text cũ (declarations):", get(declarations).heSoQuyDoi);
+        console.log("=> KẾT QUẢ MAP HỆ SỐ TRẢ VỀ:", heSoMap);
+        if (Object.keys(heSoMap).length === 0) {
+            console.warn("⚠️ CẢNH BÁO: Map hệ số đang TRỐNG TRƠN. Tất cả DT Quy đổi sẽ bị ép về bằng 1 (Bằng DT Thực)!");
+        }
+        // --- KẾT THÚC CHÈN LOG 1 ---
+
         return heSoMap;
     },
 

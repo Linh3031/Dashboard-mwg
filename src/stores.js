@@ -91,8 +91,38 @@ export const thuongNongDataThangTruoc = writable([]);
 export const thuongERPDataThangTruoc = writable([]);
 export const masterReportData = writable({ luyke: [], sknv: [], realtime: [] });
 export const competitionData = writable([]);
-export const declarations = writable({ hinhThucXuat: '', hinhThucXuatGop: '', heSoQuyDoi: '' });
-export const virtualProductList = writable([]); // Lưu danh sách Sản phẩm đặc thù
+
+// --- [PHẪU THUẬT v3.1]: Vá lỗi mất cấu hình Hệ số (Mất DT Quy Đổi) khi F5 ---
+let savedDeclarations = { hinhThucXuat: '', hinhThucXuatGop: '', heSoQuyDoi: '' };
+let savedEfficiency = [];
+if (typeof localStorage !== 'undefined') {
+    try {
+        const decRaw = localStorage.getItem('declarations_cache');
+        if (decRaw) savedDeclarations = JSON.parse(decRaw);
+        
+        const effRaw = localStorage.getItem('efficiencyConfig_cache');
+        if (effRaw) savedEfficiency = JSON.parse(effRaw);
+    } catch (e) {
+        console.error('Lỗi đọc cấu hình hệ số từ localStorage:', e);
+    }
+}
+
+export const declarations = writable(savedDeclarations);
+export const efficiencyConfig = writable(savedEfficiency);
+
+declarations.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('declarations_cache', JSON.stringify(value));
+    }
+});
+efficiencyConfig.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('efficiencyConfig_cache', JSON.stringify(value));
+    }
+});
+// -------------------------------------------------------------------------
+
+export const virtualProductList = writable([]); 
 export const categoryStructure = writable([]); 
 export const brandList = writable([]); 
 export const specialProductList = writable([]);
@@ -104,7 +134,6 @@ export const brandNameMapping = writable({});
 export const localCompetitionConfigs = writable([]); 
 export const globalCompetitionConfigs = writable([]); 
 export const globalSpecialPrograms = writable([]); 
-export const efficiencyConfig = writable([]); 
 export const qdcConfigStore = writable([]);
 export const warehouseCustomMetrics = writable([]);
 export const customRevenueTables = writable([]);

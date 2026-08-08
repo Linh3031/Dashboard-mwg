@@ -24,7 +24,6 @@ export const cacheHandler = {
         
         const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
         
-        // MẢNG LỌC TOÀN CỤC CHUẨN XÁC
         let allowedWarehouses = [];
         if (dsnvData && dsnvData.length > 0) {
              const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
@@ -34,32 +33,40 @@ export const cacheHandler = {
         }
 
         await Promise.all(otherFiles.map(async (key) => {
-            let data = await storage.getItem(key);
-            if (data && data.length > 0) {
-                // 1. Bảo vệ dữ liệu cứng: Lọc tạp chất ngoài cụm quản lý
-                if (key.includes('ycx') && allowedWarehouses.length > 0) {
-                     data = data.filter(d => {
-                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                        return allowedWarehouses.includes(whCode);
-                     });
-                     try { await storage.setItem(key, data); } catch(e){} 
-                }
-
-                // 2. LỌC Ở TẦNG GIAO DIỆN (View-level Filtering)
-                let displayData = data;
-                const currentWh = get(selectedWarehouse);
+            try {
+                let data = await storage.getItem(key);
                 
-                // Cả ycx, giocong, thuongnong đều phải chạy qua View-Level filter nếu đang xem kho lẻ
-                if (currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
-                     displayData = data.filter(d => {
-                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                         return whCode === currentWh;
-                     });
-                }
+                // [PHẪU THUẬT v3.3]: Kiểm tra Array.isArray để bọc lỗi vỡ Cache gây trắng trang
+                if (data && Array.isArray(data) && data.length > 0) {
+                    
+                    if (key.includes('ycx') && allowedWarehouses.length > 0) {
+                         data = data.filter(d => {
+                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                            return allowedWarehouses.includes(whCode);
+                         });
+                         try { await storage.setItem(key, data); } catch(e){} 
+                    }
 
-                FILE_MAPPING[key].store.set(displayData);
-                updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
-             }
+                    let displayData = data;
+                    const currentWh = get(selectedWarehouse);
+                    
+                    if (currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
+                         displayData = data.filter(d => {
+                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                             return whCode === currentWh;
+                         });
+                    }
+
+                    FILE_MAPPING[key].store.set(displayData);
+                    updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
+                 } else if (data && !Array.isArray(data)) {
+                     // Reset rác cache để dọn luồng bộ nhớ
+                     console.warn(`[CacheHandler] Rác cache phát hiện tại key: ${key}. Đang tiến hành làm sạch...`);
+                     await storage.setItem(key, []);
+                 }
+            } catch (err) {
+                console.error(`[CacheHandler] Bỏ qua lỗi đọc cache file ${key}:`, err);
+            }
         }));
 
         console.log("[DataService] Bắt đầu xử lý dữ liệu Paste (Absolute Isolation)...");

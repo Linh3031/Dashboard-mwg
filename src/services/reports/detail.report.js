@@ -135,8 +135,13 @@ export const detailReportLogic = {
                     byCustomer[customerName].totalRealRevenue += realRevenue;
                     byCustomer[customerName].totalConvertedRevenue += convertedRevenue;
                     
-                    const ngayTao = row.ngayTao;
-                    if (ngayTao instanceof Date) {
+                    // [PHẪU THUẬT LOGIC]: Chuyển đổi an toàn chuỗi từ Cache về Date Object
+                    let ngayTao = row.ngayTao;
+                    if (typeof ngayTao === 'string' || typeof ngayTao === 'number') {
+                        ngayTao = new Date(ngayTao);
+                    }
+                    
+                    if (ngayTao instanceof Date && !isNaN(ngayTao.getTime())) {
                         const dateString = ngayTao.toISOString().split('T')[0];
                         if (!dailyStats[dateString]) {
                             dailyStats[dateString] = { date: ngayTao, revenue: 0, convertedRevenue: 0 };

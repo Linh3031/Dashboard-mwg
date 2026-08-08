@@ -99,7 +99,8 @@ export const syncHandler = {
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
             } else {
-                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'];
+                // [PHẪU THUẬT v3.2]: Bổ sung YCX vào danh sách tải xuống cho từng kho lẻ
+                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong', 'saved_ycx', 'saved_ycx_thangtruoc', 'saved_ycx_cungkynam'];
             }
         } else {
             targetKeys = [...Object.keys(FILE_MAPPING), ...Object.keys(PASTE_MAPPING)];
@@ -235,7 +236,7 @@ export const syncHandler = {
                 }
 
                 let filesToDownload = [];
-                // Phẫu thuật File: Hỗ trợ nạp song song cả Multi (YCX) và Single split (Giờ công, Thưởng nóng)
+                
                 if (get(selectedWarehouse) === 'ALL') {
                      for(let wh of userAllowedWarehouses) {
                          const singleMetaStr = localStorage.getItem(`_meta_${wh}_${baseKey}`);
@@ -323,18 +324,15 @@ export const syncHandler = {
                 updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allDataForStore.length} dòng)`, metaToSave);
 
             } else {
-                // Phẫu thuật PASTE: Gom tụ nguyên tử (Atomic Aggregation) để triệt tiêu Race Condition
                 const response = await fetch(state.metadata.downloadURL);
                 const textContent = await response.text();
                 
-                // Lưu text của ô hiện tại xuống kho riêng của nó
                 localStorage.setItem(stateKey, textContent);
                 
                 let processedCount = 0;
                 const isBatchMode = get(selectedWarehouse) === 'ALL';
                 
                 if (mapping.isThiDuaNV) {
-                    // 1. Tính toán số dòng cho riêng ô này để hiển thị UI
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {
                         dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
@@ -342,7 +340,6 @@ export const syncHandler = {
                         processedCount = processedData?.length || 0;
                     }
 
-                    // 2. Gom tụ dữ liệu cho Store tổng
                     if (isBatchMode) {
                         let combinedData = [];
                         const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
@@ -356,7 +353,7 @@ export const syncHandler = {
                                 }
                             }
                         }
-                        mapping.store.set(combinedData); // Bảng chung nhận 100% data
+                        mapping.store.set(combinedData); 
                     } else {
                         if (parsedData.success) {
                             const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
@@ -364,14 +361,12 @@ export const syncHandler = {
                         }
                     }
                 } else if (mapping.processFunc) {
-                    // 1. Tính toán số dòng cho riêng ô này
                     if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
                          processedCount = dataProcessing.parseCompetitionDataFromLuyKe(textContent).length;
                     } else {
                          processedCount = mapping.processFunc(textContent)?.length || 0;
                     }
                     
-                    // 2. Gom tụ dữ liệu cho Store tổng
                     if (isBatchMode) {
                         let combinedData = [];
                         let combinedText = '';
@@ -381,7 +376,7 @@ export const syncHandler = {
                             if (txt) {
                                 const pData = mapping.processFunc(txt);
                                 combinedData.push(...pData);
-                                combinedText += txt + '\n'; // Nối văn bản để parse tổng hợp
+                                combinedText += txt + '\n';
                             }
                         }
                         mapping.store.set(combinedData);
