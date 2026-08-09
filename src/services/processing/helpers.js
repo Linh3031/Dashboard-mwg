@@ -16,30 +16,24 @@ const normalizeStr = (str) => {
 const extractKey = (str) => {
     if (!str) return 'unknown';
     const rawStr = str.toString().trim();
-    // Quét tìm cụm số đứng trước dấu gạch ngang (VD: "1273 - Máy tính" -> bóc ra "1273")
     const match = rawStr.match(/^(\d+)\s*[-–]/);
     if (match) {
         return match[1]; 
     }
-    // Fallback: Nếu không có mã số (VD: "Phụ kiện"), trả về chuỗi chuẩn hóa
     return normalizeStr(rawStr);
 };
 
 export const helpers = {
-    // [PHẪU THUẬT v3.5 - SURGICAL FIX]: Đảo ngược vòng lặp, duyệt theo thứ tự ưu tiên của aliases
-    // Giúp từ khóa 'giá bán_1' (đứng đầu config) luôn đánh bại từ khóa 'giá bán' (đứng sau trong Excel)
     findColumnName(header, aliases) {
         if (!header || !Array.isArray(header) || !aliases || !Array.isArray(aliases)) return null;
         
-        // Chuẩn hóa header 1 lần để tối ưu hiệu năng
         const normalizedHeader = header.map(col => ({ original: col, norm: normalizeStr(col) }));
         
-        // Duyệt theo thứ tự ưu tiên của từ khóa cấu hình (từ khóa nào xếp trước tìm trước)
         for (const alias of aliases) {
             const normAlias = normalizeStr(alias);
             const found = normalizedHeader.find(h => h.norm === normAlias);
             if (found) {
-                return found.original; // Tìm thấy cột ưu tiên cao nhất -> Trả về ngay lập tức!
+                return found.original; 
             }
         }
         return null;
@@ -64,7 +58,6 @@ export const helpers = {
     getHeSoQuyDoi: () => {
         const heSoMap = {};
         
-        // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
         const dynamicConfig = get(efficiencyConfig);
         if (dynamicConfig && dynamicConfig.length > 0) {
             dynamicConfig.forEach(item => {
@@ -74,7 +67,6 @@ export const helpers = {
             });
         }
 
-        // ƯU TIÊN 2: Lấy từ Khai báo Text
         const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
@@ -83,9 +75,7 @@ export const helpers = {
                     const rawKey = line.substring(0, lastCommaIndex);
                     const rawVal = line.substring(lastCommaIndex + 1);
                     
-                    // SỬ DỤNG ID LÀM CHÌA KHÓA LƯU TRỮ
                     const safeKey = extractKey(rawKey);
-                    // Đề phòng trường hợp gõ nhầm dấu phẩy thập phân
                     const value = parseFloat(rawVal.trim().replace(',', '.')); 
                     
                     if (safeKey && !isNaN(value)) {
@@ -97,32 +87,43 @@ export const helpers = {
             });
         }
 
-        // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
-        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI || {};
-        Object.entries(defaultData).forEach(([key, value]) => {
-             const safeKey = extractKey(key);
-             if (heSoMap[safeKey] === undefined) {
-                 heSoMap[safeKey] = value;
-             }
-        });
-
-        // --- BẮT ĐẦU CHÈN LOG 1 ---
-        console.log("🕵️ [DEBUG 1 - HỆ SỐ CỐT LÕI]");
-        console.log("- Dữ liệu từ bảng Admin mới (efficiencyConfig):", get(efficiencyConfig));
-        console.log("- Dữ liệu từ Khai báo Text cũ (declarations):", get(declarations).heSoQuyDoi);
-        console.log("=> KẾT QUẢ MAP HỆ SỐ TRẢ VỀ:", heSoMap);
-        if (Object.keys(heSoMap).length === 0) {
-            console.warn("⚠️ CẢNH BÁO: Map hệ số đang TRỐNG TRƠN. Tất cả DT Quy đổi sẽ bị ép về bằng 1 (Bằng DT Thực)!");
-        }
-        // --- KẾT THÚC CHÈN LOG 1 ---
-
         return heSoMap;
     },
 
-    // [CODEGENESIS v3.1]: Nhận cột Ngành hàng (nganhHangRaw) để tra cứu
-    getHeSoForCategory: (nganhHangRaw, mapHeSo) => {
-        const safeKey = extractKey(nganhHangRaw);
-        return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;
+    // [CODEGENESIS v4.2]: Đa hình (Overload) - Đã gỡ bỏ console.warn theo yêu cầu
+    getHeSoForCategory: (arg1, arg2, arg3) => {
+        let nhomHangRaw, nganhHangRaw, mapHeSo;
+
+        // KIỂM TRA ĐA HÌNH: Nếu file cũ gọi kiểu (nganhHang, mapHeSo) -> arg3 sẽ rỗng
+        if (arg3 === undefined && typeof arg2 === 'object' && arg2 !== null) {
+            nhomHangRaw = null; 
+            nganhHangRaw = arg1;
+            mapHeSo = arg2;
+        } else {
+            // Nếu gọi kiểu mới (nhomHang, nganhHang, mapHeSo)
+            nhomHangRaw = arg1;
+            nganhHangRaw = arg2;
+            mapHeSo = arg3;
+        }
+
+        // Khóa bảo vệ cuối cùng: Ép kiểu tránh Crash toàn hệ thống
+        mapHeSo = mapHeSo || {};
+
+        const safeNhomKey = nhomHangRaw ? extractKey(nhomHangRaw) : 'unknown';
+        const safeNganhKey = nganhHangRaw ? extractKey(nganhHangRaw) : 'unknown';
+
+        // Ưu tiên 1: Tìm Nhóm con (Xét xem nhóm con có bị ghi đè Ngoại lệ không)
+        if (safeNhomKey !== 'unknown' && mapHeSo[safeNhomKey] !== undefined) {
+            return mapHeSo[safeNhomKey];
+        }
+
+        // Ưu tiên 2: Kế thừa (Nếu Nhóm con không có, lấy Hệ số của Ngành cha)
+        if (safeNganhKey !== 'unknown' && mapHeSo[safeNganhKey] !== undefined) {
+            return mapHeSo[safeNganhKey];
+        }
+
+        // Ưu tiên 3: Fallback ngầm định (Đã gỡ bỏ còi báo động)
+        return 1;
     },
 
     cleanCompetitionName(name) {

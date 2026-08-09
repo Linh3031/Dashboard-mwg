@@ -46,8 +46,8 @@ export const salesProcessor = {
         const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
         const soLuong = parseInt(String(row.soLuong || row.SO_LUONG || "0"), 10) || 0;
         
-        // [PHẪU THUẬT LOGIC v3.2]: Sử dụng hàm getHeSoForCategory để bóc tách ID tự động
-        const heSo = dataProcessing.getHeSoForCategory(row.nganhHang, heSoQuyDoi);
+        // [PHẪU THUẬT LOGIC v4.0]: Nâng cấp Hàm lấy hệ số nhận 2 biến (Nhóm Con và Ngành Cha) để xử lý Kế thừa
+        const heSo = dataProcessing.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoQuyDoi);
         
         const revenueQuyDoi = row.revenueQuyDoi !== undefined ? parseMoney(row.revenueQuyDoi) : (thanhTien * heSo);
         const isTraGop = hinhThucXuatTraGop.has(htx);

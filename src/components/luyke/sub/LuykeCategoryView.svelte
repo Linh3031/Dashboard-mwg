@@ -9,8 +9,10 @@
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
     import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
     import { inventoryHelper } from '../inventory/InventoryLogic.js';
+    
     export let data = [];
     export let selectedWarehouse = '';
+    
     const AVAILABLE_DIMENSIONS = [
         { id: 'nganhHang', label: 'Ngành hàng', default: true },
         { id: 'nhomHang', label: 'Nhóm hàng', default: true },
@@ -18,6 +20,7 @@
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
+    
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
@@ -58,6 +61,7 @@
         if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
         return true;
     });
+    
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) {
@@ -92,6 +96,7 @@
         if (!val) return 0;
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
+    
     const isValidRow = (row) => {
         return (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
                (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
@@ -137,7 +142,7 @@
         warnings = [];
         if (!data || data.length === 0) return;
 
-        // [PHẪU THUẬT LOGIC]: Xác định mốc thời gian thực tế dựa trên ngày lớn nhất có trong dữ liệu tải lên
+        // Xác định mốc thời gian thực tế dựa trên ngày lớn nhất có trong dữ liệu tải lên
         let referenceDate = new Date();
         let computedElapsedDays = Math.max(1, referenceDate.getDate() - 1);
         let computedDaysInMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
@@ -159,15 +164,16 @@
         elapsedDays = computedElapsedDays;
         daysInMonth = computedDaysInMonth;
 
-        // Xác định chuỗi Tháng/Năm đích của kỳ trước cần so sánh (lùi 1 tháng từ dữ liệu hiện tại)
         let prevMonthDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
         const targetPrevMonthStr = `${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}/${prevMonthDate.getFullYear()}`;
 
         let processedData = dateFilter.from || dateFilter.to ?
             filterDataByDate(data, dateFilter.from, dateFilter.to) : data;
+            
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
         let rootMap = new Map();
+        
         const processRowIntoTree = (row, isCK = false) => {
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) || !isValidRow(row)) return;
             if (Object.keys(currentFilters).length > 0) {
@@ -178,18 +184,24 @@
 
             const quantity = parseInt(row.soLuong || 0);
             const revenue = parseMoney(row.thanhTien);
-            let heSo = dataProcessing.getHeSoForCategory(row.nhomHang, heSoQuyDoiMap);
+            
+            // [PHẪU THUẬT LOGIC v3.3 - BUG FIX]: Đã vá lỗi Kế thừa. Truyền đủ 3 tham số (nhomHang, nganhHang, map) 
+            // để hàm getHeSoForCategory có thể dò ngược lên Ngành cha nếu Nhóm con không thiết lập Ngoại lệ.
+            let heSo = dataProcessing.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoQuyDoiMap);
+            
             const isTraGop = (row.hinhThucXuat || '').toLowerCase().includes('trả');
             if (isTraGop) heSo += 0.3;
             const revenueQD = revenue * heSo;
 
             if (!isCK) {
                 totalMetrics.quantity += quantity;
-                totalMetrics.revenue += revenue; totalMetrics.revenueQD += revenueQD;
+                totalMetrics.revenue += revenue; 
+                totalMetrics.revenueQD += revenueQD;
                 if (isTraGop) totalMetrics.revenueTraCham += revenue;
             } else {
                 totalMetrics.quantityCK += quantity;
-                totalMetrics.revenueCK += revenue; totalMetrics.revenueQDCK += revenueQD;
+                totalMetrics.revenueCK += revenue; 
+                totalMetrics.revenueQDCK += revenueQD;
                 if (isTraGop) totalMetrics.revenueTraChamCK += revenue;
             }
 
@@ -216,7 +228,6 @@
 
         processedData.forEach(row => processRowIntoTree(row, false));
         
-        // [PHẪU THUẬT LOGIC]: Đặt màng lọc chặn đứng tình trạng cộng dồn đa tháng của tệp dữ liệu cùng kỳ
         if (isCompareMode && $ycxDataThangTruoc?.length > 0) {
             $ycxDataThangTruoc.forEach(row => {
                 const rd = getRowDate(row);
@@ -238,7 +249,9 @@
        
             return newItem;
         }).sort((a, b) => b.revenue - a.revenue);
+        
         let finalTree = convertMapToArray(rootMap);
+        
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
             const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
@@ -298,6 +311,7 @@
     }
 
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
+    
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
         if (isVelocityMode) { velocityDays = getCurrentMinusOne();
@@ -358,9 +372,6 @@
         {/if}
     </div>
 
-    {#if isCompareMode && !isVelocityMode}
-    {/if}
-
     <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
         <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
@@ -401,7 +412,6 @@
 </div>
 
 <style>
-  .animate-fade-in { animation: fadeIn 0.3s ease-out;
- }
+  .animate-fade-in { animation: fadeIn 0.3s ease-out; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>

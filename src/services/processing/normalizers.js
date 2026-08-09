@@ -150,7 +150,6 @@ export const normalizers = {
             return { normalizedData: [], success: false, missingColumns };
         }
 
-        // [LOGIC PREP]
         let heSoMap = {};
         if (fileType === 'ycx') {
             heSoMap = helpers.getHeSoQuyDoi(); 
@@ -178,40 +177,27 @@ export const normalizers = {
                 }
             }
 
-            // --- [NEW LOGIC FIXED] TÍNH TOÁN DOANH THU QUY ĐỔI ---
             if (fileType === 'ycx') {
-                // 1. Chuẩn hóa doanh thu thực
                 let revenue = 0;
                 if (newRow.thanhTien) {
                     revenue = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
                 }
                 newRow.revenue = revenue; 
 
-                // 2. Xác định Hệ số gốc (Base Rate) - [VÁ LỖI CỰC MẠNH: DÙNG GET HỆ SỐ FOR CATEGORY]
-                const productKey = String(newRow.nhomHang || '');
-                const baseRate = helpers.getHeSoForCategory(productKey, heSoMap);
+                // [PHẪU THUẬT v4.0]: Truyền đủ cả Nhóm (để check Override) và Ngành (để check Inherit)
+                const nhomKey = String(newRow.nhomHang || '');
+                const nganhKey = String(newRow.nganhHang || '');
+                const baseRate = helpers.getHeSoForCategory(nhomKey, nganhKey, heSoMap);
 
-                // 3. Xác định thưởng Trả Góp (Bonus Rate)
                 const exportModeRaw = String(newRow.hinhThucXuat || '');
                 const exportModeLower = exportModeRaw.toLowerCase();
                 
                 const isInstallment = exportModeLower.includes('trả góp') || exportModeLower.includes('trả chậm');
                 const bonusRate = isInstallment ? 0.3 : 0;
 
-                // 4. Tính toán
                 newRow.heSoQuyDoi = baseRate + bonusRate; 
                 newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
-                
-                // --- BẮT ĐẦU CHÈN LOG 2 (Chỉ log 5 dòng đầu cho đỡ lag máy) ---
-                if (index < 5) {
-                    console.log(`🕵️ [DEBUG 2 - TÍNH DÒNG YCX #${index}]`);
-                    console.log(`- Sản phẩm: ${newRow.tenSanPham} (Nganh: ${productKey})`);
-                    console.log(`- DT Thực: ${revenue} | Hệ số gốc: ${baseRate} | Thưởng Góp: ${bonusRate}`);
-                    console.log(`=> Tổng Hệ số: ${newRow.heSoQuyDoi} | DT Quy Đổi Tính Ra: ${newRow.revenueQuyDoi}`);
-                }
-                // --- KẾT THÚC CHÈN LOG 2 ---
             }
-            // ------------------------------------------------------------------
 
             return newRow;
         });
