@@ -1,3 +1,4 @@
+// src/services/datasync.service.js
 import { doc, setDoc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"; 
 import { 
     firebaseStore, 
@@ -27,6 +28,28 @@ const getDB = () => {
 const getCurrentUserEmail = () => {
     const user = get(currentUser);
     return user ? user.email : 'unknown';
+};
+
+// [PHẪU THUẬT LOGIC]: Hàm vũ khí chuẩn hóa ngày tháng đa năng chống lỗi Serialize từ Cloud
+const parseSafeDate = (d) => {
+    if (!d) return null;
+    if (d instanceof Date && !isNaN(d)) return d;
+    if (!isNaN(d) && Number(d) > 30000 && Number(d) < 60000) {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+        return new Date(excelEpoch.getTime() + Number(d) * 86400000);
+    }
+    if (typeof d === 'string' || typeof d === 'number') {
+        const dDate = new Date(d);
+        if (!isNaN(dDate.getTime())) return dDate;
+        
+        const str = String(d).trim();
+        const parts = str.split(/[-/ ]/);
+        if (parts.length >= 3) {
+            if (parts[0].length === 4) return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            else return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        }
+    }
+    return null;
 };
 
 export const datasyncService = {
@@ -172,6 +195,7 @@ export const datasyncService = {
         const khoRef = doc(db, "warehouseData", kho);
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; } catch(e) { return []; }
     },
+    
     async saveDailyTrendConfigs(kho, configs) {
         const db = getDB();
         if (!db || !kho) return;
@@ -297,12 +321,11 @@ export const datasyncService = {
                 
                 existingFiles.push({ ...metadata, updatedAt: new Date().toISOString(), updatedBy: getCurrentUserEmail() });
                 
-                // [PHẪU THUẬT LOGIC]: Tẩy trắng cờ isDeleted (Ép isDeleted: false) để Firebase không hợp nhất với cờ rác cũ
                 const dataToSave = { 
                     [key]: { 
                         files: existingFiles, 
                         isMulti: true, 
-                        isDeleted: false, // Chốt tẩy trắng
+                        isDeleted: false,
                         timestamp: Date.now(), 
                         updatedAt: serverTimestamp(), 
                         updatedBy: getCurrentUserEmail() 
@@ -311,7 +334,6 @@ export const datasyncService = {
                 await setDoc(khoRef, dataToSave, { merge: true });
                 
             } else {
-                // [PHẪU THUẬT LOGIC]: Chốt tẩy trắng cho cả chế độ file đơn
                 const dataToSave = { 
                     [key]: { 
                         ...metadata, 
@@ -400,8 +422,10 @@ export const datasyncService = {
             const targetYear = targetDate.getFullYear();
 
             lastMonthYcx.forEach(row => { 
-                if (!row.ngayTao || !(row.ngayTao instanceof Date)) return; 
-                if (row.ngayTao.getMonth() !== targetMonth || row.ngayTao.getFullYear() !== targetYear) return;
+                // [PHẪU THUẬT LOGIC]: Sửa lỗi mất dữ liệu Cùng Kỳ do Cloud Serialize Date thành String. Dùng parseSafeDate thay vì instanceof
+                const rowDate = parseSafeDate(row.ngayTao || row.ngay_tao || row['Ngày tạo']);
+                if (!rowDate) return; 
+                if (rowDate.getMonth() !== targetMonth || rowDate.getFullYear() !== targetYear) return;
 
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/); 
                 if (!msnvMatch) return;
