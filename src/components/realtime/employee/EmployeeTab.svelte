@@ -9,13 +9,14 @@
   // [GENESIS UPDATE] Lưu trữ object nhân viên thay vì chỉ ID
   let selectedEmployee = null;
   let filteredReport = [];
+  let currentGoals = {}; // [SURGICAL LOGIC]: Khai báo biến ở đây để truyền xuống component con
 
   $: {
     const currentWarehouse = $selectedWarehouse;
     const settings = settingsService.getRealtimeGoalSettings(currentWarehouse);
-    const goals = settings.goals || {};
+    currentGoals = settings.goals || {}; 
     
-    const masterReport = reportService.generateMasterReportData($realtimeYCXData, goals, true);
+    const masterReport = reportService.generateMasterReportData($realtimeYCXData, currentGoals, true);
     if (currentWarehouse) {
       filteredReport = masterReport.filter(nv => nv.maKho == currentWarehouse);
     } else {
@@ -49,8 +50,10 @@
     />
   {:else}
     {#if filteredReport.length > 0}
+      <!-- [SURGICAL LOGIC]: Bơm trực tiếp currentGoals vào đây -->
       <EmployeeList 
         reportData={filteredReport} 
+        goals={currentGoals} 
         on:viewDetail={handleViewDetail}
       />
     {:else}

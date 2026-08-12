@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_00_CORE.txt
-GENERATED AT: 6/12/2026, 1:52:43 PM
+GENERATED AT: 8/12/2026, 5:17:41 PM
 
 
 >>> FILE_START: src/stores.js
@@ -96,7 +96,38 @@ export const thuongNongDataThangTruoc = writable([]);
 export const thuongERPDataThangTruoc = writable([]);
 export const masterReportData = writable({ luyke: [], sknv: [], realtime: [] });
 export const competitionData = writable([]);
-export const declarations = writable({ hinhThucXuat: '', hinhThucXuatGop: '', heSoQuyDoi: '' });
+
+// --- [PHẪU THUẬT v3.1]: Vá lỗi mất cấu hình Hệ số (Mất DT Quy Đổi) khi F5 ---
+let savedDeclarations = { hinhThucXuat: '', hinhThucXuatGop: '', heSoQuyDoi: '' };
+let savedEfficiency = [];
+if (typeof localStorage !== 'undefined') {
+    try {
+        const decRaw = localStorage.getItem('declarations_cache');
+        if (decRaw) savedDeclarations = JSON.parse(decRaw);
+        
+        const effRaw = localStorage.getItem('efficiencyConfig_cache');
+        if (effRaw) savedEfficiency = JSON.parse(effRaw);
+    } catch (e) {
+        console.error('Lỗi đọc cấu hình hệ số từ localStorage:', e);
+    }
+}
+
+export const declarations = writable(savedDeclarations);
+export const efficiencyConfig = writable(savedEfficiency);
+
+declarations.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('declarations_cache', JSON.stringify(value));
+    }
+});
+efficiencyConfig.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('efficiencyConfig_cache', JSON.stringify(value));
+    }
+});
+// -------------------------------------------------------------------------
+
+export const virtualProductList = writable([]); 
 export const categoryStructure = writable([]); 
 export const brandList = writable([]); 
 export const specialProductList = writable([]);
@@ -108,11 +139,11 @@ export const brandNameMapping = writable({});
 export const localCompetitionConfigs = writable([]); 
 export const globalCompetitionConfigs = writable([]); 
 export const globalSpecialPrograms = writable([]); 
-export const efficiencyConfig = writable([]); 
 export const qdcConfigStore = writable([]);
 export const warehouseCustomMetrics = writable([]);
 export const customRevenueTables = writable([]);
 export const customPerformanceTables = writable([]);
+export const dailyTrendConfigs = writable([]);
 
 // --- [LOGGING SECTION] QUẢN LÝ MỤC TIÊU (KPI) ---
 let savedKpi = null;
@@ -334,12 +365,12 @@ initializeApp();
   import UserCompetitionModal from './components/modals/UserCompetitionModal.svelte';
   import UserSpecialProgramModal from './components/modals/UserSpecialProgramModal.svelte';
   import ComposerModal from './components/modals/composer/ComposerModal.svelte';
-  import AddEfficiencyColumnModal from './components/modals/AddEfficiencyColumnModal.svelte';
-  import AddRevenueTableModal from './components/modals/AddRevenueTableModal.svelte';
-  import AddPerformanceTableModal from './components/modals/AddPerformanceTableModal.svelte';
   import UnexportedDetailModal from './components/modals/UnexportedDetailModal.svelte';
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
   import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
+
+  // [GENESIS SURGERY] Import Siêu Modal Hợp Nhất
+  import UnifiedConfigModal from './components/modals/UnifiedConfigModal.svelte';
 
   // [GENESIS IMPORT] Import cửa sổ Xem trước Ảnh
   import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
@@ -535,6 +566,25 @@ initializeApp();
       }
   }
 
+  // [GENESIS SURGERY] Bộ chuyển mạch cho UnifiedConfigModal
+  function handleUnifiedSave(event) {
+      const { type, payload } = event.detail;
+      const activeModal = get(modalState).activeModal;
+      
+      // Giả lập lại event cũ để gọi đúng các hàm lưu đã có sẵn của bạn
+      const fakeEvent = { detail: payload };
+
+      if (type === 'INDICATOR' || activeModal === 'add-efficiency-modal' || activeModal === 'add-metric-modal') {
+          handleSaveEffConfig(fakeEvent);
+      } else if (activeModal === 'add-performance-table-modal' || get(activeTab) === 'declaration-section') {
+          handleSavePerformanceTable(fakeEvent);
+      } else {
+          handleSaveCustomTable(fakeEvent);
+      }
+      
+      closeModal();
+  }
+
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
   
   $: {
@@ -590,27 +640,12 @@ initializeApp();
     />
 {/if}
 
-<AddRevenueTableModal 
-    isOpen={$modalState.activeModal === 'add-revenue-table-modal'} 
+<UnifiedConfigModal 
+    isOpen={['add-revenue-table-modal', 'add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
     editItem={$modalState.payload}
+    isSystem={$modalState.isSystem || $activeTab === 'declaration-section'}
     on:close={closeModal}
-    on:save={handleSaveCustomTable}
-/>
-
-<AddPerformanceTableModal
-    isOpen={$modalState.activeModal === 'add-performance-table-modal'}
-    editItem={$modalState.payload}
-    isSystem={$modalState.isSystem || false}
-    on:close={closeModal}
-    on:save={handleSavePerformanceTable}
-/>
-
-<AddEfficiencyColumnModal 
-    isOpen={$modalState.activeModal === 'add-efficiency-modal'} 
-    editItem={$modalState.payload}
-    isAdmin={$activeTab === 'declaration-section'}
-    on:close={closeModal}
-    on:save={handleSaveEffConfig}
+    on:save={handleUnifiedSave}
 />
 
 {#if $isDemoMode}
@@ -704,9 +739,8 @@ initializeApp();
 <<< FILE_END: src/App.svelte
 
 >>> FILE_START: src/config.js
-
 // src/config.js
-// Version 2.4 - Add Installment Sectors
+// Version 2.6 - Atomic Integrity: Cleaned up hardcoded HE_SO_QUY_DOI (Single Source of Truth via UI)
 // Chứa tất cả các cấu hình tĩnh của ứng dụng.
 
 export const config = {
@@ -724,7 +758,7 @@ export const config = {
             ngayTao: { required: true, displayName: 'Ngày tạo', aliases: ['ngày tạo'] },
             ngayHenGiao: { required: false, displayName: 'Ngày hẹn giao', aliases: ['ngày hẹn giao'] },
             nguoiTao: { required: true, displayName: 'Người tạo', aliases: ['người tạo'] },
-            thanhTien: { required: true, displayName: 'Giá bán', aliases: ['giá bán_1', 'giá bán'] },
+            thanhTien: { required: true, displayName: 'Giá bán_1', aliases: ['giá bán_1', 'giá bán'] },
             soLuong: { required: true, displayName: 'Số lượng', aliases: ['sl bán', 'số lượng'] },
             nhomHang: { required: true, displayName: 'Nhóm hàng', aliases: ['nhóm hàng'] },
             tenSanPham: { required: true, displayName: 'Tên sản phẩm', aliases: ['tên sản phẩm'] },
@@ -740,6 +774,7 @@ export const config = {
             diaChi: { required: false, displayName: 'Địa chỉ', aliases: ['địa chỉ', 'dia chi', 'address', 'địa chỉ giao hàng', 'địa chỉ kh'] }
         },
         giocong: {
+            maKho: { required: false, displayName: 'Mã siêu thị', aliases: ['mã siêu thị', 'masieuthi', 'mã kho'] },
             maNV: { required: false, displayName: 'Mã NV', aliases: ['mã nv', 'msnv'] },
             hoTen: { required: false, displayName: 'Tên NV', aliases: ['tên nv', 'tennv'] },
             tongGioCong: { required: true, displayName: 'Tổng giờ công', aliases: ['tổng giờ công (x.nhận) total', 'tổng giờ công'] }
@@ -794,7 +829,6 @@ export const config = {
         'BP Kho Kiêm Hỗ Trợ Kỹ Thuật Xe Đạp - ĐM'
     ],
     DEFAULT_DATA: {
-        // [GENESIS ADD] Danh sách Mã Ngành Hàng được phép hiển thị ở tab Trả Góp
         NGANH_HANG_TRA_GOP_ALLOW_LIST: [
             '484',  // Điện gia dụng
             '13',   // Điện thoại
@@ -819,12 +853,10 @@ export const config = {
             'Xuất bán pre-order trả góp tại siêu thị (TCĐM)',
             'Xuất dịch vụ thu hộ bảo hiểm'
         ],
-        HINH_THUC_XUAT_TRA_GOP: ['Xuất bán hàng trả góp tại siêu thị', 'Xuất bán trả góp ưu đãi cho nhân viên', 'Xuất bán trả góp cho NV phục vụ công việc', 'Xuất bán pre-order trả góp tại siêu thị', 'Xuất bán pre-order trả góp tại siêu thị (TCĐM)'],
-        HE_SO_QUY_DOI: { '1098 - Máy lạnh (IMEI)': 1,'4659 - Phụ kiện tiện ích Apple': 3.37,'6400 - Phụ kiện Âm Thanh Apple': 3.37,'6400 - Phụ kiện âm thanh Apple': 3.37,'2381 - Phụ kiện trang trí Apple': 3.37,'2011 - Khuyến mãi - SP Ảo': 1, '2511 - Nạp tiền AirTime M_Service': 1, '2151 - Phiếu mua hàng/Pre Order': 1, '971 - Thẻ cào điện tử': 1, '431 - Ốp Lưng - Flip Cover': 3.37, '2571 - Thu hộ cước Viettel': 1, '4519 - Thu Hộ Tiền Trả Góp': 1, '2513 - Thu hộ Payoo': 1, '4302 - Nón bảo hiểm các loại': 1.92, '2291 - Sim trắng (Seri)': 1, '18 - Điện Thoại Di Động': 1, '4599 - Thu Hộ Tiền Mặt': 1, '12 - Pin sạc dự phòng': 3.37, '571 - UDDĐ': 1, '58 - Miếng dán mặt sau': 3.37, '1231 - Miếng dán mặt trước': 3.37, '1491 - Smartphone': 1, '1891 - Sim Online': 5.45, '4479 - Dịch Vụ Bảo Hiểm': 4.18, '3359 - Phụ kiện đồng hồ': 3, '2391 - Smartwatch': 3, '911 - Máy nước nóng': 1, '4499 - Thu Hộ Phí Bảo Hiểm': 4.18, '4142 - Bình đun siêu tốc': 1.85, '4153 - Xay Sinh tố': 1.85, '15 - Tai nghe dây': 3.37, '1412 - Dịch vụ bảo trì': 1, '3345 - Cáp': 3.37, '2312 - Mã nạp thẻ game': 1, '4900 - Bàn phím': 3.37, '4141 - Bàn ủi khô': 1.85, '4156 - Nồi cơm nắp gài/nắp rời': 1.85, '14 - Sạc/ Adapter': 3.37, '42 - Laptop': 1.2, '751 - Khuyến mãi ba lô, túi xách': 1, '1031 - Loa di động': 3.37, '4199 - Miếng Dán Kính': 3.37, '3346 - Tai Nghe Bluetooth': 3.37, '931 - Máy tính bảng': 1.2, '19 - Khuyến mãi ĐTDĐ': 1, '10 - Chuột': 3.37, '4060 - Đồng hồ Nam Dây da': 3, '880 - Loa Karaoke': 1.29, '851 - Khuyến mãi Điện Tử': 1, '4169 - Lõi lọc': 1.85, '4540 - Tai Nghe Bluetooth - imei': 3.37, '4062 - Đồng hồ Nữ Dây kim loại': 3, '2831 - Phụ kiện Apple': 3.37, '2691 - Bộ Sạc/Cáp/Adaptor (Giá Rẻ)': 3.37, '1351 - Loa vi tính (imei)': 3.37, '1094 - Tivi LED (IMEI)': 1, '4324 - Khung treo, giá đỡ': 3.37, '1099 - Máy giặt (IMEI)': 1, '1097 - Tủ lạnh (IMEI)': 1, '4099 - Nồi chiên': 1.85, '4070 - Đồng hồ Trẻ em': 3, '967 - Sấy tóc': 1.85, '957 - Lò nướng': 1.85, '958 - Lò vi sóng': 1.85, '4158 - Nồi cơm điện tử': 1.85, '3241 - Dao/Kéo/Thớt': 1.92, '3240 - Hộp/Hũ': 1.92, '3265 - Nồi': 1.92, '4139 - Đèn bàn/Đèn Sạc/Đèn bắt muỗi': 1.85, '73 - Phụ kiện điện máy': 3.37, '4171 - Lọc nước dạng tủ đứng': 1.85, '3384 - Đồ nghề sử dụng điện': 1, '4147 - Bếp điện đơn': 1.85, '4063 - Đồng hồ Nữ Dây da': 3, '3263 - Chảo': 1.92, '3185 - Vệ sinh nhà cửa': 1.92, '4143 - Bàn ủi hơi nước đứng': 1.85, '4146 - Bếp gas đôi': 1.85, '1052 - Khuyến mãi Điện Lạnh': 1, '3799 - Quạt điều hòa': 1.85, '1951 - Software (số Lượng)': 1, '6000 - Máy ép trái cây': 1.85, '4059 - Đồng hồ Nam Dây kim loại': 3, '4160 - Quạt bàn/hộp/sạc': 1.85, '4162 - Bình/Ca đựng nước': 1.92, '4660 - Quạt lửng': 1.85, '17 - Phụ kiện IT khác': 3.37, '4145 - Bếp gas đơn': 1.85, '875 - Dàn máy': 1, '1071 - Phụ kiện điện tử': 3.37, '891 - Micro': 1, '4152 - Ổ cắm điện/vợt muỗi': 1.85, '4154 - Xay ép/Khác': 1.85, '5975 - Balo Túi Chống Sốc': 3.37, '893 - Tủ đông': 1, '2531 - Thu hộ Mservice': 1, '4019 - Sim trắng điện tử': 1, '4320 - Đồng hồ - Khuyến mãi mua': 1, '3187 - Bình/Ly/Ca giữ nhiệt': 1.92, '4159 - Quạt đứng': 1.85, '4157 - Nồi cơm cao tần': 1.85, '16 - Thẻ Nhớ': 3.37, '4140 - Bàn ủi hơi nước': 1.85, '4150 - Máy nước nóng lạnh': 1.85, '591 - Thay sim': 1, '2999 - Dụng cụ nhà bếp khác': 1.92, '4779 - Loa di động - imei': 3.37, '4440 - Gói Cước Và Dịch Vụ GTGT': 1, '4121 - Máy Bơm Nước': 1, '4161 - Quạt treo': 1.85, '4961 - Quần bó & legging nữ Thể Thao': 1, '4151 - Áp suất/lẩu/chiên/nướng': 1.85, '4144 - Bếp gas âm': 1.85, '871 - USB': 3.37, '6479 - Camera IP Trong nhà': 3.37, '4219 - Camera IP Ngoài trời': 3.37, '4659 - Phụ kiện tiện ích Apple': 3.37, '531 - Pin, 4095 - Cáp (Giá Rẻ)': 3.37, '2791 - Kinh doanh mùa vụ': 3.37, '2771 - Giá treo màn hình máy tính': 3.37, '80 - Khuyến mãi Khác': 1, '1131 - Máy in, Fax': 2, '4125 - Smartband': 3, '743 - Quạt sưởi': 1.85, '4659 - Phụ kiện Apple - Imei': 3.37, '4064 - Đồng hồ Nữ Dây khác': 3, '956 - Hút bụi': 1.85, '4172 - Lọc nước âm tủ/trên bàn': 1.85, '3779 - Bếp điện âm': 1.85, '4061 - Đồng hồ Nam Dây khác': 3, '4067 - Đồng hồ Unisex Dây khác': 3, '1411 - Dịch vụ lắp đặt': 1, '4149 - Bình thủy điện': 1.85, '4148 - Bếp điện đôi': 1.85, '955 - Hút mùi/ hút khói': 1.85, '4699 - Gia dụng không điện khác': 1.92, '4859 - Xe đạp đường phố cổ điển': 1, '4759 - Phụ Kiện Xe Đạp': 1, '2471 - Thu hộ cước VinaPhone': 1, '3719 - Quần dài nữ Thể Thao': 1, '1051 - Khuyến mãi Điện gia dụng': 1, '3721 - Quần ngắn & váy nữ Thể Thao': 1, '410 - Phụ kiện TT khác': 3.37, '4155 - Hút bụi cây': 1.85, '3563 - Máy tính nguyên bộ': 1, '894 - Tủ mát': 1, '3639 - Máy lọc không khí': 1.85, '611 - Ứng dụng PC & Laptop': 1, '4089 - Đồng hồ Unisex Dây kim loại': 3, '4439 - Hút Bụi Robot': 1.85, '3740 - Áo T-shirt nam Thể Thao': 1, '4339 - Ổn Áp': 1, '4459 - Quạt Trần': 1.85, '2351 - Router - Imei': 3.37, '3159 - DV Internet và Truyền hình thu tiền': 1, '3659 - Máy sấy lồng ngang': 1, '3519 - Áo Bra Thể Thao': 1, '3479 - Thiết bị mạng khác': 3.37, '3859 - Máy rửa chén': 1 }
+        HINH_THUC_XUAT_TRA_GOP: ['Xuất bán hàng trả góp tại siêu thị', 'Xuất bán trả góp ưu đãi cho nhân viên', 'Xuất bán trả góp cho NV phục vụ công việc', 'Xuất bán pre-order trả góp tại siêu thị', 'Xuất bán pre-order trả góp tại siêu thị (TCĐM)']
+        // Đã xóa bỏ mảng HE_SO_QUY_DOI đồ cổ. Trách nhiệm thuộc về Admin UI 100%.
     }
 };
-
-
 <<< FILE_END: src/config.js
 
 >>> FILE_START: src/services/action.service.js
@@ -2836,7 +2868,6 @@ export const cacheHandler = {
         
         const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
         
-        // MẢNG LỌC TOÀN CỤC CHUẨN XÁC
         let allowedWarehouses = [];
         if (dsnvData && dsnvData.length > 0) {
              const dsKho = [...new Set(dsnvData.map(e => e.maKho || e.storeId).filter(Boolean))];
@@ -2846,32 +2877,40 @@ export const cacheHandler = {
         }
 
         await Promise.all(otherFiles.map(async (key) => {
-            let data = await storage.getItem(key);
-            if (data && data.length > 0) {
-                // 1. Bảo vệ dữ liệu cứng: Lọc tạp chất ngoài cụm quản lý
-                if (key.includes('ycx') && allowedWarehouses.length > 0) {
-                     data = data.filter(d => {
-                        const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                        return allowedWarehouses.includes(whCode);
-                     });
-                     try { await storage.setItem(key, data); } catch(e){} 
-                }
-
-                // 2. LỌC Ở TẦNG GIAO DIỆN (View-level Filtering)
-                let displayData = data;
-                const currentWh = get(selectedWarehouse);
+            try {
+                let data = await storage.getItem(key);
                 
-                // Cả ycx, giocong, thuongnong đều phải chạy qua View-Level filter nếu đang xem kho lẻ
-                if (currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
-                     displayData = data.filter(d => {
-                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                         return whCode === currentWh;
-                     });
-                }
+                // [PHẪU THUẬT v3.3]: Kiểm tra Array.isArray để bọc lỗi vỡ Cache gây trắng trang
+                if (data && Array.isArray(data) && data.length > 0) {
+                    
+                    if (key.includes('ycx') && allowedWarehouses.length > 0) {
+                         data = data.filter(d => {
+                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                            return allowedWarehouses.includes(whCode);
+                         });
+                         try { await storage.setItem(key, data); } catch(e){} 
+                    }
 
-                FILE_MAPPING[key].store.set(displayData);
-                updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
-             }
+                    let displayData = data;
+                    const currentWh = get(selectedWarehouse);
+                    
+                    if (currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
+                         displayData = data.filter(d => {
+                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                             return whCode === currentWh;
+                         });
+                    }
+
+                    FILE_MAPPING[key].store.set(displayData);
+                    updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
+                 } else if (data && !Array.isArray(data)) {
+                     // Reset rác cache để dọn luồng bộ nhớ
+                     console.warn(`[CacheHandler] Rác cache phát hiện tại key: ${key}. Đang tiến hành làm sạch...`);
+                     await storage.setItem(key, []);
+                 }
+            } catch (err) {
+                console.error(`[CacheHandler] Bỏ qua lỗi đọc cache file ${key}:`, err);
+            }
         }));
 
         console.log("[DataService] Bắt đầu xử lý dữ liệu Paste (Absolute Isolation)...");
@@ -3002,7 +3041,7 @@ import { get } from 'svelte/store';
 import { 
     selectedWarehouse, currentUser, realtimeYCXData, 
     categoryStructure, brandList, specialProductList,
-    warehouseList 
+    warehouseList, virtualProductList // [NEW] Thêm store mới
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
@@ -3146,8 +3185,8 @@ export const fileHandler = {
                         }
 
                         const successMsg = isMultiMode && currentMonths.length > 0 
-                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')}` 
-                            : `✓ Đã đồng bộ lên Cloud`;
+                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')} (${dataToStore.length} dòng)` 
+                            : `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
                         updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
 
@@ -3223,7 +3262,7 @@ export const fileHandler = {
             updateSyncState(saveKey, 'error', 'Chưa có file. Vui lòng tải file.', null);
             return { success: true };
         } catch (error) {
-            updateSyncState(saveKey, 'error', `Lỗi xóa file: ${error.message}`);
+            updateSyncState(syncKey, 'error', `Lỗi xóa file: ${error.message}`);
             return { success: false, message: error.message };
         }
     },
@@ -3254,7 +3293,8 @@ export const fileHandler = {
             if (!success) throw new Error(error);
             categoryStructure.set(normalizedData);
             
-            const brands = [...new Set(normalizedData.map(item => item.brand).filter(Boolean))].sort();
+            // [PHẪU THUẬT LOGIC]: Nhận diện toàn bộ các khả năng đặt tên của thuộc tính Hãng
+            const brands = [...new Set(normalizedData.map(item => item.nhaSanXuat || item.nhasanxuat || item.NhaSanXuat || item.brand || item.hang || item['Nhà sản xuất']).filter(Boolean))].sort();
             brandList.set(brands);
             event.target.value = null;
             return { success: true, count: normalizedData.length };
@@ -3271,6 +3311,23 @@ export const fileHandler = {
             const { success, normalizedData, error } = dataProcessing.normalizeSpecialProductData(rawData);
             if (!success) throw new Error(error);
             specialProductList.set(normalizedData);
+            event.target.value = null;
+            return { success: true, count: normalizedData.length };
+        } catch (err) { throw err; }
+    },
+
+    // [NEW] Xử lý tải file Sản phẩm đặc thù (Gói bảo dưỡng, combo...)
+    async handleVirtualProductFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        try {
+            const workbook = await _handleFileRead(file);
+            const sheetName = workbook.SheetNames[0];
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
+            const { success, normalizedData, error } = dataProcessing.normalizeVirtualProductData(rawData);
+            if (!success) throw new Error(error);
+            
+            virtualProductList.set(normalizedData);
             event.target.value = null;
             return { success: true, count: normalizedData.length };
         } catch (err) { throw err; }
@@ -3514,7 +3571,8 @@ export const syncHandler = {
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
             } else {
-                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'];
+                // [PHẪU THUẬT v3.2]: Bổ sung YCX vào danh sách tải xuống cho từng kho lẻ
+                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong', 'saved_ycx', 'saved_ycx_thangtruoc', 'saved_ycx_cungkynam'];
             }
         } else {
             targetKeys = [...Object.keys(FILE_MAPPING), ...Object.keys(PASTE_MAPPING)];
@@ -3650,7 +3708,7 @@ export const syncHandler = {
                 }
 
                 let filesToDownload = [];
-                // Phẫu thuật File: Hỗ trợ nạp song song cả Multi (YCX) và Single split (Giờ công, Thưởng nóng)
+                
                 if (get(selectedWarehouse) === 'ALL') {
                      for(let wh of userAllowedWarehouses) {
                          const singleMetaStr = localStorage.getItem(`_meta_${wh}_${baseKey}`);
@@ -3738,18 +3796,15 @@ export const syncHandler = {
                 updateSyncState(stateKey, 'synced', `✓ Đã đồng bộ (${allDataForStore.length} dòng)`, metaToSave);
 
             } else {
-                // Phẫu thuật PASTE: Gom tụ nguyên tử (Atomic Aggregation) để triệt tiêu Race Condition
                 const response = await fetch(state.metadata.downloadURL);
                 const textContent = await response.text();
                 
-                // Lưu text của ô hiện tại xuống kho riêng của nó
                 localStorage.setItem(stateKey, textContent);
                 
                 let processedCount = 0;
                 const isBatchMode = get(selectedWarehouse) === 'ALL';
                 
                 if (mapping.isThiDuaNV) {
-                    // 1. Tính toán số dòng cho riêng ô này để hiển thị UI
                     const parsedData = dataProcessing.parsePastedThiDuaTableData(textContent);
                     if (parsedData.success) {
                         dataProcessing.updateCompetitionNameMappings(parsedData.mainHeaders);
@@ -3757,7 +3812,6 @@ export const syncHandler = {
                         processedCount = processedData?.length || 0;
                     }
 
-                    // 2. Gom tụ dữ liệu cho Store tổng
                     if (isBatchMode) {
                         let combinedData = [];
                         const validWarehouses = get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'));
@@ -3771,7 +3825,7 @@ export const syncHandler = {
                                 }
                             }
                         }
-                        mapping.store.set(combinedData); // Bảng chung nhận 100% data
+                        mapping.store.set(combinedData); 
                     } else {
                         if (parsedData.success) {
                             const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
@@ -3779,14 +3833,12 @@ export const syncHandler = {
                         }
                     }
                 } else if (mapping.processFunc) {
-                    // 1. Tính toán số dòng cho riêng ô này
                     if (baseKey === 'daily_paste_luyke' || baseKey === 'cluster_paste_luyke') {
                          processedCount = dataProcessing.parseCompetitionDataFromLuyKe(textContent).length;
                     } else {
                          processedCount = mapping.processFunc(textContent)?.length || 0;
                     }
                     
-                    // 2. Gom tụ dữ liệu cho Store tổng
                     if (isBatchMode) {
                         let combinedData = [];
                         let combinedText = '';
@@ -3796,7 +3848,7 @@ export const syncHandler = {
                             if (txt) {
                                 const pData = mapping.processFunc(txt);
                                 combinedData.push(...pData);
-                                combinedText += txt + '\n'; // Nối văn bản để parse tổng hợp
+                                combinedText += txt + '\n';
                             }
                         }
                         mapping.store.set(combinedData);
@@ -3860,6 +3912,7 @@ export const dataProcessing = {
     normalizeCategoryStructureData: normalizers.normalizeCategoryStructureData,
     normalizeSpecialProductData: normalizers.normalizeSpecialProductData,
     normalizeBrandData: normalizers.normalizeBrandData,
+    normalizeVirtualProductData: normalizers.normalizeVirtualProductData,
 
     // --- Parsers ---
     processThuongERP: parsers.processThuongERP,
@@ -3878,25 +3931,25 @@ export const dataProcessing = {
 
 >>> FILE_START: src/services/dataService.js
 // src/services/dataService.js
+// Version 3.2 - Surgical Fix: Complete FileHandler Bridge & Auto-Hydrate Brand List
 import { fileHandler } from './data/fileHandler.js';
 import { pasteHandler } from './data/pasteHandler.js';
 import { syncHandler } from './data/syncHandler.js';
 import { cacheHandler } from './data/cacheHandler.js';
-// [NEW] Import thêm để xử lý load config
 import { datasyncService } from './datasync.service.js';
-import { localCompetitionConfigs, specialProductList } from '../stores.js';
+import { categoryService } from './declarations/category.service.js';
+import { localCompetitionConfigs, specialProductList, brandList, categoryStructure } from '../stores.js';
 
 export const dataService = {
     appController: null,
     init(controller) { this.appController = controller; },
 
-    // --- File Handlers ---
-    // --- File Handlers ---
-    // [SURGICAL MODIFICATION] Thêm isMultiMode
+    // --- File Handlers (Đã khôi phục toàn bộ cầu nối bị đứt gãy) ---
     handleFileChange: (file, key, isMultiMode = false) => fileHandler.handleFileChange(file, key, isMultiMode),
     handleRealtimeFileInput: (event) => fileHandler.handleRealtimeFileInput(event),
     handleCategoryFile: (event) => fileHandler.handleCategoryFile(event),
     handleSpecialProductFileUpload: (event) => fileHandler.handleSpecialProductFileUpload(event),
+    handleVirtualProductFileUpload: (event) => fileHandler.handleVirtualProductFileUpload(event),
     handleTemplateDownload: () => fileHandler.handleTemplateDownload(),
 
     // --- Paste Handlers ---
@@ -3909,25 +3962,24 @@ export const dataService = {
 
     _getSavedMetadata(warehouse, dataType) { return null; },
 
-    // [NEW] Hàm tải toàn bộ cấu hình phụ trợ của Kho (Thi đua, SPĐQ...)
-    // Hàm này sẽ được gọi khi chọn Kho
+    // --- Warehouse Settings Loader ---
     async loadWarehouseSettings(warehouse) {
         if (!warehouse) return;
         console.log(`[DataService] Loading settings for warehouse: ${warehouse}`);
         
         try {
-            // 1. Tải cấu hình Thi đua (User)
-            const competitions = await datasyncService.loadCompetitionConfigs(warehouse);
+            // [PHẪU THUẬT LOGIC]: Nạp song song cấu hình Thi đua và Danh sách Hãng/Ngành hàng từ Cloud
+            const [competitions] = await Promise.all([
+                datasyncService.loadCompetitionConfigs(warehouse),
+                categoryService.loadMappingsGlobal()
+            ]);
+
             if (competitions) {
                 localCompetitionConfigs.set(competitions);
                 console.log(`[DataService] Loaded ${competitions.length} competitions.`);
             } else {
                 localCompetitionConfigs.set([]);
             }
-
-            // 2. Tải danh sách SPĐQ (nếu có lưu theo kho - logic mở rộng)
-            // const spList = await datasyncService.loadSpecialPrograms(warehouse);
-            // ...
 
         } catch (error) {
             console.error("[DataService] Error loading warehouse settings:", error);
@@ -3967,6 +4019,28 @@ const getDB = () => {
 const getCurrentUserEmail = () => {
     const user = get(currentUser);
     return user ? user.email : 'unknown';
+};
+
+// [PHẪU THUẬT LOGIC]: Hàm vũ khí chuẩn hóa ngày tháng đa năng chống lỗi Serialize từ Cloud
+const parseSafeDate = (d) => {
+    if (!d) return null;
+    if (d instanceof Date && !isNaN(d)) return d;
+    if (!isNaN(d) && Number(d) > 30000 && Number(d) < 60000) {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+        return new Date(excelEpoch.getTime() + Number(d) * 86400000);
+    }
+    if (typeof d === 'string' || typeof d === 'number') {
+        const dDate = new Date(d);
+        if (!isNaN(dDate.getTime())) return dDate;
+        
+        const str = String(d).trim();
+        const parts = str.split(/[-/ ]/);
+        if (parts.length >= 3) {
+            if (parts[0].length === 4) return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            else return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        }
+    }
+    return null;
 };
 
 export const datasyncService = {
@@ -4023,6 +4097,36 @@ export const datasyncService = {
             }
             return 100;
         } catch (e) { return 100; }
+    },
+
+    async loadAllTargetRatios(kho) {
+        const db = getDB();
+        if (!db || !kho) return { global: 100, categories: {} };
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                return {
+                    global: data.personalTargetRatio !== undefined ? data.personalTargetRatio : 100,
+                    categories: data.categoryTargetRatios || {}
+                };
+            }
+            return { global: 100, categories: {} };
+        } catch (e) { return { global: 100, categories: {} }; }
+    },
+
+    async saveCategoryTargetRatio(kho, category, ratio) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                [`categoryTargetRatios.${category}`]: ratio,
+                categoryTargetRatiosUpdatedAt: serverTimestamp(),
+                categoryTargetRatiosUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) { console.error(error); }
     },
 
     async saveQdcConfig(kho, config) {
@@ -4082,6 +4186,38 @@ export const datasyncService = {
         const khoRef = doc(db, "warehouseData", kho);
         try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalPerformanceTables || []) : []; } catch(e) { return []; }
     },
+    
+    async saveDailyTrendConfigs(kho, configs) {
+        const db = getDB();
+        if (!db || !kho) return;
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            await setDoc(khoRef, {
+                dailyTrendConfigs: configs,
+                dailyTrendConfigsUpdatedAt: serverTimestamp(),
+                dailyTrendConfigsUpdatedBy: getCurrentUserEmail()
+            }, { merge: true });
+        } catch (error) {
+            console.error("[DataSync] Lỗi lưu cấu hình Xu Hướng Ngày:", error);
+            throw error;
+        }
+    },
+    
+    async loadDailyTrendConfigs(kho) {
+        const db = getDB();
+        if (!db || !kho) return [];
+        const khoRef = doc(db, "warehouseData", kho);
+        try {
+            const docSnap = await getDoc(khoRef);
+            if (docSnap.exists() && docSnap.data().dailyTrendConfigs) {
+                return docSnap.data().dailyTrendConfigs;
+            }
+            return [];
+        } catch (error) {
+            console.error("[DataSync] Lỗi tải cấu hình Xu Hướng Ngày:", error);
+            return [];
+        }
+    },
 
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
@@ -4139,8 +4275,24 @@ export const datasyncService = {
         if (!db || !kho) return;
         const khoRef = doc(db, "warehouseData", kho);
         const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
+        
         try {
             if (multiModeKeys.includes(key)) {
+                if (metadata.isDeleted) {
+                    const dataToSave = { 
+                        [key]: { 
+                            files: [], 
+                            isDeleted: true, 
+                            isMulti: true, 
+                            timestamp: Date.now(), 
+                            updatedAt: serverTimestamp(), 
+                            updatedBy: getCurrentUserEmail() 
+                        } 
+                    };
+                    await setDoc(khoRef, dataToSave, { merge: true });
+                    return; 
+                }
+
                 const docSnap = await getDoc(khoRef);
                 let existingFiles = [];
                 if (docSnap.exists() && docSnap.data()[key]) {
@@ -4148,6 +4300,7 @@ export const datasyncService = {
                     if (Array.isArray(existingData.files)) existingFiles = existingData.files;
                     else if (existingData.downloadURL) existingFiles = [existingData];
                 }
+                
                 if (metadata.uploadedMonths && metadata.uploadedMonths.length > 0) {
                     existingFiles = existingFiles.filter(f => {
                         if (!f.uploadedMonths) return f.fileName !== metadata.fileName;
@@ -4156,11 +4309,30 @@ export const datasyncService = {
                 } else {
                     existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
                 }
+                
                 existingFiles.push({ ...metadata, updatedAt: new Date().toISOString(), updatedBy: getCurrentUserEmail() });
-                const dataToSave = { [key]: { files: existingFiles, isMulti: true, timestamp: Date.now(), updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
+                
+                const dataToSave = { 
+                    [key]: { 
+                        files: existingFiles, 
+                        isMulti: true, 
+                        isDeleted: false,
+                        timestamp: Date.now(), 
+                        updatedAt: serverTimestamp(), 
+                        updatedBy: getCurrentUserEmail() 
+                    } 
+                };
                 await setDoc(khoRef, dataToSave, { merge: true });
+                
             } else {
-                const dataToSave = { [key]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
+                const dataToSave = { 
+                    [key]: { 
+                        ...metadata, 
+                        isDeleted: metadata.isDeleted || false, 
+                        updatedAt: serverTimestamp(), 
+                        updatedBy: getCurrentUserEmail() 
+                    } 
+                };
                 await setDoc(khoRef, dataToSave, { merge: true });
             }
         } catch (error) { throw error; }
@@ -4241,8 +4413,10 @@ export const datasyncService = {
             const targetYear = targetDate.getFullYear();
 
             lastMonthYcx.forEach(row => { 
-                if (!row.ngayTao || !(row.ngayTao instanceof Date)) return; 
-                if (row.ngayTao.getMonth() !== targetMonth || row.ngayTao.getFullYear() !== targetYear) return;
+                // [PHẪU THUẬT LOGIC]: Sửa lỗi mất dữ liệu Cùng Kỳ do Cloud Serialize Date thành String. Dùng parseSafeDate thay vì instanceof
+                const rowDate = parseSafeDate(row.ngayTao || row.ngay_tao || row['Ngày tạo']);
+                if (!rowDate) return; 
+                if (rowDate.getMonth() !== targetMonth || rowDate.getFullYear() !== targetYear) return;
 
                 const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/); 
                 if (!msnvMatch) return;
@@ -4258,8 +4432,13 @@ export const datasyncService = {
                 }
             });
 
-            let targetRatio = 100;
-            try { targetRatio = await this.loadPersonalTargetRatio(wh) || 100; } catch(e){}
+            let globalRatio = 100;
+            let catRatios = {};
+            try {
+                const ratios = await this.loadAllTargetRatios(wh);
+                globalRatio = ratios.global || 100;
+                catRatios = ratios.categories || {};
+            } catch(e){}
 
             const getWarehouseEmpCount = (empWh) => {
                 const filtered = allEmps.filter(e => String(e.maKho || e.MAKHO || '').trim() === String(empWh).trim());
@@ -4288,7 +4467,8 @@ export const datasyncService = {
                     const luykeMap = luykeNameMaps && luykeNameMaps[item.name]; 
                     let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
                     if (linkedEmpProg) {
-                        const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100); 
+                        const specificRatio = catRatios[item.name] || globalRatio;
+                        const rawTarget = (parseFloat(item.target) || 0) * (specificRatio / 100); 
                         const isQty = item.type === 'soLuong'; 
                         const pTarget = (isQty ? Math.ceil(rawTarget / storeEmpCount) : Math.round(rawTarget / storeEmpCount)); 
                         stMappedData[linkedEmpProg] = pTarget; 
@@ -4499,7 +4679,8 @@ import {
     efficiencyConfig,
     qdcConfigStore,
     competitionNameMappings,
-    luykeNameMappings // [NEW] Import store mới
+    luykeNameMappings, 
+    virtualProductList // [NEW] Import store Sản phẩm đặc thù
 } from '../../stores.js';
 import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
 
@@ -4561,7 +4742,7 @@ export const categoryService = {
                 "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping", 
                 "groupNameMapping", "brandNameMapping", "efficiencyConfig", 
                 "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList",
-                "luykeNameMappings" // [NEW] Thêm file cấu hình thi đua siêu thị vào tiến trình tải lúc khởi động
+                "luykeNameMappings", "virtualProductList" // [NEW] Thêm file cấu hình SP Đặc thù vào tiến trình tải
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
@@ -4576,7 +4757,8 @@ export const categoryService = {
             competitionNameMappings.set(safeGet(results[7], {}));
             categoryStructure.set(safeGet(results[8]));
             brandList.set(safeGet(results[9]));
-            luykeNameMappings.set(safeGet(results[10], {})); // [NEW] Nạp dữ liệu vào store
+            luykeNameMappings.set(safeGet(results[10], {})); 
+            virtualProductList.set(safeGet(results[11])); // [NEW] Nạp dữ liệu vào store SP Đặc thù
 
             console.log("[declarations.category] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -4674,7 +4856,6 @@ export const categoryService = {
         }
     },
 
-    // [NEW] Lưu và tải mapping riêng biệt cho Thi đua Siêu thị
     async saveLuykeNameMappings(mappings) {
         const db = getDB();
         if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
@@ -4730,6 +4911,38 @@ export const categoryService = {
             }
             return [];
         } catch (error) { console.error("Error loading SPĐQ:", error); return []; }
+    },
+
+    // --- VIRTUAL PRODUCTS (SẢN PHẨM ĐẶC THÙ) [NEW] ---
+    async saveVirtualProductList(products) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "virtualProductList");
+            await setDoc(docRef, { data: sanitizeForFirestore(products) });
+            notify('Đã lưu Danh sách Sản phẩm Đặc thù thành công!', 'success');
+        } catch (error) { 
+            console.error("Error saving virtual products:", error); 
+            notify('Lỗi lưu SP Đặc thù.', 'error'); 
+        }
+    },
+
+    async loadVirtualProductList() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "virtualProductList");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.data || d.products || [];
+            }
+            return [];
+        } catch (error) { 
+            console.error("Error loading Virtual Products:", error);
+            return []; 
+        }
     },
 
     async loadGlobalSpecialPrograms() {
@@ -5464,21 +5677,24 @@ const normalizeStr = (str) => {
 const extractKey = (str) => {
     if (!str) return 'unknown';
     const rawStr = str.toString().trim();
-    // Quét tìm cụm số đứng trước dấu gạch ngang (VD: "1273 - Máy tính" -> bóc ra "1273")
     const match = rawStr.match(/^(\d+)\s*[-–]/);
     if (match) {
         return match[1]; 
     }
-    // Fallback: Nếu không có mã số (VD: "Phụ kiện"), trả về chuỗi chuẩn hóa
     return normalizeStr(rawStr);
 };
 
 export const helpers = {
     findColumnName(header, aliases) {
-        for (const colName of header) {
-            const processedColName = normalizeStr(colName);
-            if (aliases.map(a => normalizeStr(a)).includes(processedColName)) {
-                return colName;
+        if (!header || !Array.isArray(header) || !aliases || !Array.isArray(aliases)) return null;
+        
+        const normalizedHeader = header.map(col => ({ original: col, norm: normalizeStr(col) }));
+        
+        for (const alias of aliases) {
+            const normAlias = normalizeStr(alias);
+            const found = normalizedHeader.find(h => h.norm === normAlias);
+            if (found) {
+                return found.original; 
             }
         }
         return null;
@@ -5503,7 +5719,6 @@ export const helpers = {
     getHeSoQuyDoi: () => {
         const heSoMap = {};
         
-        // ƯU TIÊN 1: Lấy từ Cấu hình Hiệu quả (Giao diện Admin mới)
         const dynamicConfig = get(efficiencyConfig);
         if (dynamicConfig && dynamicConfig.length > 0) {
             dynamicConfig.forEach(item => {
@@ -5513,7 +5728,6 @@ export const helpers = {
             });
         }
 
-        // ƯU TIÊN 2: Lấy từ Khai báo Text
         const declarationData = get(declarations).heSoQuyDoi;
         if (declarationData) {
             declarationData.split('\n').filter(l => l.trim()).forEach(line => {
@@ -5522,9 +5736,7 @@ export const helpers = {
                     const rawKey = line.substring(0, lastCommaIndex);
                     const rawVal = line.substring(lastCommaIndex + 1);
                     
-                    // SỬ DỤNG ID LÀM CHÌA KHÓA LƯU TRỮ
                     const safeKey = extractKey(rawKey);
-                    // Đề phòng trường hợp gõ nhầm dấu phẩy thập phân
                     const value = parseFloat(rawVal.trim().replace(',', '.')); 
                     
                     if (safeKey && !isNaN(value)) {
@@ -5536,22 +5748,43 @@ export const helpers = {
             });
         }
 
-        // ƯU TIÊN 3: Mặc định (Fallback cuối cùng)
-        const defaultData = config.DEFAULT_DATA.HE_SO_QUY_DOI || {};
-        Object.entries(defaultData).forEach(([key, value]) => {
-             const safeKey = extractKey(key);
-             if (heSoMap[safeKey] === undefined) {
-                 heSoMap[safeKey] = value;
-             }
-        });
-
         return heSoMap;
     },
 
-    // [CODEGENESIS] Cổng giao tiếp an toàn cho các báo cáo Lũy kế, Realtime
-    getHeSoForCategory: (nhomHangRaw, mapHeSo) => {
-        const safeKey = extractKey(nhomHangRaw);
-        return mapHeSo[safeKey] !== undefined ? mapHeSo[safeKey] : 1;
+    // [CODEGENESIS v4.2]: Đa hình (Overload) - Đã gỡ bỏ console.warn theo yêu cầu
+    getHeSoForCategory: (arg1, arg2, arg3) => {
+        let nhomHangRaw, nganhHangRaw, mapHeSo;
+
+        // KIỂM TRA ĐA HÌNH: Nếu file cũ gọi kiểu (nganhHang, mapHeSo) -> arg3 sẽ rỗng
+        if (arg3 === undefined && typeof arg2 === 'object' && arg2 !== null) {
+            nhomHangRaw = null; 
+            nganhHangRaw = arg1;
+            mapHeSo = arg2;
+        } else {
+            // Nếu gọi kiểu mới (nhomHang, nganhHang, mapHeSo)
+            nhomHangRaw = arg1;
+            nganhHangRaw = arg2;
+            mapHeSo = arg3;
+        }
+
+        // Khóa bảo vệ cuối cùng: Ép kiểu tránh Crash toàn hệ thống
+        mapHeSo = mapHeSo || {};
+
+        const safeNhomKey = nhomHangRaw ? extractKey(nhomHangRaw) : 'unknown';
+        const safeNganhKey = nganhHangRaw ? extractKey(nganhHangRaw) : 'unknown';
+
+        // Ưu tiên 1: Tìm Nhóm con (Xét xem nhóm con có bị ghi đè Ngoại lệ không)
+        if (safeNhomKey !== 'unknown' && mapHeSo[safeNhomKey] !== undefined) {
+            return mapHeSo[safeNhomKey];
+        }
+
+        // Ưu tiên 2: Kế thừa (Nếu Nhóm con không có, lấy Hệ số của Ngành cha)
+        if (safeNganhKey !== 'unknown' && mapHeSo[safeNganhKey] !== undefined) {
+            return mapHeSo[safeNganhKey];
+        }
+
+        // Ưu tiên 3: Fallback ngầm định (Đã gỡ bỏ còi báo động)
+        return 1;
     },
 
     cleanCompetitionName(name) {
@@ -5825,14 +6058,349 @@ export const competitionProcessor = {
 };
 <<< FILE_END: src/services/processing/logic/competition.processor.js
 
+>>> FILE_START: src/services/processing/logic/dailyTrend.processor.js
+import { formatters } from '../../../utils/formatters.js';
+import { helpers } from '../helpers.js'; 
+
+const normalizeStr = (str) => {
+    if (!str) return '';
+    return str.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "");
+};
+
+const extractId = (str) => {
+    if (!str) return 'unknown';
+    const match = String(str).trim().match(/^(\d+)\s*[-–]/);
+    return match ? match[1] : normalizeStr(str);
+};
+
+export const dailyTrendProcessor = {
+    parseUniversalDate(val) {
+        if (!val) return null;
+        if (val instanceof Date) return val.getTime();
+        if (typeof val === 'number') {
+            const jsEpoch = Math.round((val - 25569) * 86400 * 1000);
+            const tempDate = new Date(jsEpoch);
+            return new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate()).getTime();
+        }
+        const str = String(val).trim();
+        const parts = str.split(/[\s,T]+/); 
+        const datePart = parts[0]; 
+        if (datePart.includes('/')) {
+            const dParts = datePart.split('/');
+            if (dParts.length >= 3) {
+                const p1 = parseInt(dParts[0], 10), p2 = parseInt(dParts[1], 10), p3 = parseInt(dParts[2], 10);
+                if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+                return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+            }
+        } else if (datePart.includes('-')) {
+            const dParts = datePart.split('-');
+            if (dParts.length >= 3) {
+                const p1 = parseInt(dParts[0], 10), p2 = parseInt(dParts[1], 10), p3 = parseInt(dParts[2], 10);
+                if (p1 > 1000) return new Date(p1, p2 - 1, p3).setHours(0,0,0,0);
+                return new Date(p3, p2 - 1, p1).setHours(0,0,0,0);
+            }
+        }
+        const fallbackDate = new Date(val);
+        if (!isNaN(fallbackDate.getTime())) return new Date(fallbackDate.getFullYear(), fallbackDate.getMonth(), fallbackDate.getDate()).setHours(0,0,0,0);
+        return null;
+    },
+
+    buildPivotMatrix(ycxData, employees, settings, allMetricsConfig = [], heSoMap = {}) {
+        const empMap = new Map();
+        const empList = [];
+        
+        employees.forEach(emp => {
+            const id = String(emp.maNV || '').trim().toLowerCase();
+            if (id) {
+                empMap.set(id, emp);
+                empList.push({
+                    maNV: emp.maNV, hoTen: emp.hoTen, maKho: emp.maKho,
+                    displayName: formatters.getShortEmployeeName(emp.hoTen, emp.maNV)
+                });
+            }
+        });
+
+        const startTimestamp = settings.startDate ? new Date(settings.startDate).setHours(0,0,0,0) : null;
+        const endTimestamp = settings.endDate ? new Date(settings.endDate).setHours(23,59,59,999) : null;
+
+        const dayMap = new Map();
+        const matrixData = {};
+        empList.forEach(emp => { matrixData[emp.maNV] = {}; });
+        
+        let activeMetricCfg = settings.viewMode === 'METRIC' ? allMetricsConfig.find(m => m.id === settings.metricId) : null;
+        const validHTX = helpers.getHinhThucXuatTinhDoanhThu();
+        const validHTXLower = new Set(Array.from(validHTX).map(s => s.toLowerCase()));
+
+        for (let i = 0; i < ycxData.length; i++) {
+            const row = ycxData[i];
+
+            const trangThaiHuy = String(row.trangThaiHuy || row['Trạng thái hủy'] || '').trim().toLowerCase();
+            if (trangThaiHuy === 'đã hủy' || trangThaiHuy === 'hủy') continue; 
+
+            const htxRaw = String(row.hinhThucXuat || row['Hình thức xuất'] || '').trim().toLowerCase();
+            if (settings.viewMode !== 'RAW' && !validHTXLower.has(htxRaw)) continue; 
+
+            if (settings.warehouse && settings.warehouse !== 'ALL') {
+                const wh = row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'];
+                if (wh && String(wh).trim() !== String(settings.warehouse).trim()) continue;
+            }
+
+            const rowTime = this.parseUniversalDate(row.ngayTao || row['Ngày tạo'] || row.date);
+            if (!rowTime) continue;
+            if (startTimestamp && rowTime < startTimestamp) continue;
+            if (endTimestamp && rowTime > endTimestamp) continue;
+
+            const dObj = new Date(rowTime);
+            const dateStr = `${dObj.getFullYear()}-${dObj.getMonth() + 1 < 10 ? '0'+(dObj.getMonth() + 1) : dObj.getMonth() + 1}-${dObj.getDate() < 10 ? '0'+dObj.getDate() : dObj.getDate()}`;
+            dayMap.set(dateStr, rowTime);
+
+            let empId = null;
+            const rowMaNV = String(row.maNV || row.manv || row.maNhanVien || '').trim().toLowerCase();
+            if (rowMaNV && empMap.has(rowMaNV)) {
+                empId = empMap.get(rowMaNV).maNV;
+            } else {
+                const nguoiTao = String(row.nguoiTao || row['Người tạo'] || '').trim();
+                const numMatch = nguoiTao.match(/(NV\d+|\d+)/i);
+                if (numMatch && empMap.has(numMatch[1].toLowerCase())) {
+                    empId = empMap.get(numMatch[1].toLowerCase()).maNV;
+                } else {
+                    const cleanName = nguoiTao.split('-')[0].trim().toLowerCase();
+                    if (empMap.has(cleanName)) empId = empMap.get(cleanName).maNV;
+                }
+            }
+
+            if (!empId || !matrixData[empId]) continue;
+            
+            if (!matrixData[empId][dateStr]) {
+                matrixData[empId][dateStr] = { 
+                    doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, 
+                    totalRevenue: 0, totalQuantity: 0, traGopRevenue: 0, rawRows: []
+                };
+            }
+            const cell = matrixData[empId][dateStr];
+
+            const quantity = parseInt(row.soLuong || 0);
+            let revenue = parseFloat(String(row.thanhTien || 0).replace(/[^0-9.-]+/g, "")) || 0;
+            const isTraGop = htxRaw.includes('trả') || htxRaw.includes('chậm');
+
+            const nhomHang = String(row.nhomHang || '');
+            const nganhHang = String(row.nganhHang || '');
+            const nhomId = extractId(nhomHang);
+            const nganhId = extractId(nganhHang);
+
+            let hs = heSoMap[nhomId] !== undefined ? heSoMap[nhomId] : 1;
+            if (isTraGop) hs += 0.3;
+            const revenueQuyDoi = revenue * hs;
+
+            if (!cell.doanhThuTheoNhomHang[nhomId]) cell.doanhThuTheoNhomHang[nhomId] = { quantity: 0, revenue: 0, revenueQuyDoi: 0 };
+            cell.doanhThuTheoNhomHang[nhomId].quantity += quantity;
+            cell.doanhThuTheoNhomHang[nhomId].revenue += revenue;
+            cell.doanhThuTheoNhomHang[nhomId].revenueQuyDoi += revenueQuyDoi;
+
+            if (!cell.doanhThuTheoNganhHang[nganhId]) cell.doanhThuTheoNganhHang[nganhId] = { quantity: 0, revenue: 0, revenueQuyDoi: 0 };
+            cell.doanhThuTheoNganhHang[nganhId].quantity += quantity;
+            cell.doanhThuTheoNganhHang[nganhId].revenue += revenue;
+            cell.doanhThuTheoNganhHang[nganhId].revenueQuyDoi += revenueQuyDoi;
+
+            cell.totalRevenue += revenue;
+            cell.totalQuantity += quantity;
+            if (isTraGop) cell.traGopRevenue += revenue;
+            
+            if (settings.viewMode === 'RAW') cell.rawRows.push(row);
+        }
+
+        const sortedDates = Array.from(dayMap.keys()).sort();
+        const columnDays = sortedDates.map(dStr => ({ dateStr: dStr, display: `${dStr.split('-')[2]}/${dStr.split('-')[1]}` }));
+        const colTotals = {}; 
+        let grandRaw = 0, grandNum = 0, grandDen = 0;
+
+        const finalRows = empList.map(emp => {
+            const rowCells = {};
+            let rowRaw = 0, rowNum = 0, rowDen = 0;
+
+            sortedDates.forEach(dStr => {
+                const cellBucket = matrixData[emp.maNV][dStr] || { 
+                    doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, 
+                    totalRevenue: 0, totalQuantity: 0, traGopRevenue: 0, rawRows: [] 
+                };
+                
+                let val = 0, displayStr = '-', num = 0, den = 0, rawValue = 0;
+
+                // [UPDATE 1]: Tính toán riêng rẽ Doanh Thu / Số Lượng cho Đơn giá Ma Trận
+                if (settings.viewMode === 'RAW') {
+                    let cellRawSum = 0;
+                    let cellTempRev = 0; 
+                    let cellTempQty = 0;
+
+                    const checkArrayMatch = (filterArray, rowValue) => {
+                        if (!filterArray || filterArray.length === 0) return true;
+                        return filterArray.some(f => normalizeStr(rowValue).includes(normalizeStr(f)));
+                    };
+
+                    cellBucket.rawRows.forEach(row => {
+                        let isMatch = true;
+                        if (!checkArrayMatch(settings.filters.nganhHang, row.nganhHang)) isMatch = false;
+                        if (!checkArrayMatch(settings.filters.nhomHang, row.nhomHang)) isMatch = false;
+                        if (!checkArrayMatch(settings.filters.nhaSanXuat, row.nhaSanXuat)) isMatch = false;
+                        if (!checkArrayMatch(settings.filters.tenSanPham, row.tenSanPham)) isMatch = false;
+
+                        if (isMatch) {
+                            const quantity = parseInt(row.soLuong || 0);
+                            let revenue = parseFloat(String(row.thanhTien || 0).replace(/[^0-9.-]+/g, "")) || 0;
+                            
+                            let hs = heSoMap[extractId(row.nhomHang)] !== undefined ? heSoMap[extractId(row.nhomHang)] : 1;
+                            const htxStr = String(row.hinhThucXuat || row['Hình thức xuất'] || '').toLowerCase();
+                            if (htxStr.includes('trả') || htxStr.includes('chậm')) hs += 0.3;
+
+                            if (settings.rawType === 'quantity') cellRawSum += quantity;
+                            else if (settings.rawType === 'revenueQuyDoi') cellRawSum += (revenue * hs);
+                            else if (settings.rawType === 'unitPrice') {
+                                cellTempRev += revenue;
+                                cellTempQty += quantity;
+                            }
+                            else cellRawSum += revenue;
+                        }
+                    });
+
+                    // Chốt Tỷ lệ cho Đơn giá
+                    if (settings.rawType === 'unitPrice') {
+                        num = cellTempRev;
+                        den = cellTempQty;
+                        rawValue = den > 0 ? num / den : 0;
+                    } else {
+                        rawValue = cellRawSum;
+                    }
+                } 
+                else if (settings.metricId === 'DTTL') { rawValue = cellBucket.totalRevenue; }
+                else if (settings.metricId === 'SL') { rawValue = cellBucket.totalQuantity; }
+                else if (settings.metricId === 'TY_LE_QUY_DOI') {
+                    let totalDTQD = 0;
+                    Object.values(cellBucket.doanhThuTheoNhomHang).forEach(b => totalDTQD += b.revenueQuyDoi);
+                    num = totalDTQD; den = cellBucket.totalRevenue;
+                }
+                else if (settings.metricId === 'TY_LE_TRA_CHAM') {
+                    num = cellBucket.traGopRevenue; den = cellBucket.totalRevenue;
+                }
+                else if (activeMetricCfg) {
+                    const metricType = activeMetricCfg.percentMetric || activeMetricCfg.typeA || activeMetricCfg.type || 'DTTL';
+                    const denType = activeMetricCfg.typeB || metricType;
+                    const modeA = activeMetricCfg.modeA || 'group';
+                    const modeB = activeMetricCfg.modeB || (activeMetricCfg.modeA === 'category' ? 'category' : 'group');
+
+                    const calcValue = (groupList, type, mode) => {
+                        let total = 0;
+                        if (!Array.isArray(groupList)) return 0;
+                        groupList.forEach(targetId => {
+                            if (!targetId) return;
+                            const cleanTargetId = extractId(targetId); 
+                            const bucketToScan = (mode === 'category') ? cellBucket.doanhThuTheoNganhHang : cellBucket.doanhThuTheoNhomHang;
+                            const bucketVal = bucketToScan[cleanTargetId];
+                            if (bucketVal) {
+                                if (type === 'SL') total += bucketVal.quantity || 0;
+                                else if (type === 'DTQD') total += bucketVal.revenueQuyDoi || 0;
+                                else total += bucketVal.revenue || 0;
+                            }
+                        });
+                        return total;
+                    };
+                    num = calcValue(activeMetricCfg.groupA, metricType, modeA);
+                    den = calcValue(activeMetricCfg.groupB, denType, modeB);
+                }
+
+                // [UPDATE 2]: Format cho Đơn giá trên từng Cell lưới
+                if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') {
+                    val = rawValue; 
+                    displayStr = val > 0 ? formatters.formatRevenue(val, 1) : '-';
+                    rowNum += num; rowDen += den; 
+                    colTotals[dStr] = colTotals[dStr] || { raw: 0, num: 0, den: 0 }; 
+                    colTotals[dStr].num += num; colTotals[dStr].den += den;
+                } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+                    val = rawValue;
+                    displayStr = val > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(val) : formatters.formatRevenue(val, 1)) : '-';
+                    rowRaw += val; 
+                    colTotals[dStr] = colTotals[dStr] || { raw: 0, num: 0, den: 0 }; 
+                    colTotals[dStr].raw += val;
+                } else if (settings.metricId === 'TY_LE_QUY_DOI') {
+                    val = den > 0 ? (num / den) - 1 : 0;
+                    displayStr = den > 0 ? formatters.formatPercentage(val, 1) : '-';
+                    rowNum += num; rowDen += den;
+                    colTotals[dStr] = colTotals[dStr] || { num: 0, den: 0 }; colTotals[dStr].num += num; colTotals[dStr].den += den;
+                } else {
+                    val = den > 0 ? num / den : 0;
+                    displayStr = den > 0 ? formatters.formatPercentage(val, 1) : '-';
+                    rowNum += num; rowDen += den;
+                    colTotals[dStr] = colTotals[dStr] || { num: 0, den: 0 }; colTotals[dStr].num += num; colTotals[dStr].den += den;
+                }
+                rowCells[dStr] = { value: val, display: displayStr, num, den, rawValue };
+            });
+
+            grandRaw += rowRaw; grandNum += rowNum; grandDen += rowDen;
+            
+            // [UPDATE 3]: Tính Cột TỔNG HỢP (Hàng ngang của nhân viên)
+            let sumVal = 0, sumDisplay = '-';
+            if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') { 
+                sumVal = rowDen > 0 ? rowNum / rowDen : 0;
+                sumDisplay = sumVal > 0 ? formatters.formatRevenue(sumVal, 1) : '-';
+            } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+                sumVal = rowRaw;
+                sumDisplay = sumVal > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(sumVal) : formatters.formatRevenue(sumVal, 1)) : '-';
+            } else if (settings.metricId === 'TY_LE_QUY_DOI') {
+                sumVal = rowDen > 0 ? (rowNum / rowDen) - 1 : 0;
+                sumDisplay = rowDen > 0 ? formatters.formatPercentage(sumVal, 1) : '-';
+            } else {
+                sumVal = rowDen > 0 ? rowNum / rowDen : 0;
+                sumDisplay = rowDen > 0 ? formatters.formatPercentage(sumVal, 1) : '-';
+            }
+
+            return { ...emp, cells: rowCells, summaryValue: sumVal, summaryDisplay: sumDisplay };
+        });
+
+        // [UPDATE 4]: Tính Dòng TỔNG HỢP DƯỚI CÙNG (Cột dọc theo từng ngày)
+        Object.keys(colTotals).forEach(dStr => {
+            if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') { 
+                colTotals[dStr].value = colTotals[dStr].den > 0 ? colTotals[dStr].num / colTotals[dStr].den : 0;
+                colTotals[dStr].display = colTotals[dStr].value > 0 ? formatters.formatRevenue(colTotals[dStr].value, 1) : '-';
+            } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+                colTotals[dStr].value = colTotals[dStr].raw;
+                colTotals[dStr].display = colTotals[dStr].raw > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(colTotals[dStr].raw) : formatters.formatRevenue(colTotals[dStr].raw, 1)) : '-';
+            } else if (settings.metricId === 'TY_LE_QUY_DOI') {
+                colTotals[dStr].value = colTotals[dStr].den > 0 ? (colTotals[dStr].num / colTotals[dStr].den) - 1 : 0;
+                colTotals[dStr].display = colTotals[dStr].den > 0 ? formatters.formatPercentage(colTotals[dStr].value, 1) : '-';
+            } else {
+                colTotals[dStr].value = colTotals[dStr].den > 0 ? colTotals[dStr].num / colTotals[dStr].den : 0;
+                colTotals[dStr].display = colTotals[dStr].den > 0 ? formatters.formatPercentage(colTotals[dStr].value, 1) : '-';
+            }
+        });
+
+        // [UPDATE 5]: Tính Ô TỔNG CỦA TỔNG (Góc dưới cùng bên phải)
+        let grandVal = 0, grandDisplay = '-';
+        if (settings.viewMode === 'RAW' && settings.rawType === 'unitPrice') { 
+            grandVal = grandDen > 0 ? grandNum / grandDen : 0;
+            grandDisplay = grandVal > 0 ? formatters.formatRevenue(grandVal, 1) : '-';
+        } else if (settings.viewMode === 'RAW' || settings.metricId === 'DTTL' || settings.metricId === 'SL') {
+            grandVal = grandRaw;
+            grandDisplay = grandVal > 0 ? (settings.rawType === 'quantity' || settings.metricId === 'SL' ? formatters.formatNumber(grandVal) : formatters.formatRevenue(grandVal, 1)) : '-';
+        } else if (settings.metricId === 'TY_LE_QUY_DOI') {
+            grandVal = grandDen > 0 ? (grandNum / grandDen) - 1 : 0;
+            grandDisplay = grandDen > 0 ? formatters.formatPercentage(grandVal, 1) : '-';
+        } else {
+            grandVal = grandDen > 0 ? grandNum / grandDen : 0;
+            grandDisplay = grandDen > 0 ? formatters.formatPercentage(grandVal, 1) : '-';
+        }
+
+        return { rows: finalRows.filter(r => r.summaryDisplay !== '-'), columns: columnDays, colTotals, grandSummaryDisplay: grandDisplay };
+    }
+};
+<<< FILE_END: src/services/processing/logic/dailyTrend.processor.js
+
 >>> FILE_START: src/services/processing/logic/dynamicTable.processor.js
 /* src/services/processing/logic/dynamicTable.processor.js */
+// Version 3.2 - Atomic Integrity: Main Column & Brand Filtering Support for Dynamic Tables
 import { get } from 'svelte/store';
 import { formatters } from '../../../utils/formatters.js';
 import { parseIdentity } from '../../../utils.js';
 import { macroCategoryConfig, macroProductGroupConfig } from '../../../stores.js';
 
-// Helper: Làm sạch và ép kiểu số an toàn
 const getSafeNumber = (value) => {
     if (typeof value === 'number') return value;
     if (!value) return 0;
@@ -5843,14 +6411,10 @@ const getSafeNumber = (value) => {
     return 0;
 };
 
-const getValueFromMultiKeys = (obj, keys) => {
-    if (!obj) return 0;
-    for (const key of keys) {
-        if (obj[key] !== undefined && obj[key] !== null) {
-            return getSafeNumber(obj[key]);
-        }
-    }
-    return 0;
+const isBrandMatch = (rowBrand, targetBrands) => {
+    if (!targetBrands || !Array.isArray(targetBrands) || targetBrands.length === 0) return true;
+    const cleanRowBrand = String(rowBrand || 'Khác').trim().toLowerCase();
+    return targetBrands.some(b => String(b).trim().toLowerCase() === cleanRowBrand);
 };
 
 export const dynamicTableProcessor = {
@@ -5858,179 +6422,177 @@ export const dynamicTableProcessor = {
         if (!employee || !targetId) return null;
         const parsed = parseIdentity(targetId);
         const searchKey = (parsed.id !== 'unknown' ? parsed.id : targetId).toString().trim();
-        if (employee.doanhThuTheoNhomHang && employee.doanhThuTheoNhomHang[searchKey]) {
-            return employee.doanhThuTheoNhomHang[searchKey];
-        }
-        if (employee.doanhThuTheoNganhHang && employee.doanhThuTheoNganhHang[searchKey]) {
-            return employee.doanhThuTheoNganhHang[searchKey];
-        }
-        return null;
+        
+        const nh = employee.doanhThuTheoNhomHang?.[searchKey];
+        const ng = employee.doanhThuTheoNganhHang?.[searchKey];
+        const sp = employee.doanhThuTheoMaSanPham?.[searchKey];
+
+        if (sp && (sp.quantity > 0 || sp.revenue > 0)) return sp;
+        if (nh && (nh.quantity > 0 || nh.revenue > 0)) return nh;
+        if (ng && (ng.quantity > 0 || ng.revenue > 0)) return ng;
+        
+        return sp || nh || ng || null;
     },
 
-    /**
-     * Tính tổng giá trị (CÓ LOG CHI TIẾT)
-     * @param logger: Mảng để lưu log truy vết
-     */
-    calculateGroupValue(employee, items, type = 'DT', logger = null) {
-        if (!items || items.length === 0) return 0;
+    processTableData(sourceData, tableConfig) {
+        if (!sourceData || !tableConfig) return { processedData: [], totals: {} };
 
-        const macroCats = get(macroCategoryConfig) || [];
-        const macroGroups = get(macroProductGroupConfig) || [];
+        const { columns = [], subColumns = [], mainColumn: configMainCol } = tableConfig;
+        
+        // [SURGICAL FIX]: Lấy đúng cấu hình Cột Tổng từ tableConfig, đảm bảo không rơi vào fallback sai
+        const rawMain = configMainCol || columns.find(c => c.id === 'mainValue');
+        const mainColumn = (rawMain && (rawMain.show !== false)) ? { ...rawMain, show: true } : { show: false, items: [], type: 'DT' };
+        
+        const usedSubColumns = (subColumns && subColumns.length > 0) 
+            ? subColumns 
+            : columns.filter(c => c.id !== 'mainValue');
 
-        let total = 0;
-        const processedIds = new Set();
+        const $macroCategoryConfig = get(macroCategoryConfig) || [];
+        const $macroProductGroupConfig = get(macroProductGroupConfig) || [];
 
-        const processId = (id) => {
-            const safeId = id ? id.toString().trim() : '';
-            if (!safeId || processedIds.has(safeId)) return;
+        const calculateGroupValue = (employee, items, type, targetBrands = []) => {
+            let totalVal = 0, totalSL = 0, totalDTQD = 0;
             
-            // 1. Check Macro Category
-            const macroCat = macroCats.find(m => m.id == safeId || m.name === safeId);
-            if (macroCat && macroCat.items) {
-                processedIds.add(safeId);
-                if (logger) logger.push(`   📂 [MACRO CAT] ${safeId}:`);
-                macroCat.items.forEach(childId => processId(childId));
-                return;
+            const targetIds = new Set();
+            items.forEach(rawId => {
+                const parsedId = parseIdentity(rawId).id;
+                
+                const macroCat = $macroCategoryConfig.find(m => m.name === rawId);
+                if (macroCat && macroCat.items) {
+                    macroCat.items.forEach(subId => targetIds.add(subId));
+                    return;
+                }
+
+                const macroGrp = $macroProductGroupConfig.find(m => m.name === rawId);
+                if (macroGrp && macroGrp.items) {
+                    macroGrp.items.forEach(subId => targetIds.add(subId));
+                    return;
+                }
+
+                const finalId = parsedId !== 'unknown' ? parsedId : rawId;
+                targetIds.add(finalId);
+            });
+
+            if (targetBrands && targetBrands.length > 0 && employee._rawSalesData && Array.isArray(employee._rawSalesData)) {
+                employee._rawSalesData.forEach(row => {
+                    const rowNhom = String(row.maNhomHang || '').trim();
+                    const rowNganh = String(row.maNganhHang || '').trim();
+                    const rowBrand = String(row.nhaSanXuat || row.brand || row['Hãng'] || row['Hãng sản xuất'] || row['NhaSanXuat'] || row['TEN_HANG'] || '').trim();
+
+                    if ((targetIds.has(rowNhom) || targetIds.has(rowNganh)) && isBrandMatch(rowBrand, targetBrands)) {
+                        totalVal += (row._thanhTien || 0);
+                        totalSL += (row._soLuong || 0);
+                        totalDTQD += (row._revenueQuyDoi || 0);
+                    }
+                });
+            } else {
+                targetIds.forEach(targetId => {
+                    const data = this.findItemData(employee, targetId);
+                    if (data) {
+                        totalVal += data.revenue || 0;
+                        totalSL += data.quantity || 0;
+                        totalDTQD += data.revenueQuyDoi || 0;
+                    }
+                });
             }
 
-            // 2. Check Macro Product Group
-            const macroGroup = macroGroups.find(m => m.id == safeId || m.name === safeId);
-            if (macroGroup && macroGroup.items) {
-                processedIds.add(safeId);
-                if (logger) logger.push(`   📂 [MACRO GROUP] ${safeId}:`);
-                macroGroup.items.forEach(childId => processId(childId));
-                return;
-            }
-
-            // 3. Raw ID
-            const data = this.findItemData(employee, safeId);
-            let val = 0;
-            if (data) {
-                processedIds.add(safeId);
-                if (type === 'SL') {
-                    val = getValueFromMultiKeys(data, ['quantity', 'soLuong', 'sl', 'count']);
-                } else if (type === 'DTQD') {
-                    val = getValueFromMultiKeys(data, ['revenueQuyDoi', 'doanhThuQuyDoi', 'dtqd']);
-                } else {
-                    val = getValueFromMultiKeys(data, ['revenue', 'doanhThu', 'thanhTien', 'totalPrice', 'dt']);
-                }
-                
-                total += val;
-                
-                // Chỉ log những mục có giá trị để đỡ rối
-                if (logger && val !== 0) {
-                    logger.push(`      🔹 ${safeId} (${type}): ${formatters.formatNumber(val)}`);
-                }
-            }
+            return {
+                val: type === 'SL' ? totalSL : (type === 'DTQD' ? totalDTQD : totalVal),
+                sl: totalSL,
+                dtqd: totalDTQD
+            };
         };
 
-        items.forEach(id => processId(id));
-        return total;
-    },
-
-    processTableData(reportData, config) {
-        if (!reportData || !config) return { processedData: [], totals: {} };
-
-        const mainColConfig = config.mainColumn ? { ...config.mainColumn, id: 'mainValue', isMain: true } : null;
-        const subColsConfig = config.subColumns || [];
-        const effectiveSubCols = config.columns || subColsConfig;
-        
-        const allColumnsToProcess = mainColConfig ? [mainColConfig, ...effectiveSubCols] : [...effectiveSubCols];
-
-        const totalRow = {
-            maNV: 'TOTAL',
-            hoTen: 'TỔNG CỘNG',
-            isTotal: true,
+        const totalRow = { 
+            hoTen: 'Tổng cộng', 
+            isTotal: true, 
+            mainValue: 0, mainValue_sl: 0, mainValue_dtqd: 0, 
             cells: {} 
         };
+        
+        usedSubColumns.forEach(col => {
+            totalRow.cells[col.id] = { val: 0, sl: 0, dtqd: 0, num: 0, den: 0, type: col.type };
+        });
 
-        const processedData = reportData.map(employee => {
+        const processedData = sourceData.map(employee => {
             const row = {
                 maNV: employee.maNV,
                 hoTen: employee.hoTen,
-                mucTieu: employee.mucTieu || {},
+                mainValue: 0, mainValue_sl: 0, mainValue_dtqd: 0,
                 cells: {}
             };
-
+            
             let hasAnyData = false;
 
-            allColumnsToProcess.forEach(col => {
-                const colId = col.id || col.header;
-                const cellData = { sl: 0, dt: 0, dtqd: 0, value: 0, display: '', config: col };
+            // [SURGICAL FIX]: Tôn trọng tuyệt đối Nhóm hàng và Loại dữ liệu khi bật Cột tổng gộp
+            if (mainColumn.show && mainColumn.items && mainColumn.items.length > 0) {
+                const result = calculateGroupValue(employee, mainColumn.items, mainColumn.type, mainColumn.brands || []);
+                row.mainValue = result.val;
+                row.mainValue_sl = result.sl;
+                row.mainValue_dtqd = result.dtqd;
+                if (result.val > 0 || result.sl > 0) hasAnyData = true;
+            } else if (!mainColumn.show) {
+                // Chỉ gán doanh thu thực tổng toàn siêu thị khi Cột tổng gộp bị tắt
+                row.mainValue = employee.doanhThu || 0;
+                row.mainValue_sl = employee.tongSoLuong || 0;
+                row.mainValue_dtqd = employee.doanhThuQuyDoi || 0;
+                if (row.mainValue > 0) hasAnyData = true;
+            }
 
+            usedSubColumns.forEach(col => {
+                let cellData = { val: 0, sl: 0, dtqd: 0, num: 0, den: 0, type: col.type, display: '0', value: 0 };
+                
                 if (col.type === 'PERCENT') {
-                    // Logic % (Bảng hiệu quả)
+                    const numType = col.percentMetric || col.typeA || 'DT';
+                    const denType = col.percentMetric || col.typeB || 'DT';
                     
-                    // --- 🔍 TRACE DEBUG START ---
-                    let traceLog = [];
-                    // Chỉ debug cho một vài nhân viên mẫu để đỡ spam
-                    const isTargetDebug = employee.hoTen.includes('Tú Phương') || employee.hoTen.includes('Tien'); 
+                    const numRes = calculateGroupValue(employee, col.numerator || [], numType, col.brands);
+                    const denRes = calculateGroupValue(employee, col.denominator || [], denType, col.brands);
                     
-                    // [LOGIC MỚI] Lấy loại Metric từ cấu hình (Ưu tiên percentMetric -> mặc định DT)
-                    const metricType = col.percentMetric || 'DT';
-
-                    const numVal = this.calculateGroupValue(employee, col.numerator, metricType, isTargetDebug ? traceLog : null);
-                    // Mẫu số dùng chung loại Metric với Tử số (trừ khi có config riêng typeB - mà hiện tại UI chưa hỗ trợ separate config nên cứ dùng chung)
-                    const denVal = this.calculateGroupValue(employee, col.denominator, metricType, isTargetDebug ? traceLog : null);
-
-                    if (isTargetDebug) { 
-                         // Điều kiện lọc log: In ra nếu có mẫu số > 0 để kiểm tra
-                         if (denVal > 0) {
-                             console.groupCollapsed(`🕵️ [TRACE] ${employee.hoTen} - ${col.header} (% ${metricType})`);
-                             console.log(`%c Tử số (${metricType}): ${formatters.formatNumber(numVal)}`, 'color: green');
-                             console.log(`%c Mẫu số (${metricType}): ${formatters.formatNumber(denVal)}`, 'color: red; font-weight: bold');
-                             console.log(`👇 CHI TIẾT CÁC MÓN CỘNG VÀO:`);
-                             traceLog.forEach(log => console.log(log));
-                             console.groupEnd();
-                         }
-                    }
-                    // --- TRACE DEBUG END ---
-
-                    const val = denVal > 0 ? numVal / denVal : 0;
+                    cellData.num = numRes.val;
+                    cellData.den = denRes.val;
+                    
+                    const val = cellData.den > 0 ? cellData.num / cellData.den : 0;
                     cellData.value = val;
                     cellData.display = formatters.formatPercentage(val);
                     
-                    if (numVal > 0 || denVal > 0) hasAnyData = true;
-
-                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { num: 0, den: 0, type: 'PERCENT' };
-                    totalRow.cells[colId].num += numVal;
-                    totalRow.cells[colId].den += denVal;
+                    totalRow.cells[col.id].num += cellData.num;
+                    totalRow.cells[col.id].den += cellData.den;
+                    if (cellData.num > 0 || cellData.den > 0) hasAnyData = true;
 
                 } else {
-                    // Logic Cột thường (DT, SL, DTQD)
-                    cellData.sl = this.calculateGroupValue(employee, col.items, 'SL');
-                    cellData.dt = this.calculateGroupValue(employee, col.items, 'DT');
-                    cellData.dtqd = this.calculateGroupValue(employee, col.items, 'DTQD');
+                    const result = calculateGroupValue(employee, col.items || [], col.type, col.brands);
+                    cellData.val = result.val;
+                    cellData.sl = result.sl;
+                    cellData.dtqd = result.dtqd;
+                    cellData.value = result.val;
+                    
+                    if (col.type === 'SL') cellData.display = formatters.formatNumber(result.val);
+                    else cellData.display = formatters.formatRevenue(result.val);
 
-                    if (col.type === 'SL') {
-                        cellData.value = cellData.sl;
-                        cellData.display = formatters.formatNumber(cellData.sl);
-                    } else if (col.type === 'DTQD') {
-                        cellData.value = cellData.dtqd;
-                        cellData.display = formatters.formatRevenue(cellData.dtqd);
-                    } else {
-                        cellData.value = cellData.dt;
-                        cellData.display = formatters.formatRevenue(cellData.dt);
-                    }
-
-                    if (cellData.value > 0 || cellData.sl > 0 || cellData.dt > 0 || cellData.dtqd > 0) hasAnyData = true;
-
-                    if (!totalRow.cells[colId]) totalRow.cells[colId] = { sl: 0, dt: 0, dtqd: 0, val: 0, type: col.type || 'DT' };
-                    totalRow.cells[colId].sl += cellData.sl;
-                    totalRow.cells[colId].dt += cellData.dt;
-                    totalRow.cells[colId].dtqd += cellData.dtqd;
-                    totalRow.cells[colId].val += cellData.value;
+                    totalRow.cells[col.id].val += result.val;
+                    totalRow.cells[col.id].sl += result.sl;
+                    totalRow.cells[col.id].dtqd += result.dtqd;
+                    if (result.val > 0 || result.sl > 0) hasAnyData = true;
                 }
 
-                row.cells[colId] = cellData;
-                if (col.isMain) {
-                    row.mainValue = cellData.value;
+                row.cells[col.id] = cellData;
+                
+                if (mainColumn.show && col.id === 'mainValue') {
+                    row.mainValue = cellData.val;
                     row.mainValue_sl = cellData.sl;
                     row.mainValue_dtqd = cellData.dtqd;
                 }
             });
 
-            return hasAnyData ? row : null;
+            // [SURGICAL FIX]: Cộng dồn chính xác số liệu vào dòng Tổng cộng (totalRow)
+            if (hasAnyData) {
+                totalRow.mainValue += (row.mainValue || 0);
+                totalRow.mainValue_sl += (row.mainValue_sl || 0);
+                totalRow.mainValue_dtqd += (row.mainValue_dtqd || 0);
+                return row;
+            }
+            return null;
         }).filter(Boolean);
 
         Object.keys(totalRow.cells).forEach(key => {
@@ -6480,6 +7042,31 @@ export const normalizers = {
         return { success: true, normalizedData: [...new Set(normalizedData)].sort() };
     },
 
+    normalizeVirtualProductData(rawData) {
+        if (!rawData || rawData.length === 0) {
+            return { success: false, error: 'File rỗng.', normalizedData: [] };
+        }
+        const header = Object.keys(rawData[0] || {});
+        const maSpCol = helpers.findColumnName(header, ['mã sản phẩm', 'masanpham', 'mã sp', 'ma sp']);
+        const tenSpCol = helpers.findColumnName(header, ['tên sản phẩm', 'tensanpham', 'tên sp', 'ten sp']);
+        const nhomHangCol = helpers.findColumnName(header, ['nhóm hàng', 'nhom hang']);
+
+        if (!maSpCol || !tenSpCol) {
+            return { success: false, error: `File thiếu cột Mã SP hoặc Tên SP.`, normalizedData: [] };
+        }
+
+        const normalizedData = rawData
+            .map(row => ({
+                maSanPham: String(row[maSpCol] || '').trim(),
+                tenSanPham: String(row[tenSpCol] || '').trim(),
+                nhomHang: String(row[nhomHangCol] || '').trim(), 
+                display: `${String(row[maSpCol] || '').trim()} - ${String(row[tenSpCol] || '').trim()}`
+            }))
+            .filter(item => item.maSanPham && item.tenSanPham);
+
+        return { success: true, normalizedData };
+    },
+
     normalizeData(rawData, fileType) {
         const mapping = config.COLUMN_MAPPINGS[fileType];
         if (!mapping) {
@@ -6527,7 +7114,6 @@ export const normalizers = {
             return { normalizedData: [], success: false, missingColumns };
         }
 
-        // [LOGIC PREP]
         let heSoMap = {};
         if (fileType === 'ycx') {
             heSoMap = helpers.getHeSoQuyDoi(); 
@@ -6555,31 +7141,27 @@ export const normalizers = {
                 }
             }
 
-            // --- [NEW LOGIC FIXED] TÍNH TOÁN DOANH THU QUY ĐỔI ---
             if (fileType === 'ycx') {
-                // 1. Chuẩn hóa doanh thu thực
                 let revenue = 0;
                 if (newRow.thanhTien) {
                     revenue = parseFloat(String(newRow.thanhTien).replace(/,/g, '')) || 0;
                 }
                 newRow.revenue = revenue; 
 
-                // 2. Xác định Hệ số gốc (Base Rate) - [VÁ LỖI CỰC MẠNH: DÙNG GET HỆ SỐ FOR CATEGORY]
-                const productKey = String(newRow.nhomHang || '');
-                const baseRate = helpers.getHeSoForCategory(productKey, heSoMap);
+                // [PHẪU THUẬT v4.0]: Truyền đủ cả Nhóm (để check Override) và Ngành (để check Inherit)
+                const nhomKey = String(newRow.nhomHang || '');
+                const nganhKey = String(newRow.nganhHang || '');
+                const baseRate = helpers.getHeSoForCategory(nhomKey, nganhKey, heSoMap);
 
-                // 3. Xác định thưởng Trả Góp (Bonus Rate)
                 const exportModeRaw = String(newRow.hinhThucXuat || '');
                 const exportModeLower = exportModeRaw.toLowerCase();
                 
                 const isInstallment = exportModeLower.includes('trả góp') || exportModeLower.includes('trả chậm');
                 const bonusRate = isInstallment ? 0.3 : 0;
 
-                // 4. Tính toán
                 newRow.heSoQuyDoi = baseRate + bonusRate; 
                 newRow.revenueQuyDoi = revenue * newRow.heSoQuyDoi;
             }
-            // ------------------------------------------------------------------
 
             return newRow;
         });
@@ -7312,18 +7894,20 @@ import { masterReportLogic } from './reports/master.report.js';
 import { competitionReportLogic } from './reports/competition.report.js';
 import { detailReportLogic } from './reports/detail.report.js';
 import { generalReportLogic } from './reports/general.report.js';
+import { dailyTrendProcessor } from './processing/logic/dailyTrend.processor.js';
 
 export const reportService = {
     ...masterReportLogic,
     ...competitionReportLogic,
     ...detailReportLogic,
+    ...dailyTrendProcessor,
     ...generalReportLogic
 };
 <<< FILE_END: src/services/reportService.js
 
 >>> FILE_START: src/services/reports/competition.report.js
 // src/services/reports/competition.report.js
-// Version 1.1 - Fix: Include maKho in result for Realtime filtering
+// Version 2.3 - Atomic Integrity: Multi-layer Group & Brand Matching (Surgical Fix)
 import { get } from 'svelte/store';
 import * as utils from '../../utils.js';
 import { dataProcessing } from '../dataProcessing.js';
@@ -7380,7 +7964,7 @@ export const competitionReportLogic = {
                 if (employeeSales.length === 0) {
                     return { 
                         ...employee, 
-                        maKho: employee.maKho, // [FIX] Ensure maKho is preserved
+                        maKho: employee.maKho, 
                         ...stats, 
                         tyLeSL: 0, 
                         tyLeDT: 0 
@@ -7407,7 +7991,7 @@ export const competitionReportLogic = {
                     maNV: employee.maNV,
                     hoTen: employee.hoTen,
                     boPhan: employee.boPhan,
-                    maKho: employee.maKho, // [FIX] Add maKho here
+                    maKho: employee.maKho,
                     ...stats,
                     tyLeSL,
                     tyLeDT
@@ -7424,92 +8008,187 @@ export const competitionReportLogic = {
     },
 
     calculateCompetitionFocusReport(sourceYcxData, competitionConfigs) {
-        if (!sourceYcxData || sourceYcxData.length === 0 || !competitionConfigs || competitionConfigs.length === 0) {
+        if (!competitionConfigs || competitionConfigs.length === 0) {
             return [];
         }
 
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
-        const validSalesData = sourceYcxData.filter(row => {
+        const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi() || {};
+
+        const validSalesData = (sourceYcxData || []).filter(row => {
             const isDoanhThuHTX = hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat);
             const isBaseValid = (row.trangThaiThuTien || "").trim() === 'Đã thu' &&
-                                 (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
+                                (row.trangThaiHuy || "").trim() === 'Chưa hủy' &&
                                 (row.tinhTrangTra || "").trim() === 'Chưa trả' &&
                                 (row.trangThaiXuat || "").trim() === 'Đã xuất';
             return isBaseValid && isDoanhThuHTX;
         });
         const $danhSachNhanVien = get(danhSachNhanVien);
 
+        // [SURGICAL HELPER 1]: Tạo tập hợp từ khóa lọc đa tầng (Khớp cả ID số lẫn Tên chữ)
+        const buildGroupSet = (groupList) => {
+            const set = new Set();
+            if (!groupList || !Array.isArray(groupList)) return set;
+            groupList.forEach(g => {
+                if (!g) return;
+                const raw = String(g).trim();
+                set.add(raw); // Thêm ID thô (VD: "1097")
+                set.add(raw.toLowerCase());
+                
+                if (utils.cleanCategoryName) {
+                    const cleaned = utils.cleanCategoryName(raw);
+                    if (cleaned) set.add(cleaned); // Thêm tên sạch (VD: "tivi led")
+                }
+                if (utils.parseIdentity) {
+                    const parsed = utils.parseIdentity(raw);
+                    if (parsed && parsed.id && parsed.id !== 'unknown') {
+                        set.add(String(parsed.id).trim()); // Thêm ID phân tích từ chuỗi "1097 - Tivi"
+                    }
+                }
+            });
+            return set;
+        };
+
+        // [SURGICAL HELPER 2]: Kiểm tra một đơn hàng YCX có khớp với tập hợp Nhóm/Ngành hàng hay không
+        const isGroupMatch = (row, targetGroupSet) => {
+            if (!targetGroupSet || targetGroupSet.size === 0) return true;
+
+            const maNhom = String(row.maNhomHang || row.MA_NHOM_HANG || '').trim();
+            const maNganh = String(row.maNganhHang || row.MA_NGANH_HANG || '').trim();
+            if (targetGroupSet.has(maNhom) || targetGroupSet.has(maNganh)) return true;
+
+            const rawNhom = String(row.nhomHang || row.NHOM_HANG || '').trim();
+            const rawNganh = String(row.nganhHang || row.NGANH_HANG || '').trim();
+            if (targetGroupSet.has(rawNhom) || targetGroupSet.has(rawNganh)) return true;
+            if (targetGroupSet.has(rawNhom.toLowerCase()) || targetGroupSet.has(rawNganh.toLowerCase())) return true;
+
+            if (utils.parseIdentity) {
+                const pNhom = utils.parseIdentity(rawNhom);
+                const pNganh = utils.parseIdentity(rawNganh);
+                if (pNhom && pNhom.id && targetGroupSet.has(String(pNhom.id).trim())) return true;
+                if (pNganh && pNganh.id && targetGroupSet.has(String(pNganh.id).trim())) return true;
+            }
+
+            if (utils.cleanCategoryName) {
+                const cNhom = utils.cleanCategoryName(rawNhom);
+                const cNganh = utils.cleanCategoryName(rawNganh);
+                if (cNhom && targetGroupSet.has(cNhom)) return true;
+                if (cNganh && targetGroupSet.has(cNganh)) return true;
+            }
+
+            return false;
+        };
+
+        // [SURGICAL HELPER 3]: Kiểm tra Hãng sản xuất không phân biệt chữ hoa/thường
+        const isBrandMatch = (rowBrand, targetBrands) => {
+            if (!targetBrands || !Array.isArray(targetBrands) || targetBrands.length === 0) return true;
+            const cleanRowBrand = String(rowBrand || 'Khác').trim().toLowerCase();
+            return targetBrands.some(b => String(b).trim().toLowerCase() === cleanRowBrand);
+        };
+
         const report = competitionConfigs.map(config => {
-            const cleanedConfigGroups = new Set((config.groups || []).map(g => utils.cleanCategoryName(g)));
+            const mainColType = config.mainColumn ? (config.mainColumn.type || 'DT') : (config.type === 'soluong' ? 'SL' : (config.type === 'dtqd' ? 'DTQD' : 'DT'));
+            const globalGroupsList = config.groups || (config.mainColumn ? config.mainColumn.items : []) || [];
+            const globalGroupSet = buildGroupSet(globalGroupsList);
+            const hasSubColumns = Array.isArray(config.subColumns) && config.subColumns.length > 0;
 
             let baseSalesData = validSalesData.filter(row => {
-                const cleanNhomHangFromYCX = utils.cleanCategoryName(row.nhomHang);
-                const isInGroup = cleanedConfigGroups.has(cleanNhomHangFromYCX);
-                
-                if (!isInGroup) return false;
-
-                if (config.type === 'soluong' && (config.minPrice > 0 || config.maxPrice > 0)) {
+                if (mainColType === 'SL' && (config.minPrice > 0 || config.maxPrice > 0)) {
                     const price = (parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0) / (parseInt(String(row.soLuong || "1"), 10) || 1);
-                    const minPrice = config.minPrice || 0;
-                    const maxPrice = config.maxPrice || Infinity;
-                    if (price < minPrice || price > maxPrice) return false;
+                    if (price < (config.minPrice || 0) || price > (config.maxPrice || Infinity)) return false;
                 }
                 return true;
             });
 
             if (config.excludeApple) {
-                baseSalesData = baseSalesData.filter(row => row.nhaSanXuat !== 'Apple');
+                baseSalesData = baseSalesData.filter(row => String(row.nhaSanXuat || '').trim().toLowerCase() !== 'apple');
             }
 
             const employeeResults = $danhSachNhanVien.map(employee => {
                 let performanceByBrand = {};
-                let totalTargetRevenue = 0;
-                let totalTargetQuantity = 0;
-                let baseCategoryRevenue = 0;
-                let baseCategoryQuantity = 0;
+                let totalTargetRevenue = 0, totalTargetQuantity = 0, totalTargetRevenueQD = 0;
+                let baseCategoryRevenue = 0, baseCategoryQuantity = 0, baseCategoryRevenueQD = 0;
+                let dynamicColumns = {};
 
                 baseSalesData.forEach(row => {
-                     const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
-                     if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
-                        const revenueValue = (parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0);
-                        const quantityValue = (parseInt(String(row.soLuong || "0"), 10) || 0);
+                    const msnvMatch = String(row.nguoiTao || '').match(/(\d+)/);
+                    if (msnvMatch && msnvMatch[1].trim() === employee.maNV) {
+                        const rev = parseFloat(String(row.thanhTien || "0").replace(/,/g, '')) || 0;
+                        const qty = parseInt(String(row.soLuong || "0"), 10) || 0;
+                        const heSo = heSoQuyDoiMap[row.nhomHang] || 1;
+                        const revQD = row.revenueQuyDoi !== undefined ? (parseFloat(String(row.revenueQuyDoi || "0").replace(/,/g, '')) || 0) : (rev * heSo);
+                        const brand = row.nhaSanXuat || 'Khác';
 
-                        baseCategoryRevenue += revenueValue;
-                        baseCategoryQuantity += quantityValue;
+                        // 1. TÍNH CHO CỘT TỔNG NHÓM (Sử dụng bộ đối chiếu đa tầng isGroupMatch)
+                        if (isGroupMatch(row, globalGroupSet)) {
+                            baseCategoryRevenue += rev;
+                            baseCategoryQuantity += qty;
+                            baseCategoryRevenueQD += revQD;
+                        }
 
-                        const brand = row.nhaSanXuat;
-                        if ((config.brands || []).includes(brand)) {
-                            if (!performanceByBrand[brand]) {
-                                performanceByBrand[brand] = { revenue: 0, quantity: 0 };
+                        // 2. TÍNH CHO CÁC CỘT PHỤ (TABLE BUILDER)
+                        if (hasSubColumns) {
+                            config.subColumns.forEach(col => {
+                                if (!col.id || col.type === 'PERCENT') return;
+                                
+                                if (!isBrandMatch(brand, col.brands)) return;
+
+                                const colGroupsList = col.items || col.groups || [];
+                                const effectiveGroupSet = colGroupsList.length > 0 ? buildGroupSet(colGroupsList) : globalGroupSet;
+                                
+                                if (!isGroupMatch(row, effectiveGroupSet)) return;
+
+                                if (!dynamicColumns[col.id]) dynamicColumns[col.id] = { dt: 0, sl: 0, dtqd: 0 };
+                                dynamicColumns[col.id].dt += rev;
+                                dynamicColumns[col.id].sl += qty;
+                                dynamicColumns[col.id].dtqd += revQD;
+                            });
+                        }
+
+                        // 3. Tương thích ngược với config cũ
+                        if (isBrandMatch(brand, config.brands)) {
+                            if (isGroupMatch(row, globalGroupSet)) {
+                                if (!performanceByBrand[brand]) performanceByBrand[brand] = { revenue: 0, quantity: 0, revenueQD: 0 };
+                                performanceByBrand[brand].revenue += rev;
+                                performanceByBrand[brand].quantity += qty;
+                                performanceByBrand[brand].revenueQD += revQD;
+
+                                totalTargetRevenue += rev;
+                                totalTargetQuantity += qty;
+                                totalTargetRevenueQD += revQD;
                             }
-                            performanceByBrand[brand].revenue += revenueValue;
-                            performanceByBrand[brand].quantity += quantityValue;
-
-                            totalTargetRevenue += revenueValue;
-                            totalTargetQuantity += quantityValue;
                         }
                     }
                 });
+
+                const tyLeDT = baseCategoryRevenue > 0 ? (totalTargetRevenue / baseCategoryRevenue) : 0;
+                const tyLeSL = baseCategoryQuantity > 0 ? (totalTargetQuantity / baseCategoryQuantity) : 0;
+                const tyLeDTQD = baseCategoryRevenueQD > 0 ? (totalTargetRevenueQD / baseCategoryRevenueQD) : 0;
+
                 return {
                     maNV: employee.maNV,
                     hoTen: employee.hoTen,
                     boPhan: employee.boPhan,
-                    maKho: employee.maKho, // [FIX] Add maKho here so filter works
+                    maKho: employee.maKho,
                     performanceByBrand,
+                    dynamicColumns,
                     targetBrandsRevenue: totalTargetRevenue,
                     targetBrandsQuantity: totalTargetQuantity,
+                    targetBrandsRevenueQD: totalTargetRevenueQD,
                     baseCategoryRevenue,
                     baseCategoryQuantity,
-                    tyLeDT: baseCategoryRevenue > 0 ? (totalTargetRevenue / baseCategoryRevenue) : 0,
-                    tyLeSL: baseCategoryQuantity > 0 ? (totalTargetQuantity / baseCategoryQuantity) : 0,
+                    baseCategoryRevenueQD,
+                    tyLeDT,
+                    tyLeSL,
+                    tyLeDTQD,
                 };
-            }).filter(e => e.baseCategoryRevenue > 0 || e.baseCategoryQuantity > 0);
+            }).filter(e => e.baseCategoryRevenue > 0 || e.baseCategoryQuantity > 0 || e.baseCategoryRevenueQD > 0);
 
             return {
                 competition: config,
                 employeeData: employeeResults,
             };
-        }).filter(r => r.employeeData.length > 0);
+        });
 
         return report;
     },
@@ -7529,7 +8208,7 @@ export const competitionReportLogic = {
         const supermarketKeyTong = findKey($thiDuaVungTong, 'siêu thị');
         const supermarketKeyChiTiet = findKey($thiDuaVungChiTiet, 'siêu thị');
         const tongThuongKey = findKey($thiDuaVungChiTiet, 'tổng thưởng');
-        const hangVuotTroiKey = findKey($thiDuaVungChiTiet, 'hạng vượt trội');
+        const hangVuotTroiKey = findKey($thiDuaVungChiTiet, 'hạng % target');
         const hangTargetKey = findKey($thiDuaVungChiTiet, 'hạng % target');
         const layTopKey = findKey($thiDuaVungChiTiet, 'lấy top');
         const kenhKey = findKey($thiDuaVungChiTiet, 'kênh');
@@ -7733,8 +8412,13 @@ export const detailReportLogic = {
                     byCustomer[customerName].totalRealRevenue += realRevenue;
                     byCustomer[customerName].totalConvertedRevenue += convertedRevenue;
                     
-                    const ngayTao = row.ngayTao;
-                    if (ngayTao instanceof Date) {
+                    // [PHẪU THUẬT LOGIC]: Chuyển đổi an toàn chuỗi từ Cache về Date Object
+                    let ngayTao = row.ngayTao;
+                    if (typeof ngayTao === 'string' || typeof ngayTao === 'number') {
+                        ngayTao = new Date(ngayTao);
+                    }
+                    
+                    if (ngayTao instanceof Date && !isNaN(ngayTao.getTime())) {
                         const dateString = ngayTao.toISOString().split('T')[0];
                         if (!dailyStats[dateString]) {
                             dailyStats[dateString] = { date: ngayTao, revenue: 0, convertedRevenue: 0 };
@@ -8112,24 +8796,22 @@ const processCustomerGrouping = (orders) => {
 >>> FILE_START: src/services/reports/master/aggregator.js
 // src/services/reports/master/aggregator.js
 import { get } from 'svelte/store';
-import { efficiencyConfig, warehouseCustomMetrics } from '../../../stores.js';
+import { efficiencyConfig, warehouseCustomMetrics, macroProductGroupConfig, macroCategoryConfig } from '../../../stores.js';
 import { normalize } from './utils.js';
+import { parseIdentity } from '../../../utils.js';
 
 export const aggregator = {
     aggregateReport(reportData) {
         if (!reportData || reportData.length === 0) return {};
 
-        // Tính tổng hợp cho toàn siêu thị
         const supermarketReport = reportData.reduce((acc, curr) => {
-            // Cộng dồn tất cả các trường số
             for (const key in curr) {
                 if (typeof curr[key] === 'number') {
                     acc[key] = (acc[key] || 0) + curr[key];
                 }
             }
             
-            // Merge chi tiết Ngành hàng / Nhóm hàng
-            ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang'].forEach(dictKey => {
+            ['doanhThuTheoNganhHang', 'doanhThuTheoNhomHang', 'doanhThuTheoMaSanPham'].forEach(dictKey => {
                 if(curr[dictKey]) {
                     if(!acc[dictKey]) acc[dictKey] = {};
                     Object.entries(curr[dictKey]).forEach(([k, v]) => {
@@ -8148,8 +8830,8 @@ export const aggregator = {
 
         supermarketReport.nganhHangChiTiet = supermarketReport.doanhThuTheoNganhHang;
         supermarketReport.nhomHangChiTiet = supermarketReport.doanhThuTheoNhomHang;
+        supermarketReport.sanPhamChiTiet = supermarketReport.doanhThuTheoMaSanPham; 
 
-        // Tính lại % Tổng hợp Siêu thị
         const totalRevenue = supermarketReport.doanhThu || 1;
         supermarketReport.pctPhuKien = (supermarketReport.dtPhuKien || 0) / totalRevenue;
         supermarketReport.pctGiaDung = (supermarketReport.dtGiaDung || 0) / totalRevenue;
@@ -8168,9 +8850,10 @@ export const aggregator = {
             }
         }
 
-        // --- Tính lại Dynamic Metrics cho cấp Siêu thị ---
         const $efficiencyConfig = get(efficiencyConfig) || [];
         const $warehouseCustomMetrics = get(warehouseCustomMetrics) || [];
+        const $macroGrpCfg = get(macroProductGroupConfig) || []; 
+        const $macroCatCfg = get(macroCategoryConfig) || [];     
         const allMetricsConfig = [...$efficiencyConfig, ...$warehouseCustomMetrics];
 
         supermarketReport.dynamicMetrics = {};
@@ -8187,21 +8870,44 @@ export const aggregator = {
                         let total = 0;
                         if (!Array.isArray(groupList) || groupList.length === 0) return 0;
                         
+                        const resolvedIds = new Set();
+                        
+                        const addCleanId = (rawId) => {
+                            if (!rawId) return;
+                            const parsed = parseIdentity(rawId);
+                            const cleanId = (parsed.id !== 'unknown' ? parsed.id : rawId).toString().trim();
+                            if (cleanId) resolvedIds.add(cleanId);
+                        };
+
                         groupList.forEach(rawName => {
-                            if(!rawName) return;
-                            const cleanCfgName = normalize(rawName);
-                             const scanBucket = (bucket) => {
-                                for (const [k, v] of Object.entries(bucket)) {
-                                    if (normalize(k).includes(cleanCfgName)) {
-                                        if(valueType==='SL') total+=v.quantity;
-                                        else if(valueType==='DTQD') total+=v.revenueQuyDoi;
-                                        else total+=v.revenue;
-                                    }
-                                }
-                            };
-                            scanBucket(supermarketReport.doanhThuTheoNganhHang);
-                            scanBucket(supermarketReport.doanhThuTheoNhomHang);
+                            const macroGrp = $macroGrpCfg.find(m => m.name === rawName);
+                            const macroCat = $macroCatCfg.find(m => m.name === rawName);
+                            
+                            if (macroGrp && macroGrp.items) {
+                                macroGrp.items.forEach(subId => addCleanId(subId));
+                            } else if (macroCat && macroCat.items) {
+                                macroCat.items.forEach(subId => addCleanId(subId));
+                            } else {
+                                addCleanId(rawName);
+                            }
                         });
+
+                        resolvedIds.forEach(targetId => {
+                            // CẤM QUÉT THEO CHUỖI, CHỈ TÌM CHÍNH XÁC ID TRONG NHÓM VÀ NGÀNH
+                            const nh = supermarketReport.doanhThuTheoNhomHang?.[targetId];
+                            const ng = supermarketReport.doanhThuTheoNganhHang?.[targetId];
+
+                            let foundData = null;
+                            if (nh && (nh.quantity > 0 || nh.revenue > 0)) foundData = nh;
+                            else if (ng && (ng.quantity > 0 || ng.revenue > 0)) foundData = ng;
+
+                            if (foundData) {
+                                if (valueType === 'SL') total += foundData.quantity;
+                                else if (valueType === 'DTQD') total += foundData.revenueQuyDoi;
+                                else total += foundData.revenue;
+                            }
+                        });
+
                         return total;
                     };
 
@@ -8213,7 +8919,7 @@ export const aggregator = {
                         target: cfg.target, 
                         label: cfg.label
                     };
-                } catch(e) {}
+                } catch(e) { console.error("Aggregator Metric Error:", e); }
             });
         }
 
@@ -8297,81 +9003,82 @@ export const configLoader = {
 >>> FILE_START: src/services/reports/master/metricsProcessor.js
 // src/services/reports/master/metricsProcessor.js
 import { get } from 'svelte/store';
-import { efficiencyConfig, warehouseCustomMetrics } from '../../../stores.js';
+import { efficiencyConfig, macroProductGroupConfig, macroCategoryConfig } from '../../../stores.js';
 import { normalize } from './utils.js';
+import { parseIdentity } from '../../../utils.js';
 
 export const metricsProcessor = {
-    calculateDynamicMetrics(data, goalSettings) {
+    calculateDynamicMetrics(salesData, goalSettings) {
+        const metrics = {};
         const $efficiencyConfig = get(efficiencyConfig) || [];
-        const $warehouseCustomMetrics = get(warehouseCustomMetrics) || [];
-        
-        // Gộp cấu hình
-        const allMetricsConfig = [...$efficiencyConfig, ...$warehouseCustomMetrics];
-        
-        const dynamicMetrics = {};
+        const $macroGrpCfg = get(macroProductGroupConfig) || []; 
+        const $macroCatCfg = get(macroCategoryConfig) || []; 
 
-        if (allMetricsConfig && Array.isArray(allMetricsConfig)) {
-            allMetricsConfig.forEach(cfg => {
-                try {
-                    if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
+        if (!$efficiencyConfig.length) return metrics;
 
-                    // [LOGIC FIX] Ưu tiên lấy percentMetric (từ Modal mới) -> typeA -> type -> mặc định DTTL
-                    // Điều này đảm bảo khi bạn chọn "Số lượng" ở Modal, code sẽ tính theo SL
-                    const metricType = cfg.percentMetric || cfg.typeA || cfg.type || 'DTTL';
-                    
-                    const numType = metricType; 
-                    const denType = cfg.typeB || metricType; // Nếu mẫu số không cấu hình riêng thì dùng chung loại
+        $efficiencyConfig.forEach(cfg => {
+            try {
+                if (!cfg.id || !cfg.groupA || !cfg.groupB) return;
 
-                    const modeA = cfg.modeA || 'group';
-                    const modeB = cfg.modeB || (cfg.modeA === 'category' ? 'category' : 'group'); 
+                const numType = cfg.typeA || 'DTTL';
+                const denType = cfg.typeB || 'DTTL';
 
-                    const calcValue = (groupList, type, mode) => {
-                        let total = 0;
-                        if (!Array.isArray(groupList)) return 0;
+                const calcGroupValue = (groupList, valueType) => {
+                    let total = 0;
+                    if (!Array.isArray(groupList) || groupList.length === 0) return 0;
+
+                    const resolvedIds = new Set();
+
+                    groupList.forEach(rawName => {
+                        if(!rawName) return;
+
+                        const macroGrp = $macroGrpCfg.find(m => m.name === rawName);
+                        const macroCat = $macroCatCfg.find(m => m.name === rawName);
                         
-                        groupList.forEach(targetId => {
-                            if (!targetId) return;
-                            const cleanTargetId = normalize(targetId); 
+                        if (macroGrp && macroGrp.items) {
+                            macroGrp.items.forEach(id => resolvedIds.add(id));
+                        } else if (macroCat && macroCat.items) {
+                            macroCat.items.forEach(id => resolvedIds.add(id));
+                        } else {
+                            resolvedIds.add(rawName);
+                        }
+                    });
 
-                            // Chọn thùng dữ liệu
-                            const bucketToScan = (mode === 'category') 
-                                ? data.doanhThuTheoNganhHang 
-                                : data.doanhThuTheoNhomHang;
+                    resolvedIds.forEach(targetId => {
+                        const parsed = parseIdentity(targetId);
+                        const searchKey = (parsed.id !== 'unknown' ? parsed.id : targetId).toString().trim();
 
-                            // Quét dữ liệu
-                            for (const [key, val] of Object.entries(bucketToScan)) {
-                                const cleanKey = normalize(key);
-                                
-                                if (cleanKey === cleanTargetId) {
-                                    let valueToAdd = 0;
-                                    // Logic lấy giá trị chính xác theo type
-                                    if (type === 'SL') valueToAdd = val.quantity || 0;
-                                    else if (type === 'DTQD') valueToAdd = val.revenueQuyDoi || 0;
-                                    else valueToAdd = val.revenue || 0; // Mặc định là DTTL
+                        // CHỈ TRUY XUẤT NHÓM HÀNG HOẶC NGÀNH HÀNG
+                        const nh = salesData.doanhThuTheoNhomHang?.[searchKey];
+                        const ng = salesData.doanhThuTheoNganhHang?.[searchKey];
 
-                                    total += valueToAdd;
-                                }
-                            }
-                        });
+                        let foundData = null;
+                        if (nh && (nh.quantity > 0 || nh.revenue > 0)) foundData = nh;
+                        else if (ng && (ng.quantity > 0 || ng.revenue > 0)) foundData = ng;
 
-                        return total;
-                    };
+                        if (foundData) {
+                            if(valueType === 'SL') total += foundData.quantity;
+                            else if(valueType === 'DTQD') total += foundData.revenueQuyDoi;
+                            else total += foundData.revenue;
+                        }
+                    });
+                    return total;
+                };
 
-                    // Tính toán
-                    const num = calcValue(cfg.groupA, numType, modeA);
-                    const den = calcValue(cfg.groupB, denType, modeB);
+                const numVal = calcGroupValue(cfg.groupA, numType);
+                const denVal = calcGroupValue(cfg.groupB, denType);
+                
+                metrics[cfg.id] = {
+                    value: denVal > 0 ? numVal / denVal : 0,
+                    target: cfg.target,
+                    label: cfg.label
+                };
+            } catch(e) {
+                console.error("Metric Processor Error:", e);
+            }
+        });
 
-                    dynamicMetrics[cfg.id] = {
-                        value: den > 0 ? num / den : 0, // Lưu dạng decimal (0.5) để component UI format sau
-                        target: goalSettings && goalSettings[cfg.id] ? parseFloat(goalSettings[cfg.id]) : (cfg.target || 0),
-                        label: cfg.label
-                    };
-                } catch (e) {
-                    console.error("Metric Calc Error:", e);
-                }
-            });
-        }
-        return dynamicMetrics;
+        return metrics;
     }
 };
 <<< FILE_END: src/services/reports/master/metricsProcessor.js
@@ -8456,6 +9163,7 @@ export const salaryProcessor = {
 <<< FILE_END: src/services/reports/master/salaryProcessor.js
 
 >>> FILE_START: src/services/reports/master/salesProcessor.js
+// src/services/reports/master/salesProcessor.js
 import { config } from '../../../config.js';
 import * as utils from '../../../utils.js';
 import { normalize } from './utils.js';
@@ -8471,7 +9179,6 @@ const parseMoney = (value) => {
 const normalizeStr = (val) => (val || "").trim();
 
 export const salesProcessor = {
-    // [SURGICAL OPTIMIZATION]: Nhận context để tránh gọi config lại hàng nghìn lần
     evaluateTransaction(row, context = null) {
         const hinhThucXuatTinhDoanhThu = context?.hinhThucXuatTinhDoanhThu || dataProcessing.getHinhThucXuatTinhDoanhThu();
         const hinhThucXuatTraGop = context?.hinhThucXuatTraGop || dataProcessing.getHinhThucXuatTraGop();
@@ -8503,7 +9210,10 @@ export const salesProcessor = {
 
         const thanhTien = parseMoney(row.thanhTien || row.THANH_TIEN);
         const soLuong = parseInt(String(row.soLuong || row.SO_LUONG || "0"), 10) || 0;
-        const heSo = heSoQuyDoi[row.nhomHang] || 1;
+        
+        // [PHẪU THUẬT LOGIC v4.0]: Nâng cấp Hàm lấy hệ số nhận 2 biến (Nhóm Con và Ngành Cha) để xử lý Kế thừa
+        const heSo = dataProcessing.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoQuyDoi);
+        
         const revenueQuyDoi = row.revenueQuyDoi !== undefined ? parseMoney(row.revenueQuyDoi) : (thanhTien * heSo);
         const isTraGop = hinhThucXuatTraGop.has(htx);
 
@@ -8516,10 +9226,11 @@ export const salesProcessor = {
             doanhThu: 0, doanhThuQuyDoi: 0, doanhThuTraGop: 0,
             doanhThuChuaXuat: 0, doanhThuQuyDoiChuaXuat: 0,
             doanhThuGiaoXa: 0, doanhThuQuyDoiGiaoXa: 0,
-            doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, tongSoLuong: 0, qdc: {},
+            doanhThuTheoNganhHang: {}, doanhThuTheoNhomHang: {}, doanhThuTheoMaSanPham: {}, tongSoLuong: 0, qdc: {},
             dtICT: 0, dtCE: 0, dtPhuKien: 0, dtGiaDung: 0, dtSim: 0, dtVAS: 0, dtBaoHiem: 0, dtMLN: 0,
             dtTivi: 0, slTivi: 0, dtTuLanh: 0, slTuLanh: 0, dtMayGiat: 0, slMayGiat: 0, 
-            dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0
+            dtMayLanh: 0, slMayLanh: 0, dtDienThoai: 0, slDienThoai: 0, dtLaptop: 0, slLaptop: 0,
+            _rawSalesData: []
         };
 
         if (PG && PG.QDC_GROUPS) {
@@ -8534,7 +9245,6 @@ export const salesProcessor = {
         const data = this.createEmptySalesData();
         const PG = config.PRODUCT_GROUPS;
 
-        // [XÂY DỰNG NGỮ CẢNH] 1 lần duy nhất
         const context = {
             hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
             hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
@@ -8542,8 +9252,8 @@ export const salesProcessor = {
         };
 
         if (sourceData && Array.isArray(sourceData)) {
-            sourceData.forEach(row => {
-                const evalResult = this.evaluateTransaction(row, context); // Truyền context vào
+            sourceData.forEach((row, index) => {
+                const evalResult = this.evaluateTransaction(row, context); 
 
                 if (evalResult.isValid && evalResult.empId === String(employee.maNV)) {
                     if (evalResult.isDaXuat) {
@@ -8553,6 +9263,12 @@ export const salesProcessor = {
                         
                         const nhomIdObj = row.maNhomHang ? { id: row.maNhomHang, name: parseIdentity(row.nhomHang).name } : parseIdentity(row.nhomHang);
                         const nganhIdObj = row.maNganhHang ? { id: row.maNganhHang, name: parseIdentity(row.nganhHang).name } : parseIdentity(row.nganhHang);
+
+                        const nhomHangCode = String(nhomIdObj.id).trim();
+
+                        const rawMaSP = row.maSanPham || row.MA_SAN_PHAM || row['Mã sản phẩm'] || '';
+                        const rawTenSP = row.tenSanPham || row.TEN_SAN_PHAM || row['Tên sản phẩm'] || rawMaSP;
+                        const spIdObj = { id: String(rawMaSP).trim(), name: String(rawTenSP).trim() };
 
                         const trackMetric = (container, idObj, rawString) => {
                             if (!idObj.id || idObj.id === 'unknown') return;
@@ -8567,16 +9283,13 @@ export const salesProcessor = {
 
                         trackMetric(data.doanhThuTheoNganhHang, nganhIdObj, row.nganhHang);
                         trackMetric(data.doanhThuTheoNhomHang, nhomIdObj, row.nhomHang);
+                        if (spIdObj.id) trackMetric(data.doanhThuTheoMaSanPham, spIdObj, spIdObj.name);
 
                         data.doanhThu += thanhTien;
                         data.doanhThuQuyDoi += revenueQuyDoi;
                         data.tongSoLuong += soLuong;
 
-                        if (evalResult.isTraGop) {
-                            data.doanhThuTraGop += thanhTien;
-                        }
-
-                        const nhomHangCode = String(nhomIdObj.id).trim();
+                        if (evalResult.isTraGop) { data.doanhThuTraGop += thanhTien; }
                         
                         if (PG.DIEN_THOAI.includes(nhomHangCode) || PG.LAPTOP.includes(nhomHangCode) || (PG.TABLET && PG.TABLET.includes(nhomHangCode))) { data.dtICT += thanhTien; }
                         if (PG.TIVI.includes(nhomHangCode) || PG.TU_LANH.includes(nhomHangCode) || PG.MAY_GIAT.includes(nhomHangCode) || PG.MAY_LANH.includes(nhomHangCode) || (PG.DONG_HO && PG.DONG_HO.includes(nhomHangCode))) { data.dtCE += thanhTien; }
@@ -8624,6 +9337,16 @@ export const salesProcessor = {
                                 data.qdc[key].dtqd += revenueQuyDoi;
                             }
                         }
+
+                        data._rawSalesData.push({
+                            maNhomHang: nhomHangCode,
+                            maNganhHang: String(nganhIdObj.id).trim(),
+                            maSanPham: spIdObj.id,
+                            nhaSanXuat: row.nhaSanXuat || row.brand || row['Hãng'] || row['Hãng sản xuất'] || row['NhaSanXuat'] || row['TEN_HANG'] || '',
+                            _soLuong: soLuong,
+                            _thanhTien: thanhTien,
+                            _revenueQuyDoi: revenueQuyDoi
+                        });
                     } else if (evalResult.isChuaXuat) {
                         data.doanhThuChuaXuat += evalResult.thanhTien;
                         data.doanhThuQuyDoiChuaXuat += evalResult.revenueQuyDoi;
@@ -9748,6 +10471,77 @@ export const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 };
 <<< FILE_END: src/utils/kpi.utils.js
+
+>>> FILE_START: src/utils/lunar.utils.js
+// src/utils/lunar.utils.js
+// Thuật toán Âm lịch Việt Nam chuẩn (Dựa trên thuật toán Hồ Ngọc Đức)
+
+export const lunarUtils = {
+    getLunarDate: function(dd, mm, yy) {
+        const INT = parseInt;
+        function jdn(dd, mm, yy) {
+            let a = INT((14 - mm) / 12);
+            let y = yy + 4800 - a;
+            let m = mm + 12 * a - 3;
+            return dd + INT((153 * m + 2) / 5) + 365 * y + INT(y / 4) - INT(y / 100) + INT(y / 400) - 32045;
+        }
+        function jdToDate(jd) {
+            let a = jd + 32044;
+            let b = INT((4 * a + 3) / 146097);
+            let c = a - INT((146097 * b) / 4);
+            let d = INT((4 * c + 3) / 1461);
+            let e = c - INT((1461 * d) / 4);
+            let m = INT((5 * e + 2) / 153);
+            let day = e - INT((153 * m + 2) / 5) + 1;
+            let month = m + 3 - 12 * INT(m / 10);
+            let year = b * 100 + d - 4800 + INT(m / 10);
+            return [day, month, year];
+        }
+        function newMoon(k) {
+            let T = k / 1236.85;
+            let T2 = T * T, T3 = T2 * T;
+            let dr = 7771.3771450833 + 415471.40119226 * T + 0.00068731 * T2 - 0.00000325 * T3;
+            let M1 = (134.96298139 + 477198.8673981 * T + 0.0086972 * T2 + 0.0000147 * T3) * Math.PI / 180;
+            let M = (359.2242 + 29.10535608 * k) * Math.PI / 180;
+            let F = (93.27191 + 483202.017538 * T - 0.0036825 * T2 + 0.00000306 * T3) * Math.PI / 180;
+            let O = (259.183275 - 1934.136261 * T + 0.002078 * T2 + 0.0000022 * T3) * Math.PI / 180;
+            let jd = 2415020.75933 + 29.53058868 * k + 0.0001178 * T2 - 0.000000155 * T3
+                + 0.00033 * Math.sin(O)
+                + (0.1734 - 0.000393 * T) * Math.sin(M1)
+                + 0.0021 * Math.sin(2 * M1)
+                - 0.000406 * Math.sin(M)
+                + 0.011 * Math.sin(2 * F);
+            return INT(jd + 0.5 + 7 / 24); // GMT+7
+        }
+        function getLunarMonth(mm, yy) {
+            let k = INT((yy - 1900) * 12.3685);
+            let jd = jdn(1, mm, yy);
+            let nm = newMoon(k);
+            while (nm > jd) { k--; nm = newMoon(k); }
+            while (newMoon(k + 1) <= jd) { k++; nm = newMoon(k); }
+            let month = k - INT((yy - 1900) * 12.3685) + 1;
+            if (month < 1) month += 12;
+            return month;
+        }
+
+        let jd = jdn(dd, mm, yy);
+        let k = INT((yy - 1900) * 12.3685);
+        let nm = newMoon(k);
+        while (nm > jd) { k--; nm = newMoon(k); }
+        while (newMoon(k + 1) <= jd) { k++; nm = newMoon(k); }
+        
+        let lunarDay = jd - nm + 1;
+        let lunarMonth = getLunarMonth(mm, yy);
+
+        return {
+            day: lunarDay,
+            month: lunarMonth,
+            year: yy,
+            display: `${lunarDay}/${lunarMonth}`
+        };
+    }
+};
+<<< FILE_END: src/utils/lunar.utils.js
 
 >>> FILE_START: src/utils/revenue-table.utils.js
 import { getCompletionColor } from './kpi.utils.js';

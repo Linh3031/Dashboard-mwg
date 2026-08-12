@@ -1,23 +1,26 @@
 CONTEXT GROUP: SNAP_04_ADMIN.txt
-GENERATED AT: 6/12/2026, 1:52:43 PM
+GENERATED AT: 8/12/2026, 5:17:41 PM
 
 
 >>> FILE_START: src/components/admin/AdminCalculation.svelte
 <script>
     import { onMount } from 'svelte';
-    import { declarations } from '../../stores.js';
+    import { declarations, categoryStructure } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
+    import { parseIdentity } from '../../utils.js';
 
     let ycxValue = '';
     let ycxGopValue = '';
     let isSaving = false;
 
-    // --- LOGIC QUẢN LÝ HỆ SỐ QUY ĐỔI DẠNG BẢNG ---
-    let heSoItems = []; 
-    let filteredItems = [];
+    // --- LOGIC QUẢN LÝ HỆ SỐ QUY ĐỔI (TREE-VIEW & OVERRIDE CHUẨN EXCEL) ---
+    let rawHeSoMap = {}; // Lưu trữ map hệ số thô từ Cloud/Database
+    let treeData = [];   // Cây cấu trúc: Lấy 100% từ Excel ($categoryStructure)
+    let extraItems = []; // Danh sách các dòng do Admin CHỦ ĐỘNG bấm nút Thêm dòng bổ sung
     let searchTerm = '';
-    let sortKey = null; 
-    let sortDirection = 'asc';
+    
+    // Biến lưu trạng thái mở rộng (expand) của các Ngành hàng
+    let expandedCategories = {};
 
     const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -28,125 +31,248 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
                 declarations.set(data);
                 ycxValue = data.hinhThucXuat || data.ycx || '';
                 ycxGopValue = data.hinhThucXuatGop || data.ycxGop || '';
-                parseHeSoToItems(data.heSoQuyDoi || data.heSo || '');
+                
+                // Parse chuỗi hệ số thành Map { id/name: value }
+                rawHeSoMap = parseHeSoToMap(data.heSoQuyDoi || data.heSo || '');
+                buildTreeData();
             }
         } catch (error) {
             console.error("Lỗi tải dữ liệu:", error);
         }
     });
 
-    function parseHeSoToItems(rawString) {
-        if (!rawString) {
-            heSoItems = [];
-            applyFilterAndSort();
-            return;
-        }
-        heSoItems = rawString.split('\n')
-            .filter(line => line.trim())
-            .map(line => {
-                const lastComma = line.lastIndexOf(',');
-                if (lastComma > -1) {
-                    const valNum = parseFloat(line.substring(lastComma + 1).trim()) || 1;
-                    return { 
-                        id: generateId(), 
-                        name: line.substring(0, lastComma).trim(), 
-                        valueDisplay: valNum.toString().replace('.', ',') 
-                    };
+    // Lắng nghe thay đổi từ categoryStructure để build lại cây
+    $: if ($categoryStructure && $categoryStructure.length > 0) {
+        buildTreeData();
+    }
+
+    function parseHeSoToMap(rawString) {
+        const map = {};
+        if (!rawString) return map;
+        rawString.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            const lastComma = trimmed.lastIndexOf(',');
+            if (lastComma > -1) {
+                const key = trimmed.substring(0, lastComma).trim();
+                const valNum = parseFloat(trimmed.substring(lastComma + 1).trim().replace(',', '.')) || 1;
+                map[key] = valNum;
+            } else {
+                map[trimmed] = 1;
+            }
+        });
+        return map;
+    }
+
+    // [PHẪU THUẬT v3.3]: Xây dựng cây DỰA 100% VÀO EXCEL CẤU TRÚC ($categoryStructure)
+    function buildTreeData() {
+        const catMap = new Map();
+        const knownKeys = new Set();
+
+        if ($categoryStructure && $categoryStructure.length > 0) {
+            $categoryStructure.forEach(row => {
+                const nganhRaw = row.nganhHang || 'Khác';
+                const nhomRaw = row.nhomHang || 'Khác';
+                
+                const nganhId = parseIdentity(nganhRaw).id !== 'unknown' ? parseIdentity(nganhRaw).id : nganhRaw;
+                const nhomId = parseIdentity(nhomRaw).id !== 'unknown' ? parseIdentity(nhomRaw).id : nhomRaw;
+                
+                knownKeys.add(nganhRaw);
+                knownKeys.add(String(nganhId));
+                knownKeys.add(nhomRaw);
+                knownKeys.add(String(nhomId));
+
+                if (!catMap.has(nganhRaw)) {
+                    // Lấy hệ số ngành từ DB cũ (nếu có), không có mặc định là 1
+                    const nganhVal = rawHeSoMap[nganhRaw] !== undefined ? rawHeSoMap[nganhRaw] : (rawHeSoMap[nganhId] !== undefined ? rawHeSoMap[nganhId] : 1);
+                    catMap.set(nganhRaw, {
+                        id: generateId(),
+                        rawKey: nganhRaw,
+                        name: nganhRaw,
+                        valueDisplay: nganhVal.toString().replace('.', ','),
+                        childrenMap: new Map()
+                    });
                 }
-                return { id: generateId(), name: line.trim(), valueDisplay: '1' };
-            });
-        applyFilterAndSort();
-    }
 
-    function applyFilterAndSort() {
-        let temp = [...heSoItems];
-        
-        if (searchTerm) {
-            temp = temp.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
-        }
-        
-        if (sortKey) {
-            temp.sort((a, b) => {
-                if (!a.name && b.name) return -1;
-                if (a.name && !b.name) return 1;
+                const catObj = catMap.get(nganhRaw);
+                const currentCatVal = parseFloat(catObj.valueDisplay.replace(',', '.')) || 1;
 
-                if (sortKey === 'valueDisplay') {
-                    let valA = parseFloat((a.valueDisplay || '0').toString().replace(',', '.')) || 0;
-                    let valB = parseFloat((b.valueDisplay || '0').toString().replace(',', '.')) || 0;
-                    return sortDirection === 'asc' ? valA - valB : valB - valA;
-                } else {
-                    return sortDirection === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+                if (!catObj.childrenMap.has(nhomRaw)) {
+                    // Tìm xem trong DB cũ có lưu giá trị cho nhóm này không
+                    let storedChildVal = rawHeSoMap[nhomRaw] !== undefined ? rawHeSoMap[nhomRaw] : (rawHeSoMap[nhomId] !== undefined ? rawHeSoMap[nhomId] : undefined);
+                    
+                    // [CHỐT LOGIC QUAN TRỌNG]: Nếu giá trị con BẰNG Y HỆT Ngành cha -> Tự động chuyển về "Kế thừa" (không bị Ngoại lệ oan)
+                    let isOverride = storedChildVal !== undefined && storedChildVal !== currentCatVal;
+                    let displayVal = isOverride ? storedChildVal.toString().replace('.', ',') : '';
+
+                    catObj.childrenMap.set(nhomRaw, {
+                        id: generateId(),
+                        rawKey: nhomRaw,
+                        name: nhomRaw,
+                        isOverride: isOverride,
+                        valueDisplay: displayVal
+                    });
                 }
             });
         }
-        filteredItems = temp;
+
+        // Chuyển map thành array để hiển thị
+        treeData = Array.from(catMap.values()).map(cat => ({
+            ...cat,
+            children: Array.from(cat.childrenMap.values())
+        }));
+
+        // [KHÔNG SÁNG TẠO VÔ LẬP TRƯỜNG]: Loại bỏ hoàn toàn tính năng tự động hút mã lạ từ DB cũ lên bảng.
+        // extraItems chỉ chứa những dòng do chính Admin bấm nút Thêm dòng bổ sung (nếu đã tạo trước đó ở session hiện tại).
+        extraItems = extraItems.filter(item => item.name && item.name.trim());
     }
 
-    $: {
-        searchTerm; sortKey; sortDirection; heSoItems;
-        applyFilterAndSort();
+    // Xử lý tìm kiếm thông minh: nếu khớp con thì tự mở rộng cha
+    $: filteredTree = (() => {
+        if (!searchTerm) return treeData;
+        const term = searchTerm.toLowerCase();
+        return treeData.map(cat => {
+            const catMatch = cat.name.toLowerCase().includes(term);
+            const matchedChildren = cat.children.filter(child => child.name.toLowerCase().includes(term));
+            
+            if (matchedChildren.length > 0) {
+                expandedCategories[cat.id] = true; // Tự động mở rộng
+            }
+
+            if (catMatch || matchedChildren.length > 0) {
+                return {
+                    ...cat,
+                    children: catMatch ? cat.children : matchedChildren
+                };
+            }
+            return null;
+        }).filter(Boolean);
+    })();
+
+    $: filteredExtra = searchTerm ? extraItems.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())) : extraItems;
+
+    function toggleExpand(catId) {
+        expandedCategories[catId] = !expandedCategories[catId];
+        expandedCategories = { ...expandedCategories };
     }
 
-    function addItem() {
-        heSoItems = [{ id: generateId(), name: '', valueDisplay: '1' }, ...heSoItems];
-        searchTerm = ''; 
-        sortKey = null; 
+    // Admin chủ động bấm thêm dòng bổ sung (được đưa lên TOP 1 bảng để thao tác tức thì)
+    function addExtraItem() {
+        extraItems = [{ id: generateId(), name: '', valueDisplay: '1' }, ...extraItems];
+        searchTerm = '';
     }
 
-    function removeItem(id) {
-        heSoItems = heSoItems.filter(item => item.id !== id);
+    function removeExtraItem(id) {
+        extraItems = extraItems.filter(item => item.id !== id);
     }
 
-    function handleSort(key) {
-        if (sortKey === key) {
-            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            sortKey = key;
-            sortDirection = 'asc';
-        }
-    }
-
-    function handleValueInput(item, event) {
+    // Khi gõ vào ô Ngành hàng cha -> cập nhật giá trị cha và đồng bộ trạng thái kế thừa của con
+    function handleCatValueInput(cat, event) {
         let val = event.target.value;
         if (val.includes('.')) {
-            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.\nVí dụ: 4,18");
+            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.\nVí dụ: 1,85");
             val = val.replace(/\./g, ',');
-            event.target.value = val; 
+            event.target.value = val;
         }
-        item.valueDisplay = val; 
+        cat.valueDisplay = val;
+        
+        // Nếu thay đổi hệ số cha, kiểm tra lại con: đứa nào bằng số mới của cha thì cho về Kế thừa
+        const newCatNum = parseFloat(val.replace(',', '.')) || 1;
+        cat.children.forEach(child => {
+            if (child.isOverride) {
+                const childNum = parseFloat(child.valueDisplay.replace(',', '.')) || 1;
+                if (childNum === newCatNum) {
+                    child.isOverride = false;
+                    child.valueDisplay = '';
+                }
+            }
+        });
+
+        treeData = [...treeData];
+    }
+
+    // Khi gõ vào ô Nhóm con -> kích hoạt chế độ Ghi đè (Override), nếu số gõ giống hệt cha -> tự động về Kế thừa
+    function handleChildValueInput(child, cat, event) {
+        let val = event.target.value;
+        if (val.includes('.')) {
+            alert("⚠️ Lỗi định dạng: Vui lòng sử dụng dấu phẩy (,) thay vì dấu chấm (.) cho số thập phân.\nVí dụ: 1,92");
+            val = val.replace(/\./g, ',');
+            event.target.value = val;
+        }
+        
+        const childNum = parseFloat(val.replace(',', '.'));
+        const catNum = parseFloat(cat.valueDisplay.replace(',', '.'));
+
+        if (val.trim() === '' || (!isNaN(childNum) && childNum === catNum)) {
+            child.isOverride = false;
+            child.valueDisplay = '';
+        } else {
+            child.valueDisplay = val;
+            child.isOverride = true;
+        }
+        
+        treeData = [...treeData];
+    }
+
+    // Xóa ghi đè cho nhóm con -> quay lại kế thừa cha
+    function resetChildOverride(child) {
+        child.valueDisplay = '';
+        child.isOverride = false;
+        treeData = [...treeData];
     }
 
     async function saveDeclarations() {
         isSaving = true;
         try {
-            const heSoString = heSoItems
-                .filter(item => item.name.trim())
-                .map(item => {
+            const lines = [];
+
+            // 1. Gom các Ngành cha và Nhóm con bị ghi đè Ngoại lệ
+            treeData.forEach(cat => {
+                if (cat.name && cat.name.trim()) {
+                    let numStr = (cat.valueDisplay || '1').toString().replace(',', '.');
+                    if (isNaN(parseFloat(numStr))) numStr = '1';
+                    lines.push(`${cat.name.trim()},${numStr}`);
+                }
+                cat.children.forEach(child => {
+                    if (child.isOverride && child.valueDisplay && child.name.trim()) {
+                        let childNumStr = child.valueDisplay.toString().replace(',', '.');
+                        if (!isNaN(parseFloat(childNumStr))) {
+                            lines.push(`${child.name.trim()},${childNumStr}`);
+                        }
+                    }
+                });
+            });
+
+            // 2. Gom các mục Khai báo bổ sung / Đặc thù (do Admin CHỦ ĐỘNG gõ thêm tay)
+            extraItems.forEach(item => {
+                if (item.name && item.name.trim()) {
                     let numStr = (item.valueDisplay || '1').toString().replace(',', '.');
                     if (isNaN(parseFloat(numStr))) numStr = '1';
-                    return `${item.name.trim()},${numStr}`;
-                })
-                .join('\n');
+                    lines.push(`${item.name.trim()},${numStr}`);
+                }
+            });
+
+            const heSoString = lines.join('\n');
 
             // [FIX CRITICAL] Đóng gói cả Key cũ và Key mới để vỗ về Firebase
             const payload = {
-                // Key cũ cho admin.service.js không bị lỗi undefined
                 ycx: ycxValue || '',
                 ycxGop: ycxGopValue || '',
                 heSo: heSoString || '',
-                // Key mới cho các file Helpers hoạt động bình thường
                 hinhThucXuat: ycxValue || '',
                 hinhThucXuatGop: ycxGopValue || '',
                 heSoQuyDoi: heSoString || ''
             };
 
-            // Đẩy lên Firebase (Sẽ gọi hàm notify nội bộ của file admin.service.js)
             await adminService.saveDeclarationsToFirestore(payload);
-            
-            // Cập nhật cục bộ cho UI
             declarations.set(payload);
+            
+            // Cập nhật lại map cục bộ sau khi lưu thành công
+            rawHeSoMap = parseHeSoToMap(heSoString);
+            alert("✅ Đã lưu cấu hình Hệ số quy đổi theo Ngành hàng thành công!");
         } catch (error) {
             console.error("Lưu thất bại:", error);
+            alert("❌ Lưu thất bại: " + error.message);
         } finally {
             isSaving = false;
         }
@@ -168,8 +294,8 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-                <h3 class="font-bold text-slate-800">Hệ số quy đổi ngành hàng</h3>
-                <p class="text-xs text-slate-500">Quản lý hệ số nhân cho từng nhóm sản phẩm</p>
+                <h3 class="font-bold text-slate-800">Hệ số quy đổi Ngành Hàng (Kế thừa & Ngoại lệ)</h3>
+                <p class="text-xs text-slate-500">Danh sách hiển thị 100% theo file Excel Cấu trúc. Nhóm con mặc định kế thừa Ngành cha.</p>
             </div>
             
             <div class="flex flex-wrap items-center gap-2 md:gap-3">
@@ -180,14 +306,14 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
                     <input 
                         type="text" 
                         bind:value={searchTerm} 
-                        placeholder="Tìm nhóm hàng..." 
-                        class="pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full md:w-56"
+                        placeholder="Tìm ngành hoặc nhóm hàng..." 
+                        class="pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none w-full md:w-64"
                     />
                 </div>
                 
-                <button on:click={addItem} class="bg-slate-200 text-slate-700 px-3 md:px-4 py-2 rounded-lg hover:bg-slate-300 flex items-center gap-2 font-bold transition shadow-sm whitespace-nowrap">
+                <button on:click={addExtraItem} class="bg-slate-200 text-slate-700 px-3 md:px-4 py-2 rounded-lg hover:bg-slate-300 flex items-center gap-2 font-bold transition shadow-sm whitespace-nowrap" title="Chỉ dùng khi cần khai báo bổ sung mã mới chưa có trong Excel">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> 
-                    <span class="hidden sm:inline">Thêm dòng</span>
+                    <span class="hidden sm:inline">+ Thêm dòng bổ sung</span>
                 </button>
                 
                 <button on:click={saveDeclarations} disabled={isSaving} class="bg-green-600 text-white px-4 md:px-6 py-2 rounded-lg hover:bg-green-700 font-bold transition shadow-sm flex items-center gap-2 disabled:opacity-50 whitespace-nowrap">
@@ -202,46 +328,138 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
             </div>
         </div>
 
-        <div class="max-h-[500px] overflow-y-auto">
+        <div class="max-h-[550px] overflow-y-auto">
             <table class="w-full text-left border-collapse">
                 <thead class="bg-slate-50 sticky top-0 z-10 shadow-sm">
                     <tr>
-                        <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase cursor-pointer hover:text-blue-600 transition" on:click={() => handleSort('name')}>
-                            Nhóm Hàng {sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase">
+                            Ngành Hàng / Nhóm Hàng
                         </th>
-                        <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase cursor-pointer hover:text-blue-600 transition w-40" on:click={() => handleSort('valueDisplay')}>
-                            Hệ số {sortKey === 'valueDisplay' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase w-48 text-center">
+                            Hệ số quy đổi
                         </th>
-                        <th class="px-6 py-3 w-20"></th>
+                        <th class="px-6 py-3 w-28 text-right text-xs font-bold text-slate-500 uppercase">
+                            Trạng thái
+                        </th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    {#each filteredItems as item (item.id)}
-                        <tr class="hover:bg-blue-50/50 transition-colors">
-                            <td class="px-6 py-2">
-                                <input type="text" value={item.name} on:input={(e) => { item.name = e.target.value; }} class="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700" placeholder="Nhập tên nhóm hàng..." />
-                            </td>
-                            <td class="px-6 py-2">
-                                <input type="text" value={item.valueDisplay} on:input={(e) => handleValueInput(item, e)} class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-bold text-blue-700 text-center" />
-                            </td>
-                            <td class="px-6 py-2 text-right">
-                                <button on:click={() => removeItem(item.id)} class="text-slate-300 hover:text-red-500 p-1 transition">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                                </button>
+                    <!-- KHU VỰC 1: KHAI BÁO BỔ SUNG / ĐẶC THÙ (ĐƯỢC ĐƯA LÊN TOP 1 ĐỂ THAO TÁC NGAY) -->
+                    {#if extraItems.length > 0}
+                        <tr class="bg-slate-200/80 font-bold text-slate-700 border-b border-slate-300">
+                            <td colspan="3" class="px-6 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1 text-amber-800">
+                                <span>⭐ Khai báo bổ sung (Mã mới / mã ảo chưa có trong Excel)</span>
                             </td>
                         </tr>
+                        {#each filteredExtra as item (item.id)}
+                            <tr class="hover:bg-amber-50 transition-colors bg-amber-50/20">
+                                <td class="px-6 py-2">
+                                    <input 
+                                        type="text" 
+                                        value={item.name} 
+                                        on:input={(e) => { item.name = e.target.value; }} 
+                                        class="w-full bg-transparent border-none focus:ring-0 font-bold text-slate-700" 
+                                        placeholder="Nhập tên mã hàng mới / mã khuyến mãi ảo..." 
+                                    />
+                                </td>
+                                <td class="px-6 py-2">
+                                    <input 
+                                        type="text" 
+                                        value={item.valueDisplay} 
+                                        on:input={(e) => handleCatValueInput(item, e)} 
+                                        class="w-full bg-white border border-amber-300 rounded px-2 py-1 text-sm font-bold text-amber-800 text-center focus:ring-2 focus:ring-amber-500" 
+                                    />
+                                </td>
+                                <td class="px-6 py-2 text-right">
+                                    <button on:click={() => removeExtraItem(item.id)} class="text-slate-400 hover:text-red-500 p-1 transition" title="Xóa dòng này">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        {/each}
+                        <tr class="bg-slate-300/40 h-2 border-t-2 border-slate-300"><td colspan="3"></td></tr>
+                    {/if}
+
+                    <!-- KHU VỰC 2: CÂY NGÀNH HÀNG VÀ NHÓM HÀNG CHUẨN EXCEL CẤU TRÚC -->
+                    {#each filteredTree as cat (cat.id)}
+                        <!-- Dòng Ngành Hàng Cha -->
+                        <tr class="bg-slate-100/70 hover:bg-slate-200/60 font-bold transition-colors cursor-pointer select-none" on:click={() => toggleExpand(cat.id)}>
+                            <td class="px-6 py-3 flex items-center gap-2 text-slate-800">
+                                <span class="text-xs text-slate-400 w-4 inline-block transition-transform transform {expandedCategories[cat.id] ? 'rotate-90 text-blue-600' : ''}">▶</span>
+                                <span>{cat.name}</span>
+                                {#if cat.children.length > 0}
+                                    <span class="text-[11px] font-normal bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full ml-2">
+                                        {cat.children.length} nhóm con
+                                    </span>
+                                {/if}
+                            </td>
+                            <td class="px-6 py-2" on:click|stopPropagation>
+                                <input 
+                                    type="text" 
+                                    value={cat.valueDisplay} 
+                                    on:input={(e) => handleCatValueInput(cat, e)} 
+                                    class="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-sm font-extrabold text-blue-700 text-center focus:ring-2 focus:ring-blue-500 shadow-inner" 
+                                    title="Hệ số chung cho toàn bộ ngành này"
+                                />
+                            </td>
+                            <td class="px-6 py-2 text-right text-xs text-slate-500 font-normal">
+                                <span class="bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded">Ngành cha</span>
+                            </td>
+                        </tr>
+
+                        <!-- Các Dòng Nhóm Hàng Con (Khi được mở rộng) -->
+                        {#if expandedCategories[cat.id]}
+                            {#each cat.children as child (child.id)}
+                                <tr class="hover:bg-blue-50/50 transition-colors {child.isOverride ? 'bg-amber-50/40' : ''}">
+                                    <td class="pl-12 pr-6 py-2 text-sm text-slate-600 flex items-center gap-2">
+                                        <span class="text-slate-300">└</span>
+                                        <span class={child.isOverride ? 'font-bold text-amber-900' : ''}>{child.name}</span>
+                                    </td>
+                                    <td class="px-6 py-1.5">
+                                        <div class="relative flex items-center">
+                                            <input 
+                                                type="text" 
+                                                value={child.isOverride ? child.valueDisplay : cat.valueDisplay} 
+                                                on:input={(e) => handleChildValueInput(child, cat, e)} 
+                                                class="w-full border rounded px-2 py-1 text-sm text-center transition-all {child.isOverride ? 'bg-amber-100 border-amber-400 font-bold text-amber-900 shadow-sm' : 'bg-slate-50/50 border-slate-200 text-slate-400 italic'}" 
+                                                placeholder={cat.valueDisplay}
+                                                title={child.isOverride ? "Đang ghi đè hệ số riêng" : "Đang kế thừa hệ số từ Ngành cha"}
+                                            />
+                                            {#if child.isOverride}
+                                                <button 
+                                                    on:click={() => resetChildOverride(child)} 
+                                                    class="absolute right-1 text-amber-600 hover:text-red-600 p-1 text-xs font-bold"
+                                                    title="Xóa ngoại lệ, quay lại kế thừa cha"
+                                                >
+                                                    ↺
+                                                </button>
+                                            {/if}
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-1.5 text-right text-xs">
+                                        {#if child.isOverride}
+                                            <span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded border border-amber-300">Ngoại lệ</span>
+                                        {:else}
+                                            <span class="text-slate-400 italic">Kế thừa</span>
+                                        {/if}
+                                    </td>
+                                </tr>
+                            {/each}
+                        {/if}
                     {/each}
-                    {#if filteredItems.length === 0}
+
+                    {#if filteredTree.length === 0 && filteredExtra.length === 0}
                         <tr>
-                            <td colspan="3" class="px-6 py-10 text-center text-slate-400 italic">Không tìm thấy nhóm hàng nào</td>
+                            <td colspan="3" class="px-6 py-10 text-center text-slate-400 italic">Không tìm thấy Ngành hàng hay Nhóm hàng nào (Hãy kiểm tra tab Nạp dữ liệu cấu trúc)</td>
                         </tr>
                     {/if}
                 </tbody>
             </table>
         </div>
         
-        <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-            <span class="text-sm text-slate-500 font-medium">Tổng cộng: <b>{heSoItems.length}</b> nhóm hàng</span>
+        <div class="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-sm text-slate-500">
+            <span>Hiển thị: <b>{treeData.length}</b> Ngành hàng chuẩn Excel | <b>{extraItems.length}</b> mục bổ sung</span>
+            <span class="italic text-xs">* Mẹo: Click vào Ngành hàng để xem/sửa Nhóm con bên trong</span>
         </div>
     </div>
 </div>
@@ -1986,22 +2204,46 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
 
 >>> FILE_START: src/components/admin/category/CategoryUploader.svelte
 <script>
-    import { categoryStructure, brandList } from '../../../stores.js';
+    import { categoryStructure, brandList, virtualProductList } from '../../../stores.js';
     import { dataService } from '../../../services/dataService.js';
-    // [NEW] Import adminService để lưu
     import { adminService } from '../../../services/admin.service.js';
+    import { fileHandler } from '../../../services/data/fileHandler.js';
+    import { categoryService } from '../../../services/declarations/category.service.js';
 
     let isLoading = false;
     let isSaving = false;
-    let showRawData = false;
+    let isSavingVirtual = false;
 
-    // Tính toán số liệu thống kê từ Store
-    $: uniqueCategories = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nganhHang).filter(Boolean))] : [];
-    $: uniqueGroups = $categoryStructure ? [...new Set($categoryStructure.map(i => i.nhomHang).filter(Boolean))] : [];
-    $: totalBrands = $brandList ? $brandList.length : 0;
+    // --- LOGIC PHẪU THUẬT: QUẢN LÝ DỮ LIỆU CỤC BỘ ---
+    let localData = [];
+    let lastStructureRef = null;
+    let searchQuery = '';
+
+    // Khởi tạo/Đồng bộ dữ liệu khi file Excel vừa tải lên (hoặc lấy từ Store)
+    $: if ($categoryStructure && $categoryStructure !== lastStructureRef) {
+        lastStructureRef = $categoryStructure;
+        localData = $categoryStructure.map(item => ({
+            id: Math.random().toString(36).substr(2, 9),
+            nganhHang: item.nganhHang || '',
+            nhomHang: item.nhomHang || '',
+            nhaSanXuat: item.nhaSanXuat || '',
+            isEditing: false
+        }));
+    }
+
+    // Tính toán Auto-Suggest & Thống kê theo Dữ liệu hiển thị (Real-time update)
+    $: suggestCategories = [...new Set(localData.map(d => d.nganhHang).filter(Boolean))].sort();
+    $: suggestGroups = [...new Set(localData.map(d => d.nhomHang).filter(Boolean))].sort();
+    $: suggestBrands = [...new Set(localData.map(d => d.nhaSanXuat).filter(Boolean))].sort();
     
-    // Check xem có dữ liệu không để hiển thị bảng
-    $: hasData = $categoryStructure.length > 0;
+    $: hasData = localData.length > 0;
+
+    // Bộ lọc hiển thị trên bảng
+    $: filteredData = localData.filter(d => 
+        (d.nganhHang && d.nganhHang.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (d.nhomHang && d.nhomHang.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (d.nhaSanXuat && d.nhaSanXuat.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
 
     async function handleCategoryUpload(event) {
         isLoading = true;
@@ -2014,20 +2256,89 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         }
     }
 
-    // [NEW] Hàm lưu dữ liệu lên Cloud
+    // --- CÁC HÀM THAO TÁC TRÊN BẢNG ---
+    function addNewRow() {
+        localData = [{
+            id: Math.random().toString(36).substr(2, 9),
+            nganhHang: '',
+            nhomHang: '',
+            nhaSanXuat: '',
+            isEditing: true
+        }, ...localData];
+        searchQuery = ''; // Reset search để đảm bảo dòng mới hiện ở top
+    }
+
+    function deleteRow(id) {
+        if(confirm('Bạn có chắc muốn xóa dòng này khỏi danh sách?')) {
+            localData = localData.filter(d => d.id !== id);
+        }
+    }
+
+    function toggleEdit(id, forceSave = false) {
+        localData = localData.map(d => {
+            if (d.id === id) {
+                // Rời khỏi edit mode khi bấm Lưu
+                return { ...d, isEditing: forceSave ? false : !d.isEditing };
+            }
+            return d;
+        });
+    }
+
     async function saveToCloud() {
         if (!hasData) return;
         isSaving = true;
         try {
+            // Clean dữ liệu trắng thừa & chuẩn bị payload
+            const cleanData = localData.map(d => ({
+                nganhHang: (d.nganhHang || '').trim(),
+                nhomHang: (d.nhomHang || '').trim(),
+                nhaSanXuat: (d.nhaSanXuat || '').trim()
+            }));
+            const newBrandList = [...new Set(cleanData.map(d => d.nhaSanXuat).filter(Boolean))].sort();
+
+            // Ghi đè vào Store trước để UI phản hồi ngay lập tức
+            categoryStructure.set(cleanData);
+            brandList.set(newBrandList);
+
             await adminService.saveCategoryDataToFirestore({
-                categories: $categoryStructure,
-                brands: $brandList
+                categories: cleanData,
+                brands: newBrandList
             });
+            
+            alert("Lưu Cấu trúc lên Cloud thành công!");
+            
+            lastStructureRef = cleanData; // Chống re-render thừa
+            localData = localData.map(d => ({ ...d, isEditing: false })); // Đóng tất cả mode edit
         } catch (e) {
             console.error(e);
             alert("Lỗi khi lưu: " + e.message);
         } finally {
             isSaving = false;
+        }
+    }
+
+    async function handleVirtualUpload(e) {
+        isLoading = true; 
+        try { 
+            await fileHandler.handleVirtualProductFileUpload(e); 
+            alert('Tải file Sản phẩm đặc thù thành công!'); 
+        } catch(err) { 
+            alert(err.message); 
+        } finally { 
+            isLoading = false; 
+        }
+    }
+    
+    async function saveVirtualToCloud() {
+        if (!$virtualProductList || $virtualProductList.length === 0) return;
+        isSavingVirtual = true;
+        try {
+            await categoryService.saveVirtualProductList($virtualProductList);
+            alert("Lưu sản phẩm đặc thù thành công!");
+        } catch(e) {
+            alert("Lỗi khi lưu SP đặc thù: " + e.message);
+        } finally {
+            isSavingVirtual = false;
         }
     }
 </script>
@@ -2044,7 +2355,6 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
             >
                 Tải File Mẫu
             </button>
-            
             <button 
                 class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 on:click={saveToCloud}
@@ -2063,24 +2373,15 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
 
     <div class="p-6 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 transition-colors text-center">
         <input 
-            type="file" 
-            id="category-upload-input" 
-            class="hidden" 
-            accept=".xlsx, .xls"
-            on:change={handleCategoryUpload}
-            disabled={isLoading}
+            type="file" id="category-upload-input" class="hidden" accept=".xlsx, .xls"
+            on:change={handleCategoryUpload} disabled={isLoading}
         />
         <label for="category-upload-input" class="cursor-pointer flex flex-col items-center gap-3">
             <div class="p-3 bg-white rounded-full shadow-sm">
                 {#if isLoading}
-                    <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <svg class="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                 {/if}
             </div>
             <div>
@@ -2091,57 +2392,151 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
     </div>
 
     {#if hasData}
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Datalist để tái sử dụng làm auto-suggest -->
+        <datalist id="cat-list">
+            {#each suggestCategories as cat} <option value={cat}></option> {/each}
+        </datalist>
+        <datalist id="group-list">
+            {#each suggestGroups as grp} <option value={grp}></option> {/each}
+        </datalist>
+        <datalist id="brand-list">
+            {#each suggestBrands as br} <option value={br}></option> {/each}
+        </datalist>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div class="p-3 bg-blue-50 rounded-lg border border-blue-100 flex justify-between items-center">
                 <span class="text-sm text-blue-700 font-medium">Tổng Ngành Hàng</span>
-                <span class="text-xl font-bold text-blue-700">{uniqueCategories.length}</span>
+                <span class="text-xl font-bold text-blue-700">{suggestCategories.length}</span>
             </div>
             <div class="p-3 bg-green-50 rounded-lg border border-green-100 flex justify-between items-center">
                 <span class="text-sm text-green-700 font-medium">Tổng Nhóm Hàng</span>
-                <span class="text-xl font-bold text-green-700">{uniqueGroups.length}</span>
+                <span class="text-xl font-bold text-green-700">{suggestGroups.length}</span>
             </div>
             <div class="p-3 bg-purple-50 rounded-lg border border-purple-100 flex justify-between items-center">
                 <span class="text-sm text-purple-700 font-medium">Tổng Hãng</span>
-                <span class="text-xl font-bold text-purple-700">{totalBrands}</span>
+                <span class="text-xl font-bold text-purple-700">{suggestBrands.length}</span>
             </div>
         </div>
 
-        <div class="border rounded-lg overflow-hidden">
-            <div class="bg-slate-100 px-4 py-2 border-b flex justify-between items-center">
-                <h3 class="font-bold text-slate-700 text-xs uppercase">Dữ liệu thô (Preview)</h3>
-                <button 
-                    class="text-xs text-blue-600 hover:underline"
-                    on:click={() => showRawData = !showRawData}
-                >
-                    {showRawData ? 'Ẩn chi tiết' : 'Xem chi tiết'}
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+            <div class="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-3 justify-between items-center">
+                <div class="relative w-full md:w-64">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input type="text" bind:value={searchQuery} placeholder="Tìm ngành, nhóm, hãng..." class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <button on:click={addNewRow} class="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded-lg shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    Thêm Dòng Mới
                 </button>
             </div>
             
-            {#if showRawData}
-            <div class="overflow-x-auto max-h-60">
+            <div class="max-h-[400px] overflow-y-auto custom-scrollbar">
                 <table class="w-full text-sm text-left">
-                    <thead class="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                    <thead class="bg-slate-100 text-slate-600 font-bold sticky top-0 shadow-sm z-10 text-xs uppercase">
                         <tr>
-                            <th class="px-4 py-2">Ngành Hàng</th>
-                            <th class="px-4 py-2">Nhóm Hàng</th>
-                            <th class="px-4 py-2">Nhà Sản Xuất</th>
+                            <th class="px-4 py-3">Ngành Hàng</th>
+                            <th class="px-4 py-3">Nhóm Hàng</th>
+                            <th class="px-4 py-3">Hãng (NSX)</th>
+                            <th class="px-4 py-3 text-right">Thao tác</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200">
-                        {#each $categoryStructure.slice(0, 100) as item}
-                            <tr class="bg-white hover:bg-slate-50">
-                                <td class="px-4 py-1 text-slate-600">{item.nganhHang}</td>
-                                <td class="px-4 py-1 font-medium text-slate-700">{item.nhomHang}</td>
-                                <td class="px-4 py-1 text-slate-500 italic">{item.nhaSanXuat}</td>
+                    <tbody class="divide-y divide-slate-100">
+                        {#each filteredData as row (row.id)}
+                            <tr class="hover:bg-blue-50/50 transition-colors group {row.isEditing ? 'bg-amber-50/30' : ''}">
+                                <td class="px-4 py-2">
+                                    {#if row.isEditing}
+                                        <input list="cat-list" type="text" bind:value={row.nganhHang} class="w-full p-1.5 border border-slate-300 rounded outline-none focus:border-blue-500 bg-white" placeholder="Ngành hàng..." />
+                                    {:else}
+                                        <span class="font-medium text-slate-700">{row.nganhHang}</span>
+                                    {/if}
+                                </td>
+                                <td class="px-4 py-2">
+                                    {#if row.isEditing}
+                                        <input list="group-list" type="text" bind:value={row.nhomHang} class="w-full p-1.5 border border-slate-300 rounded outline-none focus:border-blue-500 bg-white" placeholder="Nhóm hàng..." />
+                                    {:else}
+                                        <span class="text-slate-600">{row.nhomHang}</span>
+                                    {/if}
+                                </td>
+                                <td class="px-4 py-2">
+                                    {#if row.isEditing}
+                                        <input list="brand-list" type="text" bind:value={row.nhaSanXuat} class="w-full p-1.5 border border-slate-300 rounded outline-none focus:border-blue-500 bg-white" placeholder="Hãng sản xuất..." />
+                                    {:else}
+                                        <span class="text-slate-600 px-2 py-0.5 bg-slate-100 rounded text-xs border border-slate-200">{row.nhaSanXuat}</span>
+                                    {/if}
+                                </td>
+                                <td class="px-4 py-2 text-right">
+                                    <div class="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                        {#if row.isEditing}
+                                            <button on:click={() => toggleEdit(row.id, true)} class="px-3 py-1 bg-green-100 text-green-700 hover:bg-green-200 rounded font-medium text-xs border border-green-200">
+                                                Lưu
+                                            </button>
+                                        {:else}
+                                            <button on:click={() => toggleEdit(row.id)} class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Sửa">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                                            </button>
+                                            <button on:click={() => deleteRow(row.id)} class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Xóa">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                            </button>
+                                        {/if}
+                                    </div>
+                                </td>
                             </tr>
                         {/each}
                     </tbody>
                 </table>
+                {#if filteredData.length === 0}
+                    <div class="text-center py-8 text-slate-400 italic">Không tìm thấy dữ liệu khớp với từ khóa.</div>
+                {/if}
             </div>
-            {/if}
+            <div class="p-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 text-right italic">
+                * Nhấn "Lưu Lên Cloud" sau khi điều chỉnh xong để ghi nhận cấu trúc.
+            </div>
         </div>
     {/if}
+
+    <div class="mt-8 border-t border-slate-200 pt-8">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h3 class="font-bold text-slate-700 text-lg flex items-center gap-2">
+                    <span class="text-orange-500"><i data-feather="star"></i></span>
+                    Khai báo Sản Phẩm Đặc Thù
+                </h3>
+                <p class="text-xs text-slate-500 mt-1">Tải lên file Excel để định nghĩa các sản phẩm lẻ (VD: Gói bảo dưỡng). Yêu cầu: Mã SP, Tên SP, Nhóm Hàng.</p>
+            </div>
+            <button 
+                class="px-4 py-1.5 text-xs font-bold text-white bg-orange-600 rounded hover:bg-orange-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                on:click={saveVirtualToCloud}
+                disabled={!$virtualProductList?.length || isSavingVirtual}
+            >
+                {isSavingVirtual ? 'Đang lưu...' : 'Lưu Lên Cloud'}
+            </button>
+        </div>
+
+        <div class="p-6 bg-orange-50 rounded-xl border-2 border-dashed border-orange-200 hover:border-orange-400 transition-colors text-center">
+            <input 
+                type="file" id="virtual-upload-input" class="hidden" accept=".xlsx, .xls"
+                on:change={handleVirtualUpload}
+                disabled={isLoading}
+            />
+            <label for="virtual-upload-input" class="cursor-pointer flex flex-col items-center gap-3">
+                <div class="p-3 bg-white rounded-full shadow-sm text-orange-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                </div>
+                <div>
+                    <span class="text-orange-600 font-bold hover:underline">Nhấn để tải file Excel Sản Phẩm</span>
+                    <span class="text-slate-500 block text-xs mt-1">Đã nạp: {$virtualProductList?.length || 0} sản phẩm</span>
+                </div>
+            </label>
+        </div>
+    </div>
 </div>
+
+<style>
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
 <<< FILE_END: src/components/admin/category/CategoryUploader.svelte
 
 >>> FILE_START: src/components/admin/category/MacroGroupEditor.svelte
@@ -2332,16 +2727,24 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
 >>> FILE_START: src/components/admin/category/MacroProductGroupEditor.svelte
 <script>
     import { onMount } from 'svelte';
-    import { categoryStructure, macroProductGroupConfig } from '../../../stores.js';
+    import { categoryStructure, macroProductGroupConfig, virtualProductList } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
+    import { categoryService } from '../../../services/declarations/category.service.js';
     import { parseIdentity } from '../../../utils.js';
 
     let localConfigs = []; 
     let isSaving = false;
     let editingId = null; 
     let itemSearch = '';
+    let selectorMode = 'group'; // 'group' | 'product'
 
-    // Lấy danh sách Nhóm Hàng (Product Group) kèm ID để tick chọn
+    onMount(async () => {
+        if (!$virtualProductList || $virtualProductList.length === 0) {
+            const list = await categoryService.loadVirtualProductList();
+            virtualProductList.set(list);
+        }
+    });
+
     $: rawProductGroupsWithId = (() => {
         const map = new Map();
         ($categoryStructure || []).forEach(c => {
@@ -2362,11 +2765,11 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
     }
 
     function addGroup() {
-        const name = prompt("Nhập tên Nhóm Hàng Lớn (VD: Điện thoại & Laptop, Gia dụng lớn...):");
+        const name = prompt("Nhập tên Nhóm Hàng Lớn (VD: Bảo dưỡng MLN, Gia dụng lớn...):");
         if (name && name.trim()) {
             const id = 'macro_pg_' + Date.now();
             localConfigs = [...localConfigs, { id, name: name.trim(), items: [] }];
-            editingId = id; 
+            editingId = id;
         }
     }
 
@@ -2388,12 +2791,28 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         localConfigs[groupIndex].items = [...currentItems];
     }
 
-    // [MỚI] Hàm xóa sạch lựa chọn
+    // --- TÍNH NĂNG CHỌN / BỎ CHỌN NHANH ---
+    function selectAllFiltered(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        const currentItems = new Set(localConfigs[groupIndex].items || []);
+        filteredRawGroups.forEach(item => currentItems.add(item.id));
+        localConfigs[groupIndex].items = [...currentItems];
+    }
+
+    function deselectAllFiltered(groupId) {
+        const groupIndex = localConfigs.findIndex(g => g.id === groupId);
+        if (groupIndex === -1) return;
+        const currentItems = new Set(localConfigs[groupIndex].items || []);
+        filteredRawGroups.forEach(item => currentItems.delete(item.id));
+        localConfigs[groupIndex].items = [...currentItems];
+    }
+
     function clearSelection(groupId) {
         const groupIndex = localConfigs.findIndex(g => g.id === groupId);
         if (groupIndex === -1) return;
         
-        if (confirm(`Bạn muốn xóa sạch danh sách chọn của nhóm "${localConfigs[groupIndex].name}" để chọn lại từ đầu?`)) {
+        if (confirm(`Bạn muốn xóa sạch TẤT CẢ danh sách chọn của nhóm "${localConfigs[groupIndex].name}"?`)) {
             localConfigs[groupIndex].items = [];
         }
     }
@@ -2410,8 +2829,16 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         }
     }
 
-    // Filter items cho việc chọn
-    $: filteredRawGroups = rawProductGroupsWithId.filter(g => g.display.toLowerCase().includes(itemSearch.toLowerCase()));
+    $: filteredRawGroups = (() => {
+        const term = itemSearch.toLowerCase();
+        if (selectorMode === 'group') {
+            return rawProductGroupsWithId.filter(g => g.display.toLowerCase().includes(term));
+        } else {
+            return ($virtualProductList || [])
+                .filter(p => p.display.toLowerCase().includes(term))
+                .map(p => ({ id: p.maSanPham, display: p.display }));
+        }
+    })();
 </script>
 
 <div class="space-y-4">
@@ -2421,17 +2848,10 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
             <br><span class="text-xs text-orange-600 font-semibold">* Lưu ý: Tick chọn theo Mã Định Danh (ID).</span>
         </p>
         <div class="flex gap-2">
-            <button 
-                class="px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded hover:bg-teal-100 transition"
-                on:click={addGroup}
-            >
+            <button class="px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded hover:bg-teal-100 transition" on:click={addGroup}>
                 + Thêm Nhóm Hàng Lớn
             </button>
-            <button 
-                class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-700 transition shadow-sm disabled:opacity-50"
-                on:click={handleSave}
-                disabled={isSaving}
-            >
+            <button class="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-700 transition shadow-sm disabled:opacity-50" on:click={handleSave} disabled={isSaving}>
                 {#if isSaving}Lưu...{:else}Lưu Cấu Hình{/if}
             </button>
         </div>
@@ -2445,10 +2865,7 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         <div class="grid gap-4">
             {#each localConfigs as group (group.id)}
                 <div class="border border-gray-200 rounded-lg bg-white overflow-hidden shadow-sm">
-                    <div 
-                        class="p-3 bg-gray-50 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition"
-                        on:click={() => editingId = (editingId === group.id ? null : group.id)}
-                    >
+                    <div class="p-3 bg-gray-50 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition" on:click={() => editingId = (editingId === group.id ? null : group.id)}>
                         <div class="flex items-center gap-2">
                             <span class="transform transition-transform {editingId === group.id ? 'rotate-90' : ''}">▶</span>
                             <h4 class="font-bold text-slate-700">{group.name}</h4>
@@ -2456,47 +2873,38 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
                                 {group.items?.length || 0} mục
                             </span>
                         </div>
-                        <button 
-                            class="text-red-500 hover:text-red-700 p-1"
-                            on:click|stopPropagation={() => removeGroup(group.id)}
-                            title="Xóa nhóm"
-                        >
+                        <button class="text-red-500 hover:text-red-700 p-1" on:click|stopPropagation={() => removeGroup(group.id)} title="Xóa nhóm">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                         </button>
                     </div>
 
                     {#if editingId === group.id}
                         <div class="p-4 border-t border-gray-200 bg-white animate-fade-in">
-                            <div class="mb-2 flex gap-2">
-                                <input 
-                                    type="text" 
-                                    class="flex-1 p-2 border rounded text-xs bg-slate-50 focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" 
-                                    placeholder="🔍 Tìm kiếm nhóm hàng..." 
-                                    bind:value={itemSearch}
-                                />
-                                <button 
-                                    class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1"
-                                    on:click={() => clearSelection(group.id)}
-                                    title="Xóa sạch mục đã chọn để chọn lại"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                    Làm sạch ({group.items?.length || 0})
-                                </button>
+                            <div class="mb-3 flex flex-col xl:flex-row xl:items-center gap-3 justify-between bg-slate-50 p-2 rounded border border-slate-100">
+                                <div class="flex gap-2 bg-slate-200 p-1 rounded w-fit flex-shrink-0">
+                                    <button class="px-3 py-1.5 text-xs font-bold rounded transition-colors {selectorMode === 'group' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}" on:click={() => selectorMode = 'group'}>Tìm Nhóm Hàng</button>
+                                    <button class="px-3 py-1.5 text-xs font-bold rounded transition-colors {selectorMode === 'product' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:bg-slate-300'}" on:click={() => selectorMode = 'product'}>Tìm SP Đặc Thù</button>
+                                </div>
+                                <div class="flex gap-2 w-full xl:w-auto">
+                                    <input type="text" class="flex-1 min-w-[200px] p-2 border rounded text-xs bg-white focus:bg-white transition outline-none focus:ring-1 focus:ring-teal-500" placeholder="🔍 Gõ để lọc nhanh..." bind:value={itemSearch} />
+                                    <button class="px-3 py-1 bg-teal-600 text-white rounded text-xs font-bold hover:bg-teal-700 whitespace-nowrap transition-colors" on:click={() => selectAllFiltered(group.id)}>
+                                        Chọn lọc
+                                    </button>
+                                    <button class="px-3 py-1 bg-orange-100 text-orange-700 border border-orange-200 rounded text-xs font-bold hover:bg-orange-200 whitespace-nowrap transition-colors" on:click={() => deselectAllFiltered(group.id)}>
+                                        Bỏ lọc
+                                    </button>
+                                    <button class="px-3 py-1 bg-red-50 text-red-600 border border-red-200 rounded text-xs font-bold hover:bg-red-100 whitespace-nowrap flex items-center gap-1 transition-colors ml-2" on:click={() => clearSelection(group.id)} title="Xóa sạch toàn bộ mục đã chọn">
+                                        Làm sạch All
+                                    </button>
+                                </div>
                             </div>
                             
-                            <div class="max-h-60 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 custom-scrollbar">
+                            <div class="max-h-80 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-2 custom-scrollbar p-1">
                                 {#each filteredRawGroups as item}
                                     {@const isChecked = group.items.includes(item.id)}
-                                    <label class="flex items-center gap-2 p-1.5 rounded border {isChecked ? 'bg-teal-50 border-teal-200' : 'border-transparent hover:bg-gray-50'} cursor-pointer transition">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={isChecked} 
-                                            on:change={() => toggleItem(group.id, item.id)}
-                                            class="rounded text-teal-600 focus:ring-teal-500"
-                                        />
-                                        <span class="text-xs text-gray-700 truncate" title={item.display}>
-                                            {item.display}
-                                        </span>
+                                    <label class="flex items-start gap-3 p-2 rounded-lg border {isChecked ? 'bg-teal-50 border-teal-300 shadow-sm' : 'border-slate-200 hover:border-teal-400 hover:bg-slate-50'} cursor-pointer transition-all">
+                                        <input type="checkbox" checked={isChecked} on:change={() => toggleItem(group.id, item.id)} class="mt-0.5 rounded text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer" />
+                                        <span class="text-xs text-slate-700 break-words font-medium line-clamp-2 leading-relaxed" title={item.display}>{item.display}</span>
                                     </label>
                                 {/each}
                             </div>

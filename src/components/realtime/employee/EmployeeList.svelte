@@ -3,13 +3,16 @@
   import { get } from 'svelte/store'; 
   import { formatters } from '../../../utils/formatters.js';
   import { getSortedDepartmentList } from '../../../utils.js';
-  import { kpiStore, realtimeYCXData } from '../../../stores.js'; 
+  // [SURGICAL LOGIC]: Đã gỡ bỏ kpiStore khỏi import
+  import { realtimeYCXData } from '../../../stores.js'; 
   import { getCompletionColor } from '../../../utils/kpi.utils.js';
 
   import { batchCaptureService } from '../../../services/batchCapture.service.js';
   import EmployeeDetail from './EmployeeDetail.svelte';
 
   export let reportData = [];
+  export let goals = {}; // [SURGICAL LOGIC]: Nhận mục tiêu từ file cha truyền xuống
+
   const dispatch = createEventDispatcher();
 
   let sortKey = 'doanhThuQuyDoi';
@@ -193,9 +196,9 @@
               </thead>
               <tbody class="divide-y divide-gray-200">
                 {#each sortEmployees(groupedData[deptName], sortKey, sortDirection) as item, index (item.maNV)}
-                  {@const userTarget = $kpiStore.targets[item.maNV] || $kpiStore.globalSettings}
-                  {@const targetQD = (userTarget?.phanTramQD || 0) / 100}
-                  {@const targetTC = (userTarget?.phanTramTC || 0) / 100}
+                  <!-- [SURGICAL LOGIC]: Sử dụng trực tiếp biến goals được truyền từ trên xuống -->
+                  {@const targetQD = (goals?.phanTramQD || 0) / 100}
+                  {@const targetTC = (goals?.phanTramTC || 0) / 100}
                   {@const qdClass = getCompletionColor(item.hieuQuaQuyDoi, targetQD)}
                   {@const tcClass = getCompletionColor(item.tyLeTraCham, targetTC)}
                   

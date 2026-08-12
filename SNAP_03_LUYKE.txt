@@ -1,5 +1,5 @@
 CONTEXT GROUP: SNAP_03_LUYKE.txt
-GENERATED AT: 6/12/2026, 1:52:43 PM
+GENERATED AT: 8/12/2026, 5:17:41 PM
 
 
 >>> FILE_START: src/components/luyke/AddressDashboard.svelte
@@ -1172,7 +1172,7 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
 <<< FILE_END: src/components/luyke/LuykeCumSieuThi.svelte
 
 >>> FILE_START: src/components/luyke/LuykeDtCkNam.svelte
-<svelte:window on:click={() => showSsgMonthsDropdown = false} />
+<svelte:window on:click={() => { showSsgMonthsDropdown = false; showViewToggles = false; }} />
 
 <script>
     import { onMount, tick } from 'svelte';
@@ -1183,6 +1183,12 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
     import DtCkNamTable from './dtcknam/DtCkNamTable.svelte'; 
     import SsgNamTable from './dtcknam/SsgNamTable.svelte';
     
+    // SSG CALENDAR COMPONENTS
+    import SsgTargetSimulator from './dtcknam/SsgTargetSimulator.svelte';
+    import SsgKpiBoard from './dtcknam/SsgKpiBoard.svelte';
+    import SsgCalendarView from './dtcknam/SsgCalendarView.svelte';
+    import { generateCalendarData } from './dtcknam/SsgCalendarLogic.js';
+
     export let selectedWarehouse = '';
     $: warehouseTitle = selectedWarehouse ? `- Kho ${selectedWarehouse}` : '- Gộp các kho';
 
@@ -1197,7 +1203,29 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
     let showSsgMonthsDropdown = false;
     $: data2026All = ($ycxDataThangTruoc || []).concat($ycxData || []);
 
-    // [FIX]: Trình phân tích Ngày tháng đa năng (Tránh Invalid Date của Cache)
+// Biến cho SSG Calendar (Mặc định 40%)
+    let targetGrowthPct = 0.40; 
+    let calendarGrid = [];
+    let ssgKpiTotals = { dt25: 0, qd25: 0, tc25: 0, dt26: 0, qd26: 0, tc26: 0, currentDay: 1, daysInMonth: 30, isCurrentMonth: false };
+    
+    // Đọc trạng thái đã lưu khi component vừa chạy
+    if (typeof localStorage !== 'undefined') {
+        const savedGrowth = localStorage.getItem('dtck_ssg_target_growth');
+        if (savedGrowth !== null) targetGrowthPct = parseFloat(savedGrowth);
+    }
+
+    // Tự động lưu lại mỗi khi người dùng kéo thanh trượt
+    $: {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('dtck_ssg_target_growth', targetGrowthPct.toString());
+        }
+    }
+    // Toggles Popover
+    let showViewToggles = false;
+    let showCalendar = true;
+    let showCharts = true;
+    let showTable = true;
+
     const parseSafeDate = (dateVal) => {
         if (!dateVal) return null;
         if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
@@ -1208,28 +1236,24 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         if (parts) return new Date(parts[3], parts[2] - 1, parts[1]);
         return null;
     };
-    
+
     const parseDateMax = (dateVal) => {
         const d = parseSafeDate(dateVal);
         return d ? d.getTime() : 0;
     };
     
-    // [FIX]: Dùng reduce để chặn lỗi Maximum Call Stack khi mảng có 200.000 dòng
-    $: maxTs2026 = data2026All.length > 0 
-        ? data2026All.reduce((max, r) => {
-            const ts = parseDateMax(r.ngayTao || r.NGAY_TAO);
-            return ts > max ? ts : max;
-        }, 0) 
-        : 0;
+    $: maxTs2026 = data2026All.length > 0 ? data2026All.reduce((max, r) => {
+        const ts = parseDateMax(r.ngayTao || r.NGAY_TAO);
+        return ts > max ? ts : max;
+    }, 0) : 0;
 
-    // [FEATURE]: Tạo thông báo Banner Tạm tính Dự kiến
     $: bannerInfo = (() => {
         if (maxTs2026 === 0) return null;
         const d = new Date(maxTs2026);
         const maxDay = d.getDate();
         const month = d.getMonth() + 1;
         const year = d.getFullYear();
-        const daysInMonth = new Date(year, month, 0).getDate(); // Lấy tổng số ngày của tháng đó
+        const daysInMonth = new Date(year, month, 0).getDate(); 
         
         if (maxDay < daysInMonth) {
             return `Dữ liệu tháng ${month}/${year} đang tạm tính dự kiến (Tiến độ: ${maxDay}/${daysInMonth} ngày)`;
@@ -1245,16 +1269,15 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         } catch(e) {}
         setTimeout(() => { isInitializing = false; }, 500);
     });
-    
+
     $: { localStorage.setItem('dtck_ssg_months_v3', JSON.stringify(ssgMonths)); }
 
-    // [FIX]: Lấy tháng an toàn
     const getMonthYear = (dateVal) => {
         const d = parseSafeDate(dateVal);
         if (!d) return null;
         return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
     };
-    
+
     $: if ($ycxDataCungKyNam && $ycxDataCungKyNam.length > 0) {
         const months = new Set();
         $ycxDataCungKyNam.forEach(row => {
@@ -1272,7 +1295,7 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         if (!selectedMonth) return true;
         return getMonthYear(row.ngayTao || row.NGAY_TAO) === selectedMonth;
     });
-    
+
     async function switchMode(mode) {
         if (viewMode === mode) return;
         isTransitioning = true;
@@ -1295,6 +1318,17 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
     $: if (viewMode === 'single' && !showLoading && !isTransitioning) {
         dashboardData = processDashboardData(filteredSingleData, activeDimensionIds, currentFilters, sortConfig);
     }
+
+    // NẠP NÃO BỘ LỊCH SSG VÀO ĐÂY
+    $: if (viewMode === 'single' && selectedMonth && filteredSingleData.length > 0 && !isTransitioning) {
+        const [mStr, yStr] = selectedMonth.split('/');
+        const monthNum = parseInt(mStr, 10);
+        const year26 = parseInt(yStr, 10) + 1; 
+        
+        const result = generateCalendarData(filteredSingleData, data2026All, monthNum, year26, targetGrowthPct);
+        calendarGrid = result.calendarGrid;
+        ssgKpiTotals = result.kpiTotals;
+    }
 </script>
 
 {#if showLoading}
@@ -1307,7 +1341,7 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         DOANH THU CÙNG KỲ <span class="text-blue-600">{warehouseTitle}</span>
     </h2>
 
-    <div class="flex items-center gap-4 mb-4">
+    <div class="flex flex-wrap items-center gap-4 mb-4">
         <div class="flex bg-gray-100 p-1 rounded-lg">
             <button class="px-4 py-2 rounded-md font-medium text-sm transition-colors {viewMode === 'single' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:bg-gray-200'}" on:click={() => switchMode('single')}>
                 Xem 1 Tháng (Năm trước)
@@ -1318,46 +1352,66 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         </div>
 
         {#if viewMode === 'single' && availableMonths.length > 0}
-        <div class="flex items-center gap-2 animate-fade-in">
-            <span class="text-sm text-gray-600 font-bold">Tháng:</span>
-            <select bind:value={selectedMonth} class="border border-gray-300 bg-white rounded-md px-3 py-1.5 text-sm font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer">
-                <option value="">Tất cả</option>
-                {#each availableMonths as month}
-                    <option value={month}>{month}</option>
-                {/each}
-            </select>
-        </div>
+            <div class="flex items-center gap-2 animate-fade-in">
+                <span class="text-sm text-gray-600 font-bold">Tháng:</span>
+                <select bind:value={selectedMonth} class="border border-gray-300 bg-white rounded-md px-3 py-1.5 text-sm font-bold text-blue-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer">
+                    <option value="">Tất cả</option>
+                    {#each availableMonths as month}
+                        <option value={month}>{month}</option>
+                    {/each}
+                </select>
+            </div>
+            
+            <div class="relative ml-2 animate-fade-in">
+                <button class="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-md bg-white text-sm font-bold text-gray-600 hover:bg-gray-50 shadow-sm" on:click|stopPropagation={() => showViewToggles = !showViewToggles}>
+                    <i data-feather="sliders" class="w-4 h-4 text-blue-500"></i> Hiển thị ▾
+                </button>
+                {#if showViewToggles}
+                    <div class="absolute top-full mt-1 left-0 bg-white border border-gray-200 shadow-xl rounded-lg w-52 z-50 p-3" on:click|stopPropagation>
+                        <p class="text-xs font-bold text-gray-400 uppercase mb-2">Bật/Tắt Giao diện</p>
+                        <label class="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-50 p-1.5 rounded transition">
+                            <input type="checkbox" bind:checked={showCalendar} class="rounded accent-blue-600 w-4 h-4"> Bảng Lịch Ngày
+                        </label>
+                        <label class="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-50 p-1.5 rounded transition">
+                            <input type="checkbox" bind:checked={showCharts} class="rounded accent-blue-600 w-4 h-4"> Biểu đồ Tuần/Ngày
+                        </label>
+                        <label class="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-50 p-1.5 rounded transition">
+                            <input type="checkbox" bind:checked={showTable} class="rounded accent-blue-600 w-4 h-4"> Bảng Danh mục
+                        </label>
+                    </div>
+                {/if}
+            </div>
         {/if}
 
         {#if viewMode === 'ssg'}
-        <div class="relative animate-fade-in flex items-center gap-3">
-            <button class="px-4 py-1.5 border border-gray-300 rounded-md bg-white text-sm font-medium text-gray-700 hover:bg-gray-100 shadow-sm flex items-center gap-2" on:click|stopPropagation={() => showSsgMonthsDropdown = !showSsgMonthsDropdown}>
-                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-                Tháng so sánh ({ssgMonths.length}/12) ▾
-            </button>
-            
-            {#if bannerInfo}
-                <div class="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    {bannerInfo}
-                </div>
-            {/if}
-
-            {#if showSsgMonthsDropdown}
-                <div class="absolute top-full mt-1 left-0 bg-white border border-gray-200 shadow-xl rounded-md w-56 max-h-64 overflow-y-auto z-50 p-2" on:click|stopPropagation>
-                    <button class="text-blue-600 font-bold mb-2 w-full text-left text-sm hover:bg-blue-50 px-2 py-1.5 rounded transition-colors" on:click={() => ssgMonths = ssgMonths.length === 12 ? [] : [...allMonths]}>
-                        {ssgMonths.length === 12 ? '[ ] Bỏ chọn tất cả' : '[✓] Chọn tất cả'}
-                    </button>
-                    <div class="grid grid-cols-2 gap-1">
-                        {#each allMonths as opt}
-                            <label class="flex items-center gap-2 p-1.5 hover:bg-gray-50 cursor-pointer text-sm rounded">
-                                <input type="checkbox" value={opt} bind:group={ssgMonths} class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"> Tháng {opt}
-                            </label>
-                        {/each}
+            <div class="relative animate-fade-in flex items-center gap-3">
+                <button class="px-4 py-1.5 border border-gray-300 rounded-md bg-white text-sm font-medium text-gray-700 hover:bg-gray-100 shadow-sm flex items-center gap-2" on:click|stopPropagation={() => showSsgMonthsDropdown = !showSsgMonthsDropdown}>
+                    <i data-feather="calendar" class="w-4 h-4 text-blue-500"></i>
+                    Tháng so sánh ({ssgMonths.length}/12) ▾
+                </button>
+                
+                {#if bannerInfo}
+                    <div class="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                        <i data-feather="alert-circle" class="w-4 h-4"></i>
+                        {bannerInfo}
                     </div>
-                </div>
-            {/if}
-        </div>
+                {/if}
+
+                {#if showSsgMonthsDropdown}
+                    <div class="absolute top-full mt-1 left-0 bg-white border border-gray-200 shadow-xl rounded-md w-56 max-h-64 overflow-y-auto z-50 p-2" on:click|stopPropagation>
+                        <button class="text-blue-600 font-bold mb-2 w-full text-left text-sm hover:bg-blue-50 px-2 py-1.5 rounded transition-colors" on:click={() => ssgMonths = ssgMonths.length === 12 ? [] : [...allMonths]}>
+                            {ssgMonths.length === 12 ? '[ ] Bỏ chọn tất cả' : '[✓] Chọn tất cả'}
+                        </button>
+                        <div class="grid grid-cols-2 gap-1">
+                            {#each allMonths as opt}
+                                <label class="flex items-center gap-2 p-1.5 hover:bg-gray-50 cursor-pointer text-sm rounded">
+                                    <input type="checkbox" value={opt} bind:group={ssgMonths} class="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"> Tháng {opt}
+                                </label>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+            </div>
         {/if}
     </div>
 
@@ -1365,29 +1419,46 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         <div class="flex flex-col items-center justify-center p-16 text-gray-500 animate-pulse bg-gray-50 rounded-xl border border-gray-100">
             <svg class="animate-spin mb-4 h-10 w-10 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
             <span class="text-lg font-bold text-gray-700">Đang tổng hợp dữ liệu SSG...</span>
-            <span class="text-sm mt-2 text-gray-400">Vui lòng đợi giây lát</span>
         </div>
     {:else}
         {#if viewMode === 'single'}
             <div class="animate-fade-in space-y-4">
-                <KpiBoard metrics={dashboardData.metrics} />
-                <div class="mb-4">
-                    <RevenueCharts weeklyData={dashboardData.weeklyData} dailyData={dashboardData.dailyData} {warehouseTitle} />
+                
+                <SsgKpiBoard kpiTotals={ssgKpiTotals} />
+
+                <div class="animate-fade-in mt-2 mb-4">
+                    <SsgTargetSimulator bind:targetGrowthPct={targetGrowthPct} kpiTotals={ssgKpiTotals} />
                 </div>
-                <DtCkNamTable 
-                    data={dashboardData.treeData} 
-                    totalMetrics={dashboardData.totalMetrics} 
-                    totalDays={dashboardData.totalDays} 
-                    allDimensions={AVAILABLE_DIMENSIONS} 
-                    activeIds={activeDimensionIds}
-                    filterOptions={dashboardData.filterOptions} 
-                    currentFilters={currentFilters} 
-                    sortConfig={sortConfig}
-                    bind:expandedRows
-                    on:filterChange={(e) => currentFilters = e.detail}
-                    on:sort={(e) => sortConfig = e.detail}
-                    on:configChange={(e) => activeDimensionIds = e.detail}
-                />
+
+                {#if showCalendar}
+                    <SsgCalendarView {calendarGrid} />
+                {/if}
+
+                {#if showCharts}
+                    <div class="mb-4 animate-fade-in">
+                        <RevenueCharts weeklyData={dashboardData.weeklyData} dailyData={dashboardData.dailyData} {warehouseTitle} />
+                    </div>
+                {/if}
+
+                {#if showTable}
+                    <div class="animate-fade-in">
+                        <DtCkNamTable 
+                            data={dashboardData.treeData} 
+                            totalMetrics={dashboardData.totalMetrics} 
+                            totalDays={dashboardData.totalDays} 
+                            allDimensions={AVAILABLE_DIMENSIONS} 
+                            activeIds={activeDimensionIds}
+                            filterOptions={dashboardData.filterOptions} 
+                            currentFilters={currentFilters} 
+                            sortConfig={sortConfig}
+                            bind:expandedRows
+                            on:filterChange={(e) => currentFilters = e.detail}
+                            on:sort={(e) => sortConfig = e.detail}
+                            on:configChange={(e) => activeDimensionIds = e.detail}
+                        />
+                    </div>
+                {/if}
+
             </div>
         {:else}
             <div class="animate-fade-in">
@@ -2343,7 +2414,7 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
 
 <div class="luyke-dashboard-container" data-capture-group="kpi-thidua">
     {#if $selectedWarehouse && $selectedWarehouse !== 'ALL'}
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6 {viewType === 'personal_target' ? 'capture-hide' : ''}">
             {@render flatKpiCard('Tổng Chương trình', summary.total, `DT: <strong class="text-blue-600">${summary.revenueTotal}</strong> • SL: <strong class="text-orange-600">${summary.quantityTotal}</strong>`, 'layers', 'text-gray-700', 0, 'bg-gray-100')}
             {@render flatKpiCard('Tỷ lệ Đạt', formatters.formatPercentage(summary.overallRate / 100), `Đã đạt: <strong class="${getRateColor(summary.overallRate)}">${summary.achieved}</strong> / ${summary.total}`, 'target', getRateColor(summary.overallRate), summary.overallRate, 'bg-green-50')}
             {@render flatKpiCard('Thi đua Doanh thu', `${summary.revenueAchieved}/${summary.revenueTotal}`, `Tỷ lệ đạt: <strong>${summary.revenueTotal > 0 ? formatters.formatPercentage(summary.revenueAchieved / summary.revenueTotal) : '0%'}</strong>`, 'dollar-sign', 'text-blue-600', summary.revenueTotal > 0 ? (summary.revenueAchieved / summary.revenueTotal) * 100 : 0, 'bg-blue-50')}
@@ -2415,11 +2486,18 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         padding: 20px !important; 
     }
 
-    :global(.capture-container .luyke-dashboard-container .grid:not(.personal-target-grid):not(.luyke-thidua-multi-columns)) { 
+    /* --- [SURGICAL STRIKE - V2]: Sức mạnh tuyệt đối --- */
+    :global(.capture-container .luyke-dashboard-container .capture-hide) {
+        display: none !important;
+    }
+
+    /* Đã vá lỗi CSS Specificity: Dùng :not(.capture-hide) để luật này tha mạng cho thẻ đang bị ẩn */
+    :global(.capture-container .luyke-dashboard-container .grid:not(.personal-target-grid):not(.luyke-thidua-multi-columns):not(.capture-hide)) { 
         display: grid !important;
         grid-template-columns: repeat(4, minmax(0, 1fr)) !important; 
         gap: 16px !important; 
     }
+    
     :global(.capture-container .luyke-dashboard-container .personal-target-grid) {
         display: grid !important;
         grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
@@ -2865,7 +2943,6 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         const gap = (d.bestRank - rankCutoff);
         return gap >= 10;
     });
-
 </script>
 
 <div class="tdv-root rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/20 border border-gray-200 overflow-hidden shadow-sm" data-capture-group="regional-competition" data-capture-filename="Thi_Dua_Luy_Ke_Vung">
@@ -2886,7 +2963,6 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
                 <h2 class="text-3xl font-black text-white mb-1 tracking-tight leading-tight">{safeData.sieuThi}</h2>
                 <div class="flex items-center flex-wrap gap-4 text-blue-100 mt-2 text-sm font-medium">
                     <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="box" class="w-4 h-4"></i> Thi đua: {safeData.soNganhHang} NH</span>
-  
                     <span class="flex items-center gap-1.5 label-with-icon"><i data-feather="check-circle" class="w-4 h-4 text-green-400"></i> Đang đạt: {safeData.soNganhHangDat} NH</span>
                     
                     {#if listCoGiai.length > 0}
@@ -2950,7 +3026,7 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
                         <i data-feather="trending-up" class="w-5 h-5 text-yellow-600"></i>
                         <h3 class="font-bold text-yellow-800 uppercase text-lg">Tiềm Năng Sắp Có Giải ({listTiemNang.length})</h3>
                     </div>
-                   
+                    
                     {#if safeData.tongThuongTiemNang > 0}
                         <span class="text-green-600 font-bold text-base bg-white px-3 py-0.5 rounded-full border border-green-200 shadow-sm whitespace-nowrap">
                             + {formatMoney(safeData.tongThuongTiemNang)}
@@ -3038,8 +3114,10 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
 
     /* BẢO VỆ CHUẨN MỰC CHỤP ẢNH HTML2CANVAS */
     :global(.capture-container) .tdv-root {
-        width: 1100px !important;
-        max-width: 1100px !important;
+        /* [PHẪU THUẬT]: Nâng lên 1200px để đồng bộ với không gian Lũy Kế */
+        width: 1200px !important;
+        max-width: 1200px !important;
+        min-width: 1200px !important;
         margin: 0 auto !important; 
         background-color: white;
         border: none !important;
@@ -3057,11 +3135,11 @@ GENERATED AT: 6/12/2026, 1:52:43 PM
         -webkit-line-clamp: 2 !important;
         -webkit-box-orient: vertical !important;
         white-space: normal !important;
-        height: 44px !important;
+        /* [PHẪU THUẬT]: Giải phóng chiều cao bị kìm kẹp */
+        height: auto !important;
     }
-    
-    :global(.capture-container) .tdv-root h2 { font-size: 28px !important; }
-    :global(.capture-container) .tdv-root .money-large { font-size: 36px !important; }
+
+    /* [PHẪU THUẬT]: Đã xóa bỏ các thuộc tính ép font-size cưỡng bức (h2, .money-large) */
 
     /* [FIX 2] Xử lý SVG Icon lơ lửng khi chụp ảnh - ĐÃ KHÓA SCOPE VÀO .tdv-root */
     :global(.capture-container .tdv-root svg) {
@@ -5007,12 +5085,12 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Doanh thu theo Tuần (ĐVT: Triệu) <span class="text-indigo-600">{warehouseTitle}</span></h4>
+        <h4 class="text-sm font-bold text-gray-700 mb-4 text-center">Doanh thu theo Tuần 2025 (ĐVT: Triệu) <span class="text-indigo-600">{warehouseTitle}</span></h4>
         <div class="relative h-[250px] w-full"><canvas id="dt-ck-weekly-chart"></canvas></div>
     </div>
     
     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <h4 class="text-sm font-bold text-gray-700 mb-1 text-center">Tăng trưởng Doanh thu theo Ngày <span class="text-indigo-600">{warehouseTitle}</span></h4>
+        <h4 class="text-sm font-bold text-gray-700 mb-1 text-center">Biểu đồ Doanh thu theo Ngày 2025 <span class="text-indigo-600">{warehouseTitle}</span></h4>
         
         <div class="text-xs text-gray-500 text-center mb-3 font-medium flex justify-center gap-4">
             <div>TB Ngày Thực: <span class="text-sky-600 font-black">{formatters.formatNumber(avgActualValue, 1)}M</span></div>
@@ -5029,6 +5107,370 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     </div>
 </div>
 <<< FILE_END: src/components/luyke/dtcknam/RevenueCharts.svelte
+
+>>> FILE_START: src/components/luyke/dtcknam/SsgCalendarCell.svelte
+<script>
+    import { formatters } from '../../../utils/formatters.js';
+    export let data;
+    export let toggles;
+
+    const fmt = (n) => formatters.formatNumber(Math.round((n || 0) / 100000) / 10, 1);
+    
+    // Nếu hôm nay có dữ liệu 2026, kiểm tra xem nó có rớt đài so với 2025 không (Dùng doanh thu thực để xét đỏ)
+    $: isNegativeDay = !data.isFuture && data.growthVal < 0;
+</script>
+
+{#if data.isEmpty}
+    <div class="bg-transparent min-h-[120px]"></div>
+{:else}
+    <div class="flex flex-col border {isNegativeDay ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white'} {data.isFuture ? 'border-dashed border-indigo-300 bg-indigo-50/20' : ''} rounded-md min-h-[120px] overflow-hidden hover:shadow-md transition">
+        
+        <div class="flex justify-between items-start px-2 py-1 border-b {isNegativeDay ? 'border-red-200 bg-red-100' : 'border-gray-200 bg-gray-50'}">
+            <span class="text-lg font-black {data.isFuture ? 'text-indigo-400' : (isNegativeDay ? 'text-red-700' : 'text-gray-800')}">{data.dayNum}</span>
+            <span class="text-[9px] text-gray-500 font-medium mt-1">{data.lunar} Âm</span>
+        </div>
+
+        <div class="flex-1 p-1.5 flex flex-col justify-center gap-1">
+            {#if data.isFuture}
+                <div class="text-center py-2 flex flex-col items-center justify-center h-full">
+                    <p class="text-[9px] font-bold text-indigo-500 uppercase mb-1">Mục tiêu (Tr)</p>
+                    <div class="flex items-center justify-center gap-1.5 w-full px-1">
+                        {#if toggles.showThuc}
+                            <span class="text-lg font-black text-blue-700" title="Mục tiêu DT Thực">{fmt(data.targetDt)}</span>
+                        {/if}
+                        
+                        {#if toggles.showThuc && toggles.showQd}
+                            <span class="text-gray-300 font-light">|</span>
+                        {/if}
+                        
+                        {#if toggles.showQd}
+                            <span class="text-lg font-black text-emerald-600" title="Mục tiêu DT Quy đổi">{fmt(data.targetQd)}</span>
+                        {/if}
+                        
+                        {#if !toggles.showThuc && !toggles.showQd}
+                            <span class="text-lg font-black text-blue-700">{fmt(data.targetDt)}</span>
+                        {/if}
+                    </div>
+                </div>
+            {:else}
+                {#if toggles.show2025}
+                    <div class="flex justify-between items-center px-1 py-0.5 bg-gray-100 rounded text-[10px]">
+                        <span class="text-gray-500 font-bold">2025</span>
+                        <div class="text-right">
+                            {#if toggles.showThuc}<span class="text-gray-700 font-bold">{fmt(data.rev25)}</span>{/if}
+                            {#if toggles.showThuc && toggles.showQd}<span class="text-gray-300 mx-0.5">|</span>{/if}
+                            {#if toggles.showQd}<span class="text-emerald-600 font-medium">{fmt(data.revQd25)}</span>{/if}
+                        </div>
+                    </div>
+                {/if}
+                
+                <div class="flex justify-between items-center px-1 py-1 {isNegativeDay ? 'bg-white' : 'bg-blue-50'} rounded border {isNegativeDay ? 'border-red-100' : 'border-blue-100'} text-[11px]">
+                    <span class="text-blue-800 font-black">2026</span>
+                    <div class="text-right">
+                        {#if toggles.showThuc}<span class="text-blue-700 font-black">{fmt(data.rev26)}</span>{/if}
+                        {#if toggles.showThuc && toggles.showQd}<span class="text-blue-300 mx-0.5">|</span>{/if}
+                        {#if toggles.showQd}<span class="text-emerald-600 font-bold">{fmt(data.revQd26)}</span>{/if}
+                    </div>
+                </div>
+            {/if}
+        </div>
+
+        {#if !data.isFuture && toggles.showGrowth}
+            <div class="border-t {isNegativeDay ? 'border-red-200' : 'border-gray-200'} px-2 py-1 flex justify-between items-center text-[10px] font-bold {isNegativeDay ? 'text-red-600' : 'text-emerald-600'}">
+                <span>{data.growthVal > 0 ? '+' : ''}{fmt(data.growthVal)}</span>
+                <span class="px-1 rounded bg-white shadow-sm border {isNegativeDay ? 'border-red-200' : 'border-emerald-100'}">
+                    {(data.growthPct * 100).toFixed(1)}%
+                </span>
+            </div>
+        {/if}
+    </div>
+{/if}
+<<< FILE_END: src/components/luyke/dtcknam/SsgCalendarCell.svelte
+
+>>> FILE_START: src/components/luyke/dtcknam/SsgCalendarLogic.js
+// src/components/luyke/dtcknam/SsgCalendarLogic.js
+import { lunarUtils } from '../../../utils/lunar.utils.js';
+import { salesProcessor } from '../../../services/reports/master/salesProcessor.js';
+import { dataProcessing } from '../../../services/dataProcessing.js';
+
+const parseSafeDate = (dateVal) => {
+    if (!dateVal) return null;
+    if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) return d;
+    const str = String(dateVal).trim();
+    const parts = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+    if (parts) return new Date(parts[3], parts[2] - 1, parts[1]);
+    return null;
+};
+
+// Hàm lấy ngày tạo an toàn
+const getNgayTao = (row) => row.ngayTao || row.NGAY_TAO || row['Ngày tạo'];
+
+// Hàm xác định xem ngày nào là Tương Lai, ngày nào là Quá Khứ
+const getCurrentDayToRender = (month, year2026) => {
+    const now = new Date();
+    if (month === now.getMonth() + 1 && year2026 === now.getFullYear()) {
+        return now.getDate() - 1; // Số liệu đến hôm qua
+    }
+    if (new Date(year2026, month - 1, 1) < now) {
+        return new Date(year2026, month, 0).getDate();
+    }
+    return 0; // Tháng tương lai hoàn toàn
+};
+
+export function generateCalendarData(data2025, data2026, month, year2026, targetGrowthPct) {
+    const daysInMonth = new Date(year2026, month, 0).getDate();
+    const firstDayOfWeek = new Date(year2026, month - 1, 1).getDay(); 
+    const currentDay = getCurrentDayToRender(month, year2026);
+    const isCurrentMonth = currentDay < daysInMonth;
+
+    let daysArray = [];
+    let map25 = new Map(), map26 = new Map();
+    
+    let totals = { 
+        dt25: 0, qd25: 0, tc25: 0, 
+        dt26: 0, qd26: 0, tc26: 0,
+        daysInMonth, currentDay, isCurrentMonth
+    };
+
+    // LẤY NGỮ CẢNH (CONTEXT) TỪ LÕI HỆ THỐNG ĐỂ KIỂM TRA ĐƠN HÀNG
+    const context = {
+        hinhThucXuatTinhDoanhThu: dataProcessing.getHinhThucXuatTinhDoanhThu(),
+        hinhThucXuatTraGop: dataProcessing.getHinhThucXuatTraGop(),
+        heSoQuyDoi: dataProcessing.getHeSoQuyDoi()
+    };
+
+    const processData = (data, map, is2025) => {
+        if (!data || !Array.isArray(data)) return;
+        data.forEach(row => {
+            const dRaw = getNgayTao(row);
+            if (!dRaw) return;
+            const d = parseSafeDate(dRaw);
+            
+            // Loại bỏ ngày rác, chỉ tính đúng tháng đang xem
+            if (!d || isNaN(d) || d.getMonth() + 1 !== month) return;
+
+            // GỌI HÀM CORE ĐỂ ĐÁNH GIÁ ĐƠN HÀNG (GIỐNG HỆT TAB LŨY KẾ & BÁO CÁO NHÂN VIÊN)
+            const evalResult = salesProcessor.evaluateTransaction(row, context);
+
+            // Chỉ cộng tiền nếu đơn hàng HỢP LỆ và ĐÃ XUẤT (bỏ qua hủy, chưa xuất, chưa thu tiền)
+            if (evalResult.isValid && evalResult.isDaXuat) {
+                const dayNum = d.getDate();
+                if (!map.has(dayNum)) map.set(dayNum, { dt: 0, qd: 0 });
+                const dayData = map.get(dayNum);
+                
+                // Cộng số liệu vào Ngày
+                dayData.dt += evalResult.thanhTien;
+                dayData.qd += evalResult.revenueQuyDoi;
+                
+                // Cộng số liệu vào Tổng Tháng (Dùng cho Thẻ KPI)
+                if (is2025) {
+                    totals.dt25 += evalResult.thanhTien; 
+                    totals.qd25 += evalResult.revenueQuyDoi; 
+                    if (evalResult.isTraGop) totals.tc25 += evalResult.thanhTien;
+                } else {
+                    // Cắt rác tương lai: Chỉ cộng cho những ngày đã đi qua
+                    if (dayNum <= currentDay) {
+                        totals.dt26 += evalResult.thanhTien; 
+                        totals.qd26 += evalResult.revenueQuyDoi; 
+                        if (evalResult.isTraGop) totals.tc26 += evalResult.thanhTien;
+                    }
+                }
+            }
+        });
+    };
+
+    // Chạy vòng lặp xử lý dữ liệu 2 năm
+    processData(data2025, map25, true);
+    processData(data2026, map26, false);
+
+    // --- TÍNH TOÁN CẢ 2 MỤC TIÊU (THỰC & QUY ĐỔI) ---
+    const targetRev2026_dt = totals.dt25 * (1 + targetGrowthPct); 
+    const targetRev2026_qd = totals.qd25 * (1 + targetGrowthPct); 
+    
+    const remainingTarget_dt = Math.max(0, targetRev2026_dt - totals.dt26);
+    const remainingTarget_qd = Math.max(0, targetRev2026_qd - totals.qd26);
+
+    // Tính tổng lịch sử năm 2025 của các ngày chưa tới để chia trọng số phân bổ
+    let sum2025Future_dt = 0; 
+    let sum2025Future_qd = 0;
+    let numFutureDays = 0;
+    for (let i = currentDay + 1; i <= daysInMonth; i++) {
+        sum2025Future_dt += (map25.get(i)?.dt || 0); 
+        sum2025Future_qd += (map25.get(i)?.qd || 0); 
+        numFutureDays++;
+    }
+
+    // Xây dựng mảng vẽ Lịch
+    const emptyCells = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1; 
+    for (let i = 0; i < emptyCells; i++) daysArray.push({ isEmpty: true });
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const isFuture = i > currentDay;
+        const d25 = map25.get(i) || { dt: 0, qd: 0 };
+        const d26 = map26.get(i) || { dt: 0, qd: 0 };
+        
+        let targetDt = 0;
+        let targetQd = 0;
+
+        if (isFuture) {
+            targetDt = (sum2025Future_dt > 0) 
+                ? remainingTarget_dt * (d25.dt / sum2025Future_dt) 
+                : (numFutureDays > 0 ? remainingTarget_dt / numFutureDays : 0);
+                
+            targetQd = (sum2025Future_qd > 0) 
+                ? remainingTarget_qd * (d25.qd / sum2025Future_qd) 
+                : (numFutureDays > 0 ? remainingTarget_qd / numFutureDays : 0);
+        }
+
+        daysArray.push({
+            isEmpty: false, dayNum: i, isFuture: isFuture,
+            lunar: lunarUtils.getLunarDate(i, month, year2026).display,
+            rev25: d25.dt, revQd25: d25.qd,
+            rev26: d26.dt, revQd26: d26.qd,
+            targetDt: targetDt, 
+            targetQd: targetQd, 
+            growthVal: d26.dt - d25.dt, 
+            growthPct: d25.dt > 0 ? (d26.dt - d25.dt) / d25.dt : 0
+        });
+    }
+
+    return { calendarGrid: daysArray, kpiTotals: totals };
+}
+<<< FILE_END: src/components/luyke/dtcknam/SsgCalendarLogic.js
+
+>>> FILE_START: src/components/luyke/dtcknam/SsgCalendarView.svelte
+<script>
+    import SsgCalendarCell from './SsgCalendarCell.svelte';
+    export let calendarGrid = [];
+    
+    // Đủ 4 Toggles theo yêu cầu
+    let toggles = { show2025: true, showThuc: true, showQd: false, showGrowth: true };
+</script>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-300 mt-6 overflow-hidden">
+    <div class="bg-[#1e293b] px-4 py-3 flex flex-wrap justify-between items-center">
+        <h3 class="text-white font-bold text-sm uppercase flex items-center gap-2">
+            <i data-feather="calendar" class="w-4 h-4 text-blue-400"></i> CHI TIẾT DOANH THU NGÀY (TRIỆU)
+        </h3>
+        <div class="flex gap-4 bg-slate-700 px-3 py-1.5 rounded-lg">
+            <label class="flex items-center gap-1.5 text-xs text-white font-bold cursor-pointer"><input type="checkbox" bind:checked={toggles.show2025} class="accent-blue-500 w-3.5 h-3.5" /> 2025</label>
+            <label class="flex items-center gap-1.5 text-xs text-blue-300 font-bold cursor-pointer"><input type="checkbox" bind:checked={toggles.showThuc} class="accent-blue-500 w-3.5 h-3.5" /> DT Thực</label>
+            <label class="flex items-center gap-1.5 text-xs text-emerald-300 font-bold cursor-pointer"><input type="checkbox" bind:checked={toggles.showQd} class="accent-blue-500 w-3.5 h-3.5" /> DT Quy Đổi</label>
+            <label class="flex items-center gap-1.5 text-xs text-white font-bold cursor-pointer"><input type="checkbox" bind:checked={toggles.showGrowth} class="accent-blue-500 w-3.5 h-3.5" /> Tăng/Giảm</label>
+        </div>
+    </div>
+
+    <div class="p-4 bg-gray-50/50">
+        <div class="grid grid-cols-7 border border-gray-300 rounded-t-lg overflow-hidden mb-2">
+            {#each ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu'] as day}
+                <div class="text-center text-[11px] font-bold text-slate-700 bg-slate-200 py-2 border-r border-gray-300 uppercase">{day}</div>
+            {/each}
+            {#each ['Thứ Bảy', 'Chủ Nhật'] as day}
+                <div class="text-center text-[11px] font-bold text-red-700 bg-red-100 py-2 border-r last:border-r-0 border-red-200 uppercase">{day}</div>
+            {/each}
+        </div>
+        
+        <div class="grid grid-cols-7 gap-2">
+            {#each calendarGrid as cellData}
+                <SsgCalendarCell data={cellData} {toggles} />
+            {/each}
+        </div>
+    </div>
+</div>
+<<< FILE_END: src/components/luyke/dtcknam/SsgCalendarView.svelte
+
+>>> FILE_START: src/components/luyke/dtcknam/SsgKpiBoard.svelte
+<script>
+    import { formatters } from '../../../utils/formatters.js';
+    export let kpiTotals = { dt25:0, qd25:0, tc25:0, dt26:0, qd26:0, tc26:0, currentDay: 1, daysInMonth: 30, isCurrentMonth: false };
+
+    const fmtRev = (n) => formatters.formatNumber(Math.round((n || 0) / 1000000), 0); 
+    const fmtPct = (n) => (n * 100).toFixed(1) + '%';
+    const fmtAbs = (n) => formatters.formatNumber(Math.abs(Math.round(n / 1000000)), 0);
+    
+    // Tính toán hệ số Dự kiến
+    $: factor = (kpiTotals.isCurrentMonth && kpiTotals.currentDay > 0) ? (kpiTotals.daysInMonth / kpiTotals.currentDay) : 1;
+    $: dt26_final = kpiTotals.dt26 * factor;
+    $: qd26_final = kpiTotals.qd26 * factor;
+    $: tc26_final = kpiTotals.tc26 * factor;
+
+    // Tăng trưởng Số tuyệt đối & Phần trăm
+    $: growthDtVal = dt26_final - kpiTotals.dt25;
+    $: growthDtPct = kpiTotals.dt25 > 0 ? (dt26_final / kpiTotals.dt25) - 1 : 0;
+
+    $: growthQdVal = qd26_final - kpiTotals.qd25;
+    $: growthQdPct = kpiTotals.qd25 > 0 ? (qd26_final / kpiTotals.qd25) - 1 : 0;
+    
+    // Tỷ lệ cấu trúc (Không nhân factor vì tử/mẫu tự triệt tiêu)
+    $: ratio25 = kpiTotals.dt25 > 0 ? (kpiTotals.qd25 / kpiTotals.dt25) - 1 : 0;
+    $: ratio26 = kpiTotals.dt26 > 0 ? (kpiTotals.qd26 / kpiTotals.dt26) - 1 : 0;
+    
+    $: tcRatio25 = kpiTotals.dt25 > 0 ? (kpiTotals.tc25 / kpiTotals.dt25) : 0;
+    $: tcRatio26 = kpiTotals.dt26 > 0 ? (kpiTotals.tc26 / kpiTotals.dt26) : 0;
+</script>
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+    <div class="bg-[#eff6ff] p-3 rounded-xl border border-blue-100 shadow-sm flex flex-col relative overflow-hidden">
+        {#if kpiTotals.isCurrentMonth}<span class="absolute top-0 right-0 bg-blue-200 text-blue-800 text-[9px] font-black px-1.5 py-0.5 rounded-bl-lg">DỰ KIẾN</span>{/if}
+        <p class="text-[11px] font-bold text-blue-800 uppercase mb-2 pb-2 border-b border-blue-200/50 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Doanh thu Thực (Tr)
+        </p>
+        <div class="flex justify-between items-center px-2 flex-1">
+            <div class="text-center"><p class="text-[10px] text-blue-400 font-bold mb-1">2025</p><h3 class="text-xl font-bold text-blue-900/60">{fmtRev(kpiTotals.dt25)}</h3></div>
+            <div class="w-px h-8 bg-blue-200"></div>
+            <div class="text-center"><p class="text-[10px] text-blue-500 font-bold mb-1">2026</p><h3 class="text-2xl font-black text-blue-700">{fmtRev(dt26_final)}</h3></div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-blue-200/50 text-center text-[11px] font-bold {growthDtPct >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+            Tăng trưởng: {growthDtVal > 0 ? '+' : (growthDtVal < 0 ? '-' : '')}{fmtAbs(growthDtVal)} ({fmtPct(growthDtPct)})
+        </div>
+    </div>
+
+    <div class="bg-[#f0fdf4] p-3 rounded-xl border border-emerald-100 shadow-sm flex flex-col relative overflow-hidden">
+        {#if kpiTotals.isCurrentMonth}<span class="absolute top-0 right-0 bg-emerald-200 text-emerald-800 text-[9px] font-black px-1.5 py-0.5 rounded-bl-lg">DỰ KIẾN</span>{/if}
+        <p class="text-[11px] font-bold text-emerald-800 uppercase mb-2 pb-2 border-b border-emerald-200/50 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> Doanh thu Quy đổi (Tr)
+        </p>
+        <div class="flex justify-between items-center px-2 flex-1">
+            <div class="text-center"><p class="text-[10px] text-emerald-400 font-bold mb-1">2025</p><h3 class="text-xl font-bold text-emerald-900/60">{fmtRev(kpiTotals.qd25)}</h3></div>
+            <div class="w-px h-8 bg-emerald-200"></div>
+            <div class="text-center"><p class="text-[10px] text-emerald-500 font-bold mb-1">2026</p><h3 class="text-2xl font-black text-emerald-600">{fmtRev(qd26_final)}</h3></div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-emerald-200/50 text-center text-[11px] font-bold {growthQdPct >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+            Tăng trưởng: {growthQdVal > 0 ? '+' : (growthQdVal < 0 ? '-' : '')}{fmtAbs(growthQdVal)} ({fmtPct(growthQdPct)})
+        </div>
+    </div>
+
+    <div class="bg-[#faf5ff] p-3 rounded-xl border border-purple-100 shadow-sm flex flex-col">
+        <p class="text-[11px] font-bold text-purple-800 uppercase mb-2 pb-2 border-b border-purple-200/50 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg> Tỷ lệ Quy đổi
+        </p>
+        <div class="flex justify-between items-center px-2 flex-1">
+            <div class="text-center"><p class="text-[10px] text-purple-400 font-bold mb-1">2025</p><h3 class="text-xl font-bold text-purple-900/60">{fmtPct(ratio25)}</h3></div>
+            <div class="w-px h-8 bg-purple-200"></div>
+            <div class="text-center"><p class="text-[10px] text-purple-500 font-bold mb-1">2026</p><h3 class="text-2xl font-black text-purple-700">{fmtPct(ratio26)}</h3></div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-purple-200/50 text-center text-[11px] font-bold {ratio26 - ratio25 >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+            Tăng trưởng: {(ratio26 - ratio25 > 0 ? '+' : '') + fmtPct(ratio26 - ratio25)}
+        </div>
+    </div>
+
+    <div class="bg-[#fff7ed] p-3 rounded-xl border border-orange-100 shadow-sm flex flex-col">
+        <p class="text-[11px] font-bold text-orange-800 uppercase mb-2 pb-2 border-b border-orange-200/50 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Tỷ lệ Trả chậm
+        </p>
+        <div class="flex justify-between items-center px-2 flex-1">
+            <div class="text-center"><p class="text-[10px] text-orange-400 font-bold mb-1">2025</p><h3 class="text-xl font-bold text-orange-900/60">{fmtPct(tcRatio25)}</h3></div>
+            <div class="w-px h-8 bg-orange-200"></div>
+            <div class="text-center"><p class="text-[10px] text-orange-500 font-bold mb-1">2026</p><h3 class="text-2xl font-black text-orange-600">{fmtPct(tcRatio26)}</h3></div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-orange-200/50 text-center text-[11px] font-bold {tcRatio26 - tcRatio25 >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+            Tăng trưởng: {(tcRatio26 - tcRatio25 > 0 ? '+' : '') + fmtPct(tcRatio26 - tcRatio25)}
+        </div>
+    </div>
+</div>
+<<< FILE_END: src/components/luyke/dtcknam/SsgKpiBoard.svelte
 
 >>> FILE_START: src/components/luyke/dtcknam/SsgNamTable.svelte
 <svelte:window on:click={() => showCategoryFilter = false} />
@@ -5462,6 +5904,83 @@ export function processDashboardData(sourceData, activeDimensionIds, currentFilt
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 </style>
 <<< FILE_END: src/components/luyke/dtcknam/SsgNamTable.svelte
+
+>>> FILE_START: src/components/luyke/dtcknam/SsgTargetSimulator.svelte
+<script>
+    import { formatters } from '../../../utils/formatters.js';
+    export let targetGrowthPct; 
+    export let kpiTotals;
+    
+    $: uiRatio = Math.round(targetGrowthPct * 100); 
+
+    function handleRatioChange(e) {
+        let val = parseInt(e.target.value);
+        if (isNaN(val)) val = 0;
+        uiRatio = val;
+        targetGrowthPct = uiRatio / 100; 
+    }
+
+    const fmt = (val) => formatters.formatNumber(val / 1000000, 0);
+
+    $: remainingDays = Math.max(0, (kpiTotals?.daysInMonth || 30) - (kpiTotals?.currentDay || 1));
+    
+    // TÍNH MỤC TIÊU: DT THỰC
+    $: dtTarget = (kpiTotals?.dt25 || 0) * (1 + (uiRatio / 100));
+    $: dtMissing = Math.max(0, dtTarget - (kpiTotals?.dt26 || 0));
+    $: dtDaily = remainingDays > 0 ? dtMissing / remainingDays : 0; // Công thức chuẩn: RunRate = Còn thiếu / Ngày còn lại
+
+    // TÍNH MỤC TIÊU: DT QUY ĐỔI
+    $: qdTarget = (kpiTotals?.qd25 || 0) * (1 + (uiRatio / 100));
+    $: qdMissing = Math.max(0, qdTarget - (kpiTotals?.qd26 || 0));
+    $: qdDaily = remainingDays > 0 ? qdMissing / remainingDays : 0;
+</script>
+
+<div class="flex flex-col lg:flex-row gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-gray-200 shadow-sm items-center">
+    
+    <div class="w-full lg:w-1/3 flex flex-col pr-4 lg:border-r border-gray-200">
+        <div class="flex justify-between items-center mb-3">
+            <span class="text-[11px] font-bold text-gray-500 uppercase flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Tăng trưởng so CK
+            </span>
+            <div class="relative flex items-center">
+                <input type="number" bind:value={uiRatio} on:change={handleRatioChange} class="w-16 py-1 px-2 text-center font-black text-indigo-800 bg-white border border-indigo-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm text-sm" />
+                <span class="absolute right-2 top-1.5 text-[10px] text-gray-400 font-bold pointer-events-none">%</span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] text-gray-400 font-bold">0%</span>
+            <input type="range" min="0" max="100" step="1" value={uiRatio} on:input={handleRatioChange} class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+            <span class="text-[10px] text-gray-400 font-bold">100%</span>
+        </div>
+    </div>
+
+    <div class="w-full lg:w-1/3 flex justify-between items-center px-4 lg:border-r border-gray-200">
+        <div>
+            <p class="text-[10px] text-blue-500 font-bold mb-1 uppercase">Mục tiêu: DT Thực</p>
+            <h3 class="text-2xl font-black text-blue-800">{fmt(dtTarget)} <span class="text-[10px] font-medium text-gray-400">Tr</span></h3>
+        </div>
+        <div class="text-right">
+            <p class="text-[10px] text-orange-500 font-bold mb-1">CÒN THIẾU ({remainingDays} NGÀY)</p>
+            <h3 class="text-xl font-black text-orange-600">{fmt(dtMissing)}</h3>
+            <p class="text-[10px] text-gray-500 mt-1 font-bold">Cần: <span class="text-orange-700">{fmt(dtDaily)} Tr/Ngày</span></p>
+        </div>
+    </div>
+
+    <div class="w-full lg:w-1/3 flex justify-between items-center px-4">
+        <div>
+            <p class="text-[10px] text-emerald-500 font-bold mb-1 uppercase">Mục tiêu: DT Quy Đổi</p>
+            <h3 class="text-2xl font-black text-emerald-800">{fmt(qdTarget)} <span class="text-[10px] font-medium text-gray-400">Tr</span></h3>
+        </div>
+        <div class="text-right">
+            <p class="text-[10px] text-orange-500 font-bold mb-1">CÒN THIẾU ({remainingDays} NGÀY)</p>
+            <h3 class="text-xl font-black text-orange-600">{fmt(qdMissing)}</h3>
+            <p class="text-[10px] text-gray-500 mt-1 font-bold">Cần: <span class="text-orange-700">{fmt(qdDaily)} Tr/Ngày</span></p>
+        </div>
+    </div>
+
+</div>
+<<< FILE_END: src/components/luyke/dtcknam/SsgTargetSimulator.svelte
 
 >>> FILE_START: src/components/luyke/hcmTdv.logic.js
 /**
@@ -6919,7 +7438,6 @@ export const inventoryHelper = {
     import { createEventDispatcher } from 'svelte';
     import LuykeTableRowRecursive from './LuykeTableRowRecursive.svelte';
     import LuykeCategoryFilterBar from './LuykeCategoryFilterBar.svelte';
-    
     export let data = [];
     export let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0 };
     export let allDimensions = [];
@@ -6934,18 +7452,11 @@ export const inventoryHelper = {
     export let sortKey = 'revenue'; 
     export let sortDirection = 'desc';
     export let columnSettings = [];
-
     const dispatch = createEventDispatcher();
 
-    // --- LOGIC RUN RATE (SỐ DỰ KIẾN) ---
-    $: today = new Date();
-    $: daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    $: elapsedDays = Math.max(1, today.getDate() - 1); 
-
-    $: getProjected = (val) => {
-        if (!val) return 0;
-        return (val / elapsedDays) * daysInMonth;
-    };
+    // --- [PHẪU THUẬT LOGIC]: Chuyển đổi từ biến nội bộ chạy theo clock hệ thống thành Props nhận từ cha ---
+    export let daysInMonth = 30;
+    export let elapsedDays = 1;
 
     $: isColVisible = (id) => {
         const found = columnSettings.find(c => c.id === id);
@@ -6960,14 +7471,19 @@ export const inventoryHelper = {
     $: fmtPct = (n) => (n || 0).toFixed(1) + '%';
     const LEVEL_COLORS = ['text-red-700 font-bold', 'text-blue-700 font-semibold', 'text-purple-700 font-medium', 'text-emerald-700', 'text-orange-700'];
 
+    $: getProjected = (val) => {
+        if (!val) return 0;
+        return (val / elapsedDays) * daysInMonth;
+    };
+
     $: getPctVal = (currProj, prev) => prev ? ((currProj - prev) / prev) * 100 : (currProj > 0 ? 100 : 0);
     $: fmtDiffText = (diff, formatter) => diff === 0 ? '0' : (diff > 0 ? '+' : '') + formatter(diff);
     $: fmtPctText = (pct) => pct === 0 ? '0.0%' : (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
     $: getColorClass = (val) => val >= 0 ? 'text-blue-600 font-bold' : 'text-red-500 font-bold';
-
     function handleSort(key) {
         if (sortKey === key) sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
-        else { sortKey = key; sortDirection = 'desc'; }
+        else { sortKey = key; sortDirection = 'desc';
+        }
     }
 
     function sortTree(nodes, key, dir) {
@@ -6982,13 +7498,14 @@ export const inventoryHelper = {
                 valB = b.quantity ? (b.revenue / b.quantity) : 0;
             } else if (key === 'donGia_prev') {
                 valA = a.quantityCK ? (a.revenueCK / a.quantityCK) : 0;
-                valB = b.quantityCK ? (b.revenueCK / b.quantityCK) : 0;
+                 valB = b.quantityCK ? (b.revenueCK / b.quantityCK) : 0;
             } else if (key === 'donGia_diff') {
                 const dgA = getProjected(a.quantity ? (a.revenue / a.quantity) : 0);
                 const dgB = getProjected(b.quantity ? (b.revenue / b.quantity) : 0);
                 const dgC_A = a.quantityCK ? (a.revenueCK / a.quantityCK) : 0;
                 const dgC_B = b.quantityCK ? (b.revenueCK / b.quantityCK) : 0;
-                valA = dgA - dgC_A; valB = dgB - dgC_B;
+                valA = dgA - dgC_A;
+                valB = dgB - dgC_B;
             } else if (key === 'donGia_pct') {
                 const dgA = getProjected(a.quantity ? (a.revenue / a.quantity) : 0);
                 const dgB = getProjected(b.quantity ? (b.revenue / b.quantity) : 0);
@@ -7006,7 +7523,8 @@ export const inventoryHelper = {
             } else if (key.endsWith('_pct')) {
                 const baseKey = key.replace('_pct', '');
                 const currA = getProjected(a[baseKey] || 0); const prevA = a[`${baseKey}CK`] || 0;
-                const currB = getProjected(b[baseKey] || 0); const prevB = b[`${baseKey}CK`] || 0;
+                const currB = getProjected(b[baseKey] || 0);
+                const prevB = b[`${baseKey}CK`] || 0;
                 valA = prevA ? (currA - prevA) / prevA : (currA > 0 ? 999999 : 0);
                 valB = prevB ? (currB - prevB) / prevB : (currB > 0 ? 999999 : 0);
             } else {
@@ -7021,9 +7539,13 @@ export const inventoryHelper = {
     }
 
     $: sortedData = sortTree(data, sortKey, sortDirection);
-    function toggleRow(id) { if (expandedRows.has(id)) expandedRows.delete(id); else expandedRows.add(id); expandedRows = expandedRows; }
-    function expandAll(nodes) { if (!nodes) return; nodes.forEach(node => { expandedRows.add(node.id); if (node.children) expandAll(node.children); }); expandedRows = expandedRows; }
-    function collapseAll() { expandedRows = new Set(); }
+    function toggleRow(id) { if (expandedRows.has(id)) expandedRows.delete(id); else expandedRows.add(id);
+    expandedRows = expandedRows; }
+    function expandAll(nodes) { if (!nodes) return;
+    nodes.forEach(node => { expandedRows.add(node.id); if (node.children) expandAll(node.children); }); expandedRows = expandedRows;
+    }
+    function collapseAll() { expandedRows = new Set();
+    }
     $: getArrow = (key) => sortKey === key ? (sortDirection === 'desc' ? ' ↓' : ' ↑') : '';
 </script>
 
@@ -7040,9 +7562,7 @@ export const inventoryHelper = {
     <div class="overflow-x-auto custom-scrollbar">
         <table class="w-full text-xs text-left border-collapse">
             <thead class="text-gray-700 uppercase font-bold sticky top-0 z-20 shadow-sm">
-                <!-- TẦNG TIÊU ĐỀ 1 -->
-                <tr class="bg-gray-100 text-[11px]">
-                    <!-- [PHẪU THUẬT LOGIC]: Sửa width của cột này, ép fix width max-w-[260px] để chữ bị đẩy xuống dòng thay vì kéo giãn bảng -->
+                 <tr class="bg-gray-100 text-[11px]">
                     <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-3 px-4 border-b border-r bg-gray-100 text-gray-700 align-middle text-left w-[260px] min-w-[260px] max-w-[260px] xl:w-[320px] xl:min-w-[320px] xl:max-w-[320px] whitespace-normal">
                         <div class="flex items-center gap-2">
                              <span>Danh mục</span>
@@ -7053,26 +7573,30 @@ export const inventoryHelper = {
                         </div>
                     </th>
 
-                    {#if isColVisible('quantity')}
-                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-slate-50/50 text-slate-800 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('quantity'); }}>
+                     {#if isColVisible('quantity')}
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-slate-50/50 text-slate-800 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('quantity');
+                        }}>
                             {isVelocityMode ? 'SL TB / Ngày' : 'Số lượng (SL)'}{getArrow('quantity')}
                         </th>
                     {/if}
                     
                     {#if isColVisible('revenue')}
-                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-blue-50/50 text-blue-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenue'); }}>
+                         <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-blue-50/50 text-blue-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenue');
+                        }}>
                             {isVelocityMode ? 'DT TB / Ngày' : 'Doanh thu thực'}{getArrow('revenue')}
                         </th>
                     {/if}
 
                     {#if isColVisible('donGia')}
-                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-amber-50/50 text-amber-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('donGia'); }}>
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-amber-50/50 text-amber-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('donGia');
+                        }}>
                             Đơn giá (Tr){getArrow('donGia')}
                         </th>
                     {/if}
 
                     {#if isColVisible('revenueQD')}
-                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-indigo-50/50 text-indigo-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenueQD'); }}>
+                         <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-indigo-50/50 text-indigo-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenueQD');
+                        }}>
                             {isVelocityMode ? 'DT QĐ / Ngày' : 'Doanh thu Quy đổi'}{getArrow('revenueQD')}
                         </th>
                         {#if !isVelocityMode && !isCompareMode}
@@ -7081,49 +7605,49 @@ export const inventoryHelper = {
                     {/if}
                     
                     {#if hasInventoryData}
-                        <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-2.5 px-2 text-right border-b border-r bg-emerald-50 text-emerald-800 align-middle">SL Tồn</th>
+                         <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-2.5 px-2 text-right border-b border-r bg-emerald-50 text-emerald-800 align-middle">SL Tồn</th>
                         <th rowspan={isCompareMode && !isVelocityMode ? 2 : 1} class="py-2.5 px-2 text-center border-b border-r bg-red-50 text-red-800 align-middle">Cảnh báo</th>
                     {/if}
                     
                     {#if isColVisible('revenueTraCham')}
-                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-yellow-50/50 text-yellow-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenueTraCham'); }}>
+                        <th colspan={isCompareMode && !isVelocityMode ? 4 : 1} class="py-2.5 px-2 text-center border-b border-r bg-yellow-50/50 text-yellow-900 align-middle cursor-pointer" on:click={() => { if(!isCompareMode || isVelocityMode) handleSort('revenueTraCham');
+                        }}>
                             DT Trả chậm{getArrow('revenueTraCham')}
                         </th>
                         {#if !isVelocityMode && !isCompareMode}
-                            <th class="py-2.5 px-2 text-center border-b bg-yellow-50/50 text-yellow-900 align-middle">% Trả chậm</th>
+                             <th class="py-2.5 px-2 text-center border-b bg-yellow-50/50 text-yellow-900 align-middle">% Trả chậm</th>
                         {/if}
                     {/if}
                 </tr>
                 
-                <!-- TẦNG TIÊU ĐỀ 2 -->
-                {#if isCompareMode && !isVelocityMode}
+                 {#if isCompareMode && !isVelocityMode}
                     <tr class="bg-gray-50 text-[10px] text-center">
                         {#if isColVisible('quantity')}
-                            <th class="py-1 px-1 bg-slate-50/30 border-b border-r cursor-pointer hover:bg-slate-100" on:click={() => handleSort('quantity_prev')}>Tháng trước{getArrow('quantity_prev')}</th>
+                             <th class="py-1 px-1 bg-slate-50/30 border-b border-r cursor-pointer hover:bg-slate-100" on:click={() => handleSort('quantity_prev')}>Tháng trước{getArrow('quantity_prev')}</th>
                             <th class="py-1 px-1 bg-slate-50/30 border-b border-r cursor-pointer hover:bg-slate-100" on:click={() => handleSort('quantity')}>Dự kiến{getArrow('quantity')}</th>
                             <th class="py-1 px-1 bg-slate-50/30 border-b border-r cursor-pointer hover:bg-slate-100" on:click={() => handleSort('quantity_diff')}>+/-{getArrow('quantity_diff')}</th>
-                            <th class="py-1 px-1 bg-slate-50/30 border-b border-r cursor-pointer hover:bg-slate-100" on:click={() => handleSort('quantity_pct')}>%{getArrow('quantity_pct')}</th>
+                             <th class="py-1 px-1 bg-slate-50/30 border-b border-r cursor-pointer hover:bg-slate-100" on:click={() => handleSort('quantity_pct')}>%{getArrow('quantity_pct')}</th>
                         {/if}
                         {#if isColVisible('revenue')}
-                            <th class="py-1 px-1 bg-blue-50/30 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_prev')}>Tháng trước{getArrow('revenue_prev')}</th>
+                             <th class="py-1 px-1 bg-blue-50/30 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_prev')}>Tháng trước{getArrow('revenue_prev')}</th>
                             <th class="py-1 px-1 bg-blue-50/30 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue')}>Dự kiến{getArrow('revenue')}</th>
                             <th class="py-1 px-1 bg-blue-50/30 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_diff')}>+/-{getArrow('revenue_diff')}</th>
                             <th class="py-1 px-1 bg-blue-50/30 border-b border-r cursor-pointer hover:bg-blue-100" on:click={() => handleSort('revenue_pct')}>%{getArrow('revenue_pct')}</th>
                         {/if}
                         {#if isColVisible('donGia')}
-                            <th class="py-1 px-1 bg-amber-50/30 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_prev')}>Tháng trước{getArrow('donGia_prev')}</th>
+                             <th class="py-1 px-1 bg-amber-50/30 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_prev')}>Tháng trước{getArrow('donGia_prev')}</th>
                             <th class="py-1 px-1 bg-amber-50/30 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia')}>Dự kiến{getArrow('donGia')}</th>
                             <th class="py-1 px-1 bg-amber-50/30 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_diff')}>+/-{getArrow('donGia_diff')}</th>
                             <th class="py-1 px-1 bg-amber-50/30 border-b border-r cursor-pointer hover:bg-amber-100" on:click={() => handleSort('donGia_pct')}>%{getArrow('donGia_pct')}</th>
                         {/if}
                         {#if isColVisible('revenueQD')}
-                            <th class="py-1 px-1 bg-indigo-50/30 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_prev')}>Tháng trước{getArrow('revenueQD_prev')}</th>
+                             <th class="py-1 px-1 bg-indigo-50/30 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_prev')}>Tháng trước{getArrow('revenueQD_prev')}</th>
                             <th class="py-1 px-1 bg-indigo-50/30 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD')}>Dự kiến{getArrow('revenueQD')}</th>
                             <th class="py-1 px-1 bg-indigo-50/30 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_diff')}>+/-{getArrow('revenueQD_diff')}</th>
                             <th class="py-1 px-1 bg-indigo-50/30 border-b border-r cursor-pointer hover:bg-indigo-100" on:click={() => handleSort('revenueQD_pct')}>%{getArrow('revenueQD_pct')}</th>
                         {/if}
                         {#if isColVisible('revenueTraCham')}
-                            <th class="py-1 px-1 bg-yellow-50/30 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_prev')}>Tháng trước{getArrow('revenueTraCham_prev')}</th>
+                             <th class="py-1 px-1 bg-yellow-50/30 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_prev')}>Tháng trước{getArrow('revenueTraCham_prev')}</th>
                             <th class="py-1 px-1 bg-yellow-50/30 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham')}>Dự kiến{getArrow('revenueTraCham')}</th>
                             <th class="py-1 px-1 bg-yellow-50/30 border-b border-r cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_diff')}>+/-{getArrow('revenueTraCham_diff')}</th>
                             <th class="py-1 px-1 bg-yellow-50/30 border-b cursor-pointer hover:bg-yellow-100" on:click={() => handleSort('revenueTraCham_pct')}>%{getArrow('revenueTraCham_pct')}</th>
@@ -7131,45 +7655,44 @@ export const inventoryHelper = {
                     </tr>
                 {/if}
                 
-                <!-- DÒNG TỔNG CỘNG -->
                 <tr class="bg-blue-50 text-blue-800 font-bold border-b-2 border-blue-200">
                     <td class="py-3 px-4 border-r font-black">TỔNG CỘNG</td>
-                    
+                             
                     {#if isColVisible('quantity')}
                         {#if isCompareMode && !isVelocityMode}
                             {@const prev = totalMetrics.quantityCK || 0} {@const currProj = getProjected(totalMetrics.quantity || 0)}
                             {@const diff = currProj - prev} {@const pct = getPctVal(currProj, prev)}
                             <td class="py-2 px-1 text-right bg-slate-50/30 border-r">{fmtQty(prev)}</td>
-                            <td class="py-2 px-1 text-right bg-slate-50/30 border-r font-black">{fmtQty(currProj)}</td>
+                             <td class="py-2 px-1 text-right bg-slate-50/30 border-r font-black">{fmtQty(currProj)}</td>
                             <td class="py-2 px-1 text-right bg-slate-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtQty)}</td>
                             <td class="py-2 px-1 text-center bg-slate-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
-                        {:else}
+                         {:else}
                             <td class="py-3 px-4 text-right bg-slate-50/30 border-r font-black">{fmtQty(totalMetrics.quantity)}</td>
                         {/if}
                     {/if}
 
-                    {#if isColVisible('revenue')}
+                     {#if isColVisible('revenue')}
                         {#if isCompareMode && !isVelocityMode}
                             {@const prev = totalMetrics.revenueCK || 0} {@const currProj = getProjected(totalMetrics.revenue || 0)}
                             {@const diff = currProj - prev} {@const pct = getPctVal(currProj, prev)}
                             <td class="py-2 px-1 text-right bg-blue-50/30 border-r">{fmtRev(prev)}</td>
-                            <td class="py-2 px-1 text-right bg-blue-50/30 border-r font-black text-blue-700">{fmtRev(currProj)}</td>
+                             <td class="py-2 px-1 text-right bg-blue-50/30 border-r font-black text-blue-700">{fmtRev(currProj)}</td>
                             <td class="py-2 px-1 text-right bg-blue-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
                             <td class="py-2 px-1 text-center bg-blue-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
-                        {:else}
+                         {:else}
                             <td class="py-3 px-4 text-right bg-blue-50/30 border-r font-black text-blue-700">{fmtRev(totalMetrics.revenue)}</td>
                         {/if}
                     {/if}
 
-                    {#if isColVisible('donGia')}
+                     {#if isColVisible('donGia')}
                         {#if isCompareMode && !isVelocityMode}
                             {@const prev = totalMetrics.quantityCK > 0 ? totalMetrics.revenueCK / totalMetrics.quantityCK : 0}
                             {@const currProj = getProjected(totalMetrics.quantity > 0 ? totalMetrics.revenue / totalMetrics.quantity : 0)}
                             {@const diff = currProj - prev} {@const pct = getPctVal(currProj, prev)}
-                            <td class="py-2 px-1 text-right bg-amber-50/30 border-r">{fmtRev(prev)}</td>
+                             <td class="py-2 px-1 text-right bg-amber-50/30 border-r">{fmtRev(prev)}</td>
                             <td class="py-2 px-1 text-right bg-amber-50/30 border-r text-amber-800">{fmtRev(currProj)}</td>
                             <td class="py-2 px-1 text-right bg-amber-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
-                            <td class="py-2 px-1 text-center bg-amber-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
+                             <td class="py-2 px-1 text-center bg-amber-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
                         {:else}
                             <td class="py-3 px-4 text-right border-r bg-amber-50/30 text-amber-800">{totalMetrics.quantity > 0 ? fmtRev(totalMetrics.revenue / totalMetrics.quantity) : '-'}</td>
                         {/if}
@@ -7177,15 +7700,17 @@ export const inventoryHelper = {
 
                     {#if isColVisible('revenueQD')}
                         {#if isCompareMode && !isVelocityMode}
-                            {@const prev = totalMetrics.revenueQDCK || 0} {@const currProj = getProjected(totalMetrics.revenueQD || 0)}
+                             {@const prev = totalMetrics.revenueQDCK || 0} {@const currProj = getProjected(totalMetrics.revenueQD || 0)}
                             {@const diff = currProj - prev} {@const pct = getPctVal(currProj, prev)}
                             <td class="py-2 px-1 text-right bg-indigo-50/30 border-r">{fmtRev(prev)}</td>
-                            <td class="py-2 px-1 text-right bg-indigo-50/30 border-r">{fmtRev(currProj)}</td>
+                             <td class="py-2 px-1 text-right bg-indigo-50/30 border-r">{fmtRev(currProj)}</td>
                             <td class="py-2 px-1 text-right bg-indigo-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
                             <td class="py-2 px-1 text-center bg-indigo-50/30 border-r {getColorClass(diff)}">{fmtPctText(pct)}</td>
-                        {:else}
+                         {:else}
                             <td class="py-3 px-4 text-right bg-indigo-50/30 border-r font-black">{fmtRev(totalMetrics.revenueQD)}</td>
-                            {#if !isVelocityMode}<td class="py-3 px-4 text-center bg-indigo-50/30 border-r">{totalMetrics.revenue > 0 ? fmtPct(((totalMetrics.revenueQD / totalMetrics.revenue) * 100) - 100) : '0%'}</td>{/if}
+                            {#if !isVelocityMode && !isCompareMode}
+                                <td class="py-3 px-4 text-center bg-indigo-50/30 border-r">{totalMetrics.revenue > 0 ? fmtPct(((totalMetrics.revenueQD / totalMetrics.revenue) * 100) - 100) : '0%'}</td>
+                            {/if}
                         {/if}
                     {/if}
 
@@ -7196,13 +7721,13 @@ export const inventoryHelper = {
 
                     {#if isColVisible('revenueTraCham')}
                         {#if isCompareMode && !isVelocityMode}
-                            {@const prev = totalMetrics.revenueTraChamCK || 0} {@const currProj = getProjected(totalMetrics.revenueTraCham || 0)}
+                             {@const prev = totalMetrics.revenueTraChamCK || 0} {@const currProj = getProjected(totalMetrics.revenueTraCham || 0)}
                             {@const diff = currProj - prev} {@const pct = getPctVal(currProj, prev)}
                             <td class="py-2 px-1 text-right bg-yellow-50/30 border-r">{fmtRev(prev)}</td>
-                            <td class="py-2 px-1 text-right bg-yellow-50/30 border-r">{fmtRev(currProj)}</td>
+                             <td class="py-2 px-1 text-right bg-yellow-50/30 border-r">{fmtRev(currProj)}</td>
                             <td class="py-2 px-1 text-right bg-yellow-50/30 border-r {getColorClass(diff)}">{fmtDiffText(diff, fmtRev)}</td>
                             <td class="py-2 px-1 text-center bg-yellow-50/30 {getColorClass(diff)}">{fmtPctText(pct)}</td>
-                        {:else}
+                         {:else}
                             <td class="py-3 px-4 text-right bg-yellow-50/30 border-r">{fmtRev(totalMetrics.revenueTraCham)}</td>
                             <td class="py-3 px-4 text-center bg-yellow-50/30">{totalMetrics.revenue > 0 ? fmtPct((totalMetrics.revenueTraCham / totalMetrics.revenue) * 100) : '0%'}</td>
                         {/if}
@@ -7210,15 +7735,15 @@ export const inventoryHelper = {
                 </tr>
             </thead>
             
-            <tbody>
+             <tbody>
                 {#if sortedData.length === 0}
                     <tr><td colspan="30" class="text-center py-10 text-gray-500 font-medium">Chưa có dữ liệu hiển thị.</td></tr>
                 {:else}
                     {#each sortedData as group (group.id)}
-                        <LuykeTableRowRecursive 
+                         <LuykeTableRowRecursive 
                             {group} {expandedRows} {toggleRow} {LEVEL_COLORS} {fmtQty} {fmtRev} {fmtPct} 
                             {isVelocityMode} {hasInventoryData} {isCompareMode} {columnSettings} {elapsedDays} {daysInMonth}
-                        />
+                          />
                     {/each}
                 {/if}
             </tbody>
@@ -7227,28 +7752,32 @@ export const inventoryHelper = {
 </div>
 
 <style>
-    /* BẢO TOÀN CAPTURE VÀ FIXTURE CHỤP PHẲNG KHÔNG CẮT CHỮ */
-    :global(.capture-container .luyke-filter-section) { display: none !important; }
-    :global(.capture-container .velocity-toolbar) { display: none !important; }
+    :global(.capture-container .luyke-filter-section) { display: none !important;
+ }
+    :global(.capture-container .velocity-toolbar) { display: none !important;
+ }
     :global(.capture-container .luyke-table-wrapper) {
-        width: max-content !important; min-width: 100% !important; max-width: none !important;
+        width: max-content !important; min-width: 100% !important;
+ max-width: none !important;
         margin: 0 auto !important; border-radius: 0 !important; border: none !important; box-shadow: none !important;
-    }
-    :global(.capture-container .overflow-x-auto) { overflow: visible !important; width: auto !important; max-width: none !important; }
-    :global(.capture-container table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important; }
+ }
+    :global(.capture-container .overflow-x-auto) { overflow: visible !important; width: auto !important; max-width: none !important;
+ }
+    :global(.capture-container table) { width: 100% !important; font-family: 'Segoe UI', sans-serif !important;
+ }
     :global(.capture-container th), :global(.capture-container td) {
-        padding: 7px 5px !important; white-space: nowrap !important; overflow: visible !important;
+        padding: 7px 5px !important;
+ white-space: nowrap !important; overflow: visible !important;
         height: auto !important; line-height: 1.4 !important; font-size: 13px !important;
-    }
+ }
     :global(.capture-container th:first-child), :global(.capture-container td:first-child) { 
-        min-width: 160px !important; 
-        white-space: normal !important; 
+        min-width: 160px !important;
+ white-space: normal !important; 
     }
 
-    /* [PHẪU THUẬT LOGIC]: Thuốc giải trị dứt điểm tình trạng bị cắt chữ tên Ngành hàng bằng "..." khi chụp ảnh */
     :global(.capture-container .truncate) {
         white-space: normal !important;
-        overflow: visible !important;
+ overflow: visible !important;
         text-overflow: clip !important;
     }
 </style>
@@ -7266,10 +7795,10 @@ export const inventoryHelper = {
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
     import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
     import { inventoryHelper } from '../inventory/InventoryLogic.js';
-
+    
     export let data = [];
     export let selectedWarehouse = '';
-
+    
     const AVAILABLE_DIMENSIONS = [
         { id: 'nganhHang', label: 'Ngành hàng', default: true },
         { id: 'nhomHang', label: 'Nhóm hàng', default: true },
@@ -7277,7 +7806,7 @@ export const inventoryHelper = {
         { id: 'nhanVienTao', label: 'Người tạo', default: false },
         { id: 'tenSanPham', label: 'Tên sản phẩm', default: false }
     ];
-
+    
     let activeDimensionIds = ['nganhHang', 'nhaSanXuat'];
     let treeData = [];
     let totalMetrics = { quantity: 0, revenue: 0, revenueQD: 0, revenueTraCham: 0, quantityCK: 0, revenueCK: 0, revenueQDCK: 0, revenueTraChamCK: 0 };
@@ -7302,6 +7831,10 @@ export const inventoryHelper = {
     let hasInventoryData = false;
     const PRESET_DAYS = [3, 5, 7, 10];
 
+    // [PHẪU THUẬT LOGIC]: Khai báo các cấu hình ngày chạy Run Rate thực tế từ dữ liệu
+    let elapsedDays = 1;
+    let daysInMonth = 30;
+
     let columnSettings = [
         { id: 'quantity', label: 'Số lượng (SL)', visible: true },
         { id: 'revenue', label: 'Doanh thu thực', visible: true },
@@ -7314,7 +7847,7 @@ export const inventoryHelper = {
         if (hasInventoryData && (d.id === 'nhaSanXuat' || d.id === 'nhanVienTao')) return false;
         return true;
     });
-
+    
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) {
@@ -7349,7 +7882,7 @@ export const inventoryHelper = {
         if (!val) return 0;
         return parseFloat(String(val).replace(/,/g, '')) || 0;
     };
-
+    
     const isValidRow = (row) => {
         return (row.trangThaiThuTien || "").trim() === 'Đã thu' && 
                (row.trangThaiHuy || "").trim() === 'Chưa hủy' && 
@@ -7365,10 +7898,28 @@ export const inventoryHelper = {
              return formatters.getShortEmployeeName(val, maNVMatch ? maNVMatch[1] : '');
         }
         if (!val) return '(Trống)';
-        
-        // [PHẪU THUẬT LOGIC]: Trả về chuỗi nguyên bản (raw string) cho tất cả các Dimension.
-        // Điều này chặn việc gọi hàm cleanCategoryName(), giúp bảo toàn nguyên vẹn ID ở đầu chuỗi (giống SSG).
         return String(val).trim();
+    };
+
+    // [PHẪU THUẬT LOGIC]: Hàm chuẩn hóa ngày đa năng giải quyết định dạng Excel Serial Date và chuỗi thô
+    const getRowDate = (row) => {
+        const d = row.ngayTao || row.ngay_tao || row.NgayTao || row['Ngày tạo'] || row.ngayXuat || row.ngay_xuat || row.NgayXuat || row.ngayChungTu;
+        if (!d) return null;
+        if (d instanceof Date && !isNaN(d)) return d;
+        if (!isNaN(d) && Number(d) > 30000 && Number(d) < 60000) {
+            const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+            return new Date(excelEpoch.getTime() + Number(d) * 86400000);
+        }
+        const str = String(d).trim();
+        const parts = str.split(/[-/ ]/);
+        if (parts.length >= 3) {
+            if (parts[0].length === 4) {
+                return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            } else {
+                return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            }
+        }
+        return null;
     };
 
     function calculateData() {
@@ -7377,14 +7928,40 @@ export const inventoryHelper = {
         warnings = [];
         if (!data || data.length === 0) return;
 
-        let processedData = dateFilter.from || dateFilter.to ? filterDataByDate(data, dateFilter.from, dateFilter.to) : data;
+        // Xác định mốc thời gian thực tế dựa trên ngày lớn nhất có trong dữ liệu tải lên
+        let referenceDate = new Date();
+        let computedElapsedDays = Math.max(1, referenceDate.getDate() - 1);
+        let computedDaysInMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
+
+        let maxRowDate = null;
+        data.forEach(row => {
+            const rd = getRowDate(row);
+            if (rd && (!maxRowDate || rd > maxRowDate)) {
+                maxRowDate = rd;
+            }
+        });
+
+        if (maxRowDate) {
+            referenceDate = maxRowDate;
+            computedElapsedDays = maxRowDate.getDate();
+            computedDaysInMonth = new Date(maxRowDate.getFullYear(), maxRowDate.getMonth() + 1, 0).getDate();
+        }
+
+        elapsedDays = computedElapsedDays;
+        daysInMonth = computedDaysInMonth;
+
+        let prevMonthDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
+        const targetPrevMonthStr = `${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}/${prevMonthDate.getFullYear()}`;
+
+        let processedData = dateFilter.from || dateFilter.to ?
+            filterDataByDate(data, dateFilter.from, dateFilter.to) : data;
+            
         const hinhThucXuatTinhDoanhThu = dataProcessing.getHinhThucXuatTinhDoanhThu();
         const heSoQuyDoiMap = dataProcessing.getHeSoQuyDoi();
         let rootMap = new Map();
-
+        
         const processRowIntoTree = (row, isCK = false) => {
             if (!hinhThucXuatTinhDoanhThu.has(row.hinhThucXuat) || !isValidRow(row)) return;
-
             if (Object.keys(currentFilters).length > 0) {
                 for (const [key, selectedValues] of Object.entries(currentFilters)) {
                     if (selectedValues !== undefined && !selectedValues.includes(getDimensionValue(row, key))) return;
@@ -7393,23 +7970,28 @@ export const inventoryHelper = {
 
             const quantity = parseInt(row.soLuong || 0);
             const revenue = parseMoney(row.thanhTien);
-            let heSo = dataProcessing.getHeSoForCategory(row.nhomHang, heSoQuyDoiMap);
+            
+            // [PHẪU THUẬT LOGIC v3.3 - BUG FIX]: Đã vá lỗi Kế thừa. Truyền đủ 3 tham số (nhomHang, nganhHang, map) 
+            // để hàm getHeSoForCategory có thể dò ngược lên Ngành cha nếu Nhóm con không thiết lập Ngoại lệ.
+            let heSo = dataProcessing.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoQuyDoiMap);
+            
             const isTraGop = (row.hinhThucXuat || '').toLowerCase().includes('trả');
             if (isTraGop) heSo += 0.3;
             const revenueQD = revenue * heSo;
 
             if (!isCK) {
                 totalMetrics.quantity += quantity;
-                totalMetrics.revenue += revenue; totalMetrics.revenueQD += revenueQD;
+                totalMetrics.revenue += revenue; 
+                totalMetrics.revenueQD += revenueQD;
                 if (isTraGop) totalMetrics.revenueTraCham += revenue;
             } else {
                 totalMetrics.quantityCK += quantity;
-                totalMetrics.revenueCK += revenue; totalMetrics.revenueQDCK += revenueQD;
+                totalMetrics.revenueCK += revenue; 
+                totalMetrics.revenueQDCK += revenueQD;
                 if (isTraGop) totalMetrics.revenueTraChamCK += revenue;
             }
 
             let currentLevel = rootMap;
-
             activeDimensionIds.forEach((dimId, index) => {
                 const key = getDimensionValue(row, dimId);
                 const stableId = `${index}_${key}`;
@@ -7431,7 +8013,18 @@ export const inventoryHelper = {
         };
 
         processedData.forEach(row => processRowIntoTree(row, false));
-        if (isCompareMode && $ycxDataThangTruoc?.length > 0) $ycxDataThangTruoc.forEach(row => processRowIntoTree(row, true));
+        
+        if (isCompareMode && $ycxDataThangTruoc?.length > 0) {
+            $ycxDataThangTruoc.forEach(row => {
+                const rd = getRowDate(row);
+                if (rd) {
+                    const rowMonthStr = `${String(rd.getMonth() + 1).padStart(2, '0')}/${rd.getFullYear()}`;
+                    if (rowMonthStr === targetPrevMonthStr) {
+                        processRowIntoTree(row, true);
+                    }
+                }
+            });
+        }
 
         const convertMapToArray = (map) => Array.from(map.values()).map(item => {
             const newItem = { ...item };
@@ -7439,10 +8032,12 @@ export const inventoryHelper = {
                 newItem.children = convertMapToArray(newItem.children);
                 newItem.children.sort((a, b) => b.revenue - a.revenue);
             } else delete newItem.children;
+       
             return newItem;
         }).sort((a, b) => b.revenue - a.revenue);
-
+        
         let finalTree = convertMapToArray(rootMap);
+        
         if (isVelocityMode && velocityDays > 1) {
             finalTree = transformVelocityTree(finalTree, velocityDays);
             const div = (v) => parseFloat(((v || 0) / velocityDays).toFixed(1));
@@ -7476,7 +8071,7 @@ export const inventoryHelper = {
                     if (filterValues !== undefined && !filterValues.includes(getDimensionValue(row, filterKey))) { isValid = false; break; }
                 }
                 if (isValid) {
-                    const val = getDimensionValue(row, targetDim.id);
+                     const val = getDimensionValue(row, targetDim.id);
                     if (val && val !== '(Trống)') uniqueValues.add(val);
                 }
             });
@@ -7502,7 +8097,7 @@ export const inventoryHelper = {
     }
 
     const getCurrentMinusOne = () => Math.max(1, new Date().getDate() - 1);
-
+    
     function toggleVelocityMode() {
         isVelocityMode = !isVelocityMode;
         if (isVelocityMode) { velocityDays = getCurrentMinusOne();
@@ -7528,7 +8123,7 @@ export const inventoryHelper = {
         <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Thời gian dữ liệu</span>
             <div class="flex items-center bg-gray-50 rounded border border-gray-300 px-2 py-1">
-                <input type="date" bind:value={dateFilter.from} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
+                 <input type="date" bind:value={dateFilter.from} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
                 <span class="mx-2 text-gray-400">➝</span>
                 <input type="date" bind:value={dateFilter.to} class="bg-transparent text-sm text-gray-700 outline-none w-32" />
             </div>
@@ -7537,7 +8132,7 @@ export const inventoryHelper = {
         <div class="w-px h-10 bg-gray-200 mx-2"></div>
 
         <div class="flex items-center gap-3 h-full pb-1">
-            <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
+             <span class="text-sm font-semibold text-gray-700">Theo dõi sức bán:</span>
             <button class="{isVelocityMode ? 'bg-orange-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" on:click={toggleVelocityMode}>
                 <span class="{isVelocityMode ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
             </button>
@@ -7554,18 +8149,14 @@ export const inventoryHelper = {
         {#if isVelocityMode}
             <div class="flex items-center gap-2 h-full pb-1 animate-fade-in border-l border-gray-200 pl-4 ml-2">
                 <button on:click={() => velocityDays = getCurrentMinusOne()} class="px-3 py-1 text-xs font-bold rounded border bg-green-50 text-green-700 border-green-200 hover:bg-green-100">Hiện tại ({getCurrentMinusOne()})</button>
-                <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
+                 <div class="flex items-center ml-2 bg-white rounded border border-gray-300 px-2 py-1">
                     <span class="text-xs text-gray-400 mr-1">Khác:</span>
                     <input type="number" min="1" class="w-10 text-sm font-bold text-center outline-none text-orange-700" bind:value={velocityDays} />
                 </div>
-            </div>
-            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={(e) => { alertDays = e.detail.alertDays;
-if(inventoryIndex) calculateData(); }} />
+             </div>
+            <InventoryToolbar {isVelocityMode} on:upload={handleInventoryUpload} on:settingsChange={(e) => { alertDays = e.detail.alertDays; if(inventoryIndex) calculateData(); }} />
         {/if}
     </div>
-
-    {#if isCompareMode && !isVelocityMode}
-    {/if}
 
     <details class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 capture-hide" style="cursor: pointer;">
         <summary class="text-xs font-bold text-gray-500 uppercase select-none outline-none flex items-center gap-1.5">
@@ -7583,7 +8174,7 @@ if(inventoryIndex) calculateData(); }} />
 
     <LuykeCategoryTreeTable 
         data={treeData} 
-        {totalMetrics}
+         {totalMetrics}
         allDimensions={displayedDimensions} 
         activeIds={activeDimensionIds}
         {filterOptions}
@@ -7591,6 +8182,8 @@ if(inventoryIndex) calculateData(); }} />
         {isVelocityMode} 
         {isCompareMode}
         {columnSettings}
+        {elapsedDays}
+        {daysInMonth}
         bind:sortKey
         bind:sortDirection
         bind:expandedRows={expandedRows}
@@ -7599,7 +8192,7 @@ if(inventoryIndex) calculateData(); }} />
             const { key, selected } = e.detail; 
             if (selected === undefined) { const nf = {...currentFilters}; delete nf[key]; currentFilters = nf; } 
             else currentFilters = {...currentFilters, [key]: selected};
-        }}
+         }}
         hasInventoryData={hasInventoryData}
     />
 </div>
@@ -7855,7 +8448,7 @@ if(inventoryIndex) calculateData(); }} />
 
 >>> FILE_START: src/components/luyke/sub/ThiDuaPersonalView.svelte
 <script>
-    import { afterUpdate, onDestroy } from 'svelte';
+    import { afterUpdate, onDestroy, onMount } from 'svelte';
     import PersonalTargetCard from './PersonalTargetCard.svelte';
     import { selectedWarehouse } from '../../../stores.js';
     import { datasyncService } from '../../../services/datasync.service.js';
@@ -7863,37 +8456,65 @@ if(inventoryIndex) calculateData(); }} />
     export let sortedData = [];
     export let totalEmployees = 1;
 
-    let targetRatio = 100;
+    let globalRatio = 100;
+    let categoryRatios = {};
     let saveTimeout;
+    let lastLoadedWarehouse = null;
 
-    // QUY TẮC SORTING KÉP:
-    // 1. Nhóm 'doanhThu' luôn nổi lên trên, 'soLuong' chìm xuống dưới
-    // 2. Trong mỗi nhóm, sắp xếp giá trị 'target' từ cao xuống thấp
     $: sortedAndGroupedData = [...sortedData].sort((a, b) => {
-        if (a.type !== b.type) {
-            return a.type === 'doanhThu' ? -1 : 1;
-        }
+        if (a.type !== b.type) return a.type === 'doanhThu' ? -1 : 1;
         const targetA = parseFloat(a.target) || 0;
         const targetB = parseFloat(b.target) || 0;
         return targetB - targetA;
     });
 
-    // Lắng nghe store kho để tải targetRatio trên Cloud về
-    $: if ($selectedWarehouse) {
-        loadRatio();
+    // Bắt sóng khi Đóng Modal để cập nhật UI ngay lập tức
+    onMount(() => {
+        const syncListener = (e) => { 
+            const { category, ratio } = e.detail;
+            categoryRatios[category] = ratio;
+            categoryRatios = { ...categoryRatios }; // Kích hoạt Reactivity của Svelte
+            
+            const cacheKey = `allTargetRatios_${$selectedWarehouse}`;
+            sessionStorage.setItem(cacheKey, JSON.stringify({ global: globalRatio, categories: categoryRatios }));
+        };
+        window.addEventListener('sync-category-ratio', syncListener);
+        return () => window.removeEventListener('sync-category-ratio', syncListener);
+    });
+
+    // Chỉ tải từ Cloud 1 lần duy nhất khi đổi kho
+    $: if ($selectedWarehouse && $selectedWarehouse !== lastLoadedWarehouse) {
+        loadRatios();
     }
 
-    async function loadRatio() {
+    async function loadRatios() {
         if (!$selectedWarehouse) return;
-        targetRatio = await datasyncService.loadPersonalTargetRatio($selectedWarehouse);
+        const cacheKey = `allTargetRatios_${$selectedWarehouse}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+            try {
+                const parsed = JSON.parse(cached);
+                globalRatio = parsed.global || 100;
+                categoryRatios = parsed.categories || {};
+            } catch(e) {}
+        }
+        
+        lastLoadedWarehouse = $selectedWarehouse; 
+        const ratios = await datasyncService.loadAllTargetRatios($selectedWarehouse);
+        globalRatio = ratios.global;
+        categoryRatios = ratios.categories;
+        sessionStorage.setItem(cacheKey, JSON.stringify(ratios));
     }
 
-    // Debounce save: Cứ kéo là UI nhảy tức thì, dừng kéo 500ms mới đẩy lên cloud
+    // Kéo thanh tổng thì lưu vào Global
     function handleSliderChange() {
         clearTimeout(saveTimeout);
+        const cacheKey = `allTargetRatios_${$selectedWarehouse}`;
+        sessionStorage.setItem(cacheKey, JSON.stringify({ global: globalRatio, categories: categoryRatios }));
+        
         saveTimeout = setTimeout(async () => {
             if ($selectedWarehouse) {
-                await datasyncService.savePersonalTargetRatio($selectedWarehouse, targetRatio);
+                await datasyncService.savePersonalTargetRatio($selectedWarehouse, globalRatio);
             }
         }, 500);
     }
@@ -7903,38 +8524,45 @@ if(inventoryIndex) calculateData(); }} />
     });
 
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
+    const today = new Date();
+    const currentMonthStr = `${today.getMonth() + 1}/${today.getFullYear()}`;
 </script>
 
 <div class="mb-5 bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-xl p-4 flex flex-col md:flex-row flex-nowrap justify-between items-center shadow-sm gap-4">
-    <div class="flex items-center gap-3 min-w-0 capture-target-header-left">
+    <div class="flex items-center gap-3 min-w-0 flex-grow capture-target-header-left">
         <div class="bg-indigo-600 w-8 h-8 rounded-lg text-white shadow-md flex items-center justify-center shrink-0 capture-target-icon-box">
             <i data-feather="target" class="w-4 h-4"></i>
         </div>
         <div class="capture-target-text-group">
-            <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title">
-                Target cá nhân
+            <div class="text-sm sm:text-base font-black text-indigo-900 uppercase capture-target-title truncate">
+                Target thi đua NV Tháng {currentMonthStr} <span class="text-indigo-300 mx-1">|</span> <span class="text-orange-600">{sortedData.length} Chương trình</span>
             </div>
             <p class="text-[11px] sm:text-xs text-indigo-600/80 mt-0.5 font-medium truncate capture-target-sub">Chia đều cho tổng nhân sự.</p>
         </div>
     </div>
     
-    <div class="flex-grow flex flex-col items-center justify-center px-4 py-2 rounded-lg border border-indigo-100/50 capture-hide">
+    <div class="text-center bg-white px-4 py-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center shrink-0 min-w-[100px]">
+        <span class="text-[9px] uppercase font-bold text-gray-400">Tổng nhân sự</span>
+        <span class="text-2xl font-black text-indigo-700 leading-none">{totalEmployees} <span class="text-xs font-bold text-gray-500">NV</span></span>
+    </div>
+
+    <div class="flex flex-col items-end justify-center px-4 py-2 rounded-lg bg-white border border-indigo-200 shadow-sm shrink-0 capture-hide">
         <div class="flex items-center gap-2 text-indigo-800 mb-1">
             <i data-feather="crosshair" class="w-3.5 h-3.5"></i>
-            <span class="text-[10px] font-black uppercase tracking-wider">Mục tiêu hoàn thành (%)</span>
+            <span class="text-[10px] font-black uppercase tracking-wider">Mục tiêu chung (%)</span>
         </div>
-        <div class="flex items-center gap-2 w-full max-w-[250px]">
+        <div class="flex items-center gap-2 w-full max-w-[200px]">
             <input 
                 type="range" 
-                min="50" max="200" step="5"
-                bind:value={targetRatio}
+                min="50" max="500" step="5"
+                bind:value={globalRatio}
                 on:input={handleSliderChange}
                 class="flex-grow h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
             >
             <div class="relative flex-shrink-0">
                 <input 
                     type="number" 
-                    bind:value={targetRatio}
+                    bind:value={globalRatio}
                     on:input={handleSliderChange}
                     class="w-12 py-0.5 px-1 text-center font-bold text-indigo-700 bg-white border border-indigo-200 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
                 >
@@ -7942,24 +8570,17 @@ if(inventoryIndex) calculateData(); }} />
             </div>
         </div>
     </div>
-
-    <div class="text-center bg-white px-4 py-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center shrink-0 min-w-[100px]">
-        <span class="text-[9px] uppercase font-bold text-gray-400">Tổng nhân sự</span>
-        <span class="text-2xl font-black text-indigo-700 leading-none">{totalEmployees} <span class="text-xs font-bold text-gray-500">NV</span></span>
-    </div>
 </div>
 
 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 personal-target-grid">
     {#each sortedAndGroupedData as item}
-        <PersonalTargetCard {item} empCount={totalEmployees} {targetRatio} />
+        <!-- [PHẪU THUẬT LOGIC]: Bơm ưu tiên Tỷ lệ của riêng Ngành hàng (nếu có), không có thì lấy Global -->
+        <PersonalTargetCard {item} empCount={totalEmployees} targetRatio={categoryRatios[item.name] || globalRatio} />
     {/each}
 </div>
 
 <style>
-    /* Ẩn khối thanh trượt khi chụp ảnh màn hình để bức ảnh tinh gọn (như hình mẫu) */
-    :global(.capture-container .capture-hide) {
-        display: none !important;
-    }
+    :global(.capture-container .capture-hide) { display: none !important; }
 </style>
 <<< FILE_END: src/components/luyke/sub/ThiDuaPersonalView.svelte
 
