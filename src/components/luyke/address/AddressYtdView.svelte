@@ -5,6 +5,7 @@
     let selectedMonths = [];
     let allMonths = [];
     let showMonthDropdown = false;
+    let hasInitializedMonths = false; // [PHẪU THUẬT]: Cờ kiểm soát auto-select
 
     // 1. Gộp toàn bộ data 2026 từ 2 store
     $: combinedData = [...($ycxDataThangTruoc || []), ...($ycxData || [])];
@@ -63,8 +64,11 @@
             });
             allMonths = Array.from(mSet).sort((a, b) => a - b);
             
-            if (selectedMonths.length === 0 && allMonths.length > 0) {
+            // [PHẪU THUẬT]: Chỉ gán full mảng ở lần khởi tạo đầu tiên.
+            // Chặn đứng hiện tượng bumerang khi người dùng cố ý xóa rỗng mảng.
+            if (!hasInitializedMonths && allMonths.length > 0) {
                 selectedMonths = [...allMonths];
+                hasInitializedMonths = true;
             }
         }
     }

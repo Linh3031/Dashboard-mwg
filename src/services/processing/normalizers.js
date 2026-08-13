@@ -1,3 +1,4 @@
+// src/services/processing/normalizers.js
 import { config } from '../../config.js';
 import { debugInfo, rawGioCongData } from '../../stores.js';
 import { helpers } from './helpers.js';
@@ -156,7 +157,10 @@ export const normalizers = {
         }
 
         const normalizedData = rawData.map((row, index) => {
-            const newRow = {};
+            // [PHẪU THUẬT LOGIC]: Kế thừa nguyên trạng toàn bộ Object row ban đầu.
+            // Tránh tình trạng gọt bỏ nhầm các cột địa chỉ bị lệch chuẩn tên.
+            const newRow = { ...row }; 
+            
             for (const key in foundMapping) {
                 if (foundMapping[key]) {
                     if (key === 'maNV' || key === 'hoTen' || key === 'maSanPham') {

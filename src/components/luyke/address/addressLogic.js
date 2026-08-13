@@ -1,6 +1,6 @@
 // src/components/luyke/address/addressLogic.js
 
-import { buildDictionary, parseAddress } from './addressParser.js';
+import { buildDictionary, parseAddress, extractAddressString } from './addressParser.js';
 
 function addStatsToNode(node, sl, dt, nhomHang, tenSanPham) {
     node.soLuong += sl;
@@ -33,62 +33,70 @@ export function buildAddressTree(ycxData, validHtxArray) {
         soLuong: 0, doanhThu: 0, products: {}, children: {} 
     };
 
+    if (!ycxData || ycxData.length === 0) return rootNode;
+
     const dictionary = buildDictionary(ycxData);
 
+    console.group("%c🔍 QUÉT LÕI ADDRESS LOGIC (TREE VIEW 3 TẦNG)", "color: white; background: #e91e63; font-size: 13px; padding: 4px; font-weight: bold;");
+    ycxData.slice(0, 3).forEach((row, i) => {
+        console.log(`\n%c--- DÒNG ${i + 1} ---`, "color: yellow; background: #333; padding: 2px;");
+        const diaChiRaw = extractAddressString(row);
+        console.log("1. Địa chỉ thô lấy được:", diaChiRaw || "RỖNG");
+        console.log("2. Kết quả tách (3 Tầng):", parseAddress(diaChiRaw, dictionary));
+    });
+    console.groupEnd();
+
     ycxData.forEach(row => {
-        const htx = row.hinhThucXuat;
+        const htx = row.hinhThucXuat || row['Hình thức xuất'];
         
-        // --- [SURGICAL FIX]: BỘ LỌC ĐỒNG BỘ VỚI TAB CHI TIẾT YCX ---
-        const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || "").trim();
-        const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || "").trim();
-        const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || "").trim();
-        const xuat = (row.trangThaiXuat || row.TRANG_THAI_XUAT || "").trim();
+        const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || row['Trạng thái thu tiền'] || "").trim();
+        const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || row['Trạng thái hủy'] || "").trim();
+        const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || row['Tình trạng nhập trả của sản phẩm đổi với sản phẩm chính'] || "").trim();
+        const xuat = (row.trangThaiXuat || row.TRANG_THAI_XUAT || row['Trạng thái xuất'] || "").trim();
 
         const isThuTien = thuTien === 'Đã thu';
         const isChuaHuy = huy === 'Chưa hủy';
         const isChuaTra = tra === 'Chưa trả';
-        const isDaXuat = xuat === 'Đã xuất';
+        const isDaXuat = (!xuat || xuat === 'Đã xuất' || xuat === 'Đã giao');
         
         const isValidRow = isThuTien && isChuaHuy && isChuaTra && isDaXuat;
-        // -------------------------------------------------------------
 
-        // Chỉ cộng tiền khi Hình thức xuất hợp lệ VÀ Đơn hàng thỏa mãn bộ lọc chặt
         if (validHtx.has(htx) && isValidRow) {
-            const sl = (parseInt(String(row.soLuong || "0"), 10) || 0);
-            const dt = (row.revenue !== undefined ? row.revenue : (parseFloat(String(row.thanhTien).replace(/,/g, '')) || 0));
-            const nhomHang = String(row.nhomHang || 'Khác').trim();
-            const tenSanPham = String(row.tenSanPham || row.tenHang || 'Không xác định').trim();
+            const sl = (parseInt(String(row.soLuong || row['Số lượng'] || "0"), 10) || 0);
+            const dt = (row.revenue !== undefined ? row.revenue : (parseFloat(String(row.thanhTien || row['Giá bán'] || "0").replace(/,/g, '')) || 0));
+            const nhomHang = String(row.nhomHang || row['Nhóm hàng'] || 'Khác').trim();
+            const tenSanPham = String(row.tenSanPham || row.tenHang || row['Tên sản phẩm'] || 'Không xác định').trim();
 
             addStatsToNode(rootNode, sl, dt, nhomHang, tenSanPham);
 
-            const parsedAddr = parseAddress(row.diaChi, dictionary);
+            let diaChiRaw = extractAddressString(row);
+            const parsedAddr = parseAddress(diaChiRaw, dictionary);
             
             if (parsedAddr) {
-                const { tinhThanh, quanHuyen, xaPhuong, apDuong } = parsedAddr;
+                let { tinhThanh, xaPhuong, apDuong } = parsedAddr;
+                
+                if (xaPhuong === '-') xaPhuong = '[Chưa rõ Phường/Xã]';
+                if (apDuong === '-') apDuong = '[Chưa rõ Địa chỉ chi tiết]';
 
+                // TẦNG 1: TỈNH / THÀNH PHỐ
                 if (!rootNode.children[tinhThanh]) {
                     rootNode.children[tinhThanh] = { id: tinhThanh, name: tinhThanh, level: 1, soLuong: 0, doanhThu: 0, products: {}, children: {} };
                 }
                 const tNode = rootNode.children[tinhThanh];
                 addStatsToNode(tNode, sl, dt, nhomHang, tenSanPham);
 
-                const idHuyen = `${tinhThanh}|${quanHuyen}`;
-                if (!tNode.children[quanHuyen]) {
-                    tNode.children[quanHuyen] = { id: idHuyen, name: quanHuyen, level: 2, soLuong: 0, doanhThu: 0, products: {}, children: {} };
+                // TẦNG 2: PHƯỜNG / XÃ
+                const idXa = `${tinhThanh}|${xaPhuong}`;
+                if (!tNode.children[xaPhuong]) {
+                    tNode.children[xaPhuong] = { id: idXa, name: xaPhuong, level: 2, soLuong: 0, doanhThu: 0, products: {}, children: {} };
                 }
-                const hNode = tNode.children[quanHuyen];
-                addStatsToNode(hNode, sl, dt, nhomHang, tenSanPham);
-
-                const idXa = `${idHuyen}|${xaPhuong}`;
-                if (!hNode.children[xaPhuong]) {
-                    hNode.children[xaPhuong] = { id: idXa, name: xaPhuong, level: 3, soLuong: 0, doanhThu: 0, products: {}, children: {} };
-                }
-                const xNode = hNode.children[xaPhuong];
+                const xNode = tNode.children[xaPhuong];
                 addStatsToNode(xNode, sl, dt, nhomHang, tenSanPham);
 
+                // TẦNG 3: ĐỊA CHỈ CHI TIẾT (ẤP, ĐƯỜNG, QUẬN, SỐ NHÀ...)
                 const idAp = `${idXa}|${apDuong}`;
                 if (!xNode.children[apDuong]) {
-                    xNode.children[apDuong] = { id: idAp, name: apDuong, level: 4, soLuong: 0, doanhThu: 0, products: {}, children: null };
+                    xNode.children[apDuong] = { id: idAp, name: apDuong, level: 3, soLuong: 0, doanhThu: 0, products: {}, children: null };
                 }
                 const aNode = xNode.children[apDuong];
                 addStatsToNode(aNode, sl, dt, nhomHang, tenSanPham);

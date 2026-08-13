@@ -6,25 +6,59 @@ export function normalizeName(name, isProvince = false) {
     let cleanName = name.trim();
 
     if (isProvince) {
-        // Cạo sạch chữ Tỉnh, Thành phố, TP. ở đầu
         cleanName = cleanName.replace(/^(Tỉnh|Thành phố|Thành Phố|TP\.?)\s+/i, '').trim();
     }
 
-    // Viết hoa chữ cái đầu cho đẹp (an giang -> An Giang)
     cleanName = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
     
     return cleanName;
 }
 
-// --- [BƯỚC 2]: MÁY HỌC TỪ ĐIỂN (SELF-LEARNING) ---
+// --- [BƯỚC 1.5]: HÀM TRÍCH XUẤT ĐỊA CHỈ SIÊU HẠNG (V5.0 - CHỐNG KẺ MẠO DANH) ---
+export function extractAddressString(row) {
+    if (!row) return '';
+    
+    let candidates = [];
+    
+    // 1. Quét tìm tất cả các cột có chữ "dia chi" hoặc "address"
+    Object.keys(row).forEach(k => {
+        if (!k) return;
+        const clean = k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/đ/g, "d").replace(/\s/g, "");
+        if (clean.includes('diachi') || clean.includes('address') || clean.includes('diachikhachhang')) {
+            candidates.push(String(row[k] || '').trim());
+        }
+    });
+
+    // 2. Nuclear Option: Quét toàn bộ các ô trong dòng, tìm chuỗi có đặc điểm của địa chỉ
+    Object.values(row).forEach(v => {
+        const val = String(v || '').trim();
+        if (val.length > 15 && val.includes(',') && (val.includes('Tỉnh') || val.includes('Xã') || val.includes('Phường') || val.includes('Thành phố') || val.includes('TP'))) {
+            candidates.push(val);
+        }
+    });
+
+    // 3. Thanh trừng kẻ mạo danh: Loại bỏ các chuỗi rác như "x", "ĐMX", chuỗi quá ngắn
+    candidates = candidates.filter(c => c.length > 5);
+
+    if (candidates.length === 0) return '';
+
+    // 4. Chọn người chiến thắng: Ưu tiên chuỗi dài nhất (chắc chắn là địa chỉ thật)
+    candidates.sort((a, b) => b.length - a.length);
+    
+    return candidates[0];
+}
+
+// --- [BƯỚC 2]: MINI AI - MÁY HỌC TỪ ĐIỂN (SELF-LEARNING) ---
 export function buildDictionary(dataRows) {
     const provinces = new Set();
     
     ['Hồ Chí Minh', 'Hà Nội', 'An Giang', 'Cần Thơ', 'Kiên Giang', 'Đồng Tháp'].forEach(p => provinces.add(p));
 
     dataRows.forEach(row => {
-        if (!row.diaChi || typeof row.diaChi !== 'string') return;
-        let addr = row.diaChi.trim();
+        let diaChiRaw = extractAddressString(row);
+
+        if (!diaChiRaw || typeof diaChiRaw !== 'string') return;
+        let addr = diaChiRaw.trim();
         if (addr.includes('Hạn thanh toán') || addr.startsWith('***')) return;
         
         addr = addr.replace(/(,\s*)?(Việt Nam|Viet Nam|VN)\.?\s*$/i, '');
@@ -43,7 +77,7 @@ export function buildDictionary(dataRows) {
     };
 }
 
-// --- [BƯỚC 3]: THUẬT TOÁN TÁCH ĐỊA CHỈ THÔNG MINH ---
+// --- [BƯỚC 3]: THUẬT TOÁN TÁCH ĐỊA CHỈ THÔNG MINH (3 TẦNG: TỈNH -> PHƯỜNG -> CHI TIẾT) ---
 export function parseAddress(rawDiaChi, dict) {
     if (!rawDiaChi || typeof rawDiaChi !== 'string') return null;
     
@@ -55,7 +89,7 @@ export function parseAddress(rawDiaChi, dict) {
     addr = addr.replace(/\b(TP\.?\s*HCM|TPHCM)\b/ig, 'Thành phố Hồ Chí Minh');
     addr = addr.replace(/\b(TP\.?\s*HN|TPHN)\b/ig, 'Thành phố Hà Nội');
 
-    let apDuong = '-', xaPhuong = '-', quanHuyen = '-', tinhThanh = '-';
+    let apDuong = '-', xaPhuong = '-', tinhThanh = '-';
 
     if (!addr.includes(',')) {
         for (let p of dict.provinces) {
@@ -95,21 +129,44 @@ export function parseAddress(rawDiaChi, dict) {
     parts = uniqueParts.map(p => p.raw);
 
     if (parts.length > 0 && tinhThanh === '-') tinhThanh = parts.pop();
-    if (parts.length > 0) quanHuyen = parts.pop();
-    if (parts.length > 0) xaPhuong = parts.pop();
     
+    let leftoverParts = [];
+    while (parts.length > 0) {
+        let p = parts.pop();
+        let lowerP = p.toLowerCase();
+        
+        const isPhuong = /^[\s\.\-,_]*(phường|xã|thị trấn|p\.|x\.)\s+/i.test(lowerP);
+
+        if (isPhuong && xaPhuong === '-') {
+            xaPhuong = p;
+        } else {
+            // Đẩy tất cả những gì không phải Phường/Xã vào chuỗi chi tiết
+            leftoverParts.unshift(p);
+        }
+    }
+
     if (pivotMatch) {
-        if (parts.length > 0) apDuong = parts.join(', ') + (apDuong !== '-' ? ', ' + apDuong : '');
+        let extraApDuong = leftoverParts.join(', ');
+        if (extraApDuong) {
+            apDuong = extraApDuong + (apDuong !== '-' ? ', ' + apDuong : '');
+        }
     } else {
-        if (parts.length > 0) apDuong = parts.join(', ');
+        if (leftoverParts.length > 0) {
+            apDuong = leftoverParts.join(', ');
+        }
     }
 
     tinhThanh = normalizeName(tinhThanh, true);
-    quanHuyen = normalizeName(quanHuyen, false);
     xaPhuong = normalizeName(xaPhuong, false);
 
+    // Chuẩn hóa chuỗi địa chỉ chi tiết (xóa dấu phẩy thừa ở đầu/cuối)
+    if (apDuong && apDuong !== '-') {
+        apDuong = apDuong.replace(/^[\s,]+|[\s,]+$/g, '').trim();
+    }
+    if (!apDuong) apDuong = '-';
+
     if (tinhThanh !== '-' || xaPhuong !== '-') {
-        return { tinhThanh, quanHuyen, xaPhuong, apDuong };
+        return { tinhThanh, xaPhuong, apDuong };
     }
     return null;
 }
