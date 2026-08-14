@@ -5,23 +5,74 @@
     import AddressProductDetail from './address/AddressProductDetail.svelte';
 
     export let ycxData = [];
+    export let pendingMappings = {}; 
 
     let rootTree = null;
     let selectedNode = null;
+    let cleanLocations = []; 
 
-    // Khi ycxData thay đổi, build lại cây địa chỉ
+    // KHỐI 1: CHỈ CHẠY KHI DATA HOẶC MAPPING ĐỔI
     $: {
         if (ycxData && ycxData.length > 0) {
-            rootTree = buildAddressTree(ycxData, config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU);
-            // Mặc định chọn Root
-            if (!selectedNode || selectedNode.id === 'root') {
+            rootTree = buildAddressTree(ycxData, config.DEFAULT_DATA.HINH_THUC_XUAT_TINH_DOANH_THU, pendingMappings);
+            
+            const locations = [];
+            if (rootTree && rootTree.children) {
+                Object.values(rootTree.children).forEach(tinhNode => {
+                    if (tinhNode.id !== 'empty' && tinhNode.children) {
+                        Object.values(tinhNode.children).forEach(xaNode => {
+                            if (!xaNode.name.includes('[Chưa rõ')) {
+                                locations.push({
+                                    value: `${tinhNode.id}|${xaNode.name}`,
+                                    label: `${tinhNode.name} - ${xaNode.name}`
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+            cleanLocations = locations.sort((a, b) => a.label.localeCompare(b.label));
+
+            // [BẮT CẦU UX]: Xử lý hiện tượng Node bốc hơi
+            if (selectedNode) {
+                let found = findNodeById(rootTree, selectedNode.id);
+                
+                // Nếu Node cũ không tồn tại nữa và nó vừa được khai báo gộp -> Lái UI sang Node Đích
+                if (!found && pendingMappings[selectedNode.name]) {
+                    const targetId = pendingMappings[selectedNode.name];
+                    found = findNodeById(rootTree, targetId);
+                }
+                selectedNode = found || rootTree;
+            } else {
                 selectedNode = rootTree;
             }
         }
     }
 
+    function findNodeById(node, id) {
+        if (!node) return null;
+        if (node.id === id) return node;
+        if (node.children) {
+            for (let key in node.children) {
+                let found = findNodeById(node.children[key], id);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    // KHỐI 2: CHỈ SET BIẾN, KHÔNG RE-RENDER CÂY
     function handleSelectNode(node) {
         selectedNode = node;
+    }
+
+    function handleMappingChange(rawName, mappedValue) {
+        if (!mappedValue) {
+            delete pendingMappings[rawName];
+        } else {
+            pendingMappings[rawName] = mappedValue;
+        }
+        pendingMappings = { ...pendingMappings };
     }
 </script>
 
@@ -45,7 +96,13 @@
     </div>
 
     <div class="w-full md:w-2/3 h-full">
-        <AddressProductDetail {selectedNode} />
+        <!-- Chú ý: Component AddressProductDetail dùng bản local của bạn (có chứa nút Dropdown) -->
+        <AddressProductDetail 
+            {selectedNode} 
+            {cleanLocations}
+            {pendingMappings}
+            onMappingChange={handleMappingChange}
+        />
     </div>
     
 </div>

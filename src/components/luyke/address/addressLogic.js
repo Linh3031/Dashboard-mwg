@@ -1,5 +1,3 @@
-// src/components/luyke/address/addressLogic.js
-
 import { buildDictionary, parseAddress, extractAddressString } from './addressParser.js';
 
 function addStatsToNode(node, sl, dt, nhomHang, tenSanPham) {
@@ -20,7 +18,7 @@ function addStatsToNode(node, sl, dt, nhomHang, tenSanPham) {
     node.products[nhomHang].productDetails[spKey].doanhThu += dt;
 }
 
-export function buildAddressTree(ycxData, validHtxArray) {
+export function buildAddressTree(ycxData, validHtxArray, mappingDict = {}) {
     const validHtx = new Set(validHtxArray || []);
     
     const rootNode = { 
@@ -37,29 +35,14 @@ export function buildAddressTree(ycxData, validHtxArray) {
 
     const dictionary = buildDictionary(ycxData);
 
-    console.group("%c🔍 QUÉT LÕI ADDRESS LOGIC (TREE VIEW 3 TẦNG)", "color: white; background: #e91e63; font-size: 13px; padding: 4px; font-weight: bold;");
-    ycxData.slice(0, 3).forEach((row, i) => {
-        console.log(`\n%c--- DÒNG ${i + 1} ---`, "color: yellow; background: #333; padding: 2px;");
-        const diaChiRaw = extractAddressString(row);
-        console.log("1. Địa chỉ thô lấy được:", diaChiRaw || "RỖNG");
-        console.log("2. Kết quả tách (3 Tầng):", parseAddress(diaChiRaw, dictionary));
-    });
-    console.groupEnd();
-
     ycxData.forEach(row => {
         const htx = row.hinhThucXuat || row['Hình thức xuất'];
-        
         const thuTien = (row.trangThaiThuTien || row.TRANG_THAI_THU_TIEN || row['Trạng thái thu tiền'] || "").trim();
         const huy = (row.trangThaiHuy || row.TRANG_THAI_HUY || row['Trạng thái hủy'] || "").trim();
         const tra = (row.tinhTrangTra || row.TINH_TRANG_TRA || row['Tình trạng nhập trả của sản phẩm đổi với sản phẩm chính'] || "").trim();
         const xuat = (row.trangThaiXuat || row.TRANG_THAI_XUAT || row['Trạng thái xuất'] || "").trim();
 
-        const isThuTien = thuTien === 'Đã thu';
-        const isChuaHuy = huy === 'Chưa hủy';
-        const isChuaTra = tra === 'Chưa trả';
-        const isDaXuat = (!xuat || xuat === 'Đã xuất' || xuat === 'Đã giao');
-        
-        const isValidRow = isThuTien && isChuaHuy && isChuaTra && isDaXuat;
+        const isValidRow = thuTien === 'Đã thu' && huy === 'Chưa hủy' && tra === 'Chưa trả' && (!xuat || xuat === 'Đã xuất' || xuat === 'Đã giao');
 
         if (validHtx.has(htx) && isValidRow) {
             const sl = (parseInt(String(row.soLuong || row['Số lượng'] || "0"), 10) || 0);
@@ -69,23 +52,50 @@ export function buildAddressTree(ycxData, validHtxArray) {
 
             addStatsToNode(rootNode, sl, dt, nhomHang, tenSanPham);
 
-            let diaChiRaw = extractAddressString(row);
-            const parsedAddr = parseAddress(diaChiRaw, dictionary);
+            // [PHẪU THUẬT LOGIC]: Lưu Cache chống giật CPU
+            if (row._cachedParsedAddr === undefined) {
+                row._cachedDiaChiRaw = extractAddressString(row);
+                row._cachedParsedAddr = parseAddress(row._cachedDiaChiRaw, dictionary);
+            }
             
+            let parsedAddr = row._cachedParsedAddr ? { ...row._cachedParsedAddr } : null;
+            
+            let tinhThanh = parsedAddr ? parsedAddr.tinhThanh : '-';
+            let xaPhuong = parsedAddr ? parsedAddr.xaPhuong : '-';
+            let apDuong = parsedAddr ? parsedAddr.apDuong : '-';
+
+            let nodeNameEmpty = (!parsedAddr || (tinhThanh === '-' && xaPhuong === '-')) ? 'Trống / Sai định dạng' : null;
+            
+            // [PHẪU THUẬT LOGIC]: Tiêu diệt "Bóng ma khoảng trắng" bằng cách ép Trim() mọi Key
+            let targetMapKey = null;
+            const searchKeys = [apDuong, xaPhuong, tinhThanh, nodeNameEmpty].map(k => k ? k.trim() : null);
+            
+            for (let mapKey in mappingDict) {
+                if (searchKeys.includes(mapKey.trim())) {
+                    targetMapKey = mappingDict[mapKey];
+                    break;
+                }
+            }
+
+            if (targetMapKey) {
+                const parts = targetMapKey.split('|');
+                if (parts.length === 2) {
+                    tinhThanh = parts[0];
+                    xaPhuong = parts[1];
+                    parsedAddr = true; 
+                }
+            }
+
             if (parsedAddr) {
-                let { tinhThanh, xaPhuong, apDuong } = parsedAddr;
-                
                 if (xaPhuong === '-') xaPhuong = '[Chưa rõ Phường/Xã]';
                 if (apDuong === '-') apDuong = '[Chưa rõ Địa chỉ chi tiết]';
 
-                // TẦNG 1: TỈNH / THÀNH PHỐ
                 if (!rootNode.children[tinhThanh]) {
                     rootNode.children[tinhThanh] = { id: tinhThanh, name: tinhThanh, level: 1, soLuong: 0, doanhThu: 0, products: {}, children: {} };
                 }
                 const tNode = rootNode.children[tinhThanh];
                 addStatsToNode(tNode, sl, dt, nhomHang, tenSanPham);
 
-                // TẦNG 2: PHƯỜNG / XÃ
                 const idXa = `${tinhThanh}|${xaPhuong}`;
                 if (!tNode.children[xaPhuong]) {
                     tNode.children[xaPhuong] = { id: idXa, name: xaPhuong, level: 2, soLuong: 0, doanhThu: 0, products: {}, children: {} };
@@ -93,7 +103,6 @@ export function buildAddressTree(ycxData, validHtxArray) {
                 const xNode = tNode.children[xaPhuong];
                 addStatsToNode(xNode, sl, dt, nhomHang, tenSanPham);
 
-                // TẦNG 3: ĐỊA CHỈ CHI TIẾT (ẤP, ĐƯỜNG, QUẬN, SỐ NHÀ...)
                 const idAp = `${idXa}|${apDuong}`;
                 if (!xNode.children[apDuong]) {
                     xNode.children[apDuong] = { id: idAp, name: apDuong, level: 3, soLuong: 0, doanhThu: 0, products: {}, children: null };
@@ -107,9 +116,6 @@ export function buildAddressTree(ycxData, validHtxArray) {
         }
     });
 
-    if (emptyNode.soLuong > 0) {
-        rootNode.children['empty'] = emptyNode;
-    }
-
+    if (emptyNode.soLuong > 0) rootNode.children['empty'] = emptyNode;
     return rootNode;
 }

@@ -7,6 +7,11 @@ export function normalizeName(name, isProvince = false) {
 
     if (isProvince) {
         cleanName = cleanName.replace(/^(Tỉnh|Thành phố|Thành Phố|TP\.?)\s+/i, '').trim();
+    } else {
+        // [PHẪU THUẬT]: Ép kiểu các biến thể cấp Phường/Xã/Thị trấn để chống phân mảnh
+        cleanName = cleanName.replace(/^[\s\.\-,_]*(P\.|P |Phường\s+)/i, 'Phường ');
+        cleanName = cleanName.replace(/^[\s\.\-,_]*(X\.|X |Xã\s+)/i, 'Xã ');
+        cleanName = cleanName.replace(/^[\s\.\-,_]*(TT\.|TT |Thị trấn\s+)/i, 'Thị trấn ');
     }
 
     cleanName = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -14,13 +19,10 @@ export function normalizeName(name, isProvince = false) {
     return cleanName;
 }
 
-// --- [BƯỚC 1.5]: HÀM TRÍCH XUẤT ĐỊA CHỈ SIÊU HẠNG (V5.0 - CHỐNG KẺ MẠO DANH) ---
+// --- [BƯỚC 1.5]: HÀM TRÍCH XUẤT ĐỊA CHỈ SIÊU HẠNG ---
 export function extractAddressString(row) {
     if (!row) return '';
-    
     let candidates = [];
-    
-    // 1. Quét tìm tất cả các cột có chữ "dia chi" hoặc "address"
     Object.keys(row).forEach(k => {
         if (!k) return;
         const clean = k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/đ/g, "d").replace(/\s/g, "");
@@ -29,7 +31,6 @@ export function extractAddressString(row) {
         }
     });
 
-    // 2. Nuclear Option: Quét toàn bộ các ô trong dòng, tìm chuỗi có đặc điểm của địa chỉ
     Object.values(row).forEach(v => {
         const val = String(v || '').trim();
         if (val.length > 15 && val.includes(',') && (val.includes('Tỉnh') || val.includes('Xã') || val.includes('Phường') || val.includes('Thành phố') || val.includes('TP'))) {
@@ -37,32 +38,24 @@ export function extractAddressString(row) {
         }
     });
 
-    // 3. Thanh trừng kẻ mạo danh: Loại bỏ các chuỗi rác như "x", "ĐMX", chuỗi quá ngắn
     candidates = candidates.filter(c => c.length > 5);
-
     if (candidates.length === 0) return '';
-
-    // 4. Chọn người chiến thắng: Ưu tiên chuỗi dài nhất (chắc chắn là địa chỉ thật)
     candidates.sort((a, b) => b.length - a.length);
-    
     return candidates[0];
 }
 
-// --- [BƯỚC 2]: MINI AI - MÁY HỌC TỪ ĐIỂN (SELF-LEARNING) ---
+// --- [BƯỚC 2]: MINI AI - MÁY HỌC TỪ ĐIỂN ---
 export function buildDictionary(dataRows) {
     const provinces = new Set();
-    
     ['Hồ Chí Minh', 'Hà Nội', 'An Giang', 'Cần Thơ', 'Kiên Giang', 'Đồng Tháp'].forEach(p => provinces.add(p));
 
     dataRows.forEach(row => {
         let diaChiRaw = extractAddressString(row);
-
         if (!diaChiRaw || typeof diaChiRaw !== 'string') return;
         let addr = diaChiRaw.trim();
         if (addr.includes('Hạn thanh toán') || addr.startsWith('***')) return;
         
         addr = addr.replace(/(,\s*)?(Việt Nam|Viet Nam|VN)\.?\s*$/i, '');
-        
         if (addr.includes(',')) {
             let parts = addr.split(',').map(s => s.trim()).filter(s => s);
             if (parts.length >= 3) {
@@ -72,19 +65,15 @@ export function buildDictionary(dataRows) {
         }
     });
 
-    return {
-        provinces: Array.from(provinces).sort((a,b) => b.length - a.length)
-    };
+    return { provinces: Array.from(provinces).sort((a,b) => b.length - a.length) };
 }
 
-// --- [BƯỚC 3]: THUẬT TOÁN TÁCH ĐỊA CHỈ THÔNG MINH (3 TẦNG: TỈNH -> PHƯỜNG -> CHI TIẾT) ---
+// --- [BƯỚC 3]: THUẬT TOÁN TÁCH ĐỊA CHỈ THÔNG MINH ---
 export function parseAddress(rawDiaChi, dict) {
     if (!rawDiaChi || typeof rawDiaChi !== 'string') return null;
-    
     if (rawDiaChi.includes('Hạn thanh toán') || rawDiaChi.startsWith('***') || /^\d+$/.test(rawDiaChi.replace(/\s/g, ''))) return null;
 
     let addr = rawDiaChi.trim();
-    
     addr = addr.replace(/(,\s*)?(Việt Nam|Viet Nam|VN)\.?\s*$/i, '');
     addr = addr.replace(/\b(TP\.?\s*HCM|TPHCM)\b/ig, 'Thành phố Hồ Chí Minh');
     addr = addr.replace(/\b(TP\.?\s*HN|TPHN)\b/ig, 'Thành phố Hà Nội');
@@ -109,7 +98,6 @@ export function parseAddress(rawDiaChi, dict) {
         const pivotIndex = pivotMatch.index;
         const leftPart = addr.substring(0, pivotIndex).replace(/,\s*$/, '').trim();
         if (leftPart) apDuong = leftPart;
-        
         const rightPart = addr.substring(pivotIndex);
         parts = rightPart.split(',').map(s => s.trim()).filter(s => s);
     } else {
@@ -121,10 +109,7 @@ export function parseAddress(rawDiaChi, dict) {
         let currentRaw = parts[i];
         let currentClean = currentRaw.replace(/^(Tỉnh|Thành phố|TP\.?|Quận|Huyện|Phường|Xã)\s+/i, '').toLowerCase();
         let prevClean = uniqueParts.length > 0 ? uniqueParts[uniqueParts.length - 1].clean : null;
-
-        if (currentClean !== prevClean) {
-            uniqueParts.push({ raw: currentRaw, clean: currentClean });
-        }
+        if (currentClean !== prevClean) uniqueParts.push({ raw: currentRaw, clean: currentClean });
     }
     parts = uniqueParts.map(p => p.raw);
 
@@ -134,39 +119,25 @@ export function parseAddress(rawDiaChi, dict) {
     while (parts.length > 0) {
         let p = parts.pop();
         let lowerP = p.toLowerCase();
-        
         const isPhuong = /^[\s\.\-,_]*(phường|xã|thị trấn|p\.|x\.)\s+/i.test(lowerP);
 
-        if (isPhuong && xaPhuong === '-') {
-            xaPhuong = p;
-        } else {
-            // Đẩy tất cả những gì không phải Phường/Xã vào chuỗi chi tiết
-            leftoverParts.unshift(p);
-        }
+        if (isPhuong && xaPhuong === '-') xaPhuong = p;
+        else leftoverParts.unshift(p);
     }
 
     if (pivotMatch) {
         let extraApDuong = leftoverParts.join(', ');
-        if (extraApDuong) {
-            apDuong = extraApDuong + (apDuong !== '-' ? ', ' + apDuong : '');
-        }
+        if (extraApDuong) apDuong = extraApDuong + (apDuong !== '-' ? ', ' + apDuong : '');
     } else {
-        if (leftoverParts.length > 0) {
-            apDuong = leftoverParts.join(', ');
-        }
+        if (leftoverParts.length > 0) apDuong = leftoverParts.join(', ');
     }
 
     tinhThanh = normalizeName(tinhThanh, true);
     xaPhuong = normalizeName(xaPhuong, false);
 
-    // Chuẩn hóa chuỗi địa chỉ chi tiết (xóa dấu phẩy thừa ở đầu/cuối)
-    if (apDuong && apDuong !== '-') {
-        apDuong = apDuong.replace(/^[\s,]+|[\s,]+$/g, '').trim();
-    }
+    if (apDuong && apDuong !== '-') apDuong = apDuong.replace(/^[\s,]+|[\s,]+$/g, '').trim();
     if (!apDuong) apDuong = '-';
 
-    if (tinhThanh !== '-' || xaPhuong !== '-') {
-        return { tinhThanh, xaPhuong, apDuong };
-    }
+    if (tinhThanh !== '-' || xaPhuong !== '-') return { tinhThanh, xaPhuong, apDuong };
     return null;
 }
