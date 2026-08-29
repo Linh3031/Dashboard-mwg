@@ -1,17 +1,15 @@
-// src/services/processing/parsers/luyke.parser.js
 import { competitionData, luykeNameMappings } from '../../../stores.js';
 import { get } from 'svelte/store';
 
 export const luykeParser = {
-    // --- BỘ GIẢI MÃ BÁO CÁO TỔNG HỢP CỤM (V4.0 - THÊM CHI TIẾT TỪNG KHO) ---
+    // --- BỘ GIẢI MÃ BÁO CÁO TỔNG HỢP CỤM (V4.0) ---
     parseClusterSummaryData: (text) => {
         if (!text || !text.trim()) throw new Error("Dữ liệu rỗng");
         
-        // Tách dòng và bảo toàn khoảng trắng/tab để xử lý
         const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
         
         let result = {
-            chiTietKho: [] // Mảng chứa dữ liệu từng Shop
+            chiTietKho: []
         };
         let dtlkCount = 0;
 
@@ -19,7 +17,6 @@ export const luykeParser = {
             const line = lines[i];
             const nextLine = (i + 1 < lines.length) ? lines[i + 1] : '';
 
-            // [PHẦN 1: LOGIC CŨ LẤY TỔNG QUAN CỤM]
             if (line === 'DTLK') {
                 dtlkCount++;
                 if (dtlkCount === 2) result.doanhThuThuc = parseFloat(nextLine.replace(/,/g, '')) || 0;
@@ -47,18 +44,15 @@ export const luykeParser = {
                 result.dtTraCham = parseFloat(nextLine.replace(/,/g, '')) || 0;
             }
             
-            // [PHẦN 2: LOGIC MỚI - LẤY CHI TIẾT TỪNG KHO]
             if (/^(ĐML|ĐMM|ĐMS|TGD)/.test(line)) {
                 let storeName = "";
                 let valuesArray = [];
 
-                // KỊCH BẢN 1: Copy dán giữ được Tab (\t) (Khi copy từ web BI)
                 if (line.includes('\t')) {
                     const parts = line.split('\t').map(p => p.trim()).filter(p => p !== '');
                     storeName = parts[0];
                     valuesArray = parts.slice(1);
                 } 
-                // KỊCH BẢN 2: Copy dán bị tách mỗi ô 1 dòng (Excel behavior)
                 else if (i + 1 < lines.length && /^[-0-9]/.test(lines[i + 1])) {
                     storeName = line;
                     let j = i + 1;
@@ -67,7 +61,6 @@ export const luykeParser = {
                         j++;
                     }
                 } 
-                // KỊCH BẢN 3: Dán dính chùm. Dùng Regex ép kiểu để lấy số.
                 else {
                     const match = line.match(/^(ĐML|ĐMM|ĐMS|TGD.*?[a-zA-ZáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ()]+)\s*(.*)/i);
                     if (match) {
@@ -101,7 +94,6 @@ export const luykeParser = {
             throw new Error("Không tìm thấy từ khóa hợp lệ. Vui lòng copy đúng bảng báo cáo BI.");
         }
 
-        // TỰ ĐỘNG IN RA CONSOLE Ở ĐÂY - BẠN CHỈ CẦN MỞ F12 ĐỂ XEM
         console.group("=== DỮ LIỆU CỤM ĐÃ TRÍCH XUẤT ===");
         console.log(JSON.parse(JSON.stringify(result)));
         console.groupEnd();
@@ -109,7 +101,6 @@ export const luykeParser = {
         return result;
     },
 
-    // --- CÁC HÀM CŨ GIỮ NGUYÊN BÊN DƯỚI ---
     parseLuyKePastedData: (text) => {
         const defaults = {
             mainKpis: {},
@@ -182,39 +173,53 @@ export const luykeParser = {
         return defaults;
     },
 
+    // --- BỘ GIẢI MÃ THI ĐUA SIÊU THỊ LŨY KẾ (V6 - NEW FORMAT BI) ---
     parseCompetitionDataFromLuyKe: (text) => {
         if (!text || !text.trim()) return [];
-        const lines = text.split('\n').map(l => l.trim());
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
         const results = [];
-        let currentCompetition = null;
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.toLowerCase().startsWith('thi đua')) {
-                if (currentCompetition) results.push(currentCompetition);
-                currentCompetition = {
-                    name: line.replace("Thi đua doanh thu", "DT").replace("Thi đua số lượng", "SL"),
-                    type: line.toLowerCase().includes('doanh thu') ? 'doanhThu' : 'soLuong',
-                    luyKe: 0, target: 0, hoanThanh: '0%'
-                };
-            } else if (currentCompetition) {
-                if (line.startsWith('DTLK') || line.startsWith('SLLK') || line.startsWith('DTQĐ')) {
-                     if (i + 1 < lines.length) {
-                         currentCompetition.luyKe = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
-                    }
-                } else if (line.startsWith('Target')) {
-                    if (i + 1 < lines.length) {
-                        currentCompetition.target = parseFloat(lines[i + 1].replace(/,/g, '')) || 0;
-                    }
-                } else if (line.startsWith('% HT Dự Kiến')) {
-                    if (i + 1 < lines.length) {
-                         currentCompetition.hoanThanh = lines[i + 1] || '0%';
-                    }
+            if (lines[i] === 'TỔNG') {
+                if (i < 2 || i + 3 >= lines.length) continue;
+                
+                let nameLine = lines[i-2];
+                let typeLine = lines[i-1];
+                
+                let progMatch = nameLine.match(/^\d+-(.*)$/);
+                let cleanName = progMatch ? progMatch[1].trim() : nameLine;
+                let prefix = typeLine.includes('DOANH THU') ? 'DT' : (typeLine.includes('SỐ LƯỢNG') ? 'SL' : '');
+                
+                if (!prefix) continue; 
+                let currentProgram = `${prefix} ${cleanName}`;
+
+                let shopName = lines[i+2];
+                let dataLine = lines[i+3];
+
+                if (!shopName.match(/(ĐML|ĐMS|ĐMM|TGD)/i)) continue;
+
+                let parts = dataLine.split(/\s+/).filter(p => p);
+                
+                if (parts.length >= 4) {
+                    let lk = Math.floor(parseFloat(parts[0].replace(/,/g, '')) || 0);
+                    let target = Math.floor(parseFloat(parts[1].replace(/,/g, '')) || 0);
+                    let htThang = Math.ceil(parseFloat(parts[2].replace(/%/g, '')) || 0);
+                    let htDuBao = Math.ceil(parseFloat(parts[3].replace(/%/g, '')) || 0);
+
+                    // [PHẪU THUẬT LOGIC]: Xuất thêm biến hoanThanhDuKien
+                    results.push({
+                        name: currentProgram,
+                        type: prefix === 'DT' ? 'doanhThu' : 'soLuong',
+                        luyKe: lk,
+                        target: target,
+                        hoanThanh: htThang + '%',
+                        hoanThanhDuKien: htDuBao + '%'
+                    });
                 }
             }
         }
-        if (currentCompetition) results.push(currentCompetition);
 
+        // Tích hợp logic cập nhật Name Mappings gốc để Tab Admin tự động nhận diện
         const currentMappings = get(luykeNameMappings) || {};
         let hasChanges = false;
         results.forEach(item => {
@@ -227,11 +232,6 @@ export const luykeParser = {
         if (hasChanges) {
             luykeNameMappings.set(currentMappings);
         }
-
-        // [SURGICAL FIX - RACE CONDITION VACCINE]
-        // Đã tước quyền tự ý đẩy vào Store của Parser. 
-        // Store sẽ được cập nhật nguyên khối 1 lần bên pasteHandler/cacheHandler.
-        // competitionData.set(results); 
 
         return results;
     }

@@ -123,6 +123,7 @@ src/components/health-staff/detail/DetailView.svelte
 src/components/health-staff/detail/MetricGrid.svelte
 src/components/health-staff/detail/DetailHeader.svelte
 src/components/health-staff/detail/CardFilter.svelte
+src/components/health-staff/detail/cv
 src/components/health-staff/detail/DetailTableQDC.svelte
 src/components/health-staff/installment
 src/components/health-staff/installment/InstallmentDetailModal.svelte

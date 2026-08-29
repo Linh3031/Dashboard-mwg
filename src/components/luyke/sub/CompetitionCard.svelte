@@ -14,6 +14,10 @@
     $: isActualCompleted = item.luyKe >= item.target;
     $: colorKey = isProjectedCompleted ? 'blue' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red');
     $: colors = COLOR_MAP[colorKey];
+    
+    $: dkColorKey = (item.hoanThanhDuKienValue || item.hoanThanhValue) >= 100 ? 'blue' : ((item.hoanThanhDuKienValue || item.hoanThanhValue) >= 80 ? 'yellow' : 'red');
+    $: dkColors = COLOR_MAP[dkColorKey];
+
     $: targetRemaining = (item.target || 0) - (item.luyKe || 0);
     $: daysLeft = Math.max(30 - (new Date().getDate()), 1);
     $: dailyTarget = (item.target > 0 && targetRemaining > 0) ? (targetRemaining / daysLeft) : 0;
@@ -39,14 +43,28 @@
          }
      }}
 >
-    <div class="flex justify-between items-start gap-3 mb-4 relative">
-        <div class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden h-[48px] line-clamp-2 capture-pt-title" title={item.name}>
+    <div class="flex justify-between items-start gap-2 mb-4 relative">
+        <div class="font-bold text-gray-800 text-sm leading-snug flex-grow overflow-hidden h-[48px] line-clamp-2 capture-pt-title pr-1" title={item.name}>
             {displayTitle}
         </div>
         
-        <span class="text-2xl font-extrabold {colors.text} leading-none flex-shrink-0 capture-pt-value">
-           {formatters.formatPercentage(item.hoanThanhValue / 100)}
-        </span>
+        <div class="flex items-center gap-1.5 flex-shrink-0 capture-pt-value mt-0.5">
+            <div class="flex flex-col items-center">
+                <span class="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">% Lũy kế</span>
+                <span class="text-xl font-extrabold {colors.text} leading-none drop-shadow-sm" title="% Lũy kế">
+                   {formatters.formatPercentage(item.hoanThanhValue / 100)}
+                </span>
+            </div>
+            
+            <span class="text-gray-300 font-thin text-3xl leading-none pb-1">|</span>
+            
+            <div class="flex flex-col items-center">
+                <span class="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">% Dự kiến</span>
+                <span class="text-xl font-extrabold {dkColors.text} opacity-90 leading-none drop-shadow-sm" title="% Dự kiến">
+                   {item.hoanThanhDuKien || item.hoanThanh || '0%'}
+                </span>
+            </div>
+        </div>
     </div>
 
     <div class="w-full bg-white rounded-full h-1.5 mb-3 overflow-hidden border border-gray-200">

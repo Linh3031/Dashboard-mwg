@@ -27,7 +27,9 @@
         if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
             const rawData = ($competitionData || []).map(item => { 
                 const hoanThanhValue = (parseFloat(String(item.hoanThanh).replace('%','')) || 0); 
-                return { ...item, hoanThanhValue: hoanThanhValue }; 
+                // [PHẪU THUẬT LOGIC]: Bóc tách phần trăm của hoanThanhDuKien để truyền xuống Component con
+                const hoanThanhDuKienValue = (parseFloat(String(item.hoanThanhDuKien || '0').replace('%','')) || 0); 
+                return { ...item, hoanThanhValue: hoanThanhValue, hoanThanhDuKienValue: hoanThanhDuKienValue }; 
             });
             const filtered = rawData.filter(item => String(item.maKho || '').trim() === String($selectedWarehouse).trim());
             summary = filtered.reduce((acc, d) => {
@@ -118,7 +120,8 @@
                 {#if sortedData.length === 0}
                     <div class="p-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                         <p class="text-gray-500 font-bold mb-2">Chưa có dữ liệu hiển thị.</p>
-                        <p class="text-xs text-gray-400">Vui lòng dán "Data lũy kế" ở tab Cập nhật dữ liệu.</p>
+                        <!-- [PHẪU THUẬT GIAO DIỆN]: Đổi nhãn hướng dẫn cho khớp màn hình dán Data mới -->
+                        <p class="text-xs text-gray-400">Vui lòng dán "Thi đua siêu thị lũy kế" ở tab Cập nhật dữ liệu.</p>
                     </div>
                 {:else}
                     <div class="flex flex-col gap-8">

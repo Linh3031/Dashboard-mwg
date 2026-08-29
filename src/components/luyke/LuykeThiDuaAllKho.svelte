@@ -30,7 +30,9 @@
     $: {
         const rawData = ($competitionData || []).map(item => { 
             const hoanThanhValue = (parseFloat(String(item.hoanThanh).replace('%','')) || 0); 
-            return { ...item, hoanThanhValue: hoanThanhValue }; 
+            // [PHẪU THUẬT LOGIC]: Bóc tách phần trăm của hoanThanhDuKien để cấp màu sắc
+            const hoanThanhDuKienValue = (parseFloat(String(item.hoanThanhDuKien || '0').replace('%','')) || 0); 
+            return { ...item, hoanThanhValue: hoanThanhValue, hoanThanhDuKienValue: hoanThanhDuKienValue }; 
         });
 
         // --- CHẾ ĐỘ ALL KHO: PHÂN NHÓM VÀ TẠO THẺ ---
@@ -104,9 +106,12 @@
         <span class="text-[9px] font-bold text-gray-700 leading-tight w-full text-center line-clamp-2 h-6" title={item.name}>
             {getShortName(item)}
         </span>
-        <span class="text-[13px] font-black mt-1 tracking-tighter {getRateColor(item.hoanThanhValue)} drop-shadow-sm">
-            {item.hoanThanh || '0%'}
-        </span>
+        <!-- [PHẪU THUẬT GIAO DIỆN]: Tách 2 thông số LK | DK với điểm nhấn thị giác cho LK -->
+        <div class="flex items-center gap-[2px] mt-1 w-full justify-center tracking-tighter drop-shadow-sm whitespace-nowrap">
+            <span class="text-[12px] font-black {getRateColor(item.hoanThanhValue)}" title="% Lũy kế">{item.hoanThanh || '0%'}</span>
+            <span class="text-gray-300 font-medium text-[9px] mx-0.5 pb-0.5">|</span>
+            <span class="text-[11px] font-bold {getRateColor(item.hoanThanhDuKienValue || item.hoanThanhValue)} opacity-90" title="% Dự kiến">{item.hoanThanhDuKien || '0%'}</span>
+        </div>
     </div>
 {/snippet}
 

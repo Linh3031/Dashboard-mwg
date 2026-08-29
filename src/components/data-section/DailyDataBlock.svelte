@@ -120,17 +120,18 @@
             {/if}
         </div>
 
+        <!-- [PHẪU THUẬT LOGIC]: Đổi nhãn UI thành "Thi đua siêu thị lũy kế" -->
         <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-data-lk">
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
                     <div class="h-fit animate-fade-in w-full overflow-hidden">
-                        <PasteInput label={`Data Lũy kế (${kho})`} icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" saveKeyPaste={`daily_paste_luyke_${kho}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: kho })} />
+                        <PasteInput label={`Thi đua ST lũy kế (${kho})`} icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" saveKeyPaste={`daily_paste_luyke_${kho}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: kho })} />
                     </div>
                 {/each}
             {:else}
                 <div class="h-fit w-full overflow-hidden">
                     <PasteInput 
-                        label={isClusterMode ? `Data Lũy kế (Cụm ${currentClusterCode})` : `Data lũy kế (${$selectedWarehouse})`} 
+                        label={isClusterMode ? `Thi đua ST lũy kế (Cụm ${currentClusterCode})` : `Thi đua siêu thị lũy kế (${$selectedWarehouse})`} 
                         icon="clipboard" 
                         link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" 
                         saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : `daily_paste_luyke_${$selectedWarehouse}`} 
