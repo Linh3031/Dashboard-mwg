@@ -53,6 +53,10 @@ export const fileHandler = {
             mapping = { normalizeType: 'thiduanv_excel', store: pastedThiDuaReportData, localOnly: false };
             baseKey = 'saved_thiduanv_excel';
             targetWarehouse = saveKey.replace('saved_thiduanv_excel_', '');
+        } else if (saveKey.startsWith('saved_doanhthu_bi_')) {
+            mapping = FILE_MAPPING['saved_doanhthu_bi'];
+            baseKey = 'saved_doanhthu_bi';
+            targetWarehouse = saveKey.replace('saved_doanhthu_bi_', '');
         }
 
         if (!mapping) {
@@ -90,7 +94,6 @@ export const fileHandler = {
                 const grouped = {};
                 const uniquePrograms = new Set();
                 
-                // [PHẪU THUẬT LOGIC]: Chốt chặn "Trị bệnh 54 nhân viên" đầu nguồn
                 const currentDSNV = get(danhSachNhanVien) || [];
                 const validEmpCodes = new Set(currentDSNV.map(e => String(e.ma_nv || e.maNV).trim()));
 
@@ -127,7 +130,7 @@ export const fileHandler = {
             if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv' && mapping.normalizeType !== 'thiduanv_excel') {
                 dataToStore = dataToStore.filter(row => {
                     const maKhoRow = String(row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'] || row.MA_KHO_TAO || row.MA_KHO || '').trim();
-                    if (!maKhoRow && (baseKey === 'saved_giocong' || baseKey === 'saved_thuongnong')) {
+                    if (!maKhoRow && (baseKey === 'saved_giocong' || baseKey === 'saved_thuongnong' || baseKey === 'saved_doanhthu_bi')) {
                         row.maKho = currentWh;
                         return true; 
                     }
@@ -139,13 +142,13 @@ export const fileHandler = {
             let currentMonths = [];
 
             if (isMultiMode) {
-                const dates = normalizedData.map(d => d.ngayTao || d.ngay_tao || d.NgayTao || d['Ngày tạo']).filter(Boolean);
+                const dates = normalizedData.map(d => d.ngayTao || d.ngay_tao || d.NgayTao || d['Ngày tạo'] || d.luyKeToiNgay).filter(Boolean);
                 currentMonths = [...new Set(dates.map(getMonthYear))];
 
-                let existingData = await storage.getItem(saveKey) || [];
+                let existingData = await storage.getItem(baseKey) || [];
                 
                 existingData = existingData.filter(row => {
-                    const rowDate = row.ngayTao || row.ngay_tao || row.NgayTao || row['Ngày tạo'];
+                    const rowDate = row.ngayTao || row.ngay_tao || row.NgayTao || row['Ngày tạo'] || row.luyKeToiNgay;
                     if (!rowDate) return true;
                     return !currentMonths.includes(getMonthYear(rowDate));
                 });
@@ -153,8 +156,19 @@ export const fileHandler = {
                 dataToStore = [...existingData, ...dataToStore];
             }
 
-            mapping.store.set(dataToStore);
-            await storage.setItem(saveKey, dataToStore);
+            // [PHẪU THUẬT LOGIC]: Ép lưu Store theo Root BaseKey thay vì SaveKey động.
+            if (baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') {
+                 mapping.store.update(curr => {
+                     const existing = curr || [];
+                     const filtered = existing.filter(item => String(item.maKho) !== String(currentWh));
+                     return [...filtered, ...dataToStore];
+                 });
+            } else {
+                 mapping.store.set(dataToStore);
+            }
+            
+            // Xử lý nguyên nhân gốc: Ép lưu dữ liệu mảng lớn xuống LocalStorage dưới cái tên 'baseKey'
+            await storage.setItem(baseKey, get(mapping.store));
 
             if (saveKey === 'saved_danhsachnv') {
                 localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
@@ -181,13 +195,19 @@ export const fileHandler = {
                         };
 
                         for (const wh of validWarehouses) {
-                            // [PHẪU THUẬT LOGIC]: Đổi baseKey thành saveKey để F5 nhận diện được metadata
                             localStorage.setItem(`_meta_${wh}_${saveKey}`, JSON.stringify(metadata));
                         }
 
-                        const successMsg = isMultiMode && currentMonths.length > 0 
-                            ? `✓ Đã lưu tháng: ${currentMonths.join(', ')} (${dataToStore.length} dòng)` 
-                            : (mapping.normalizeType === 'thiduanv_excel' ? `✓ Đã đồng bộ (${dataToStore.length} nhân viên)` : `✓ Đã đồng bộ lên Cloud (${dataToStore.length} nhân viên)`);
+                        let successMsg = '';
+                        if (isMultiMode && currentMonths.length > 0) {
+                            successMsg = `✓ Đã lưu tháng: ${currentMonths.join(', ')} (${dataToStore.length} dòng)`;
+                        } else if (mapping.normalizeType === 'thiduanv_excel') {
+                            successMsg = `✓ Đã đồng bộ (${dataToStore.length} nhân viên)`;
+                        } else if (mapping.normalizeType === 'doanhthu_bi') {
+                            successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
+                        } else {
+                            successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} nhân viên)`;
+                        }
                         
                         updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
@@ -223,6 +243,10 @@ export const fileHandler = {
                 mapping = { normalizeType: 'thiduanv_excel', store: pastedThiDuaReportData, localOnly: false };
                 baseKey = 'saved_thiduanv_excel';
                 targetWarehouse = saveKey.replace('saved_thiduanv_excel_', '');
+            } else if (saveKey.startsWith('saved_doanhthu_bi_')) {
+                mapping = FILE_MAPPING['saved_doanhthu_bi'];
+                baseKey = 'saved_doanhthu_bi';
+                targetWarehouse = saveKey.replace('saved_doanhthu_bi_', '');
             }
 
             if (!mapping) {
@@ -240,8 +264,15 @@ export const fileHandler = {
             if (!mapping) return { success: false };
 
             updateSyncState(saveKey, 'uploading', 'Đang xóa file...');
-            mapping.store.set([]);
-            await storage.setItem(saveKey, []);
+            
+            // Xóa cục bộ data của kho thay vì đổ sụp cả mảng
+            if (baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') {
+                 mapping.store.update(curr => curr.filter(d => String(d.maKho) !== String(targetWarehouse)));
+            } else {
+                 mapping.store.set([]);
+            }
+            // Sửa lỗi lưu đè Key khi xóa file
+            await storage.setItem(baseKey, get(mapping.store));
 
             if (saveKey === 'saved_danhsachnv') {
                 localStorage.removeItem(LOCAL_DSNV_FILENAME_KEY);

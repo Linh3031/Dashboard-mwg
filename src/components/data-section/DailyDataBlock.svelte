@@ -60,9 +60,11 @@
         </div>
     </h3>
     
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div class="flex flex-col gap-4 overflow-hidden">
-             <div class="h-fit w-full" data-tour="input-ycx">
+    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+        
+        <!-- 1. Yêu cầu xuất lũy kế -->
+        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-ycx">
+             <div class="h-fit w-full">
                 <FileInput label="Yêu cầu xuất lũy kế" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx" isMultiMode={true} />
             </div>
             
@@ -78,27 +80,49 @@
             {/if}
         </div>
 
-        <!-- [ĐÃ PHẪU THUẬT]: Đẩy Thi Đua Nhân Viên lên vị trí thứ 2 và đổi sang FileInput -->
-        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-thidua-nv">
+        <!-- 2. Doanh thu BI (Đã được đảo lên trước) -->
+        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-doanhthu-bi">
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
-                    <div class="h-fit animate-fade-in w-full overflow-hidden">
-                        <FileInput label={`Thi đua nhân viên (${kho})`} icon="file-text" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=bcdtnv&rt=2&dm=1" saveKey={`saved_thiduanv_excel_${kho}`} />
-                    </div>
+                    {#if kho !== 'ALL'}
+                        <div class="h-fit animate-fade-in w-full overflow-hidden">
+                            <FileInput label={`Doanh thu BI (${kho})`} icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey={`saved_doanhthu_bi_${kho}`} />
+                        </div>
+                    {/if}
                 {/each}
             {:else}
                 <div class="h-fit w-full overflow-hidden">
-                    <FileInput label={`Thi đua nhân viên (${$selectedWarehouse})`} icon="file-text" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=bcdtnv&rt=2&dm=1" saveKey={`saved_thiduanv_excel_${$selectedWarehouse}`} />
+                    <FileInput label={`Doanh thu BI (${$selectedWarehouse})`} icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey={`saved_doanhthu_bi_${$selectedWarehouse}`} />
                 </div>
             {/if}
         </div>
 
+        <!-- 3. Thi đua nhân viên (Đã được đảo xuống sau) -->
+        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-thidua-nv">
+            {#if $selectedWarehouse === 'ALL'}
+                {#each $warehouseList as kho}
+                    {#if kho !== 'ALL'}
+                        <div class="h-fit animate-fade-in w-full overflow-hidden">
+                            <FileInput label={`Thi đua nhân viên (${kho})`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${kho}`} />
+                        </div>
+                    {/if}
+                {/each}
+            {:else}
+                <div class="h-fit w-full overflow-hidden">
+                    <FileInput label={`Thi đua nhân viên (${$selectedWarehouse})`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${$selectedWarehouse}`} />
+                </div>
+            {/if}
+        </div>
+
+        <!-- 4. Lũy kế -->
         <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-data-lk">
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
-                    <div class="h-fit animate-fade-in w-full overflow-hidden">
-                        <PasteInput label={`Thi đua ST lũy kế (${kho})`} icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" saveKeyPaste={`daily_paste_luyke_${kho}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: kho })} />
-                    </div>
+                    {#if kho !== 'ALL'}
+                        <div class="h-fit animate-fade-in w-full overflow-hidden">
+                            <PasteInput label={`Thi đua ST lũy kế (${kho})`} icon="clipboard" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKeyPaste={`daily_paste_luyke_${kho}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: kho })} />
+                        </div>
+                    {/if}
                 {/each}
             {:else}
                 {#if isClusterMode}
@@ -109,7 +133,7 @@
                     </div>
                 {/if}
                 <div class="h-fit w-full overflow-hidden">
-                    <PasteInput label={isClusterMode ? `Thi đua ST lũy kế (Cụm ${currentClusterCode})` : `Thi đua siêu thị lũy kế (${$selectedWarehouse})`} icon="clipboard" link="https://bi.thegioididong.com/sieu-thi-con?id=16612&tab=1" saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : `daily_paste_luyke_${$selectedWarehouse}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: $selectedWarehouse })} />
+                    <PasteInput label={isClusterMode ? `Thi đua ST lũy kế (Cụm ${currentClusterCode})` : `Thi đua siêu thị lũy kế (${$selectedWarehouse})`} icon="clipboard" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : `daily_paste_luyke_${$selectedWarehouse}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: $selectedWarehouse })} />
                 </div>
             {/if}
         </div>

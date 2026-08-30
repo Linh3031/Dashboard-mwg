@@ -82,6 +82,10 @@ export const thuongNongData = writable([]);
 export const thuongERPData = writable([]);
 export const pastedThiDuaReportData = writable([]);
 export const realtimeYCXData = writable([]);
+
+// [PHẪU THUẬT LOGIC]: Store lưu trữ dữ liệu Báo cáo Doanh thu siêu thị BI
+export const doanhThuBIData = writable([]); 
+
 export const dtCkNamData = writable([]);
 export const ycxDataCungKyNam = writable([]);
 export const thiDuaVungChiTiet = writable([]);

@@ -1,5 +1,5 @@
 // src/config.js
-// Version 2.7 - Atomic Integrity: Bổ sung cấu hình đọc Excel Thi Đua Nhân Viên (thiduanv_excel)
+// Version 2.9 - Atomic Integrity: Bổ sung Lũy kế tới ngày cho Doanh Thu BI
 
 export const config = {
     ADMIN_PASSWORD: "Linh3010", 
@@ -49,6 +49,20 @@ export const config = {
             soLuong: { required: false, displayName: 'Số lượng', aliases: ['số lượng', 'so luong'] },
             doanhThu: { required: true, displayName: 'Doanh thu (TR)', aliases: ['doanh thu (tr)', 'doanh thu', 'doanhthu'] },
             hangVung: { required: false, displayName: 'Hạng vùng', aliases: ['hạng vùng', 'hang vung'] }
+        },
+        doanhthu_bi: {
+            capDong: { required: false, displayName: 'Cấp dòng', aliases: ['cấp dòng', 'cap dong'] },
+            maDonVi: { required: false, displayName: 'Mã đơn vị', aliases: ['mã đơn vị', 'ma don vi', 'mã ngành hàng'] },
+            tenDonVi: { required: false, displayName: 'Tên đơn vị', aliases: ['tên đơn vị', 'ten don vi', 'tên ngành hàng'] },
+            soLuong: { required: false, displayName: 'Số lượng', aliases: ['số lượng', 'so luong'] },
+            doanhThu: { required: false, displayName: 'Doanh thu (TR)', aliases: ['doanh thu(tr)', 'doanh thu (tr)', 'doanh thu thực'] },
+            doanhThuQD: { required: false, displayName: 'Doanh thu QĐ (TR)', aliases: ['doanh thu qđ (tr)', 'doanh thu quy đổi'] },
+            tb3Thang: { required: false, displayName: 'TB 3 tháng (TR)', aliases: ['tb 3 tháng (tr)', 'trung bình 3 tháng'] },
+            tb3ThangQD: { required: false, displayName: 'TB 3 tháng QĐ (TR)', aliases: ['tb 3 tháng qđ (tr)'] },
+            dtTraGop: { required: false, displayName: 'DT trả góp (TR)', aliases: ['dt trả góp (tr)', 'doanh thu trả góp'] },
+            dtTraGopQD: { required: false, displayName: 'DT trả góp QĐ (TR)', aliases: ['dt trả góp qđ (tr)'] },
+            // [PHẪU THUẬT LOGIC]: Bổ sung nhận diện ngày của Doanh thu BI
+            luyKeToiNgay: { required: false, displayName: 'Lũy kế tới ngày', aliases: ['lũy kế tới ngày', 'luy ke toi ngay'] }
         }
     },
     PRODUCT_GROUPS: {

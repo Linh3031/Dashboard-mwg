@@ -10,7 +10,8 @@
       ycxDataCungKyNam,
       fileSyncState,
       selectedWarehouse,
-      pastedThiDuaReportData
+      pastedThiDuaReportData,
+      doanhThuBIData 
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
@@ -24,6 +25,7 @@
   let isLoading = false;
   let statusClass = "text-gray-500";
   let localError = "";
+  let localMetaFallback = null; 
 
   $: isMonthlyOrYearly = saveKey.includes('thangtruoc') || saveKey.includes('cungkynam');
   $: showMonthSummary = isMultiMode && isMonthlyOrYearly;
@@ -36,10 +38,10 @@
       'saved_ycx_thangtruoc': ycxDataThangTruoc,
       'saved_thuongnong_thangtruoc': thuongNongDataThangTruoc,
       'saved_ycx_cungkynam': ycxDataCungKyNam,
-      'saved_thiduanv_excel': pastedThiDuaReportData
+      'saved_thiduanv_excel': pastedThiDuaReportData,
+      'saved_doanhthu_bi': doanhThuBIData
   };
 
-  // [PHẪU THUẬT LOGIC]: Chặn đứng hiện tượng trùng lặp tiền tố (ví dụ: saved_ycx gối đầu lên saved_ycx_thangtruoc) bằng cách ép sort độ dài key giảm dần
   $: baseKey = (() => {
       const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
       for (const k of sortedKeys) {
@@ -48,12 +50,17 @@
       return saveKey;
   })();
 
-  $: dataStore = storeMap[baseKey]; // Map store từ baseKey thay vì saveKey gốc
-  $: syncState = $fileSyncState[saveKey];
-  // Trạng thái sync vẫn giữ nguyên ID độc lập
-  $: dataCount = $dataStore ? $dataStore.length : 0;
+  $: dataStore = storeMap[baseKey]; 
 
-  // [PHẪU THUẬT LOGIC]: Máy quét bóc tách mã kho hạng nặng chống cache rác
+  $: localDataCount = (() => {
+      if (!$dataStore) return 0;
+      const kho = saveKey.split('_').pop();
+      if (kho && kho !== 'ALL' && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
+          return $dataStore.filter(d => String(d.maKho) === String(kho)).length;
+      }
+      return $dataStore.length;
+  })();
+
   function getWhCode(d) {
       if (!d) return null;
       return d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || d['Mã Kho Tạo'] || d.makho || d.makhotao;
@@ -63,12 +70,44 @@
         ? [...new Set($dataStore.map(d => getWhCode(d)).filter(Boolean).map(c => String(c).trim()))] 
         : [];
 
+  $: maxDateStr = (() => {
+        if (!$dataStore || $dataStore.length === 0) return '';
+        const kho = saveKey.split('_').pop();
+        
+        let maxTs = 0;
+        $dataStore.forEach(d => {
+            if (kho && kho !== 'ALL' && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
+                 if (String(d.maKho) !== String(kho)) return;
+            }
+            const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO || d.luyKeToiNgay || d['Lũy kế tới ngày'];
+            if (!dateVal) return;
+            let ts = 0;
+            if (typeof dateVal === 'string' && dateVal.length === 8 && /^\d+$/.test(dateVal)) {
+                const y = parseInt(dateVal.substring(0,4));
+                const m = parseInt(dateVal.substring(4,6)) - 1;
+                const day = parseInt(dateVal.substring(6,8));
+                ts = new Date(y, m, day).getTime();
+            } else {
+                ts = new Date(dateVal).getTime();
+            }
+            if (!isNaN(ts) && ts > maxTs) maxTs = ts;
+        });
+        if (maxTs === 0) return '';
+        const d = new Date(maxTs);
+        return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  })();
+
   $: uniqueMonths = (isMultiMode && $dataStore)
         ? [...new Set($dataStore.map(d => {
-            const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO;
+            const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO || d.luyKeToiNgay || d['Lũy kế tới ngày'];
             if (!dateVal) return null;
             try {
-                const dateObj = new Date(dateVal);
+                let dateObj;
+                if (typeof dateVal === 'string' && dateVal.length === 8 && /^\d+$/.test(dateVal)) {
+                    dateObj = new Date(parseInt(dateVal.substring(0,4)), parseInt(dateVal.substring(4,6)) - 1, 1);
+                } else {
+                    dateObj = new Date(dateVal);
+                }
                 if (isNaN(dateObj)) return null;
                 const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
                 const y = dateObj.getFullYear();
@@ -77,18 +116,33 @@
         }).filter(Boolean))].sort()
         : [];
 
-  $: maxDateStr = (() => {
-        if (!$dataStore || $dataStore.length === 0) return '';
-        let maxTs = 0;
-        $dataStore.forEach(d => {
-            const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO;
-            if (!dateVal) return;
-            const ts = new Date(dateVal).getTime();
-            if (!isNaN(ts) && ts > maxTs) maxTs = ts;
-        });
-        if (maxTs === 0) return '';
-        const d = new Date(maxTs);
-        return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  function formatTimeAgo(ts) {
+      if (!ts) return '';
+      const diff = Date.now() - ts;
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'vừa xong';
+      if (mins < 60) return `${mins} phút trước`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours} giờ trước`;
+      return `${Math.floor(hours / 24)} ngày trước`;
+  }
+
+  // [PHẪU THUẬT LOGIC]: BỘ LỌC KHÁNG THỂ. Chặn đứng trạng thái 'cached' chung chung của hệ thống khi F5 và ép tải lại bằng localMetaFallback!
+  $: rawSyncState = $fileSyncState[saveKey];
+
+  $: activeSyncState = (() => {
+      // Nếu trạng thái là 'cached' (bị lỗi F5) HOẶC mất hoàn toàn, ta dùng meta xịn từ Fallback
+      if (localMetaFallback && (!rawSyncState || rawSyncState.status === 'cached' || !rawSyncState.metadata)) {
+          return {
+              status: 'synced',
+              message: isMultiMode ? `✓ Dữ liệu tổng hợp` : 
+                       (saveKey.includes('doanhthu_bi') ? `✓ Đã đồng bộ lên Cloud (${localMetaFallback.rowCount || 0} dòng)` : 
+                       (saveKey.includes('thiduanv_excel') ? `✓ Đã đồng bộ (${localMetaFallback.rowCount || 0} nhân viên)` : `✓ Đã đồng bộ lên Cloud`)),
+              metadata: localMetaFallback,
+              timestamp: localMetaFallback.timestamp || Date.now()
+          };
+      }
+      return rawSyncState || null;
   })();
 
   $: {
@@ -98,25 +152,35 @@
       } else if (localError) {
           statusHTML = localError;
           statusClass = "text-red-600 font-bold text-xs";
-      } else if (syncState) {
-          if (syncState.status === 'update_available') {
-              statusClass = "text-orange-600 font-semibold";
-              statusHTML = `<span>${syncState.message}</span> <button class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded btn-download-cloud pointer-events-auto">Tải & Xử lý</button>`;
-          } else if (syncState.status === 'downloading' || syncState.status === 'error') {
-              statusClass = syncState.status === 'error' ? "text-red-600 text-xs" : "text-blue-600";
-              statusHTML = syncState.message;
-          } else {
-              statusClass = "text-green-600 font-medium";
-              let dateInfo = maxDateStr ? ` <span class="text-[11px] text-blue-600 ml-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">(Đến: ${maxDateStr})</span>` : '';
-              statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)${dateInfo}` : `${syncState.message}${dateInfo}`;
-              if (syncState.metadata?.fileName && !isMultiMode) fileName = syncState.metadata.fileName;
+      } else if (activeSyncState) {
+          // Ép tên file hiển thị vững vàng bất chấp F5
+          if (activeSyncState.metadata?.fileName) {
+              fileName = activeSyncState.metadata.fileName;
           }
-      } else if (dataCount > 0) {
-          statusClass = "text-green-600";
+          
+          let timeInfo = activeSyncState.timestamp ? ` <span class="text-[10px] opacity-70 ml-1">(${formatTimeAgo(activeSyncState.timestamp)})</span>` : '';
           let dateInfo = maxDateStr ? ` <span class="text-[11px] text-blue-600 ml-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">(Đến: ${maxDateStr})</span>` : '';
-          statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${dataCount} dòng)${dateInfo}` : `✓ Đã tải ${dataCount} dòng (Local)${dateInfo}`;
+
+          if (activeSyncState.status === 'update_available') {
+              statusClass = "text-orange-600 font-semibold";
+              statusHTML = `<span>${activeSyncState.message}</span> <button class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded btn-download-cloud pointer-events-auto">Tải & Xử lý</button>`;
+          } else if (activeSyncState.status === 'downloading' || activeSyncState.status === 'error') {
+              statusClass = activeSyncState.status === 'error' ? "text-red-600 text-xs" : "text-blue-600";
+              statusHTML = activeSyncState.message;
+          } else {
+              statusClass = "text-green-600 font-medium flex items-center flex-wrap";
+              statusHTML = isMultiMode 
+                  ? `✓ Dữ liệu tổng hợp (${localDataCount} dòng)${dateInfo}` 
+                  : `${activeSyncState.message}${dateInfo}${timeInfo}`;
+          }
+      } else if (localDataCount > 0) {
+          statusClass = "text-green-600 font-medium flex items-center flex-wrap";
+          let dateInfo = maxDateStr ? ` <span class="text-[11px] text-blue-600 ml-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">(Đến: ${maxDateStr})</span>` : '';
+          statusHTML = isMultiMode ? `✓ Dữ liệu tổng hợp (${localDataCount} dòng)${dateInfo}` : `✓ Đã tải ${localDataCount} dòng (Local)${dateInfo}`;
+          if (localMetaFallback?.fileName) fileName = localMetaFallback.fileName;
       } else {
           statusHTML = "";
+          fileName = "Chưa thêm file";
       }
   }
 
@@ -141,6 +205,12 @@
               }
           }
           if (!localError) fileName = files.length > 1 ? `Đã nạp ${files.length} file dữ liệu` : files[0].name;
+          
+          const kho = saveKey.split('_').pop(); 
+          const targetWh = (get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
+          const metaStr = localStorage.getItem(`_meta_${targetWh}_${saveKey}`);
+          if (metaStr) localMetaFallback = JSON.parse(metaStr);
+
       } catch (err) {
           console.error(err);
           localError += `Lỗi hệ thống: ${err.message}`;
@@ -163,7 +233,7 @@
               return String(code).trim() !== String(whCode).trim();
           });
       });
-      try { await storage.setItem(saveKey, get(dataStore)); } catch(e){}
+      try { await storage.setItem(baseKey, get(dataStore)); } catch(e){}
 
       try {
           const emptyMeta = { files: [], rowCount: 0, downloadURL: null, isDeleted: true, updatedAt: new Date().toISOString() };
@@ -206,10 +276,15 @@
 
       dataStore.update(currentData => {
           return currentData.filter(d => {
-              const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO;
+              const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO || d.luyKeToiNgay || d['Lũy kế tới ngày'];
               if (!dateVal) return true; 
               try {
-                  const dateObj = new Date(dateVal);
+                  let dateObj;
+                  if (typeof dateVal === 'string' && dateVal.length === 8 && /^\d+$/.test(dateVal)) {
+                      dateObj = new Date(parseInt(dateVal.substring(0,4)), parseInt(dateVal.substring(4,6)) - 1, 1);
+                  } else {
+                      dateObj = new Date(dateVal);
+                  }
                   if (isNaN(dateObj)) return true;
                   const m = (dateObj.getMonth() + 1).toString().padStart(2, '0');
                   const y = dateObj.getFullYear();
@@ -218,23 +293,14 @@
           });
       });
       try {
-          await storage.setItem(saveKey, get(dataStore));
+          await storage.setItem(baseKey, get(dataStore));
       } catch (e) {
           console.error("Lỗi cập nhật Local Storage:", e);
       }
 
       if (newCloudMeta) {
           localStorage.setItem(`_meta_${kho}_${saveKey}`, JSON.stringify(newCloudMeta));
-          fileSyncState.update(s => ({
-              ...s,
-              [saveKey]: {
-                  ...s[saveKey],
-                  metadata: newCloudMeta,
-                  status: 'synced',
-                  message: `✓ Đã xóa tháng ${targetMonth}`,
-                  timestamp: Date.now()
-              }
-          }));
+          localMetaFallback = newCloudMeta;
       }
       isLoading = false;
   }
@@ -243,11 +309,18 @@
       if (!dataStore) return;
       if (confirm(`Bạn có chắc chắn muốn XÓA TOÀN BỘ dữ liệu của "${label}" không?`)) {
           isLoading = true;
-          dataStore.set([]);
+          const khoToClear = saveKey.split('_').pop();
+
+          if (saveKey.includes('thiduanv') || saveKey.includes('doanhthu')) {
+              dataStore.update(curr => curr.filter(d => String(d.maKho) !== String(khoToClear)));
+          } else {
+              dataStore.set([]);
+          }
+          
           fileName = "Chưa thêm file";
           const kho = get(selectedWarehouse) || 'ALL';
 
-          try { await storage.setItem(saveKey, []); } catch(e){}
+          try { await storage.setItem(baseKey, get(dataStore)); } catch(e){}
 
           try {
               const emptyMeta = { files: [], rowCount: 0, downloadURL: null, isDeleted: true, updatedAt: new Date().toISOString() };
@@ -260,7 +333,9 @@
               }
           } catch(e) { console.error("Lỗi xóa toàn bộ Cloud:", e); }
 
-          localStorage.removeItem(`_meta_${kho}_${saveKey}`);
+          localStorage.removeItem(`_meta_${khoToClear}_${saveKey}`);
+          localMetaFallback = null;
+          
           fileSyncState.update(s => {
               const newState = {...s};
               delete newState[saveKey];
@@ -279,8 +354,25 @@
       }
   }
   
-  onMount(() => {
+  onMount(async () => {
      if (typeof feather !== 'undefined') feather.replace();
+     
+     try {
+         const kho = saveKey.split('_').pop(); 
+         const targetWh = (get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
+         const metaStr = localStorage.getItem(`_meta_${targetWh}_${saveKey}`);
+         
+         if (metaStr) {
+             localMetaFallback = JSON.parse(metaStr);
+         }
+         
+         if (dataStore && get(dataStore).length === 0) {
+             const localData = await storage.getItem(baseKey);
+             if (localData && localData.length > 0) {
+                 dataStore.set(localData);
+             }
+         }
+     } catch (e) {}
   });
 </script>
 
@@ -384,7 +476,7 @@
             </div>
         {/if}
         
-        {#if isLoading || (syncState && syncState.status === 'downloading')}
+        {#if isLoading || (activeSyncState && activeSyncState.status === 'downloading')}
             <div class="progress-bar-container mt-2">
                 <div class="progress-bar" style="width: 100%; background-color: #3b82f6;"></div>
             </div>

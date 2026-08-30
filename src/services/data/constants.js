@@ -1,8 +1,10 @@
+// src/services/data/constants.js
 import { 
     danhSachNhanVien, rawGioCongData, ycxData, thuongNongData,
     ycxDataThangTruoc, thuongNongDataThangTruoc, thuongERPData, 
     thuongERPDataThangTruoc, competitionData, pastedThiDuaReportData,
-    ycxDataCungKyNam // [CHỈ IMPORT MỚI DUY NHẤT STORE NÀY]
+    ycxDataCungKyNam, 
+    doanhThuBIData // [PHẪU THUẬT LOGIC]: Bổ sung store Doanh thu BI
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 
@@ -15,7 +17,9 @@ export const FILE_MAPPING = {
     'saved_thuongnong': { store: thuongNongData, normalizeType: 'thuongnong', name: 'Thưởng nóng' },
     'saved_ycx_thangtruoc': { store: ycxDataThangTruoc, normalizeType: 'ycx', name: 'YCX Tháng trước' },
     'saved_thuongnong_thangtruoc': { store: thuongNongDataThangTruoc, normalizeType: 'thuongnong', name: 'Thưởng nóng TT' },
-    'saved_ycx_cungkynam': { store: ycxDataCungKyNam, normalizeType: 'ycx', name: 'YCX Cùng kỳ năm' } 
+    'saved_ycx_cungkynam': { store: ycxDataCungKyNam, normalizeType: 'ycx', name: 'YCX Cùng kỳ năm' },
+    // [PHẪU THUẬT LOGIC]: Tích hợp Doanh thu siêu thị BI
+    'saved_doanhthu_bi': { store: doanhThuBIData, normalizeType: 'doanhthu_bi', name: 'Doanh thu siêu thị BI' }
 };
 
 export const PASTE_MAPPING = {
