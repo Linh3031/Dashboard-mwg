@@ -2,23 +2,17 @@
     import { formatters } from '../../../utils/formatters.js';
     import { selectedWarehouse } from '../../../stores.js';
 
-    // Props nhận từ cha
     export let totalTarget = 0;
-    // Mục tiêu tháng (Quy đổi)
     export let currentRevenue = 0;
-    // Đã đạt (Quy đổi)
     export let warehouseId = '';
 
-    // State nội bộ
     let targetRatio = 100;
     let remainingDays = 1;
     let pastDays = 1;
 
-    // --- HELPER FORMAT ---
-    // Yêu cầu: Số nguyên (0 số lẻ) cho gọn
-    const fmt = (val) => formatters.formatNumber(val / 1000000, 0);
+    // [PHẪU THUẬT LOGIC]: Bỏ chia /1000000 vì Dữ liệu vào đã được chuẩn hóa theo đơn vị Triệu (Millions)
+    const fmt = (val) => formatters.formatNumber(val, 0);
 
-    // --- LOGIC TÍNH NGÀY ---
     function calculateDays() {
         const now = new Date();
         const year = now.getFullYear();
@@ -27,13 +21,11 @@
         const currentDay = now.getDate();
         let remain = daysInMonth - currentDay + 1;
         
-        // Tính số ngày đã qua để chia trung bình. Nếu là mùng 1 thì mặc định chia cho 1
         pastDays = currentDay > 1 ? currentDay - 1 : 1;
 
         return remain > 0 ? remain : 0;
     }
 
-    // --- TÍNH TOÁN SỐ LIỆU ---
     function calculateMetrics(ratio, tTarget, cRevenue) {
         const adjustedTarget = tTarget * (ratio / 100);
         const missing = adjustedTarget - cRevenue;
@@ -49,14 +41,12 @@
         };
     }
 
-    // --- REACTIVE ---
     $: remainingDays = calculateDays();
     $: mainMetrics = calculateMetrics(targetRatio, totalTarget, currentRevenue);
     $: prevMetrics = calculateMetrics(targetRatio - 10, totalTarget, currentRevenue);
     $: nextMetrics = calculateMetrics(targetRatio + 10, totalTarget, currentRevenue);
     $: tbNgay = currentRevenue / pastDays;
 
-    // --- PERSISTENCE ---
     $: if ($selectedWarehouse || warehouseId) {
         const key = `target_ratio_${$selectedWarehouse || warehouseId}`;
         const saved = localStorage.getItem(key);

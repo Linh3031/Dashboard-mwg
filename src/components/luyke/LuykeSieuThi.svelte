@@ -12,7 +12,8 @@
     modalState,
     categoryNameMapping,
     warehouseCustomMetrics,
-    clusterSummaryData // [PHẪU THUẬT LOGIC]: Bổ sung Store để lấy Báo cáo Tổng hợp Cụm
+    clusterSummaryData,
+    doanhThuBIData 
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
@@ -80,14 +81,6 @@
       }))
   ];
 
-  const cleanValue = (str) => {
-      if (typeof str === 'number') return str;
-      if (!str || typeof str !== 'string') return 0;
-      const cleanStr = str.replace(/,|%/g, '').trim();
-      const val = parseFloat(cleanStr);
-      return isNaN(val) ? 0 : val;
-  };
-
   let finalDtThuc = 0;
   let finalDtQd = 0; 
   let finalDtGop, finalTyLeGop, finalTyLeQd;
@@ -102,98 +95,52 @@
     localSupermarketReport = supermarketReport || {};
     localGoals = goals || {};
 
-    const excelData = {
-        dtThuc: localSupermarketReport.doanhThu || 0,
-        dtQd: localSupermarketReport.doanhThuQuyDoi || 0,
-        dtGop: localSupermarketReport.doanhThuTraGop || 0,
-        tyLeGop: localSupermarketReport.tyLeTraCham || 0,
-        tyLeQd: localSupermarketReport.hieuQuaQuyDoi || 0,
-        chuaXuatQd: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0
+    let dtThuc = 0;
+    let dtQd = 0;
+    let dtGop = 0;
+    let tb3ThangQD = 0;
+
+    const currentKho = $selectedWarehouse === 'ALL' ? null : $selectedWarehouse;
+
+    if ($doanhThuBIData && $doanhThuBIData.length > 0) {
+        $doanhThuBIData.forEach(row => {
+            if (currentKho && String(row.maKho) !== String(currentKho)) return;
+            if (String(row.capDong || '').toUpperCase() === 'CATEGORY') {
+                dtThuc += parseFloat(row.doanhThu || 0);
+                dtQd += parseFloat(row.doanhThuQD || 0);
+                dtGop += parseFloat(row.dtTraGop || 0);
+                tb3ThangQD += parseFloat(row.tb3ThangQD || 0);
+            }
+        });
+    }
+
+    finalDtThuc = dtThuc;
+    finalDtQd = dtQd;
+    finalDtGop = dtGop;
+    
+    finalTyLeQd = finalDtThuc > 0 ? (finalDtQd / finalDtThuc) - 1 : 0;
+    finalTyLeGop = finalDtThuc > 0 ? (finalDtGop / finalDtThuc) : 0;
+
+    const targetQD = parseFloat(localGoals?.doanhThuQD || 0); 
+    const phanTramTargetQd = targetQD > 0 ? (finalDtQd / targetQD) : 0;
+
+    const targetThuc = parseFloat(localGoals?.doanhThuThuc || 0);
+    const phanTramTargetThuc = targetThuc > 0 ? (finalDtThuc / targetThuc) : 0;
+
+    let tangTruongTB3T = tb3ThangQD > 0 ? (finalDtQd / tb3ThangQD) - 1 : 0;
+    comparisonData = {
+        value: finalDtQd - tb3ThangQD,
+        percentage: tb3ThangQD > 0 ? ((tangTruongTB3T * 100).toFixed(1) + '%') : '0.0%'
     };
 
-    // --- 🚨 [PHẪU THUẬT LOGIC]: TÁCH BẠCH ĐỘC LẬP - NO AGGREGATION TRÊN KPI 🚨 ---
-    let agg_DtDuKien = 0;
-    let agg_DtQdDuKien = 0;
-    let hasPasteData = false;
-    let pastedPhanTramTargetQd = 0;
+    // [PHẪU THUẬT LOGIC]: Tự động tính toán Dự kiến dựa trên số ngày chạy thực tế
+    const now = new Date();
+    const pastDays = now.getDate() > 1 ? now.getDate() - 1 : 1;
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    if ($selectedWarehouse === 'ALL') {
-        // [CHẾ ĐỘ ALL]: Đọc thẳng dữ liệu từ "Báo cáo Tổng hợp Cụm"
-        const cluster = $clusterSummaryData || {};
-        
-        if (cluster && cluster.doanhThuThuc) {
-            hasPasteData = true;
-            finalDtThuc = (cluster.doanhThuThuc || 0) * 1000000;
-            finalDtQd = (cluster.doanhThuQuyDoi || 0) * 1000000;
-            finalDtGop = (cluster.dtTraCham || 0) * 1000000;
-            finalTyLeGop = parseFloat(String(cluster.tyLeTraCham || '0').replace('%', '')) / 100;
-            finalTyLeQd = finalDtThuc > 0 ? (finalDtQd / finalDtThuc) - 1 : 0;
+    let agg_DtDuKien = (finalDtThuc / pastDays) * daysInMonth;
+    let agg_DtQdDuKien = (finalDtQd / pastDays) * daysInMonth;
 
-            agg_DtDuKien = (cluster.doanhThuThucDuKien || 0) * 1000000;
-            agg_DtQdDuKien = (cluster.doanhThuQuyDoiDuKien || 0) * 1000000;
-
-            pastedPhanTramTargetQd = parseFloat(String(cluster.tyLeHoanThanh || '0').replace('%', '')) / 100;
-
-            comparisonData = { value: cluster.dtckThangGiaTri || 0, percentage: cluster.dtckThangTangTruong || '0%' };
-            luotKhachData = { value: cluster.luotKhachCKGiaTri || 0, percentage: cluster.luotKhachCKTangTruong || '0%' };
-        }
-    } else if ($selectedWarehouse) {
-        // [CHẾ ĐỘ 1 KHO]: Đọc thẳng từ ô Data Lũy kế đích danh
-        if (typeof localStorage !== 'undefined') {
-            const pastedText = localStorage.getItem(`daily_paste_luyke_${$selectedWarehouse}`);
-            if (pastedText) {
-                const parsedData = dataProcessing.parseLuyKePastedData(pastedText);
-                const { mainKpis, dtDuKien, dtqdDuKien, dtTraCham, tyLeTraCham } = parsedData;
-
-                if (mainKpis && mainKpis['Thực hiện DT thực']) {
-                    hasPasteData = true;
-                    finalDtThuc = cleanValue(mainKpis['Thực hiện DT thực']) * 1000000;
-                    finalDtQd = cleanValue(mainKpis['Thực hiện DTQĐ']) * 1000000;
-                    finalDtGop = dtTraCham * 1000000;
-                    finalTyLeGop = tyLeTraCham / 100;
-                    finalTyLeQd = finalDtThuc > 0 ? ((finalDtQd / finalDtThuc) - 1) : 0;
-
-                    agg_DtDuKien = dtDuKien * 1000000;
-                    agg_DtQdDuKien = dtqdDuKien * 1000000;
-
-                    if (mainKpis['% HT Target Dự Kiến (QĐ)']) {
-                        pastedPhanTramTargetQd = cleanValue(mainKpis['% HT Target Dự Kiến (QĐ)']) / 100;
-                    }
-                    
-                    comparisonData = parsedData.comparisonData || { value: 0, percentage: 'N/A' };
-                    luotKhachData = parsedData.luotKhachData || { value: 0, percentage: 'N/A' };
-                }
-            }
-        }
-    }
-
-    // Nếu không có Data Paste (cả ở ALL hoặc 1 kho), dùng Fallback xuống File YCX
-    if (!hasPasteData) {
-        finalDtThuc = excelData.dtThuc;
-        finalDtQd = excelData.dtQd;
-        finalDtGop = excelData.dtGop;
-        finalTyLeGop = excelData.tyLeGop;
-        finalTyLeQd = excelData.tyLeQd;
-        comparisonData = { value: 0, percentage: 'N/A' };
-        luotKhachData = { value: 0, percentage: 'N/A' };
-        agg_DtDuKien = 0;
-        agg_DtQdDuKien = 0;
-        pastedPhanTramTargetQd = 0;
-    }
-
-    const targetThuc = parseFloat(localGoals?.doanhThuThuc || 0) * 1000000;
-    const targetQD = parseFloat(localGoals?.doanhThuQD || 0) * 1000000;
-    
-    let phanTramTargetQd = 0;
-    if (pastedPhanTramTargetQd > 0) {
-        phanTramTargetQd = pastedPhanTramTargetQd; // Ưu tiên 100% số của BI cung cấp
-    } else {
-        phanTramTargetQd = targetQD > 0 ? (agg_DtQdDuKien / targetQD) : 0; // Fallback khi BI rỗng
-    }
-    
-    const phanTramTargetThuc = targetThuc > 0 ? (agg_DtDuKien / targetThuc) : 0;
-    
-    // [Thi đua]: Không dính dáng đến doanh thu, đã được isolate sẵn ở Store
     const compData = $competitionData || [];
     competitionSummary.total = compData.length;
     competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanh).replace('%','')) || 0) >= 100).length;
@@ -210,7 +157,7 @@
       dtQdDuKien: agg_DtQdDuKien, 
       phanTramTargetQd: phanTramTargetQd, 
       phanTramTargetThuc: phanTramTargetThuc, 
-      chuaXuatQuyDoi: excelData.chuaXuatQd,
+      chuaXuatQuyDoi: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0,
       tyLeThiDuaDat: tyLeThiDuaDat
     };
 
@@ -309,12 +256,12 @@
           {luotKhachData}
           {channelStats}
           captureFilename="SieuThiLuyKe {$selectedWarehouse ? '- ' + $selectedWarehouse : ''}"
-          targetQdValue={(localGoals?.doanhThuQD || 0) * 1000000} 
+          targetQdValue={parseFloat(localGoals?.doanhThuQD || 0)} 
       />
   </div>
 
   <DailyTargetSimulator 
-    totalTarget={parseFloat(localGoals?.doanhThuQD || 0) * 1000000}
+    totalTarget={parseFloat(localGoals?.doanhThuQD || 0)}
     currentRevenue={finalDtQd || 0}
     warehouseId={$selectedWarehouse}
   />
@@ -347,7 +294,6 @@
 </div>
 
 <style>
-    /* Ép bề ngang chuẩn Form Mobile (450px) và gộp dọc chống vỡ layout khi Capture */
     :global(.capture-container .exclusive-sieuthi-capture) {
         display: flex !important;
         flex-direction: column !important;

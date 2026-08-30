@@ -29,9 +29,10 @@
         role="button" tabindex="0" title="Click để sửa mục tiêu"
     >
         <div class="kpi-solid-header">Doanh Thu Thực <i data-feather="dollar-sign"></i></div>
-        <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtThucLK || 0) / 1000000, 0)}</div>
+        <!-- [PHẪU THUẬT LOGIC]: Bỏ chia 1000000, lấy data thô -->
+        <div class="kpi-solid-value">{formatters.formatNumber(luykeCardData.dtThucLK || 0, 0)}</div>
         <div class="kpi-solid-sub">
-            <span>DK: {formatters.formatNumber((luykeCardData.dtThucDuKien || 0) / 1000000, 0)}</span>
+            <span>DK: {formatters.formatNumber(luykeCardData.dtThucDuKien || 0, 0)}</span>
             <span class="group-hover:text-yellow-300 transition-colors">MT: {formatters.formatNumber(localGoals?.doanhThuThuc || 0)} <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
         </div>
         <div class="kpi-bg-icon"><i data-feather="dollar-sign"></i></div>
@@ -43,10 +44,11 @@
         role="button" tabindex="0" title="Click để sửa mục tiêu"
     >
         <div class="kpi-solid-header">DT Quy Đổi <i data-feather="refresh-cw"></i></div>
-        <div class="kpi-solid-value">{formatters.formatNumber((luykeCardData.dtQdLK || 0) / 1000000, 0)}</div>
+        <!-- [PHẪU THUẬT LOGIC]: Bỏ chia 1000000, lấy data thô -->
+        <div class="kpi-solid-value">{formatters.formatNumber(luykeCardData.dtQdLK || 0, 0)}</div>
         <div class="kpi-solid-sub">
-            <span>DK: {formatters.formatNumber((luykeCardData.dtQdDuKien || 0) / 1000000, 0)}</span>
-            <span class="group-hover:text-yellow-300 transition-colors">MT: {formatters.formatNumber(targetQdValue / 1000000, 0)} <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
+            <span>DK: {formatters.formatNumber(luykeCardData.dtQdDuKien || 0, 0)}</span>
+            <span class="group-hover:text-yellow-300 transition-colors">MT: {formatters.formatNumber(targetQdValue, 0)} <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
         </div>
         <div class="kpi-bg-icon"><i data-feather="refresh-cw"></i></div>
     </div>
@@ -66,7 +68,8 @@
         role="button" tabindex="0" title="Click để sửa mục tiêu"
     >
         <div class="kpi-solid-header">Hiệu quả QĐ <i data-feather="trending-up"></i></div>
-        <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramQd || 0)}</div>
+        <!-- [PHẪU THUẬT LOGIC]: Hiển thị % với 1 số lẻ -->
+        <div class="kpi-solid-value">{((luykeCardData.phanTramQd || 0) * 100).toFixed(1)}%</div>
         <div class="kpi-solid-sub">
             <span class="group-hover:text-yellow-300 transition-colors">Mục tiêu: {formatters.formatNumber(localGoals?.phanTramQD || 0)}% <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
         </div>
@@ -79,7 +82,8 @@
         role="button" tabindex="0" title="Click để sửa mục tiêu"
     >
         <div class="kpi-solid-header">Tỷ lệ Trả chậm <i data-feather="credit-card"></i></div>
-        <div class="kpi-solid-value">{formatters.formatPercentage(luykeCardData.phanTramGop || 0)}</div>
+        <!-- [PHẪU THUẬT LOGIC]: Hiển thị % với 1 số lẻ -->
+        <div class="kpi-solid-value">{((luykeCardData.phanTramGop || 0) * 100).toFixed(1)}%</div>
         <div class="kpi-solid-sub">
             <span class="group-hover:text-yellow-300 transition-colors">Mục tiêu: {formatters.formatNumber(localGoals?.phanTramTC || 0)}% <i data-feather="edit-2" class="w-3 h-3 inline opacity-0 group-hover:opacity-100"></i></span>
         </div>
@@ -96,10 +100,11 @@
     </div>
 
     <div class="kpi-card-solid card-7">
-        <div class="kpi-solid-header">Tăng trưởng CK <i data-feather="activity"></i></div>
-        <div class="kpi-solid-value">{comparisonData.percentage || 'N/A'}</div>
+        <!-- [PHẪU THUẬT LOGIC]: Đổi tên và hiển thị dữ liệu mới -->
+        <div class="kpi-solid-header">Tăng trưởng TB 3T <i data-feather="activity"></i></div>
+        <div class="kpi-solid-value">{comparisonData.percentage || '0.0%'}</div>
         <div class="kpi-solid-sub">
-            <span>Lượt khách: {luotKhachData.percentage || 'N/A'}</span>
+            <span>Chênh lệch: {formatters.formatNumber(comparisonData.value || 0, 0)}</span>
         </div>
         <div class="kpi-bg-icon"><i data-feather="activity"></i></div>
     </div>
