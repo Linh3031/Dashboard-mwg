@@ -1,6 +1,5 @@
 // src/config.js
-// Version 2.6 - Atomic Integrity: Cleaned up hardcoded HE_SO_QUY_DOI (Single Source of Truth via UI)
-// Chứa tất cả các cấu hình tĩnh của ứng dụng.
+// Version 2.7 - Atomic Integrity: Bổ sung cấu hình đọc Excel Thi Đua Nhân Viên (thiduanv_excel)
 
 export const config = {
     ADMIN_PASSWORD: "Linh3010", 
@@ -42,6 +41,14 @@ export const config = {
             maNV: { required: false, displayName: 'Mã NV', aliases: ['manv', 'mã nv'] },
             hoTen: { required: false, displayName: 'Tên NV', aliases: ['tennv', 'tên nv'] },
             diemThuong: { required: true, displayName: 'Điểm thưởng', aliases: ['diemthuong', 'điểm thưởng'] }
+        },
+        thiduanv_excel: {
+            chuongTrinh: { required: true, displayName: 'Chương trình', aliases: ['chương trình', 'chuong trinh'] },
+            maNV: { required: true, displayName: 'Mã NV', aliases: ['mã nv', 'manv'] },
+            dtQuyDoi: { required: false, displayName: 'DT Quy đổi (TR)', aliases: ['dt quy đổi (tr)', 'dt quy doi', 'dt quy đổi'] },
+            soLuong: { required: false, displayName: 'Số lượng', aliases: ['số lượng', 'so luong'] },
+            doanhThu: { required: true, displayName: 'Doanh thu (TR)', aliases: ['doanh thu (tr)', 'doanh thu', 'doanhthu'] },
+            hangVung: { required: false, displayName: 'Hạng vùng', aliases: ['hạng vùng', 'hang vung'] }
         }
     },
     PRODUCT_GROUPS: {
@@ -113,6 +120,5 @@ export const config = {
             'Xuất dịch vụ thu hộ bảo hiểm'
         ],
         HINH_THUC_XUAT_TRA_GOP: ['Xuất bán hàng trả góp tại siêu thị', 'Xuất bán trả góp ưu đãi cho nhân viên', 'Xuất bán trả góp cho NV phục vụ công việc', 'Xuất bán pre-order trả góp tại siêu thị', 'Xuất bán pre-order trả góp tại siêu thị (TCĐM)']
-        // Đã xóa bỏ mảng HE_SO_QUY_DOI đồ cổ. Trách nhiệm thuộc về Admin UI 100%.
     }
 };

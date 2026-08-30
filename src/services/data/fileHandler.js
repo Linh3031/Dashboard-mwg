@@ -3,7 +3,9 @@ import { get } from 'svelte/store';
 import { 
     selectedWarehouse, currentUser, realtimeYCXData, 
     categoryStructure, brandList, specialProductList,
-    warehouseList, virtualProductList // [NEW] Thêm store mới
+    warehouseList, virtualProductList,
+    pastedThiDuaReportData,
+    danhSachNhanVien 
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { storage, storageService } from '../storage.service.js';
@@ -47,6 +49,12 @@ export const fileHandler = {
         let baseKey = saveKey;
         let targetWarehouse = null;
 
+        if (saveKey.startsWith('saved_thiduanv_excel_')) {
+            mapping = { normalizeType: 'thiduanv_excel', store: pastedThiDuaReportData, localOnly: false };
+            baseKey = 'saved_thiduanv_excel';
+            targetWarehouse = saveKey.replace('saved_thiduanv_excel_', '');
+        }
+
         if (!mapping) {
             const sortedKeys = Object.keys(FILE_MAPPING).sort((a, b) => b.length - a.length);
             for (const key of sortedKeys) {
@@ -78,10 +86,47 @@ export const fileHandler = {
             let dataToStore = normalizedData;
             const currentWh = targetWarehouse || get(selectedWarehouse);
 
-            if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv') {
-                dataToStore = normalizedData.filter(row => {
+            if (mapping.normalizeType === 'thiduanv_excel') {
+                const grouped = {};
+                const uniquePrograms = new Set();
+                
+                // [PHẪU THUẬT LOGIC]: Chốt chặn "Trị bệnh 54 nhân viên" đầu nguồn
+                const currentDSNV = get(danhSachNhanVien) || [];
+                const validEmpCodes = new Set(currentDSNV.map(e => String(e.ma_nv || e.maNV).trim()));
+
+                normalizedData.forEach(row => {
+                    const empCode = String(row.maNV || '').trim();
+                    if (!empCode) return;
+                    
+                    if (validEmpCodes.size > 0 && !validEmpCodes.has(empCode)) return;
+
+                    if (!grouped[empCode]) grouped[empCode] = { maNV: empCode, competitions: [] };
+                    
+                    const progName = String(row.chuongTrinh || '').trim();
+                    if (progName) uniquePrograms.add(progName);
+
+                    grouped[empCode].competitions.push({
+                        tenGoc: progName,
+                        doanhThu: parseFloat(row.doanhThu) || 0,
+                        soLuong: parseFloat(row.soLuong) || 0,
+                        dtQuyDoi: parseFloat(row.dtQuyDoi) || 0,
+                        hang: parseInt(row.hangVung) || 0
+                    });
+                });
+                
+                dataToStore = Object.values(grouped).map(emp => ({
+                    ...emp,
+                    maKho: currentWh
+                }));
+                
+                if (dataProcessing.updateCompetitionNameMappings) {
+                    dataProcessing.updateCompetitionNameMappings(Array.from(uniquePrograms));
+                }
+            }
+
+            if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv' && mapping.normalizeType !== 'thiduanv_excel') {
+                dataToStore = dataToStore.filter(row => {
                     const maKhoRow = String(row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'] || row.MA_KHO_TAO || row.MA_KHO || '').trim();
-                    // [BƠM MÁU LOGIC TỪ BƯỚC TRƯỚC]
                     if (!maKhoRow && (baseKey === 'saved_giocong' || baseKey === 'saved_thuongnong')) {
                         row.maKho = currentWh;
                         return true; 
@@ -117,19 +162,14 @@ export const fileHandler = {
 
             if (!mapping.localOnly) {
                 try {
-                    // [PHẪU THUẬT LOGIC]: Chặn lưu vào document "ALL", nhân bản Metadata cho từng kho
                     const validWarehouses = currentWh === 'ALL' 
                         ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
                         : [currentWh];
 
                     if (validWarehouses.length > 0) {
-                        const primaryWh = validWarehouses[0];
-                        const path = `warehouse_data/${primaryWh}/${baseKey}_${Date.now()}.xlsx`;
-                        const downloadUrl = await storageService.uploadFileToStorage(file, path);
                         const now = Date.now();
-                        
                         const metadata = {
-                            downloadURL: downloadUrl,
+                            downloadURL: null,
                             fileName: file.name,
                             fileType: 'excel',
                             rowCount: dataToStore.length,
@@ -140,15 +180,15 @@ export const fileHandler = {
                             isMulti: isMultiMode
                         };
 
-                        // [NÒNG CỐT]: Lưu cho tất cả các kho có trong cụm của quản lý này
                         for (const wh of validWarehouses) {
-                            await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
-                            localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
+                            // [PHẪU THUẬT LOGIC]: Đổi baseKey thành saveKey để F5 nhận diện được metadata
+                            localStorage.setItem(`_meta_${wh}_${saveKey}`, JSON.stringify(metadata));
                         }
 
                         const successMsg = isMultiMode && currentMonths.length > 0 
                             ? `✓ Đã lưu tháng: ${currentMonths.join(', ')} (${dataToStore.length} dòng)` 
-                            : `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
+                            : (mapping.normalizeType === 'thiduanv_excel' ? `✓ Đã đồng bộ (${dataToStore.length} nhân viên)` : `✓ Đã đồng bộ lên Cloud (${dataToStore.length} nhân viên)`);
+                        
                         updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
 
@@ -157,7 +197,7 @@ export const fileHandler = {
                     updateSyncState(saveKey, 'error', `Lưu local OK nhưng lỗi Cloud: ${cloudErr.message}`);
                 }
             } else {
-                updateSyncState(saveKey, 'cached', `✓ Đã tải ${dataToStore.length} dòng (Chỉ lưu máy này)`, { fileName: file.name });
+                updateSyncState(saveKey, 'cached', `✓ Đã tải ${dataToStore.length} nhân viên (Chỉ lưu máy này)`, { fileName: file.name });
             }
 
             analyticsService.trackAction();
@@ -178,6 +218,12 @@ export const fileHandler = {
             let baseKey = saveKey;
             let targetWarehouse = get(selectedWarehouse);
             let mapping = FILE_MAPPING[saveKey];
+
+            if (saveKey.startsWith('saved_thiduanv_excel_')) {
+                mapping = { normalizeType: 'thiduanv_excel', store: pastedThiDuaReportData, localOnly: false };
+                baseKey = 'saved_thiduanv_excel';
+                targetWarehouse = saveKey.replace('saved_thiduanv_excel_', '');
+            }
 
             if (!mapping) {
                 const sortedKeys = Object.keys(FILE_MAPPING).sort((a, b) => b.length - a.length);
@@ -210,21 +256,20 @@ export const fileHandler = {
                     updatedBy: get(currentUser)?.email || 'Tôi'
                 };
                 
-                // [PHẪU THUẬT LOGIC]: Khi xóa ở chế độ ALL, phải xóa rải rác ở từng kho con
                 const validWarehouses = targetWarehouse === 'ALL' 
                     ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
                     : [targetWarehouse];
 
                 for (const wh of validWarehouses) {
                     await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
-                    localStorage.removeItem(`_meta_${wh}_${baseKey}`);
+                    localStorage.removeItem(`_meta_${wh}_${saveKey}`);
                 }
             }
 
             updateSyncState(saveKey, 'error', 'Chưa có file. Vui lòng tải file.', null);
             return { success: true };
         } catch (error) {
-            updateSyncState(syncKey, 'error', `Lỗi xóa file: ${error.message}`);
+            updateSyncState(saveKey, 'error', `Lỗi xóa file: ${error.message}`);
             return { success: false, message: error.message };
         }
     },
@@ -254,8 +299,6 @@ export const fileHandler = {
             const { success, normalizedData, error } = dataProcessing.normalizeCategoryStructureData(rawData);
             if (!success) throw new Error(error);
             categoryStructure.set(normalizedData);
-            
-            // [PHẪU THUẬT LOGIC]: Nhận diện toàn bộ các khả năng đặt tên của thuộc tính Hãng
             const brands = [...new Set(normalizedData.map(item => item.nhaSanXuat || item.nhasanxuat || item.NhaSanXuat || item.brand || item.hang || item['Nhà sản xuất']).filter(Boolean))].sort();
             brandList.set(brands);
             event.target.value = null;
@@ -278,7 +321,6 @@ export const fileHandler = {
         } catch (err) { throw err; }
     },
 
-    // [NEW] Xử lý tải file Sản phẩm đặc thù (Gói bảo dưỡng, combo...)
     async handleVirtualProductFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -288,7 +330,6 @@ export const fileHandler = {
             const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false, defval: null });
             const { success, normalizedData, error } = dataProcessing.normalizeVirtualProductData(rawData);
             if (!success) throw new Error(error);
-            
             virtualProductList.set(normalizedData);
             event.target.value = null;
             return { success: true, count: normalizedData.length };

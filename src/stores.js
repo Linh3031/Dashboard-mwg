@@ -1,5 +1,5 @@
 // src/stores.js
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 
 // --- [NEW] CHẾ ĐỘ DEMO ---
 export const isDemoMode = writable(false); 
@@ -144,7 +144,6 @@ export const dailyTrendConfigs = writable([]);
 let savedKpi = null;
 if (typeof localStorage !== 'undefined') {
     const raw = localStorage.getItem('kpiStore_cache');
-    console.log(`[STORE ${new Date().toLocaleTimeString()}] Raw LocalStorage:`, raw);
     savedKpi = raw ? JSON.parse(raw) : null;
 }
 
@@ -198,3 +197,81 @@ export const fileSyncState = writable({});
 
 // --- [NEW] STORE LƯU DỮ LIỆU TỔNG HỢP CỤM ---
 export const clusterSummaryData = writable(null);
+
+// ============================================================================
+// [ATOMIC INTEGRITY] TRẠM TRỘN DỮ LIỆU THI ĐUA NHÂN VIÊN (DERIVED STORE)
+// Tự động làm giàu dữ liệu chéo ngầm định, triệt tiêu Lag ở UI Component
+// ============================================================================
+export const processedEmployeeCompetitionData = derived(
+    [pastedThiDuaReportData, danhSachNhanVien, ycxData, selectedWarehouse],
+    ([$pastedData, $dsnv, $ycx, $wh]) => {
+        if (!$pastedData || $pastedData.length === 0) return [];
+
+        // 1. Tạo Map thông tin nhân viên từ YCX để lấy Tên thật (O(N))
+        const infoMap = {};
+        if ($ycx && $ycx.length) {
+            $ycx.forEach(nv => {
+                const code = String(nv.ma_nv || nv.maNV || '').trim();
+                const name = nv.ten_nv || nv.hoTen || '';
+                const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
+                if (code) infoMap[code] = { name, dept };
+                if (nv.nguoiTao) {
+                    const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
+                    if (msnvMatch) {
+                        const extractedCode = msnvMatch[1].trim();
+                        if (!infoMap[extractedCode]) infoMap[extractedCode] = { name: nv.hoTen || nv.nguoiTao, dept };
+                    }
+                }
+            });
+        }
+
+        // 2. Lọc danh sách nhân viên theo Kho hiện hành
+        let targetEmps = $dsnv || [];
+        if ($wh && $wh !== 'ALL') {
+            targetEmps = targetEmps.filter(e => String(e.ma_kho || e.maKho) === $wh);
+        }
+
+        // 3. Gom nhóm dữ liệu dán theo mã NV để ráp nối nhanh (O(1))
+        const reportByNv = new Map();
+        $pastedData.forEach(r => {
+            const code = String(r.maNV).trim();
+            if (!reportByNv.has(code)) reportByNv.set(code, []);
+            reportByNv.get(code).push(r);
+        });
+
+        // 4. Ráp nối dữ liệu thành bản ghi nguyên tử
+        let finalEmployees = [];
+        targetEmps.forEach(emp => {
+            const empCode = String(emp.ma_nv || emp.maNV || '').trim();
+            const empKho = String(emp.ma_kho || emp.maKho || '').trim();
+            
+            const matchingReports = reportByNv.get(empCode) || [];
+            let matchedReport = null;
+            if (matchingReports.length > 0) {
+                matchedReport = matchingReports.find(r => String(r.maKho).trim() === empKho);
+                if (!matchedReport) matchedReport = matchingReports[0]; 
+            }
+
+            if (matchedReport) {
+                finalEmployees.push({
+                    ...matchedReport,
+                    maNV: empCode,
+                    maKho: empKho || matchedReport.maKho || 'N/A',
+                    hoTen: infoMap[empCode]?.name || emp.ten_nv || emp.hoTen || matchedReport.hoTen,
+                    boPhan: infoMap[empCode]?.dept || emp.vi_tri || emp.boPhan || matchedReport.boPhan
+                });
+            } else {
+                finalEmployees.push({
+                    maNV: empCode,
+                    maKho: empKho || 'N/A',
+                    hoTen: infoMap[empCode]?.name || emp.ten_nv || emp.hoTen,
+                    boPhan: infoMap[empCode]?.dept || emp.vi_tri || emp.boPhan || 'Chưa phân loại',
+                    competitions: [],
+                    completedCount: 0
+                });
+            }
+        });
+
+        return finalEmployees;
+    }
+);

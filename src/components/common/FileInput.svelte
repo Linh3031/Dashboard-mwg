@@ -9,7 +9,8 @@
       ycxDataThangTruoc, thuongNongDataThangTruoc,
       ycxDataCungKyNam,
       fileSyncState,
-      selectedWarehouse
+      selectedWarehouse,
+      pastedThiDuaReportData
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
@@ -34,7 +35,8 @@
       'saved_thuongnong': thuongNongData,
       'saved_ycx_thangtruoc': ycxDataThangTruoc,
       'saved_thuongnong_thangtruoc': thuongNongDataThangTruoc,
-      'saved_ycx_cungkynam': ycxDataCungKyNam
+      'saved_ycx_cungkynam': ycxDataCungKyNam,
+      'saved_thiduanv_excel': pastedThiDuaReportData
   };
 
   // [PHẪU THUẬT LOGIC]: Chặn đứng hiện tượng trùng lặp tiền tố (ví dụ: saved_ycx gối đầu lên saved_ycx_thangtruoc) bằng cách ép sort độ dài key giảm dần

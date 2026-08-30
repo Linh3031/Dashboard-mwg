@@ -1,6 +1,13 @@
 <script>
   import { createEventDispatcher, afterUpdate } from 'svelte';
-  import { pastedThiDuaReportData, competitionNameMappings, ycxData, competitionData, danhSachNhanVien, selectedWarehouse, luykeNameMappings } from '../../../stores.js';
+  import { 
+      competitionNameMappings, 
+      competitionData, 
+      danhSachNhanVien, 
+      selectedWarehouse, 
+      luykeNameMappings,
+      processedEmployeeCompetitionData 
+  } from '../../../stores.js';
   import { settingsService } from '../../../services/settings.service.js';
   import { formatters } from '../../../utils/formatters.js';
   import { datasyncService } from '../../../services/datasync.service.js';
@@ -8,14 +15,12 @@
   export let reportData = [];
   const dispatch = createEventDispatcher();
 
-  // --- HÀM TÌM MAPPING TÊN CỘT THEO ADMIN ---
   function findSmartMapping(tenGoc, mappings) {
       if (!mappings) return tenGoc;
       if (mappings[tenGoc]) return mappings[tenGoc];
       return tenGoc;
   }
 
-  // --- THỜI GIAN ĐỂ TÍNH TIẾN ĐỘ DỰ KIẾN ---
   let currentDay = 1;
   let daysInMonth = 30;
 
@@ -32,18 +37,20 @@
       }
   }
 
-  // --- STATE ---
   let columnSettings = [];
   let sortKey = 'totalScore';
   let sortDirection = 'desc';
   let allEmployees = [];
   let targetRatio = 100;
   let categoryTargets = {};
+  
+  let isTargetLoaded = false;
 
-  $: if ($selectedWarehouse) {
-      datasyncService.loadPersonalTargetRatio($selectedWarehouse)
-        .then(ratio => targetRatio = ratio)
-        .catch(() => targetRatio = 100);
+  $: if ($selectedWarehouse !== undefined) {
+      isTargetLoaded = false;
+      datasyncService.loadPersonalTargetRatio($selectedWarehouse || 'ALL')
+        .then(ratio => { targetRatio = ratio; isTargetLoaded = true; })
+        .catch(() => { targetRatio = 100; isTargetLoaded = true; });
   }
 
   $: emps = $danhSachNhanVien || [];
@@ -51,6 +58,15 @@
         ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) 
         : emps;
   $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
+
+  $: {
+      let savedSettings = settingsService.loadPastedCompetitionViewSettings();
+      if (!savedSettings || savedSettings.length === 0) savedSettings = settingsService.loadPastedCompetitionViewSettings();
+      
+      columnSettings = savedSettings.map(col => ({
+          ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
+      }));
+  }
 
   $: {
       const stMappedData = {};
@@ -82,95 +98,52 @@
   ];
   function getHeaderColor(index) { return headerColors[index % headerColors.length]; }
 
-  // --- REACTIVE PROCESSING: LEFT JOIN TỪ DSNV ---
+  // Hash map xác định kiểu dữ liệu từ gốc (chính xác hơn .loaiSoLieu)
+  $: isQuantityMap = (columnSettings || []).reduce((acc, col) => {
+      acc[col.tenGoc] = ($competitionData || []).some(c => c.name.endsWith(col.tenGoc) && c.type === 'soLuong');
+      return acc;
+  }, {});
+
+  function getDynamicMetricValue(comp, colTenGoc, qtyMap) {
+      if (!comp) return 0; 
+      if (comp.giaTri !== undefined) return comp.giaTri; 
+      return qtyMap[colTenGoc] ? (comp.soLuong || 0) : (comp.doanhThu || 0);
+  }
+
+  // Chặn hiển thị nhân viên không có trong DSNV hiện tại
   $: {
-      if (reportData && reportData.length > 0) {
-          const infoMap = {};
-          if ($ycxData && $ycxData.length) {
-              $ycxData.forEach(nv => {
-                  const code = String(nv.ma_nv || nv.maNV || '').trim();
-                  const name = nv.ten_nv || nv.hoTen || '';
-                  const dept = nv.ma_kho || nv.boPhan || nv.vi_tri || '';
-                  if (code) infoMap[code] = { name, dept };
-                  if (nv.nguoiTao) {
-                      const msnvMatch = String(nv.nguoiTao).match(/(\d+)/);
-                      if (msnvMatch) {
-                          const extractedCode = msnvMatch[1].trim();
-                          if (!infoMap[extractedCode]) infoMap[extractedCode] = { name: nv.hoTen || nv.nguoiTao, dept: dept };
+      if ($processedEmployeeCompetitionData && $processedEmployeeCompetitionData.length > 0) {
+          
+          const validEmpCodes = new Set(filteredEmps.map(e => String(e.maNV || e.ma_nv || e.id).trim()));
+
+          let tempEmployees = $processedEmployeeCompetitionData
+              .filter(emp => validEmpCodes.has(String(emp.maNV).trim()))
+              .map(emp => {
+                  let score = 0;
+                  emp._staticMetrics = {}; 
+                  
+                  (columnSettings || []).forEach(col => {
+                      const comp = (emp.competitions || []).find(c => c.tenGoc === col.tenGoc);
+                      const val = getDynamicMetricValue(comp, col.tenGoc, isQuantityMap);
+                      emp._staticMetrics[col.tenGoc] = val; 
+                      
+                      const pTarget = categoryTargets[col.tenGoc] || 0;
+                      const projectedVal = (val / currentDay) * daysInMonth;
+                      if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) {
+                          score++;
                       }
+                  });
+                  emp._cachedScore = score; 
+
+                  const dsnvMatch = filteredEmps.find(e => String(e.maNV || e.ma_nv).trim() === String(emp.maNV).trim());
+                  if (dsnvMatch) {
+                      emp.hoTen = dsnvMatch.hoTen || dsnvMatch.tenNV || dsnvMatch.ten_nv || emp.hoTen;
                   }
+
+                  return { ...emp };
               });
-          }
 
-          let targetEmps = $danhSachNhanVien || [];
-          if ($selectedWarehouse && $selectedWarehouse !== 'ALL') {
-              targetEmps = targetEmps.filter(e => String(e.ma_kho || e.maKho) === $selectedWarehouse);
-          }
-
-          let finalEmployees = [];
-          targetEmps.forEach(emp => {
-              const empCode = String(emp.ma_nv || emp.maNV || '').trim();
-              const empKho = String(emp.ma_kho || emp.maKho || '').trim();
-              
-              const matchingReports = (reportData || []).filter(r => String(r.maNV).trim() === empCode);
-              let matchedReport = null;
-              if (matchingReports.length > 0) {
-                  matchedReport = matchingReports.find(r => String(r.maKho).trim() === empKho);
-                  if (!matchedReport) matchedReport = matchingReports[0]; 
-              }
-
-              if (matchedReport) {
-                  finalEmployees.push({
-                      ...matchedReport,
-                      maNV: empCode,
-                      maKho: empKho || matchedReport.maKho || 'N/A',
-                      hoTen: emp.ten_nv || emp.hoTen || matchedReport.hoTen,
-                      boPhan: emp.vi_tri || emp.boPhan || matchedReport.boPhan
-                  });
-              } else {
-                  finalEmployees.push({
-                      maNV: empCode,
-                      maKho: empKho || 'N/A',
-                      hoTen: emp.ten_nv || emp.hoTen,
-                      boPhan: emp.vi_tri || emp.boPhan || 'Chưa phân loại',
-                      competitions: [],
-                      completedCount: 0
-                  });
-              }
-          });
-
-          (reportData || []).forEach(r => {
-              const rCode = String(r.maNV).trim();
-              const rKho = String(r.maKho).trim();
-              const exists = finalEmployees.find(e => String(e.maNV) === rCode && (String(e.maKho) === rKho || $selectedWarehouse === 'ALL'));
-              
-              if (!exists && (!$selectedWarehouse || $selectedWarehouse === 'ALL' || rKho === $selectedWarehouse)) {
-                  let realName = r.hoTen || r.name;
-                  let realDept = r.boPhan;
-                  const info = infoMap[rCode];
-                  if (info) {
-                      if (info.name) realName = info.name;
-                      if (!realDept || realDept === 'Chưa phân loại' || realDept === rCode) realDept = info.dept;
-                  }
-                  if (realName && realName.includes('-')) {
-                       const parts = realName.split('-');
-                       if (parts.length > 1 && /\d/.test(parts[parts.length-1])) realName = parts[0].trim();
-                  }
-
-                  finalEmployees.push({
-                      ...r, maNV: rCode, maKho: rKho || 'N/A', hoTen: realName, boPhan: realDept || 'Chưa phân loại'
-                  });
-              }
-          });
-          
-          let savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          if (!savedSettings || savedSettings.length === 0) savedSettings = settingsService.loadPastedCompetitionViewSettings();
-          
-          columnSettings = savedSettings.map(col => ({
-              ...col, label: findSmartMapping(col.tenGoc, $competitionNameMappings) || col.label || col.tenGoc
-          }));
-
-          allEmployees = finalEmployees;
+          allEmployees = tempEmployees;
       } else {
           allEmployees = [];
       }
@@ -189,24 +162,15 @@
 
   $: sortedEmployees = [...allEmployees].sort((a, b) => {
       let valA, valB;
-      const getScore = (emp) => {
-          let score = 0;
-          (emp.competitions || []).forEach(comp => {
-              const val = comp.giaTri || 0;
-              const pTarget = categoryTargets[comp.tenGoc] || 0;
-              const projectedVal = (val / currentDay) * daysInMonth;
-              if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) score++;
-          });
-          return score;
-      };
 
       if (sortKey.startsWith('comp_')) {
             const sortCol = columnSettings.find(c => c.id === sortKey);
             if (!sortCol) return 0;
-            valA = (a.competitions || []).find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
-            valB = (b.competitions || []).find(c => c.tenGoc === sortCol.tenGoc)?.giaTri || 0;
+            valA = a._staticMetrics ? (a._staticMetrics[sortCol.tenGoc] || 0) : 0;
+            valB = b._staticMetrics ? (b._staticMetrics[sortCol.tenGoc] || 0) : 0;
       } else if (sortKey === 'totalScore') {
-            valA = getScore(a); valB = getScore(b);
+            valA = a._cachedScore || 0; 
+            valB = b._cachedScore || 0;
       } else {
             valA = a[sortKey] || ''; valB = b[sortKey] || '';
       }
@@ -276,20 +240,13 @@
 
   function calculateTotal(col) {
       return allEmployees.reduce((sum, emp) => {
-          const comp = (emp.competitions || []).find(c => c.tenGoc === col.tenGoc);
-          return sum + (comp?.giaTri || 0);
+          return sum + (emp._staticMetrics ? (emp._staticMetrics[col.tenGoc] || 0) : 0);
       }, 0);
   }
 
   function calculateTotalScore() {
       return allEmployees.reduce((total, item) => {
-          const score = (item.competitions || []).reduce((acc, c) => {
-              const val = c.giaTri || 0;
-              const pTarget = categoryTargets[c.tenGoc] || 0;
-              const projectedVal = (val / currentDay) * daysInMonth;
-              return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
-          }, 0);
-          return total + score;
+          return total + (item._cachedScore || 0);
       }, 0);
   }
 
@@ -299,7 +256,7 @@
 <div class="space-y-4 animate-fade-in">
     {#if reportData.length === 0}
         <div class="p-8 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
-            <p class="text-gray-500">Vui lòng dán dữ liệu "Thi đua nhân viên" ở tab "Cập nhật dữ liệu".</p>
+            <p class="text-gray-500">Vui lòng tải file "Thi đua nhân viên" ở tab "Cập nhật dữ liệu".</p>
         </div>
     {:else}
         
@@ -357,12 +314,6 @@
                     
                     <tbody class="divide-y divide-gray-100">
                         {#each processedEmployees as item, loopIndex (item.maNV + '_' + (item.maKho || '') + '_' + loopIndex)}
-                            {@const score = (item.competitions || []).reduce((acc, c) => {
-                                const val = c.giaTri || 0;
-                                const pTarget = categoryTargets[c.tenGoc] || 0;
-                                const projectedVal = (val / currentDay) * daysInMonth;
-                                return ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) ? acc + 1 : acc;
-                            }, 0)}
                             
                             <tr class="transition-colors group cursor-pointer {getRowStyle(item._displayRank)}" on:click={() => dispatch('viewDetail', { employeeId: item.maNV })}>
                                 <td class="px-1 py-1.5 text-center font-bold border-r border-gray-200 z-10 sticky transition-colors {getStickyClass(item._displayRank)} {item._displayRank <= 2 ? 'text-lg' : 'text-sm text-slate-400'}" style="left: 0px;">
@@ -380,22 +331,22 @@
                                 </td>
                                 
                                 <td class="px-1 py-1.5 w-[100px] min-w-[100px] text-center font-bold text-green-600 border-r border-gray-200 text-[14px] sticky z-10 transition-colors {getStickyClass(item._displayRank)}" style="left: {$selectedWarehouse === 'ALL' ? '260px' : '200px'};">
-                                    {score}
+                                    {item._cachedScore || 0}
                                 </td>
 
                                 {#each visibleColumns as col}
-                                    {@const comp = (item.competitions || []).find(c => c.tenGoc === col.tenGoc)}
-                                    {@const val = comp?.giaTri || 0}
+                                    {@const val = item._staticMetrics ? (item._staticMetrics[col.tenGoc] || 0) : 0}
                                     {@const pTarget = categoryTargets[col.tenGoc] || 0}
                                     {@const projectedVal = (val / currentDay) * daysInMonth}
                                     {@const isBelow = pTarget > 0 && projectedVal < pTarget}
-                                    {@const isNoTarget = pTarget === 0 && val === 0}
-                                    {@const isRevenue = col.loaiSoLieu && col.loaiSoLieu.includes('DT')}
-                                    {@const textColorClass = isBelow ? 'text-yellow-900' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
+                                    
+                                    <!-- [PHẪU THUẬT LOGIC]: Tận dụng trực tiếp isQuantityMap làm Source of Truth thay vì col.loaiSoLieu -->
+                                    {@const isRevenue = !isQuantityMap[col.tenGoc]}
+                                    {@const textColorClass = isBelow ? 'text-red-600' : (isRevenue ? 'text-blue-700' : 'text-gray-900')}
 
-                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden" title={isNoTarget ? "Chưa có target cá nhân" : `Dự kiến: ${formatters.formatNumber(projectedVal)}`}>
+                                    <td class="px-1 py-1.5 text-right border-r border-gray-100 font-bold text-[13px] {isBelow ? 'bg-red-100' : ''} {textColorClass} whitespace-nowrap overflow-hidden">
                                         {#if val === 0}
-                                            <span class="text-gray-300 font-normal">{isNoTarget ? '0' : '-'}</span>
+                                            <span class="text-gray-300 font-normal">0</span>
                                         {:else}
                                             {formatters.formatNumber(val)}
                                         {/if}
@@ -415,7 +366,7 @@
                             </td>
                             {#each visibleColumns as col}
                                 {@const pTarget = categoryTargets[col.tenGoc] || 0}
-                                <td class="px-1 py-2 text-right border-r border-indigo-200 text-[13px] bg-indigo-50 text-indigo-700" title={pTarget === 0 ? "Chưa link dữ liệu hoặc Target bằng 0" : ""}>
+                                <td class="px-1 py-2 text-right border-r border-indigo-200 text-[13px] bg-indigo-50 text-indigo-700">
                                     {pTarget > 0 ? formatters.formatNumber(pTarget) : '0'}
                                 </td>
                             {/each}
@@ -463,7 +414,5 @@
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
     table { border-spacing: 0; }
-    
-    /* [SỬA ĐỔI] Thêm style ẩn icon mũi tên mặc định của thẻ details */
     details > summary::-webkit-details-marker { display: none; }
 </style>

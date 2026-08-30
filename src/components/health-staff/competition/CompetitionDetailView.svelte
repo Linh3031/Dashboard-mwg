@@ -7,11 +7,10 @@
 
     export let employeeId;
     export let allReportData = []; 
-    export let isGhostMode = false; // [TÍNH NĂNG MỚI]: Bật khi chạy Background Rendering
+    export let isGhostMode = false; 
 
     const dispatch = createEventDispatcher();
     
-    // --- STATE ---
     let viewMode = 'rut_gon'; 
     let employee = null;
     let displayInfo = { name: '', code: '' }; 
@@ -25,10 +24,8 @@
         summary: { total: 0, dat: 0, rate: 0, ganDat: 0, canCoGang: 0 }
     };
 
-    // --- [ĐÃ PHẪU THUẬT] TÊN FILE ĐỘNG CHO CHỤP NGẦM AN TOÀN ---
     $: captureFileName = displayInfo.name ? `ThiDua_ChiTiet_${displayInfo.name}_${displayInfo.code}` : `ThiDua_ChiTiet_${employeeId}`;
 
-    // --- LOGIC TIẾN ĐỘ DỰ KIẾN ---
     let currentDay = 1;
     let daysInMonth = 30;
 
@@ -46,14 +43,16 @@
         }
     }
 
-    // --- LOGIC TARGET CÁ NHÂN ---
     let targetRatio = 100;
     let categoryTargets = {};
+    
+    let isTargetLoaded = false;
 
-    $: if ($selectedWarehouse) {
-        datasyncService.loadPersonalTargetRatio($selectedWarehouse)
-            .then(ratio => targetRatio = ratio)
-            .catch(() => targetRatio = 100);
+    $: if ($selectedWarehouse !== undefined) {
+        isTargetLoaded = false;
+        datasyncService.loadPersonalTargetRatio($selectedWarehouse || 'ALL')
+            .then(ratio => { targetRatio = ratio; isTargetLoaded = true; })
+            .catch(() => { targetRatio = 100; isTargetLoaded = true; });
     }
 
     $: emps = $danhSachNhanVien || [];
@@ -88,21 +87,43 @@
         return 'text-red-600';
     }
 
+    function getDynamicMetricValue(comp, colTenGoc) {
+        if (!comp) return 0;
+        if (comp.giaTri !== undefined) return comp.giaTri; 
+        
+        const isQuantity = ($competitionData || []).some(c => {
+            return c.name.endsWith(colTenGoc) && c.type === 'soLuong';
+        });
+
+        return isQuantity ? (comp.soLuong || 0) : (comp.doanhThu || 0);
+    }
+
+    // [PHẪU THUẬT LOGIC]: Tối ưu trích xuất tên NV chuẩn xác
     $: {
         if (employeeId && allReportData.length > 0) {
-            let rawEmp = allReportData.find(e => e.maNV === employeeId);
+            let rawEmp = allReportData.find(e => String(e.maNV).trim() === String(employeeId).trim());
             if (rawEmp) {
                 employee = { ...rawEmp };
                 const cleanCode = String(employeeId).trim();
                 let realName = employee.hoTen || employee.name || '';
 
-                if ($ycxData?.length) {
+                // 1. Ưu tiên lấy từ DSNV chuẩn
+                const dsnvEmp = ($danhSachNhanVien || []).find(e => String(e.maNV || e.ma_nv || e.id).trim() === cleanCode);
+                if (dsnvEmp && (dsnvEmp.hoTen || dsnvEmp.tenNV)) {
+                    realName = dsnvEmp.hoTen || dsnvEmp.tenNV;
+                } 
+                // 2. Fallback qua YCX nếu không có trong DSNV
+                else if ($ycxData?.length) {
                     const dbEmp = $ycxData.find(e => String(e.ma_nv || e.maNV || '').trim() === cleanCode || (e.nguoiTao && String(e.nguoiTao).includes(cleanCode)));
                     if (dbEmp) {
                         realName = dbEmp.ten_nv || dbEmp.hoTen || realName;
                     }
                 }
-                realName = realName.replace(cleanCode, '').replace(/[-–—\s]+$/, '').trim();
+
+                // Dọn dẹp chuỗi: Xóa mã NV và cắt sạch các ký tự gạch ngang/dấu cách ở 2 đầu
+                realName = realName.replace(cleanCode, '').replace(/^[-–—\s]+|[-–—\s]+$/g, '').trim();
+                if (!realName) realName = "Nhân viên"; // Cứu cánh nếu bị rỗng
+
                 displayInfo = { name: realName, code: cleanCode };
 
                 let columnSettings = settingsService.loadPastedCompetitionViewSettings() || [];
@@ -111,10 +132,11 @@
                 }));
 
                 let datList = [], ganDatList = [], canCoGangList = [], chuaCoSoBanList = [];
+                const empComps = employee.competitions || [];
 
                 activeColumns.forEach(col => {
-                    const compData = employee.competitions.find(c => c.tenGoc === col.tenGoc);
-                    const val = compData?.giaTri || 0;
+                    const compData = empComps.find(c => c.tenGoc === col.tenGoc);
+                    const val = getDynamicMetricValue(compData, col.tenGoc);
                     const target = categoryTargets[col.tenGoc] || 0;
                     const projectedVal = (val / currentDay) * daysInMonth;
                     

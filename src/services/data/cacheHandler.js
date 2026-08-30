@@ -35,10 +35,7 @@ export const cacheHandler = {
         await Promise.all(otherFiles.map(async (key) => {
             try {
                 let data = await storage.getItem(key);
-                
-                // [PHẪU THUẬT v3.3]: Kiểm tra Array.isArray để bọc lỗi vỡ Cache gây trắng trang
                 if (data && Array.isArray(data) && data.length > 0) {
-                    
                     if (key.includes('ycx') && allowedWarehouses.length > 0) {
                          data = data.filter(d => {
                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
@@ -60,7 +57,6 @@ export const cacheHandler = {
                     FILE_MAPPING[key].store.set(displayData);
                     updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
                  } else if (data && !Array.isArray(data)) {
-                     // Reset rác cache để dọn luồng bộ nhớ
                      console.warn(`[CacheHandler] Rác cache phát hiện tại key: ${key}. Đang tiến hành làm sạch...`);
                      await storage.setItem(key, []);
                  }
@@ -77,7 +73,8 @@ export const cacheHandler = {
             let aggregatedErpTT = [];
 
             if (allowedWarehouses.length > 0) {
-                allowedWarehouses.forEach(kho => {
+                // [PHẪU THUẬT LOGIC]: Chuyển forEach sang for...of để dùng được Async/Await đọc DB
+                for (const kho of allowedWarehouses) {
                     const luykeText = localStorage.getItem(`daily_paste_luyke_${kho}`);
                     if (luykeText) {
                         dataProcessing.parseLuyKePastedData(luykeText); 
@@ -94,23 +91,29 @@ export const cacheHandler = {
                         aggregatedErp = [...aggregatedErp, ...data];
                     }
 
-                    const rawThiDua = localStorage.getItem(`raw_paste_thiduanv_${kho}`);
-                    if (rawThiDua) {
-                        const parsedData = dataProcessing.parsePastedThiDuaTableData(rawThiDua);
-                        if (parsedData.success) {
-                            const $competitionData = get(competitionData);
-                            const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, $competitionData);
-                            aggregatedThidua = [...aggregatedThidua, ...processedData];
-                            updateSyncState(`daily_paste_thiduanv_${kho}`, 'cached', `(Local)`, null);
-                        }
-                    }
-
                     const erpTTText = localStorage.getItem(`saved_thuongerp_thangtruoc_${kho}`) || localStorage.getItem(`saved_thuongerp_thangtruoc`);
                     if (erpTTText) {
                          const data = dataProcessing.processThuongERP(erpTTText);
                          aggregatedErpTT = [...aggregatedErpTT, ...data];
                     }
-                });
+
+                    // Tải dữ liệu Excel Thi đua NV mới từ IndexedDB
+                    const excelThiDua = await storage.getItem(`saved_thiduanv_excel_${kho}`);
+                    if (excelThiDua && Array.isArray(excelThiDua)) {
+                        aggregatedThidua = [...aggregatedThidua, ...excelThiDua];
+                        updateSyncState(`saved_thiduanv_excel_${kho}`, 'cached', `✓ (Local Cache)`, null);
+                    } else {
+                        // Kế thừa đồ cổ (Dán text cũ) nếu có
+                        const rawThiDua = localStorage.getItem(`raw_paste_thiduanv_${kho}`);
+                        if (rawThiDua) {
+                            const parsedData = dataProcessing.parsePastedThiDuaTableData(rawThiDua);
+                            if (parsedData.success) {
+                                const processedData = dataProcessing.processThiDuaNhanVienData(parsedData, get(competitionData));
+                                aggregatedThidua = [...aggregatedThidua, ...processedData];
+                            }
+                        }
+                    }
+                }
 
                 if (aggregatedLuykeComps.length > 0) competitionData.set(aggregatedLuykeComps);
                 if (aggregatedErp.length > 0) thuongERPData.set(aggregatedErp);
