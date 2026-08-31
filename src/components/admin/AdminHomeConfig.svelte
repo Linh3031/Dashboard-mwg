@@ -6,29 +6,24 @@
     let localConfig = {
         videoUrl: '',
         timeline: [],
-        sliderImages: [], // Bây giờ chỉ lưu { url, title }
+        sliderImages: [],
         changelogs: []
     };
     let activeTab = 'video';
     let isSaving = false;
 
-    // --- BIẾN CHO TRÌNH SOẠN THẢO MỚI ---
-    let mainTitle = ''; // Tiêu đề chính (VD: Cập nhật tháng 12)
-    let editorSections = []; // Danh sách các mục nhỏ
+    let mainTitle = ''; 
+    let editorSections = []; 
 
-    // [CODEGENESIS] 1. CỜ KHÓA (DRAFT PROTECTION)
     let isEditing = false;
     
-    // [CODEGENESIS] 2. Chỉ ghi đè localConfig khi KHÔNG ở trạng thái đang soạn thảo
     $: if ($homeConfig && !isEditing) {
         localConfig = JSON.parse(JSON.stringify($homeConfig));
     }
 
-    // --- LOGIC TIMELINE VIDEO ---
     function addTimelineItem() { localConfig.timeline = [...localConfig.timeline, { time: '00:00', label: 'Mốc mới' }]; }
     function removeTimelineItem(index) { localConfig.timeline = localConfig.timeline.filter((_, i) => i !== index); }
 
-    // --- LOGIC SLIDE ẢNH BẰNG URL (ĐÃ FIX: CHÈN LÊN ĐẦU) ---
     function addSlide() {
         localConfig.sliderImages = [{ url: '', title: '' }, ...localConfig.sliderImages];
     }
@@ -38,7 +33,6 @@
         localConfig.sliderImages = localConfig.sliderImages.filter((_, i) => i !== index);
     }
 
-    // --- LOGIC CHANGELOG ---
     function addChangelogItem() {
         isEditing = true;
         const today = new Date().toLocaleDateString('vi-VN');
@@ -84,7 +78,6 @@
         if (!silent) alert("Đã cập nhật nội dung! Hãy bấm 'Lưu Cấu Hình' ở dưới cùng để hoàn tất.");
     }
 
-    // --- HÀM LƯU CHUNG ---
     async function saveAllConfig() {
         if (isEditing && (editorSections.length > 0 || mainTitle !== '')) {
             applyEditorContent(0, true);
@@ -93,7 +86,6 @@
         console.log("Đang lưu...", localConfig);
         isSaving = true;
         try {
-            // 1. Fix link Youtube
             if (localConfig.videoUrl) {
                 let url = localConfig.videoUrl;
                 if (url.includes('watch?v=')) {
@@ -106,13 +98,10 @@
                 localConfig.videoUrl = url;
             }
 
-            // 2. Dọn dẹp Slide ảnh (Loại bỏ các item rỗng)
             localConfig.sliderImages = localConfig.sliderImages.filter(img => img.url && img.url.trim() !== '');
 
-            // 3. Lưu Firestore
             await adminService.saveHomeConfig(localConfig);
             
-            // 4. Mở khóa đồng bộ Svelte sau khi lưu thành công
             isEditing = false;
             localConfig = localConfig; 
 
@@ -129,7 +118,8 @@
 </script>
 
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6 transition-all hover:shadow-md">
-    <details class="group" open> 
+    <!-- [PHẪU THUẬT LOGIC]: Đã xóa thuộc tính 'open' ở đây -->
+    <details class="group"> 
         <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
             <div class="flex items-center gap-3">
                 <div class="p-2 bg-pink-50 rounded-lg text-pink-600">

@@ -23,6 +23,9 @@
   import ProductivityDataBlock from './data-section/ProductivityDataBlock.svelte';
   import MonthlyDataBlock from './data-section/MonthlyDataBlock.svelte';
   
+  // [PHẪU THUẬT LOGIC]: Import Component Modal Video
+  import MicroTutorialModal from './modals/MicroTutorialModal.svelte';
+  
   export let activeTab;
   let isSyncing = false;
   let dsnvUnsubscribe; 
@@ -43,6 +46,12 @@
         { id: 'input-ycx-thang-truoc', title: 'YCX Lũy kế tháng trước', content: 'Dùng để so sánh sự tăng giảm với cùng kỳ tháng trước.\nBạn có thể tải lên nhiều file để xem dữ liệu nhiều tháng.', openDetails: 'block-yellow' },
         { id: 'input-ycx-nam-truoc', title: 'YCX Lũy kế năm trước', content: 'Dùng để so sánh tăng trưởng SSG 1 tháng hoặc đối chiếu lũy kế nguyên năm.', openDetails: 'block-yellow' }
   ];
+
+  // [PHẪU THUẬT LOGIC]: Logic điều khiển Modal Video
+  let tutorialModal;
+  function handleOpenTutorial(event) {
+      if (tutorialModal) tutorialModal.open(event.detail);
+  }
 
   $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
       checkClusterStatus($danhSachNhanVien);
@@ -351,12 +360,16 @@
             on:pasteClusterSummary={handlePasteClusterSummary}
             on:pasteCumulative={handlePasteCumulative}
             on:pasteCompetition={handlePasteCompetition}
+            on:openTutorial={handleOpenTutorial}
         />
         
-        <ProductivityDataBlock />
+        <ProductivityDataBlock on:openTutorial={handleOpenTutorial} />
     </div>
    
-    <MonthlyDataBlock />
+    <MonthlyDataBlock on:openTutorial={handleOpenTutorial} />
 
     <TourGuide bind:isActive={isTourActive} steps={dataTourSteps} />
+
+    <!-- [PHẪU THUẬT LOGIC]: Chèn Component Modal vào lớp root ngoài cùng -->
+    <MicroTutorialModal bind:this={tutorialModal} />
 </section>

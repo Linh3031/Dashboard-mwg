@@ -60,16 +60,28 @@
         </div>
     </h3>
     
-    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4 mt-1">
         
         <!-- 1. Yêu cầu xuất lũy kế -->
-        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-ycx">
-             <div class="h-fit w-full">
+        <div class="flex flex-col gap-2 overflow-hidden" data-tour="input-ycx">
+             <!-- [PHẪU THUẬT LOGIC]: Nâng cấp Header 1 -->
+             <div class="flex justify-between items-center px-1 pb-1 border-b border-blue-100/50">
+                 <span class="text-[12px] font-extrabold text-blue-900 uppercase tracking-wide">Excel Lũy Kế</span>
+                 <button on:click={() => dispatch('openTutorial', 'ycx-luy-ke')} class="group flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-2.5 py-0.5 rounded-full transition-all text-[10px] font-bold shadow-sm" title="Xem video hướng dẫn">
+                     <span class="relative flex h-2 w-2">
+                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                       <span class="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+                     </span>
+                     <span>HƯỚNG DẪN</span>
+                     <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
+                 </button>
+             </div>
+             <div class="h-fit w-full mt-1">
                 <FileInput label="Yêu cầu xuất lũy kế" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx" isMultiMode={true} />
             </div>
             
             {#if $selectedWarehouse === 'ALL'}
-                <div class="h-fit animate-fade-in border border-blue-200 rounded-lg bg-blue-50/50 p-2 overflow-hidden flex flex-col w-full max-w-full">
+                <div class="h-fit animate-fade-in border border-blue-200 rounded-lg bg-blue-50/50 p-2 overflow-hidden flex flex-col w-full max-w-full mt-2">
                     <h4 class="text-sm font-bold text-blue-800 mb-2 px-1 flex items-center gap-2">
                         <i data-feather="pie-chart" class="w-4 h-4"></i> BC Tổng Hợp Cụm
                     </h4>
@@ -80,59 +92,95 @@
             {/if}
         </div>
 
-        <!-- 2. Doanh thu BI (Đã được đảo lên trước) -->
-        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-doanhthu-bi">
+        <!-- 2. Doanh thu BI -->
+        <div class="flex flex-col gap-2 overflow-hidden" data-tour="input-doanhthu-bi">
+            <!-- [PHẪU THUẬT LOGIC]: Nâng cấp Header 2 -->
+            <div class="flex justify-between items-center px-1 pb-1 border-b border-blue-100/50">
+                 <span class="text-[12px] font-extrabold text-blue-900 uppercase tracking-wide">Báo Cáo BI</span>
+                 <button on:click={() => dispatch('openTutorial', 'doanh-thu-bi')} class="group flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-2.5 py-0.5 rounded-full transition-all text-[10px] font-bold shadow-sm" title="Xem video hướng dẫn">
+                     <span class="relative flex h-2 w-2">
+                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                       <span class="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+                     </span>
+                     <span>HƯỚNG DẪN</span>
+                     <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
+                 </button>
+            </div>
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
                     {#if kho !== 'ALL'}
-                        <div class="h-fit animate-fade-in w-full overflow-hidden">
+                        <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
                             <FileInput label={`Doanh thu BI (${kho})`} icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey={`saved_doanhthu_bi_${kho}`} />
                         </div>
                     {/if}
                 {/each}
             {:else}
-                <div class="h-fit w-full overflow-hidden">
+                <div class="h-fit w-full overflow-hidden mt-1">
                     <FileInput label={`Doanh thu BI (${$selectedWarehouse})`} icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey={`saved_doanhthu_bi_${$selectedWarehouse}`} />
                 </div>
             {/if}
         </div>
 
-        <!-- 3. Thi đua nhân viên (Đã được đảo xuống sau) -->
-        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-thidua-nv">
+        <!-- 3. Thi đua nhân viên -->
+        <div class="flex flex-col gap-2 overflow-hidden" data-tour="input-thidua-nv">
+            <!-- [PHẪU THUẬT LOGIC]: Nâng cấp Header 3 -->
+            <div class="flex justify-between items-center px-1 pb-1 border-b border-blue-100/50">
+                 <span class="text-[12px] font-extrabold text-blue-900 uppercase tracking-wide">Thi đua cá nhân</span>
+                 <button on:click={() => dispatch('openTutorial', 'thi-dua-nv')} class="group flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-2.5 py-0.5 rounded-full transition-all text-[10px] font-bold shadow-sm" title="Xem video hướng dẫn">
+                     <span class="relative flex h-2 w-2">
+                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                       <span class="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+                     </span>
+                     <span>HƯỚNG DẪN</span>
+                     <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
+                 </button>
+            </div>
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
                     {#if kho !== 'ALL'}
-                        <div class="h-fit animate-fade-in w-full overflow-hidden">
+                        <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
                             <FileInput label={`Thi đua nhân viên (${kho})`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${kho}`} />
                         </div>
                     {/if}
                 {/each}
             {:else}
-                <div class="h-fit w-full overflow-hidden">
+                <div class="h-fit w-full overflow-hidden mt-1">
                     <FileInput label={`Thi đua nhân viên (${$selectedWarehouse})`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${$selectedWarehouse}`} />
                 </div>
             {/if}
         </div>
 
         <!-- 4. Lũy kế -->
-        <div class="flex flex-col gap-4 overflow-hidden" data-tour="input-data-lk">
+        <div class="flex flex-col gap-2 overflow-hidden" data-tour="input-data-lk">
+            <!-- [PHẪU THUẬT LOGIC]: Nâng cấp Header 4 -->
+            <div class="flex justify-between items-center px-1 pb-1 border-b border-blue-100/50">
+                 <span class="text-[12px] font-extrabold text-blue-900 uppercase tracking-wide">Thi đua ST Lũy Kế</span>
+                 <button on:click={() => dispatch('openTutorial', 'data-luy-ke')} class="group flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-2.5 py-0.5 rounded-full transition-all text-[10px] font-bold shadow-sm" title="Xem video hướng dẫn">
+                     <span class="relative flex h-2 w-2">
+                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                       <span class="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+                     </span>
+                     <span>HƯỚNG DẪN</span>
+                     <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
+                 </button>
+            </div>
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
                     {#if kho !== 'ALL'}
-                        <div class="h-fit animate-fade-in w-full overflow-hidden">
+                        <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
                             <PasteInput label={`Thi đua ST lũy kế (${kho})`} icon="clipboard" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKeyPaste={`daily_paste_luyke_${kho}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: kho })} />
                         </div>
                     {/if}
                 {/each}
             {:else}
                 {#if isClusterMode}
-                    <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative w-full overflow-hidden mb-4">
+                    <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative w-full overflow-hidden mb-4 mt-2">
                         <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
                         <PasteInput label="Thi đua siêu thị lũy kế" icon="layers" link="#" placeholder="Paste dữ liệu thi đua cụm..." saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`} on:paste={(e) => dispatch('pasteCompetition', e.detail)} />
                         <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1"><i data-feather="info" class="w-3 h-3"></i>Dành cho quản lý Cụm {currentClusterCode}</p>
                     </div>
                 {/if}
-                <div class="h-fit w-full overflow-hidden">
+                <div class="h-fit w-full overflow-hidden mt-1">
                     <PasteInput label={isClusterMode ? `Thi đua ST lũy kế (Cụm ${currentClusterCode})` : `Thi đua siêu thị lũy kế (${$selectedWarehouse})`} icon="clipboard" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : `daily_paste_luyke_${$selectedWarehouse}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: $selectedWarehouse })} />
                 </div>
             {/if}

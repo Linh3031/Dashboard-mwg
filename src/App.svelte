@@ -154,7 +154,9 @@
               adminService.loadCategoryDataFromFirestore(),
               adminService.loadEfficiencyConfig(),
               adminService.loadSpecialProductList(),
-              adminService.loadHomeConfig()       
+              adminService.loadHomeConfig(),
+              // [PHẪU THUẬT LOGIC]: Bổ sung lệnh nạp dữ liệu Video Hướng Dẫn khi F5 khởi động app
+              (typeof adminService.loadHelpContent === 'function') ? adminService.loadHelpContent() : Promise.resolve()
           ]);
       } catch (error) {
           console.error("[App] Lỗi tải cấu hình hệ thống:", error);

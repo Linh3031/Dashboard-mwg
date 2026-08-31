@@ -3,15 +3,77 @@
     import { helpContent } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
 
-    let localHelpContent = { ...$helpContent };
+    // 1. Định nghĩa trước các mốc gắn dấu "?" trên hệ thống
+    const tutorialTargets = [
+        { id: 'ycx-luy-ke', label: 'Khối 1: Yêu cầu xuất lũy kế (File Excel)' },
+        { id: 'doanh-thu-bi', label: 'Khối 1: Doanh thu BI' },
+        { id: 'thi-dua-nv', label: 'Khối 1: Thi đua nhân viên' },
+        { id: 'data-luy-ke', label: 'Khối 1: Thi đua siêu thị lũy kế (Paste)' },
+        { id: 'nang-suat', label: 'Khối 2: Chi tiết năng suất (Giờ công, Thưởng)' },
+        { id: 'data-thang', label: 'Khối 3: Cập nhật dữ liệu tháng' }
+    ];
 
-    $: if ($helpContent) {
-        if (!localHelpContent.data && $helpContent.data) localHelpContent = { ...$helpContent };
+    let localHelpContent = {};
+    tutorialTargets.forEach(t => {
+        localHelpContent[t.id] = { title: '', desc: '', youtubeUrl: '' };
+    });
+
+    // [PHẪU THUẬT LOGIC]: Chữa lỗi Svelte Reactivity Reassignment & Race Condition
+    let syncedString = '';
+    $: if ($helpContent && Object.keys($helpContent).length > 0) {
+        const incomingString = JSON.stringify($helpContent);
+        
+        // Chỉ nạp lại Form nếu dữ liệu store THỰC SỰ thay đổi (Khắc phục lỗi data đến trễ sau F5)
+        if (incomingString !== syncedString) {
+            let updatedContent = { ...localHelpContent };
+            for (const key in $helpContent) {
+                if (updatedContent[key] && typeof $helpContent[key] === 'object') {
+                    updatedContent[key] = { ...updatedContent[key], ...$helpContent[key] };
+                }
+            }
+            
+            // LUẬT CỦA SVELTE: Phải gán lại (Reassign) biến chính để ép UI render text
+            localHelpContent = updatedContent;
+            syncedString = incomingString; // Lưu lại mốc data để không bị re-render đè phím lúc gõ
+        }
     }
 
+    let isSaving = false;
+
     async function saveHelp() {
-        await adminService.saveHelpContent(localHelpContent);
-        helpContent.set({ ...localHelpContent });
+        isSaving = true;
+        try {
+            for (const key in localHelpContent) {
+                let url = localHelpContent[key].youtubeUrl;
+                if (url) {
+                    if (url.includes('watch?v=')) {
+                        url = url.replace('watch?v=', 'embed/');
+                        const ampIdx = url.indexOf('&');
+                        if (ampIdx !== -1) url = url.substring(0, ampIdx);
+                    } else if (url.includes('youtu.be/')) {
+                        url = url.replace('youtu.be/', 'www.youtube.com/embed/');
+                    }
+                    if (!url.includes('?')) url += '?rel=0&modestbranding=1&autoplay=1';
+                    localHelpContent[key].youtubeUrl = url;
+                }
+            }
+
+            // Lưu local cache trước để an toàn chống F5
+            helpContent.set({ ...localHelpContent });
+            localStorage.setItem('cached_help_content', JSON.stringify(localHelpContent));
+            
+            // Đẩy lên Firebase Server Cloud
+            if (typeof adminService.saveHelpContent === 'function') {
+                await adminService.saveHelpContent(localHelpContent);
+            }
+            
+            alert("✅ Đã đồng bộ hệ thống Video Hướng Dẫn thành công lên Server Cloud!");
+        } catch (error) {
+            console.error("Lỗi xử lý:", error);
+            alert("⚠️ Lỗi không thể lưu lên Server: " + error.message);
+        } finally {
+            isSaving = false;
+        }
     }
 
     afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
@@ -22,11 +84,11 @@
         <summary class="flex justify-between items-center p-5 cursor-pointer bg-white hover:bg-slate-50 transition-colors list-none select-none">
             <div class="flex items-center gap-3">
                 <div class="p-2 bg-green-50 rounded-lg text-green-600">
-                    <i data-feather="book-open"></i>
+                    <i data-feather="youtube"></i>
                 </div>
                 <div>
-                    <h3 class="font-bold text-slate-700 text-lg">Nội dung Hướng dẫn</h3>
-                    <p class="text-xs text-slate-500">Chỉnh sửa popup hướng dẫn (?) tại các tab</p>
+                    <h3 class="font-bold text-slate-700 text-lg">Quản lý Video Hướng Dẫn</h3>
+                    <p class="text-xs text-slate-500">Gắn link Youtube cho các nút hỏi chấm (?) trên hệ thống</p>
                 </div>
             </div>
             <span class="transform transition-transform duration-200 group-open:rotate-180 text-slate-400">
@@ -35,29 +97,69 @@
         </summary> 
         
         <div class="p-6 border-t border-slate-100 bg-slate-50/50"> 
-            <div class="grid grid-cols-1 gap-6"> 
-                {#each [
-                    { id: 'data', label: 'Tab Cập nhật dữ liệu' },
-                    { id: 'luyke', label: 'Tab Lũy kế' },
-                    { id: 'sknv', label: 'Tab Sức khỏe NV' },
-                    { id: 'realtime', label: 'Tab Realtime' }
-                ] as tab}
-                    <div class="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                        <label for="help-{tab.id}" class="block text-sm font-bold text-slate-700 mb-2">{tab.label}</label>
-                        <textarea 
-                            id="help-{tab.id}" 
-                            rows="4" 
-                            class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-slate-600" 
-                            bind:value={localHelpContent[tab.id]}
-                            placeholder="Nhập nội dung hướng dẫn (hỗ trợ HTML cơ bản)..."
-                        ></textarea>
+            
+            <div class="mb-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-200 flex items-start gap-2">
+                <i data-feather="info" class="w-5 h-5 flex-shrink-0 mt-0.5"></i>
+                <p>Nội dung cấu hình ở đây sẽ được nạp tự động vào các Modal Video tại trang Cập nhật dữ liệu tương ứng. Dán link gốc Youtube, hệ thống sẽ tự động ép thành link siêu nhẹ.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6"> 
+                {#each tutorialTargets as target}
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3 relative">
+                        <div class="absolute -top-3 left-4 bg-green-100 text-green-800 px-2 py-0.5 text-xs font-bold rounded shadow-sm">
+                            {target.label}
+                        </div>
+
+                        <div class="mt-2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Tiêu đề Video</label>
+                            <input 
+                                type="text" 
+                                bind:value={localHelpContent[target.id].title}
+                                class="w-full p-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 focus:ring-1 focus:ring-green-500 focus:border-green-500 outline-none" 
+                                placeholder="VD: Hướng dẫn xuất YCX"
+                            />
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Mô tả ngắn gọn (Tips)</label>
+                            <textarea 
+                                bind:value={localHelpContent[target.id].desc}
+                                rows="2" 
+                                class="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 outline-none text-slate-600 resize-none" 
+                                placeholder="Nhập ghi chú nhỏ hiển thị dưới video..."
+                            ></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-red-500 mb-1 flex items-center gap-1">
+                                <i data-feather="link" class="w-3 h-3"></i> Youtube Link
+                            </label>
+                            <input 
+                                type="text" 
+                                bind:value={localHelpContent[target.id].youtubeUrl}
+                                class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-1 focus:ring-red-400 focus:border-red-400 outline-none" 
+                                placeholder="Dán link Youtube vào đây..."
+                            />
+                        </div>
                     </div>
                 {/each}
             </div> 
+            
             <div class="mt-6 flex justify-end pt-4 border-t border-slate-200">
-                <button on:click={saveHelp} class="bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 transition font-semibold shadow-sm flex items-center gap-2">
-                    <i data-feather="save" class="w-4 h-4"></i>
-                    Lưu Hướng Dẫn
+                <button 
+                    on:click={saveHelp} 
+                    disabled={isSaving}
+                    class="bg-green-600 text-white px-6 py-2.5 rounded-lg hover:bg-green-700 transition font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50"
+                >
+                    <div class={isSaving ? 'hidden' : 'block'}>
+                        <i data-feather="save" class="w-4 h-4 mt-1"></i>
+                    </div>
+                    
+                    <div class={isSaving ? 'block' : 'hidden'}>
+                        <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </div>
+                    
+                    <span>{isSaving ? 'Đang lưu...' : 'Lưu Hướng Dẫn'}</span>
                 </button> 
             </div> 
         </div>

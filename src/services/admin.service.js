@@ -8,6 +8,8 @@ import { performanceService } from './declarations/performance.service.js';
 export const adminService = {
     // --- 1. HELP CONTENT ---
     saveHelpContent: configService.saveHelpContent,
+    // [PHẪU THUẬT LOGIC]: Khai báo Export hàm loadHelpContent
+    loadHelpContent: configService.loadHelpContent,
 
     // --- 2. HOME CONFIG ---
     saveHomeConfig: configService.saveHomeConfig,
