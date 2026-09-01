@@ -156,7 +156,6 @@ export const fileHandler = {
                 dataToStore = [...existingData, ...dataToStore];
             }
 
-            // [PHẪU THUẬT LOGIC]: Ép lưu Store theo Root BaseKey thay vì SaveKey động.
             if (baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') {
                  mapping.store.update(curr => {
                      const existing = curr || [];
@@ -167,7 +166,6 @@ export const fileHandler = {
                  mapping.store.set(dataToStore);
             }
             
-            // Xử lý nguyên nhân gốc: Ép lưu dữ liệu mảng lớn xuống LocalStorage dưới cái tên 'baseKey'
             await storage.setItem(baseKey, get(mapping.store));
 
             if (saveKey === 'saved_danhsachnv') {
@@ -195,7 +193,7 @@ export const fileHandler = {
                         };
 
                         for (const wh of validWarehouses) {
-                            localStorage.setItem(`_meta_${wh}_${saveKey}`, JSON.stringify(metadata));
+                            localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
                         }
 
                         let successMsg = '';
@@ -265,13 +263,11 @@ export const fileHandler = {
 
             updateSyncState(saveKey, 'uploading', 'Đang xóa file...');
             
-            // Xóa cục bộ data của kho thay vì đổ sụp cả mảng
             if (baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') {
                  mapping.store.update(curr => curr.filter(d => String(d.maKho) !== String(targetWarehouse)));
             } else {
                  mapping.store.set([]);
             }
-            // Sửa lỗi lưu đè Key khi xóa file
             await storage.setItem(baseKey, get(mapping.store));
 
             if (saveKey === 'saved_danhsachnv') {
@@ -293,7 +289,7 @@ export const fileHandler = {
 
                 for (const wh of validWarehouses) {
                     await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
-                    localStorage.removeItem(`_meta_${wh}_${saveKey}`);
+                    localStorage.removeItem(`_meta_${wh}_${baseKey}`); 
                 }
             }
 

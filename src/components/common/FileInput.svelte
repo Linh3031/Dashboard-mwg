@@ -42,6 +42,14 @@
       'saved_doanhthu_bi': doanhThuBIData
   };
 
+  function getBaseKey(sk) {
+      const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
+      for (const k of sortedKeys) {
+          if (sk.startsWith(k)) return k;
+      }
+      return sk;
+  }
+
   $: baseKey = (() => {
       const sortedKeys = Object.keys(storeMap).sort((a, b) => b.length - a.length);
       for (const k of sortedKeys) {
@@ -127,11 +135,9 @@
       return `${Math.floor(hours / 24)} ngày trước`;
   }
 
-  // [PHẪU THUẬT LOGIC]: BỘ LỌC KHÁNG THỂ. Chặn đứng trạng thái 'cached' chung chung của hệ thống khi F5 và ép tải lại bằng localMetaFallback!
   $: rawSyncState = $fileSyncState[saveKey];
 
   $: activeSyncState = (() => {
-      // Nếu trạng thái là 'cached' (bị lỗi F5) HOẶC mất hoàn toàn, ta dùng meta xịn từ Fallback
       if (localMetaFallback && (!rawSyncState || rawSyncState.status === 'cached' || !rawSyncState.metadata)) {
           return {
               status: 'synced',
@@ -153,7 +159,6 @@
           statusHTML = localError;
           statusClass = "text-red-600 font-bold text-xs";
       } else if (activeSyncState) {
-          // Ép tên file hiển thị vững vàng bất chấp F5
           if (activeSyncState.metadata?.fileName) {
               fileName = activeSyncState.metadata.fileName;
           }
@@ -208,7 +213,7 @@
           
           const kho = saveKey.split('_').pop(); 
           const targetWh = (get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
-          const metaStr = localStorage.getItem(`_meta_${targetWh}_${saveKey}`);
+          const metaStr = localStorage.getItem(`_meta_${targetWh}_${getBaseKey(saveKey)}`);
           if (metaStr) localMetaFallback = JSON.parse(metaStr);
 
       } catch (err) {
@@ -333,7 +338,7 @@
               }
           } catch(e) { console.error("Lỗi xóa toàn bộ Cloud:", e); }
 
-          localStorage.removeItem(`_meta_${khoToClear}_${saveKey}`);
+          localStorage.removeItem(`_meta_${khoToClear}_${getBaseKey(saveKey)}`);
           localMetaFallback = null;
           
           fileSyncState.update(s => {
@@ -360,7 +365,7 @@
      try {
          const kho = saveKey.split('_').pop(); 
          const targetWh = (get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
-         const metaStr = localStorage.getItem(`_meta_${targetWh}_${saveKey}`);
+         const metaStr = localStorage.getItem(`_meta_${targetWh}_${getBaseKey(saveKey)}`);
          
          if (metaStr) {
              localMetaFallback = JSON.parse(metaStr);

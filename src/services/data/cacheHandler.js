@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList, selectedWarehouse } from '../../stores.js';
+import { danhSachNhanVien, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, warehouseList, selectedWarehouse, doanhThuBIData } from '../../stores.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { adminService } from '../admin.service.js';
@@ -22,7 +22,7 @@ export const cacheHandler = {
             updateSyncState('saved_danhsachnv', 'error', 'Chưa có DSNV. Vui lòng tải file.', null);
         }
         
-        const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam'];
+        const otherFiles = ['saved_giocong', 'saved_ycx', 'saved_thuongnong', 'saved_ycx_thangtruoc', 'saved_thuongnong_thangtruoc', 'saved_ycx_cungkynam', 'saved_doanhthu_bi'];
         
         let allowedWarehouses = [];
         if (dsnvData && dsnvData.length > 0) {
@@ -55,7 +55,18 @@ export const cacheHandler = {
                     }
 
                     FILE_MAPPING[key].store.set(displayData);
-                    updateSyncState(key, 'cached', `✓ Đã tải ${displayData.length} dòng`, null);
+                    
+                    let stateKey = key;
+                    if (['saved_giocong', 'saved_thuongnong', 'saved_doanhthu_bi'].includes(key) && currentWh !== 'ALL' && !currentWh.startsWith('CLUSTER_')) {
+                        stateKey = `${key}_${currentWh}`;
+                    }
+
+                    // [PHẪU THUẬT LOGIC]: Đọc lại Meta để khôi phục Tên File cho các block khác
+                    let metaStr = localStorage.getItem(`_meta_${currentWh}_${key}`);
+                    if (currentWh === 'ALL') metaStr = localStorage.getItem(`_meta_ALL_${key}`);
+                    let meta = metaStr ? JSON.parse(metaStr) : null;
+
+                    updateSyncState(stateKey, 'cached', `✓ Đã tải ${displayData.length} dòng`, meta);
                  } else if (data && !Array.isArray(data)) {
                      console.warn(`[CacheHandler] Rác cache phát hiện tại key: ${key}. Đang tiến hành làm sạch...`);
                      await storage.setItem(key, []);
@@ -71,9 +82,10 @@ export const cacheHandler = {
             let aggregatedErp = [];
             let aggregatedThidua = [];
             let aggregatedErpTT = [];
+            
+            const allExcelThiDua = await storage.getItem('saved_thiduanv_excel') || [];
 
             if (allowedWarehouses.length > 0) {
-                // [PHẪU THUẬT LOGIC]: Chuyển forEach sang for...of để dùng được Async/Await đọc DB
                 for (const kho of allowedWarehouses) {
                     const luykeText = localStorage.getItem(`daily_paste_luyke_${kho}`);
                     if (luykeText) {
@@ -97,13 +109,19 @@ export const cacheHandler = {
                          aggregatedErpTT = [...aggregatedErpTT, ...data];
                     }
 
-                    // Tải dữ liệu Excel Thi đua NV mới từ IndexedDB
-                    const excelThiDua = await storage.getItem(`saved_thiduanv_excel_${kho}`);
-                    if (excelThiDua && Array.isArray(excelThiDua)) {
-                        aggregatedThidua = [...aggregatedThidua, ...excelThiDua];
-                        updateSyncState(`saved_thiduanv_excel_${kho}`, 'cached', `✓ (Local Cache)`, null);
+                    const excelThiDuaForKho = Array.isArray(allExcelThiDua)
+                        ? allExcelThiDua.filter(d => String(d.maKho) === String(kho))
+                        : [];
+
+                    if (excelThiDuaForKho.length > 0) {
+                        aggregatedThidua = [...aggregatedThidua, ...excelThiDuaForKho];
+                        
+                        // [PHẪU THUẬT LOGIC]: Thay thế chữ "Local Cache" vô nghĩa bằng ngôn ngữ tường minh, nạp lại Meta để có Tên file
+                        const metaStr = localStorage.getItem(`_meta_${kho}_saved_thiduanv_excel`);
+                        const meta = metaStr ? JSON.parse(metaStr) : null;
+                        
+                        updateSyncState(`saved_thiduanv_excel_${kho}`, 'cached', `✓ Đã tải (${excelThiDuaForKho.length} nhân viên)`, meta);
                     } else {
-                        // Kế thừa đồ cổ (Dán text cũ) nếu có
                         const rawThiDua = localStorage.getItem(`raw_paste_thiduanv_${kho}`);
                         if (rawThiDua) {
                             const parsedData = dataProcessing.parsePastedThiDuaTableData(rawThiDua);

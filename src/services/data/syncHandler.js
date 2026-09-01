@@ -73,7 +73,7 @@ function applyDataShield(rawData, normalizedData, baseKey) {
 }
 
 function getStateKey(key, wh) {
-    if (['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
+    if (['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong', 'saved_thiduanv_excel', 'saved_doanhthu_bi'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
         return `${key}_${wh}`;
     }
     if (['cluster_paste_luyke', 'cluster_paste_comp'].includes(key) && wh.startsWith('CLUSTER_')) {
@@ -99,8 +99,7 @@ export const syncHandler = {
             } else if (warehouse.startsWith('CLUSTER_')) {
                 targetKeys = ['cluster_summary_data'];
             } else {
-                // [PHẪU THUẬT v3.2]: Bổ sung YCX vào danh sách tải xuống cho từng kho lẻ
-                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong', 'saved_ycx', 'saved_ycx_thangtruoc', 'saved_ycx_cungkynam'];
+                targetKeys = ['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong', 'saved_ycx', 'saved_ycx_thangtruoc', 'saved_ycx_cungkynam', 'saved_thiduanv_excel', 'saved_doanhthu_bi'];
             }
         } else {
             targetKeys = [...Object.keys(FILE_MAPPING), ...Object.keys(PASTE_MAPPING)];
