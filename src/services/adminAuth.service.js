@@ -10,7 +10,7 @@ export const adminAuthService = {
         const store = get(firebaseStore);
         if (!store || !store.app) throw new Error("Hệ thống chưa kết nối Firebase.");
 
-        const secondaryAppName = "SecondaryApp_" + Date.now();
+        const secondaryAppName = "SecondaryApp_" + Date.now() + "_" + Math.random().toString(36).slice(2);
         const secondaryApp = initializeApp(store.app.options, secondaryAppName);
         const secondaryAuth = getAuth(secondaryApp);
 

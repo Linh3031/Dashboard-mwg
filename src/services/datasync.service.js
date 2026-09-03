@@ -1,8 +1,9 @@
 // src/services/datasync.service.js
 import { doc, setDoc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"; 
-import { 
-    firebaseStore, 
+import {
+    firebaseStore,
     currentUser,
+    userProfile,
     masterReportData,
     ycxData,
     ycxDataThangTruoc,
@@ -28,6 +29,17 @@ const getDB = () => {
 const getCurrentUserEmail = () => {
     const user = get(currentUser);
     return user ? user.email : 'unknown';
+};
+
+// [Phòng thủ phụ phía client] Đối chiếu mã kho sắp ghi với allowedWarehouses của user đang đăng nhập.
+// Đây chỉ là lớp cảnh báo/skip sớm cho gọn UI - chốt chặn thật nằm ở Firestore Security Rules.
+const isWarehouseAllowed = (kho) => {
+    const profile = get(userProfile);
+    // Chưa đăng nhập (khách vãng lai, hoặc đang tắt tạm yêu cầu đăng nhập qua config.REQUIRE_LOGIN)
+    // -> không có hồ sơ để đối chiếu, không chặn, giữ đúng hành vi trước khi có lớp phòng thủ này.
+    if (!profile) return true;
+    if (profile.role === 'admin') return true;
+    return (profile.allowedWarehouses || []).includes(kho);
 };
 
 // [PHẪU THUẬT LOGIC]: Hàm vũ khí chuẩn hóa ngày tháng đa năng chống lỗi Serialize từ Cloud
@@ -56,6 +68,7 @@ export const datasyncService = {
     async saveGoalSettings(kho, type, settings) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const fieldName = type === 'luyke' ? 'luykeGoals' : 'realtimeGoals';
         const khoRef = doc(db, "warehouseData", kho);
         try {
@@ -85,6 +98,7 @@ export const datasyncService = {
     async savePersonalTargetRatio(kho, ratio) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
@@ -128,6 +142,7 @@ export const datasyncService = {
     async saveCategoryTargetRatio(kho, category, ratio) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
@@ -141,6 +156,7 @@ export const datasyncService = {
     async saveQdcConfig(kho, config) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { qdcConfig: config, qdcConfigUpdatedAt: serverTimestamp(), qdcConfigUpdatedBy: getCurrentUserEmail() }, { merge: true }); } catch (error) { console.error(error); }
     },
@@ -155,6 +171,7 @@ export const datasyncService = {
     async saveRealtimeHiddenCategories(kho, hiddenList) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { realtimeConfig: { hiddenCategories: hiddenList, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } }, { merge: true }); } catch (error) { console.error(error); }
     },
@@ -169,6 +186,7 @@ export const datasyncService = {
     async savePersonalRevenueTables(kho, tables) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const personalTables = tables.filter(t => !t.isSystem);
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { personalRevenueTables: personalTables, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
@@ -184,6 +202,7 @@ export const datasyncService = {
     async savePersonalPerformanceTables(kho, tables) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const personalTables = tables.filter(t => !t.isSystem);
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { personalPerformanceTables: personalTables, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
@@ -199,6 +218,7 @@ export const datasyncService = {
     async saveDailyTrendConfigs(kho, configs) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try {
             await setDoc(khoRef, {
@@ -231,6 +251,7 @@ export const datasyncService = {
     async saveCustomMetrics(kho, metrics) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { customMetrics: metrics, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
@@ -245,6 +266,7 @@ export const datasyncService = {
     async saveMetadataToFirestore(kho, dataType, metadata) {
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
+        if (!isWarehouseAllowed(kho)) throw new Error("Không có quyền thao tác với mã kho này.");
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = { [dataType]: { ...metadata, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch(e) { throw e; }
@@ -253,6 +275,7 @@ export const datasyncService = {
     async savePastedDataToFirestore(kho, dataType, content, versionInfo) {
         const db = getDB();
         if (!db || !kho) throw new Error("Invalid parameters.");
+        if (!isWarehouseAllowed(kho)) throw new Error("Không có quyền thao tác với mã kho này.");
         const khoRef = doc(db, "warehouseData", kho);
         const dataToSave = { [dataType]: { content, ...versionInfo, updatedAt: serverTimestamp(), updatedBy: getCurrentUserEmail() } };
         try { await setDoc(khoRef, dataToSave, { merge: true }); } catch(e) { throw e; }
@@ -261,6 +284,7 @@ export const datasyncService = {
     async saveCompetitionConfigs(kho, configs) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { competitionConfigs: configs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
@@ -275,6 +299,7 @@ export const datasyncService = {
     async saveSpecialPrograms(kho, programs) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         try { await setDoc(khoRef, { specialPrograms: programs, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
     },
@@ -282,6 +307,7 @@ export const datasyncService = {
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
         if (!db || !kho) return;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
         const khoRef = doc(db, "warehouseData", kho);
         const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
         
@@ -357,6 +383,7 @@ export const datasyncService = {
     async deleteMonthFromMultiMetadata(kho, key, targetMonth) {
         const db = getDB();
         if (!db || !kho) return null;
+        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua xóa dữ liệu: không có quyền với kho ${kho}`); return null; }
         const khoRef = doc(db, "warehouseData", kho);
         try {
             const docSnap = await getDoc(khoRef);
@@ -642,7 +669,11 @@ export const datasyncService = {
                 });
             });
 
-            const targetWarehouseCodes = Object.keys(warehouseGroups);
+            const targetWarehouseCodes = Object.keys(warehouseGroups).filter(code => {
+                const allowed = isWarehouseAllowed(code);
+                if (!allowed) console.warn(`[DataSync] Bỏ qua đồng bộ kho ${code}: không có quyền.`);
+                return allowed;
+            });
             let index = 0;
 
             for (const currentWhCode of targetWarehouseCodes) {

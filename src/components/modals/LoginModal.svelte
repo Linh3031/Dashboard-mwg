@@ -1,6 +1,9 @@
 <script>
-    import { onMount, afterUpdate } from 'svelte';
+    import { onMount, afterUpdate, createEventDispatcher } from 'svelte';
     import { authService } from '../../services/auth.service.js';
+
+    export let dismissable = false;
+    const dispatch = createEventDispatcher();
 
     let email = '';
     let password = '';
@@ -85,8 +88,17 @@
 </script>
 
 <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
-    <div class="bg-white rounded-2xl shadow-2xl w-[90%] max-w-md overflow-hidden flex flex-col animate-slide-up">
-        
+    <div class="bg-white rounded-2xl shadow-2xl w-[90%] max-w-md overflow-hidden flex flex-col animate-slide-up relative">
+        {#if dismissable}
+            <button
+                on:click={() => dispatch('close')}
+                class="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-white/20 hover:bg-white/40 text-white flex items-center justify-center transition-colors"
+                title="Đóng"
+            >
+                <i data-feather="x" class="w-4 h-4"></i>
+            </button>
+        {/if}
+
         <!-- Header Banner -->
         <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-6 text-center relative overflow-hidden">
             <div class="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>

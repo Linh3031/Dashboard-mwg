@@ -25,6 +25,12 @@ export const analyticsService = {
                 const data = doc.data();
                 users.push({
                     email: data.email,
+                    role: data.role || 'user',
+                    allowedWarehouses: data.allowedWarehouses || [],
+                    tier: data.tier || 'trial',
+                    expireAt: data.expireAt || null,
+                    status: data.status || 'active',
+                    uid: data.uid || null,
                     loginCount: data.loginCount || 0,
                     lastLogin: data.lastLogin ? data.lastLogin.toDate() : null,
                     actionsTaken: data.actionsTaken || 0

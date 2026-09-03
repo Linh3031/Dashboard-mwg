@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// Ghi chú: dự án trước đây KHÔNG có file rules nào (mặc định mở hoặc rules cấu hình
+// thủ công ngoài repo). File này bổ sung 1 lớp kiểm soát thật ở server, đối chiếu
+// mã kho đang thao tác với `allowedWarehouses` trên hồ sơ `users/{email}` của người
+// đang đăng nhập, để chặn việc fake file dsnv nhằm đọc/ghi dữ liệu của kho khác.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data;
+    }
+
+    function hasProfile() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && hasProfile() && myProfile().role == 'admin';
+    }
+
+    function ownsWarehouse(kho) {
+      return isSignedIn() && hasProfile() && (kho in myProfile().allowedWarehouses);
+    }
+
+    // Hồ sơ phân quyền từng user: role, allowedWarehouses, tier, expireAt...
+    // - Đọc: chính chủ hoặc admin.
+    // - Tạo/xóa/đổi quyền (role, allowedWarehouses, tier, expireAt...): chỉ admin.
+    // - User thường chỉ được tự ghi các field thống kê đăng nhập của chính mình
+    //   (khớp với analyticsService.upsertUserRecord / trackAction), không được tự nâng quyền.
+    match /users/{email} {
+      allow read: if isSignedIn() && (request.auth.token.email == email || isAdmin());
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.token.email == email &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['email', 'lastLogin', 'loginCount', 'actionsTaken'])
+      );
+    }
+
+    // Dữ liệu đồng bộ theo từng mã kho (cấu hình, dữ liệu dán, gói dữ liệu app nhân viên).
+    // Chỉ admin hoặc user có mã kho đó trong allowedWarehouses mới đọc/ghi được.
+    match /warehouseData/{kho} {
+      allow read, write: if isAdmin() || ownsWarehouse(kho);
+    }
+
+    match /sknv_final_data/{kho} {
+      allow read, write: if isAdmin() || ownsWarehouse(kho);
+    }
+
+    match /sknv_metadata/{kho} {
+      allow read, write: if isAdmin() || ownsWarehouse(kho);
+    }
+
+    // Cấu hình dùng chung toàn hệ thống (cấu trúc ngành hàng, mapping tên, help content...):
+    // ai đăng nhập cũng cần đọc được để app hiển thị đúng, nhưng chỉ admin mới sửa.
+    match /declarations/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /system_config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Số liệu thống kê tổng hợp/đếm lượt dùng - không chứa dữ liệu nhạy cảm theo kho.
+    match /analytics/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Mặc định chặn mọi collection khác chưa khai báo tường minh ở trên.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

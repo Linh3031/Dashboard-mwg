@@ -2,7 +2,8 @@
 // Version 2.9 - Atomic Integrity: Bổ sung Lũy kế tới ngày cho Doanh Thu BI
 
 export const config = {
-    ADMIN_PASSWORD: "Linh3010", 
+    ADMIN_PASSWORD: "Linh3010",
+    REQUIRE_LOGIN: false, // false = khách vào thẳng app không cần tài khoản (tạm thời khi đang test, bật lại true khi hoàn thiện phần đăng nhập)
     COLUMN_MAPPINGS: {
         danhsachnv: {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },

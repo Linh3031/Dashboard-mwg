@@ -4,7 +4,7 @@ import { get } from 'svelte/store';
 import { currentUser, isAdmin, userProfile, firebaseStore } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { config } from '../config.js';
-import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInWithEmailAndPassword, signInAnonymously, sendPasswordResetEmail, signOut, onAuthStateChanged } from "firebase/auth";
 // [ATOMIC] Import Firestore API để kéo Profile
 import { doc, getDoc } from "firebase/firestore";
 
@@ -18,7 +18,28 @@ export const authService = {
     },
 
     /**
-     * Lắng nghe trạng thái đăng nhập từ Firebase. 
+     * [Chế độ REQUIRE_LOGIN=false] Đảm bảo có phiên Firebase Auth (ẩn danh) để Storage/Firestore
+     * chấp nhận request, trong lúc chưa bắt người dùng đăng nhập thật.
+     */
+    async ensureAnonymousAuth() {
+        const auth = getAuth();
+        return new Promise((resolve, reject) => {
+            const unsubscribe = onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    unsubscribe();
+                    resolve(user);
+                } else {
+                    signInAnonymously(auth).catch((error) => {
+                        console.error("[AuthService] Lỗi đăng nhập ẩn danh:", error);
+                        reject(error);
+                    });
+                }
+            });
+        });
+    },
+
+    /**
+     * Lắng nghe trạng thái đăng nhập từ Firebase.
      */
     initAuthListener(onResolved) {
         const auth = getAuth();
@@ -39,7 +60,16 @@ export const authService = {
 
         onAuthStateChanged(auth, (user) => { // Không dùng async nữa, xử lý .then() bên trong
             // 1. Phanh phui và tiêu diệt tài khoản ẩn danh cũ
+            // (Bỏ qua khi config.REQUIRE_LOGIN=false: lúc đó phiên ẩn danh là cơ chế
+            // chủ đích để Storage/Firestore hoạt động cho khách chưa đăng nhập thật.)
             if (user && user.isAnonymous) {
+                if (config.REQUIRE_LOGIN === false) {
+                    if (isFirstCheck) {
+                        isFirstCheck = false;
+                        if (typeof onResolved === 'function') onResolved();
+                    }
+                    return;
+                }
                 console.log("[AuthService] Phát hiện tài khoản ẩn danh cũ. Đang dọn dẹp...");
                 signOut(auth).then(() => {
                     currentUser.set(null);

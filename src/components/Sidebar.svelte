@@ -16,6 +16,19 @@
   let newPass = '';
   let isUpdatingPass = false;
   let passMsg = { text: '', type: '' };
+  let showAccountDevNotice = false;
+
+  function handleAccountClick() {
+      if ($currentUser) { showPassModal = true; return; }
+      showAccountDevNotice = true;
+      setTimeout(() => { showAccountDevNotice = false; }, 2500);
+  }
+
+  function handleAccountDblClick() {
+      if ($currentUser) return;
+      showAccountDevNotice = false;
+      modalState.update(s => ({ ...s, activeModal: 'login-overlay' }));
+  }
 
   // [PHẪU THUẬT LOGIC 2]: Đọc thẳng dữ liệu từ Store toàn cục thay vì tự đi fetch Firebase
   $: userData = $userProfile;
@@ -75,18 +88,25 @@
       }
   }
 
+  $: isRoleAdmin = $userProfile && $userProfile.role === 'admin';
+
   function navigateTo(targetId) {
     const adminSafeZones = ['declaration-section', 'tools-section'];
     if ($isAdmin && !adminSafeZones.includes(targetId)) {
         isAdmin.set(false);
     }
     if (targetId === 'declaration-section' && !$isAdmin) {
-        modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
-        isMobileOpen = false; 
-        return;
+        // Tài khoản có role='admin' trên Firestore vào thẳng, khỏi nhập mật khẩu dùng chung
+        if (isRoleAdmin) {
+            isAdmin.set(true);
+        } else {
+            modalState.update(s => ({ ...s, activeModal: 'admin-modal' }));
+            isMobileOpen = false;
+            return;
+        }
     }
     activeTab.set(targetId);
-    isMobileOpen = false; 
+    isMobileOpen = false;
   }
 
   function openDrawer(drawerId) {
@@ -197,9 +217,10 @@
                  </button>
             </li>
 
+            {#if isRoleAdmin}
             <li>
-                <button 
-                  id="admin-access-btn" 
+                <button
+                  id="admin-access-btn"
                   class="w-full flex items-center p-3 rounded-lg font-semibold transition-colors nav-link
                          {currentTab === 'declaration-section' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-200'}"
                   on:click={() => navigateTo('declaration-section')}
@@ -208,23 +229,30 @@
                     <span class="menu-text">Khai báo</span>
                 </button>
             </li>
+            {/if}
         </ul>
 
         <div class="mt-2 pt-3 border-t border-gray-200 flex flex-col gap-1">
-            <button 
+            <button
                 class="w-full flex items-center p-2 rounded-lg hover:bg-blue-50 transition-colors group nav-link relative"
-                on:click={() => showPassModal = true}
-                title="Bấm để đổi mật khẩu"
+                on:click={handleAccountClick}
+                on:dblclick={handleAccountDblClick}
+                title={$currentUser ? "Bấm để đổi mật khẩu" : "Đăng nhập"}
             >
+                {#if showAccountDevNotice}
+                    <div class="absolute bottom-full left-0 mb-1 w-max max-w-[220px] bg-slate-800 text-white text-[11px] font-semibold px-2.5 py-1.5 rounded-lg shadow-lg z-10">
+                        Tính năng này đang phát triển
+                    </div>
+                {/if}
                 <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                     <i data-feather="user" class="w-4 h-4"></i>
                 </div>
-                
+
                 <div class="menu-text ml-3 flex flex-col items-start overflow-hidden text-left">
                     <span class="text-[11px] font-bold text-gray-800 truncate w-full leading-tight">
-                        {$currentUser ? $currentUser.email : 'Đang tải...'}
+                        {$currentUser ? $currentUser.email : 'Đăng nhập'}
                     </span>
-                    
+
                     {#if userData}
                         {#if userData.expireAt}
                             <span class="text-[10px] font-bold {daysRemaining < 7 ? 'text-red-500' : 'text-emerald-600'} w-full truncate leading-tight mt-0.5">

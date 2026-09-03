@@ -175,7 +175,12 @@ export const syncHandler = {
             };
 
             for (const key of targetKeys) {
-                await processKey(key);
+                try {
+                    await processKey(key);
+                } catch (keyError) {
+                    console.error(`[SyncHandler] Lỗi kiểm tra đồng bộ cho "${key}":`, keyError);
+                    updateSyncState(getStateKey(key, warehouse), 'error', `Lỗi kiểm tra: ${keyError.message}`, null);
+                }
             }
             return { success: true, message: `Đã kiểm tra dữ liệu.` };
 

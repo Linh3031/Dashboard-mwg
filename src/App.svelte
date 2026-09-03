@@ -17,6 +17,7 @@
       currentUser
   } from './stores.js';
   import { get } from 'svelte/store';
+  import { config } from './config.js';
   import { authService } from './services/auth.service.js';
   import { adminService } from './services/admin.service.js';
   import { datasyncService } from './services/datasync.service.js';
@@ -103,6 +104,14 @@
   }
 
   async function initRealMode() {
+      if (config.REQUIRE_LOGIN === false) {
+          try {
+              await authService.ensureAnonymousAuth();
+          } catch (e) {
+              console.error("[App] Lỗi đăng nhập ẩn danh:", e);
+          }
+      }
+
       authService.initAuthListener(async () => {
           // [PHẪU THUẬT LOGIC]: Giải phóng giao diện mạng lập tức (Tắt màn hình đen)
           isAuthChecking = false; 
@@ -247,7 +256,10 @@
   }
 
   const closeModal = () => modalState.update(s => ({ ...s, activeModal: null, payload: null }));
-  
+
+  // Đăng nhập thật thành công qua overlay tự chọn (khi REQUIRE_LOGIN=false) thì tự đóng overlay
+  $: if ($currentUser && $modalState.activeModal === 'login-overlay') closeModal();
+
   $: {
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
           const uniqueWarehouses = [...new Set($danhSachNhanVien
@@ -276,7 +288,7 @@
             <span class="text-white text-sm font-semibold tracking-wide">Đang xác thực phiên đăng nhập...</span>
         </div>
     </div>
-{:else if !$currentUser}
+{:else if config.REQUIRE_LOGIN && !$currentUser}
     <LoginModal />
 {:else}
     <VersionManager />
@@ -291,6 +303,10 @@
     <UserSpecialProgramModal />
     <ComposerModal /> 
     <StEmpCompetitionModal />
+
+    {#if $modalState.activeModal === 'login-overlay'}
+        <LoginModal dismissable on:close={closeModal} />
+    {/if}
 
     {#if $modalState.activeModal === 'capture-preview'}
         <CapturePreviewModal payload={$modalState.payload} />
