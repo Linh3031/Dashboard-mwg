@@ -9,8 +9,14 @@
         { id: 'doanh-thu-bi', label: 'Khối 1: Doanh thu BI' },
         { id: 'thi-dua-nv', label: 'Khối 1: Thi đua nhân viên' },
         { id: 'data-luy-ke', label: 'Khối 1: Thi đua siêu thị lũy kế (Paste)' },
-        { id: 'nang-suat', label: 'Khối 2: Chi tiết năng suất (Giờ công, Thưởng)' },
-        { id: 'data-thang', label: 'Khối 3: Cập nhật dữ liệu tháng' }
+        { id: 'gio-cong', label: 'Khối 2: Giờ công' },
+        { id: 'thuong-nong', label: 'Khối 2: Thưởng nóng' },
+        { id: 'thuong-erp', label: 'Khối 2: Thưởng ERP' },
+        { id: 'danh-sach-nv', label: 'Khối 3: Danh sách nhân viên' },
+        { id: 'ycx-thang-truoc', label: 'Khối 3: YCX Lũy Kế tháng trước' },
+        { id: 'thuong-nong-thang-truoc', label: 'Khối 3: Thưởng nóng tháng trước' },
+        { id: 'ycx-cung-ky-nam', label: 'Khối 3: YCX Lũy kế năm trước' },
+        { id: 'thuong-erp-thang-truoc', label: 'Khối 3: Thưởng ERP tháng trước' }
     ];
 
     let localHelpContent = {};
