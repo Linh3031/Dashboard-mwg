@@ -43,14 +43,29 @@
   let allEmployees = [];
   let targetRatio = 100;
   let categoryTargets = {};
-  
+
   let isTargetLoaded = false;
 
+  function getCachedPersonalRatio(kho) {
+      try {
+          const cached = sessionStorage.getItem(`personalTargetRatio_${kho}`);
+          if (cached !== null) return Number(cached);
+      } catch (e) {}
+      return null;
+  }
+
   $: if ($selectedWarehouse !== undefined) {
-      isTargetLoaded = false;
-      datasyncService.loadPersonalTargetRatio($selectedWarehouse || 'ALL')
-        .then(ratio => { targetRatio = ratio; isTargetLoaded = true; })
-        .catch(() => { targetRatio = 100; isTargetLoaded = true; });
+      const kho = $selectedWarehouse || 'ALL';
+      const cachedRatio = getCachedPersonalRatio(kho);
+      if (cachedRatio !== null) targetRatio = cachedRatio;
+      isTargetLoaded = cachedRatio !== null;
+      datasyncService.loadPersonalTargetRatio(kho)
+        .then(ratio => {
+            targetRatio = ratio;
+            isTargetLoaded = true;
+            try { sessionStorage.setItem(`personalTargetRatio_${kho}`, String(ratio)); } catch (e) {}
+        })
+        .catch(() => { if (cachedRatio === null) targetRatio = 100; isTargetLoaded = true; });
   }
 
   $: emps = $danhSachNhanVien || [];
@@ -297,6 +312,7 @@
                 <div>
                     <h3 class="text-lg font-bold text-purple-800 uppercase flex items-center gap-2">
                         <i data-feather="award" class="w-5 h-5"></i> Thi Đua Lũy Kế
+                        <span class="text-xs font-semibold text-gray-500 normal-case">({columnSettings.length} chương trình)</span>
                     </h3>
                     <p class="text-xs text-gray-500 mt-0.5 ml-7">Theo dõi tiến độ các chương trình thi đua</p>
                 </div>

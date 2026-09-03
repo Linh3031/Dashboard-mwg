@@ -110,17 +110,18 @@
         {#if activeView === 'program'}
              <ProgramView reportData={programReportData} />
         {:else}
+            <div hidden={isDetailView && selectedEmployeeId}>
+                <EmployeeView
+                    reportData={$pastedThiDuaReportData}
+                    on:viewChange={(e) => activeView = e.detail}
+                    on:viewDetail={handleViewDetail}
+                />
+            </div>
             {#if isDetailView && selectedEmployeeId}
-                <CompetitionDetailView 
+                <CompetitionDetailView
                     employeeId={selectedEmployeeId}
                     allReportData={$pastedThiDuaReportData}
                      on:back={handleBackToList}
-                />
-            {:else}
-                <EmployeeView 
-                    reportData={$pastedThiDuaReportData} 
-                    on:viewChange={(e) => activeView = e.detail}
-                    on:viewDetail={handleViewDetail} 
                 />
             {/if}
         {/if}

@@ -44,42 +44,34 @@
     }
 
     let targetRatio = 100;
-    let categoryTargets = {};
-    
+
     let isTargetLoaded = false;
 
+    function getCachedPersonalRatio(kho) {
+        try {
+            const cached = sessionStorage.getItem(`personalTargetRatio_${kho}`);
+            if (cached !== null) return Number(cached);
+        } catch (e) {}
+        return null;
+    }
+
     $: if ($selectedWarehouse !== undefined) {
-        isTargetLoaded = false;
-        datasyncService.loadPersonalTargetRatio($selectedWarehouse || 'ALL')
-            .then(ratio => { targetRatio = ratio; isTargetLoaded = true; })
-            .catch(() => { targetRatio = 100; isTargetLoaded = true; });
+        const kho = $selectedWarehouse || 'ALL';
+        const cachedRatio = getCachedPersonalRatio(kho);
+        if (cachedRatio !== null) targetRatio = cachedRatio;
+        isTargetLoaded = cachedRatio !== null;
+        datasyncService.loadPersonalTargetRatio(kho)
+            .then(ratio => {
+                targetRatio = ratio;
+                isTargetLoaded = true;
+                try { sessionStorage.setItem(`personalTargetRatio_${kho}`, String(ratio)); } catch (e) {}
+            })
+            .catch(() => { if (cachedRatio === null) targetRatio = 100; isTargetLoaded = true; });
     }
 
     $: emps = $danhSachNhanVien || [];
     $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
     $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
-
-    $: {
-        const stMappedData = {};
-        ($competitionData || []).forEach(item => {
-            const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
-            let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
-            
-            if (linkedEmpProg) {
-                const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
-                const isQty = item.type === 'soLuong';
-                const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
-                stMappedData[linkedEmpProg] = pTarget;
-            }
-        });
-
-        let columnSettings = settingsService.loadPastedCompetitionViewSettings() || [];
-        const newTargets = {};
-        columnSettings.forEach(col => {
-            newTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
-        });
-        categoryTargets = newTargets;
-    }
 
     function getColorClass(percent) {
         if (percent >= 100) return 'text-blue-600';
@@ -96,12 +88,12 @@
         return acc;
     }, {});
 
-    function getDynamicMetricValue(comp, colTenGoc) {
+    function getDynamicMetricValue(comp, colTenGoc, typeMap) {
         if (!comp) return 0;
         if (comp.giaTri !== undefined) return comp.giaTri;
 
-        const isQuantity = linkedTypeMap.hasOwnProperty(colTenGoc)
-            ? linkedTypeMap[colTenGoc] === 'soLuong'
+        const isQuantity = (typeMap || {}).hasOwnProperty(colTenGoc)
+            ? typeMap[colTenGoc] === 'soLuong'
             : ($competitionData || []).some(c => c.name.endsWith(colTenGoc) && c.type === 'soLuong');
 
         return isQuantity ? (comp.soLuong || 0) : (comp.doanhThu || 0);
@@ -136,6 +128,28 @@
                 displayInfo = { name: realName, code: cleanCode };
 
                 let columnSettings = settingsService.loadPastedCompetitionViewSettings() || [];
+
+                // [PHẪU THUẬT LOGIC]: Tính target theo chương trình NGAY TẠI ĐÂY (gộp từ 1 khối $:
+                // riêng trước đây) để tránh race điều kiện thứ tự chạy giữa 2 khối reactive —
+                // trước đây có lúc khối này chạy trước khi categoryTargets kịp có kết quả, khiến
+                // mọi chương trình tạm bị coi là "chưa có target" => tự động tính "đạt", gây nhảy số.
+                const stMappedData = {};
+                ($competitionData || []).forEach(item => {
+                    const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
+                    let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
+
+                    if (linkedEmpProg) {
+                        const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
+                        const isQty = item.type === 'soLuong';
+                        const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
+                        stMappedData[linkedEmpProg] = pTarget;
+                    }
+                });
+                const categoryTargets = {};
+                columnSettings.forEach(col => {
+                    categoryTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
+                });
+
                 const activeColumns = columnSettings.filter(col => col.visible).map(col => ({
                     ...col, label: $competitionNameMappings[col.tenGoc] || col.label || col.tenGoc
                 }));
@@ -145,7 +159,7 @@
 
                 activeColumns.forEach(col => {
                     const compData = empComps.find(c => c.tenGoc === col.tenGoc);
-                    const val = getDynamicMetricValue(compData, col.tenGoc);
+                    const val = getDynamicMetricValue(compData, col.tenGoc, linkedTypeMap);
                     const target = categoryTargets[col.tenGoc] || 0;
                     const projectedVal = (val / currentDay) * daysInMonth;
                     

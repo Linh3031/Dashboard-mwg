@@ -1,5 +1,5 @@
 <script>
-    import { modalState, pastedThiDuaReportData, danhSachNhanVien, selectedWarehouse } from '../../stores.js';
+    import { modalState, pastedThiDuaReportData, danhSachNhanVien, selectedWarehouse, competitionData, luykeNameMappings } from '../../stores.js';
     import { formatters } from '../../utils/formatters.js';
     import { afterUpdate } from 'svelte';
     import { captureService } from '../../services/capture.service.js';
@@ -44,6 +44,21 @@
 
     let captureNode;
 
+    // [PHẪU THUẬT LOGIC]: Xác định chương trình NV này đo theo Số Lượng hay Doanh Thu,
+    // bằng cách tra ngược qua chương trình ST đã link (giống EmployeeView.svelte dòng 92-118),
+    // vì dữ liệu Excel "thi đua NV" (soLuong/doanhThu/dtQuyDoi) không tự mang thông tin này.
+    $: linkedMetricType = (() => {
+        if (!targetProgram) return null;
+        const stList = $competitionData || [];
+        for (const item of stList) {
+            const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
+            const linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : null;
+            if (linkedEmpProg === targetProgram) return item.type;
+        }
+        const fallback = stList.find(c => c.name && c.name.endsWith(targetProgram) && (c.type === 'soLuong' || c.type === 'doanhThu'));
+        return fallback ? fallback.type : null;
+    })();
+
     // Logic xử lý Data (Tính Target & Lấy Lũy kế Thực tế)
     $: employeeList = (() => {
         if (!isOpen || !targetProgram) return [];
@@ -58,14 +73,19 @@
 
         if (!$pastedThiDuaReportData || $pastedThiDuaReportData.length === 0) return [];
 
-        let results = [];
         const searchKey = String(targetProgram).normalize('NFC').trim().toLowerCase();
 
-        $pastedThiDuaReportData.forEach((emp) => {
+        const reportByMaNV = new Map();
+        $pastedThiDuaReportData.forEach(emp => {
+            const key = String(emp.maNV || emp.id || '').trim();
+            if (key) reportByMaNV.set(key, emp);
+        });
+
+        function findProgData(emp) {
             let progData = null;
 
             if (Array.isArray(emp.competitions)) {
-                progData = emp.competitions.find(p => 
+                progData = emp.competitions.find(p =>
                     (p.tenNganhHang && String(p.tenNganhHang).normalize('NFC').trim().toLowerCase() === searchKey) ||
                     (p.tenGoc && String(p.tenGoc).normalize('NFC').trim().toLowerCase() === searchKey)
                 );
@@ -82,38 +102,52 @@
                 if (key) progData = emp[key];
             }
             if (!progData && Array.isArray(emp.competitions)) {
-                 progData = emp.competitions.find(p => 
+                 progData = emp.competitions.find(p =>
                     (p.tenNganhHang && String(p.tenNganhHang).normalize('NFC').trim().toLowerCase().includes(searchKey)) ||
                     (p.tenGoc && String(p.tenGoc).normalize('NFC').trim().toLowerCase().includes(searchKey))
                  );
             }
-            
-            if (progData) {
-                const normData = {};
-                if (typeof progData === 'object' && progData !== null) {
-                    Object.keys(progData).forEach(k => { normData[k.toLowerCase()] = progData[k]; });
-                }
+            return progData;
+        }
 
-                const luyKe = parseFloat(normData['thuchien'] ?? normData['luyke'] ?? normData['doanhthu'] ?? normData['soluong'] ?? normData['actual'] ?? progData[0] ?? 0);
-                let tyLe = 0;
-                if (currentPersonalTarget > 0) {
-                    tyLe = (luyKe / currentPersonalTarget) * 100;
-                } else if (luyKe > 0) {
-                    tyLe = 100;
-                }
+        let results = validEmployees.map(nv => {
+            const maNV = String(nv.maNV || '').trim();
+            const emp = reportByMaNV.get(maNV);
+            let luyKe = 0;
 
-                if (currentPersonalTarget > 0 || luyKe > 0) {
-                    let rawHoTen = emp.hoTen || emp.name || emp.ten || 'Chưa cập nhật';
-                    let cleanHoTen = rawHoTen.split(' - ')[0].trim();
-                    results.push({
-                        maNV: emp.maNV || emp.id || 'N/A',
-                        hoTen: cleanHoTen,
-                        luyKe, 
-                        target: currentPersonalTarget, 
-                        tyLe
-                    });
+            if (emp) {
+                const progData = findProgData(emp);
+                if (progData) {
+                    const normData = {};
+                    if (typeof progData === 'object' && progData !== null) {
+                        Object.keys(progData).forEach(k => { normData[k.toLowerCase()] = progData[k]; });
+                    }
+                    if (normData['thuchien'] !== undefined || normData['giatri'] !== undefined || normData['luyke'] !== undefined) {
+                        luyKe = parseFloat(normData['thuchien'] ?? normData['giatri'] ?? normData['luyke'] ?? 0) || 0;
+                    } else if (linkedMetricType === 'soLuong') {
+                        luyKe = parseFloat(normData['soluong'] ?? 0) || 0;
+                    } else if (linkedMetricType === 'doanhThu') {
+                        luyKe = parseFloat(normData['doanhthu'] ?? 0) || 0;
+                    } else {
+                        luyKe = parseFloat(normData['doanhthu'] ?? normData['soluong'] ?? normData['actual'] ?? progData[0] ?? 0) || 0;
+                    }
                 }
             }
+
+            let tyLe = 0;
+            if (currentPersonalTarget > 0) {
+                tyLe = (luyKe / currentPersonalTarget) * 100;
+            } else if (luyKe > 0) {
+                tyLe = 100;
+            }
+
+            return {
+                maNV: nv.maNV || 'N/A',
+                hoTen: nv.hoTen || 'Chưa cập nhật',
+                luyKe,
+                target: currentPersonalTarget,
+                tyLe
+            };
         });
         return results.sort((a, b) => b.tyLe - a.tyLe);
     })();
