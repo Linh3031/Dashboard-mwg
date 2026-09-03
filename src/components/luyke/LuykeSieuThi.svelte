@@ -142,9 +142,9 @@
         percentage: tb3ThangQD > 0 ? ((tangTruongTB3T * 100).toFixed(1) + '%') : '0.0%'
     };
 
-    const compData = $competitionData || [];
+    const compData = ($competitionData || []).filter(d => String(d.maKho || '').trim() === String($selectedWarehouse).trim());
     competitionSummary.total = compData.length;
-    competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanh).replace('%','')) || 0) >= 100).length;
+    competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanhDuKien || '0').replace('%','')) || 0) >= 100).length;
 
     const tyLeThiDuaDat = competitionSummary.total > 0 ? competitionSummary.dat / competitionSummary.total : 0;
 
