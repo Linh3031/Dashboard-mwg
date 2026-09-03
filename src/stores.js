@@ -1,5 +1,5 @@
 // src/stores.js
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 // --- [NEW] CHẾ ĐỘ DEMO ---
 export const isDemoMode = writable(false); 
@@ -8,11 +8,18 @@ export const isDemoMode = writable(false);
 // --- [NEW] TRẠM TRUNG CHUYỂN VERSION ---
 export const latestSystemVersion = writable(null);
 
-// QUAN TRỌNG: Phải có chữ 'export' ở đầu dòng này
 export const currentCluster = writable(null);
 export const activeTab = writable('data-section');
 export const isAdmin = writable(false); 
-export const currentUser = writable(null);
+
+// [PHẪU THUẬT FAST BOOT]: Khởi tạo currentUser ngay lập tức từ Cache thay vì chờ Firebase
+let savedUserEmail = null;
+if (typeof localStorage !== 'undefined') {
+    savedUserEmail = localStorage.getItem('userEmail');
+}
+export const currentUser = writable(savedUserEmail ? { email: savedUserEmail } : null);
+// ---------------------------------------------------------------------------------
+
 export const feedbackList = writable([]);
 export const userStats = writable([]); 
 export const helpContent = writable({ data: '...', luyke: '...', sknv: '...', realtime: '...' });
@@ -48,7 +55,6 @@ if (typeof localStorage !== 'undefined') {
 export const competitionNameMappings = writable(savedCompMappings);
 export const luykeNameMappings = writable(savedLuykeMappings);
 
-// Cập nhật localStorage khi store thay đổi (ở tab hiện tại)
 competitionNameMappings.subscribe(value => {
     if (typeof localStorage !== 'undefined') {
         localStorage.setItem('compMappings_cache', JSON.stringify(value));
@@ -61,7 +67,6 @@ luykeNameMappings.subscribe(value => {
     }
 });
 
-// Lắng nghe thay đổi từ các tab khác để đồng bộ realtime (Không cần F5)
 if (typeof window !== 'undefined') {
     window.addEventListener('storage', (event) => {
         if (event.key === 'compMappings_cache' && event.newValue) {
@@ -83,7 +88,6 @@ export const thuongERPData = writable([]);
 export const pastedThiDuaReportData = writable([]);
 export const realtimeYCXData = writable([]);
 
-// [PHẪU THUẬT LOGIC]: Store lưu trữ dữ liệu Báo cáo Doanh thu siêu thị BI
 export const doanhThuBIData = writable([]); 
 
 export const dtCkNamData = writable([]);
@@ -184,8 +188,6 @@ export const choices = writable({
 });
 export const viewingDetailFor = writable(null);
 export const sortState = writable({});
-export const warehouseList = writable([]);
-export const selectedWarehouse = writable(null);
 export const drawerState = writable({ activeDrawer: null });
 export const modalState = writable({ activeModal: null });
 export const notificationStore = writable({ message: '', type: 'info', visible: false });
@@ -198,20 +200,80 @@ export const interfaceSettings = writable({
 });
 export const firebaseStore = writable({ app: null, auth: null, db: null, storage: null });
 export const fileSyncState = writable({});
-
-// --- [NEW] STORE LƯU DỮ LIỆU TỔNG HỢP CỤM ---
 export const clusterSummaryData = writable(null);
 
 // ============================================================================
-// [ATOMIC INTEGRITY] TRẠM TRỘN DỮ LIỆU THI ĐUA NHÂN VIÊN (DERIVED STORE)
-// Tự động làm giàu dữ liệu chéo ngầm định, triệt tiêu Lag ở UI Component
+// [GIAI ĐOẠN 3]: THIẾT QUÂN LUẬT PHÂN QUYỀN (RBAC GATEKEEPER)
 // ============================================================================
+// [PHẪU THUẬT]: Khởi tạo Cache Profile từ LocalStorage để chống ngẽn F5
+let savedUserProfile = null;
+if (typeof localStorage !== 'undefined') {
+    try {
+        const raw = localStorage.getItem('userProfile_cache');
+        if (raw) savedUserProfile = JSON.parse(raw);
+    } catch (e) {
+        console.error('Lỗi đọc userProfile cache:', e);
+    }
+}
+export const userProfile = writable(savedUserProfile);
+
+userProfile.subscribe(value => {
+    if (typeof localStorage !== 'undefined') {
+        if (value) {
+            localStorage.setItem('userProfile_cache', JSON.stringify(value));
+        } else {
+            localStorage.removeItem('userProfile_cache');
+        }
+    }
+});
+
+const rawWarehouseList = writable([]);
+export const warehouseList = {
+    subscribe: rawWarehouseList.subscribe,
+    set: (rawList) => {
+        const profile = get(userProfile);
+        if (profile && profile.role === 'user') {
+            const allowed = profile.allowedWarehouses || [];
+            const filtered = rawList.filter(wh => allowed.includes(wh) && wh !== 'ALL');
+            rawWarehouseList.set(filtered);
+        } else {
+            rawWarehouseList.set(rawList);
+        }
+    },
+    update: (updater) => { warehouseList.set(updater(get(rawWarehouseList))); }
+};
+
+const rawSelectedWarehouse = writable(null);
+export const selectedWarehouse = {
+    subscribe: rawSelectedWarehouse.subscribe,
+    set: (val) => {
+        const profile = get(userProfile);
+        if (profile && profile.role === 'user') {
+            const allowed = profile.allowedWarehouses || [];
+            if (val === 'ALL' || (val && !allowed.includes(val))) {
+                rawSelectedWarehouse.set(allowed.length > 0 ? allowed[0] : null); 
+                return;
+            }
+        }
+        rawSelectedWarehouse.set(val);
+    },
+    update: (updater) => { selectedWarehouse.set(updater(get(rawSelectedWarehouse))); }
+};
+
+userProfile.subscribe(profile => {
+    if (profile) {
+        isAdmin.set(profile.role === 'admin');
+        warehouseList.set(get(rawWarehouseList));
+        selectedWarehouse.set(get(rawSelectedWarehouse));
+    }
+});
+// ============================================================================
+
 export const processedEmployeeCompetitionData = derived(
     [pastedThiDuaReportData, danhSachNhanVien, ycxData, selectedWarehouse],
     ([$pastedData, $dsnv, $ycx, $wh]) => {
         if (!$pastedData || $pastedData.length === 0) return [];
 
-        // 1. Tạo Map thông tin nhân viên từ YCX để lấy Tên thật (O(N))
         const infoMap = {};
         if ($ycx && $ycx.length) {
             $ycx.forEach(nv => {
@@ -229,13 +291,11 @@ export const processedEmployeeCompetitionData = derived(
             });
         }
 
-        // 2. Lọc danh sách nhân viên theo Kho hiện hành
         let targetEmps = $dsnv || [];
         if ($wh && $wh !== 'ALL') {
             targetEmps = targetEmps.filter(e => String(e.ma_kho || e.maKho) === $wh);
         }
 
-        // 3. Gom nhóm dữ liệu dán theo mã NV để ráp nối nhanh (O(1))
         const reportByNv = new Map();
         $pastedData.forEach(r => {
             const code = String(r.maNV).trim();
@@ -243,7 +303,6 @@ export const processedEmployeeCompetitionData = derived(
             reportByNv.get(code).push(r);
         });
 
-        // 4. Ráp nối dữ liệu thành bản ghi nguyên tử
         let finalEmployees = [];
         targetEmps.forEach(emp => {
             const empCode = String(emp.ma_nv || emp.maNV || '').trim();

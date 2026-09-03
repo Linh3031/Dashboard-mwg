@@ -34,9 +34,9 @@
             const filtered = rawData.filter(item => String(item.maKho || '').trim() === String($selectedWarehouse).trim());
             summary = filtered.reduce((acc, d) => {
                 acc.total++;
-                if (d.hoanThanhValue >= 100) acc.achieved++;
-                if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhValue >= 100) acc.revenueAchieved++; }
-                if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhValue >= 100) acc.quantityAchieved++; }
+                if (d.hoanThanhDuKienValue >= 100) acc.achieved++;
+                if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhDuKienValue >= 100) acc.revenueAchieved++; }
+                if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhDuKienValue >= 100) acc.quantityAchieved++; }
                 return acc;
             }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
             summary.overallRate = summary.total > 0 ? (summary.achieved / summary.total) * 100 : 0;

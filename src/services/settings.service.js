@@ -1,10 +1,11 @@
 // src/services/settings.service.js
 import { get } from 'svelte/store';
-import { 
-    luykeGoalSettings, 
-    realtimeGoalSettings, 
+import {
+    luykeGoalSettings,
+    realtimeGoalSettings,
     interfaceSettings,
-    pastedThiDuaReportData
+    pastedThiDuaReportData,
+    competitionNameMappings
 } from '../stores.js';
 import { datasyncService } from './datasync.service.js'; // [MỚI] Import
 
@@ -185,11 +186,24 @@ export const settingsService = {
     loadPastedCompetitionViewSettings() {
         const pastedDataStoreValue = get(pastedThiDuaReportData);
         if (!pastedDataStoreValue || pastedDataStoreValue.length === 0) return [];
-        
-        const masterColumns = pastedDataStoreValue[0].competitions.map((comp, index) => ({
+
+        // [FIX] Gộp (union) chương trình của TẤT CẢ nhân viên, không chỉ lấy từ người đầu tiên
+        // (trước đây chỉ đọc pastedDataStoreValue[0].competitions nên bị thiếu chương trình
+        // nếu nhân viên đầu tiên trong file không có đủ dữ liệu ở mọi chương trình).
+        const nameMappings = get(competitionNameMappings) || {};
+        const uniqueCompMap = new Map();
+        pastedDataStoreValue.forEach(emp => {
+            (emp.competitions || []).forEach(comp => {
+                if (comp.tenGoc && !uniqueCompMap.has(comp.tenGoc)) {
+                    uniqueCompMap.set(comp.tenGoc, comp);
+                }
+            });
+        });
+
+        const masterColumns = Array.from(uniqueCompMap.entries()).map(([tenGoc, comp], index) => ({
             id: `comp_${index}`,
-            label: comp.tenNganhHang,
-            tenGoc: comp.tenGoc,
+            label: nameMappings[tenGoc] || comp.tenNganhHang || tenGoc,
+            tenGoc: tenGoc,
             loaiSoLieu: comp.loaiSoLieu,
             visible: true
         }));

@@ -98,9 +98,22 @@
   ];
   function getHeaderColor(index) { return headerColors[index % headerColors.length]; }
 
+  // [PHẪU THUẬT LOGIC]: Ưu tiên loại SL/DT theo Link Data Nhân Viên admin đã xác nhận thủ công,
+  // chỉ dùng cách so khớp tên .endsWith() làm dự phòng khi chương trình chưa được admin link.
+  $: linkedTypeMap = ($competitionData || []).reduce((acc, item) => {
+      const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
+      const linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : null;
+      if (linkedEmpProg) acc[linkedEmpProg] = item.type;
+      return acc;
+  }, {});
+
   // Hash map xác định kiểu dữ liệu từ gốc (chính xác hơn .loaiSoLieu)
   $: isQuantityMap = (columnSettings || []).reduce((acc, col) => {
-      acc[col.tenGoc] = ($competitionData || []).some(c => c.name.endsWith(col.tenGoc) && c.type === 'soLuong');
+      if (linkedTypeMap.hasOwnProperty(col.tenGoc)) {
+          acc[col.tenGoc] = linkedTypeMap[col.tenGoc] === 'soLuong';
+      } else {
+          acc[col.tenGoc] = ($competitionData || []).some(c => c.name.endsWith(col.tenGoc) && c.type === 'soLuong');
+      }
       return acc;
   }, {});
 

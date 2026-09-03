@@ -48,16 +48,16 @@
 
             const khoSummary = sortedKhoItems.reduce((acc, d) => {
                 acc.total++;
-                if (d.hoanThanhValue >= 100) acc.achieved++;
-                if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhValue >= 100) acc.revenueAchieved++; }
-                if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhValue >= 100) acc.quantityAchieved++; }
+                if (d.hoanThanhDuKienValue >= 100) acc.achieved++;
+                if (d.type === 'doanhThu') { acc.revenueTotal++; if (d.hoanThanhDuKienValue >= 100) acc.revenueAchieved++; }
+                if (d.type === 'soLuong') { acc.quantityTotal++; if (d.hoanThanhDuKienValue >= 100) acc.quantityAchieved++; }
                 return acc;
             }, { total: 0, achieved: 0, revenueTotal: 0, revenueAchieved: 0, quantityTotal: 0, quantityAchieved: 0 });
             khoSummary.overallRate = khoSummary.total > 0 ? (khoSummary.achieved / khoSummary.total) * 100 : 0;
 
-            const groupDaDat = sortedKhoItems.filter(i => i.hoanThanhValue >= 100);
-            const groupButToc = sortedKhoItems.filter(i => i.hoanThanhValue >= 70 && i.hoanThanhValue < 100);
-            const groupBaoDong = sortedKhoItems.filter(i => i.hoanThanhValue < 70);
+            const groupDaDat = sortedKhoItems.filter(i => i.hoanThanhDuKienValue >= 100);
+            const groupButToc = sortedKhoItems.filter(i => i.hoanThanhDuKienValue >= 70 && i.hoanThanhDuKienValue < 100);
+            const groupBaoDong = sortedKhoItems.filter(i => i.hoanThanhDuKienValue < 70);
 
             tempMap[kho] = {
                 items: sortedKhoItems,

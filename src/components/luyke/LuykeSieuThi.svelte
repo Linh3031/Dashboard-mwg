@@ -121,18 +121,6 @@
     finalTyLeQd = finalDtThuc > 0 ? (finalDtQd / finalDtThuc) - 1 : 0;
     finalTyLeGop = finalDtThuc > 0 ? (finalDtGop / finalDtThuc) : 0;
 
-    const targetQD = parseFloat(localGoals?.doanhThuQD || 0); 
-    const phanTramTargetQd = targetQD > 0 ? (finalDtQd / targetQD) : 0;
-
-    const targetThuc = parseFloat(localGoals?.doanhThuThuc || 0);
-    const phanTramTargetThuc = targetThuc > 0 ? (finalDtThuc / targetThuc) : 0;
-
-    let tangTruongTB3T = tb3ThangQD > 0 ? (finalDtQd / tb3ThangQD) - 1 : 0;
-    comparisonData = {
-        value: finalDtQd - tb3ThangQD,
-        percentage: tb3ThangQD > 0 ? ((tangTruongTB3T * 100).toFixed(1) + '%') : '0.0%'
-    };
-
     // [PHẪU THUẬT LOGIC]: Tự động tính toán Dự kiến dựa trên số ngày chạy thực tế
     const now = new Date();
     const pastDays = now.getDate() > 1 ? now.getDate() - 1 : 1;
@@ -140,6 +128,19 @@
 
     let agg_DtDuKien = (finalDtThuc / pastDays) * daysInMonth;
     let agg_DtQdDuKien = (finalDtQd / pastDays) * daysInMonth;
+
+    // [SỬA LỖI] % HT Target giờ lấy theo Dự báo hoàn thành (agg_..DuKien / target), không lấy lũy kế thô / target
+    const targetQD = parseFloat(localGoals?.doanhThuQD || 0);
+    const phanTramTargetQd = targetQD > 0 ? (agg_DtQdDuKien / targetQD) : 0;
+
+    const targetThuc = parseFloat(localGoals?.doanhThuThuc || 0);
+    const phanTramTargetThuc = targetThuc > 0 ? (agg_DtDuKien / targetThuc) : 0;
+
+    let tangTruongTB3T = tb3ThangQD > 0 ? (finalDtQd / tb3ThangQD) - 1 : 0;
+    comparisonData = {
+        value: finalDtQd - tb3ThangQD,
+        percentage: tb3ThangQD > 0 ? ((tangTruongTB3T * 100).toFixed(1) + '%') : '0.0%'
+    };
 
     const compData = $competitionData || [];
     competitionSummary.total = compData.length;

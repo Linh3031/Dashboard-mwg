@@ -1,6 +1,18 @@
 // src/utils/formatters.js
-// Version 4.0 - Format 0 as "-"
+// Version 4.1 - Format 0 as "-", Added parseNumber to prevent system crash
 export const formatters = {
+    /**
+     * Bổ sung hàm parseNumber để lấp lỗ hổng crash khi xử lý chuỗi (Surgical Fix)
+     */
+    parseNumber: (value) => {
+        if (value === null || value === undefined || value === '') return 0;
+        if (typeof value === 'number') return value;
+        // Lọc bỏ các ký tự không phải số, dấu chấm, dấu trừ
+        const cleanStr = String(value).replace(/[^0-9.-]/g, '');
+        const parsed = parseFloat(cleanStr);
+        return isNaN(parsed) ? 0 : parsed;
+    },
+
     /**
      * Định dạng số lượng. 0 -> "-"
      */

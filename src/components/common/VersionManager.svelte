@@ -5,29 +5,29 @@
 
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { homeConfig, firebaseStore } from '../../stores.js';
+    import { homeConfig, firebaseStore, latestSystemVersion } from '../../stores.js';
     import { adminService } from '../../services/admin.service.js';
     
-    // [CODEGENESIS] Nhúng Core API từ Firebase
     import { doc, onSnapshot } from "firebase/firestore";
 
     let showForceUpdateModal = false;
     let latestVersionData = null;
     let showDetails = false;
-    let clientVersion = ''; 
+    
+    // [PHẪU THUẬT LOGIC]: Đọc LocalStorage NGAY LÚC KHỞI TẠO, không đợi onMount để tránh lệch nhịp Reactivity!
+    let clientVersion = (typeof localStorage !== 'undefined') ? (localStorage.getItem('app_client_version') || '0.0') : '0.0'; 
     let serverVersionString = '';
     
-    // [CODEGENESIS] Biến ngắt kết nối
     let unsubRealtime = null;
 
     showVersionDetails.subscribe(val => showDetails = val);
 
     onMount(async () => {
+        // Dự phòng an toàn
         clientVersion = localStorage.getItem('app_client_version') || '0.0';
         await fetchLatestConfig();
     });
 
-    // [CODEGENESIS] Phản ứng thiết lập kết nối Real-time (Zero delay)
     $: if ($firebaseStore && $firebaseStore.db && !unsubRealtime) {
         const docRef = doc($firebaseStore.db, 'declarations', 'homeConfig'); 
         unsubRealtime = onSnapshot(docRef, (docSnap) => {
@@ -53,27 +53,34 @@
     // Theo dõi phiên bản từ Server
     $: if ($homeConfig && $homeConfig.changelogs && $homeConfig.changelogs.length > 0) {
         latestVersionData = $homeConfig.changelogs[0];
-        serverVersionString = latestVersionData.version;
+        serverVersionString = String(latestVersionData.version).trim();
+        
+        // Cập nhật store trạm trung chuyển để interceptor bên main.js nhận biết
+        latestSystemVersion.set(serverVersionString);
+        
         checkVersionMismatch(serverVersionString);
     }
 
     function checkVersionMismatch(serverVer) {
         if (!serverVer) return;
         
-        // Nếu là lần đầu tiên vào app, lưu luôn version server và không làm phiền
-        if (clientVersion === '0.0') {
+        // Lấy tươi (fresh state) từ LocalStorage ngay khoảnh khắc chạy hàm
+        const currentLocal = localStorage.getItem('app_client_version') || '0.0';
+        
+        if (currentLocal === '0.0') {
             localStorage.setItem('app_client_version', serverVer);
             clientVersion = serverVer;
             return;
         }
 
-        // Nếu Version Server KHÁC Version Máy Khách -> BÁO ĐỘNG ĐỎ
-        if (serverVer !== clientVersion) {
+        if (serverVer !== currentLocal) {
             showForceUpdateModal = true;
+        } else {
+            // Nếu đã khớp, ép đóng Modal (chữa tận gốc vòng lặp vô tận)
+            showForceUpdateModal = false; 
         }
     }
 
-    // [PWA NUKE] Hàm diệt Cache, lưu Version mới và ép tải lại
     async function forceUpdateApp() {
         if (serverVersionString) {
             localStorage.setItem('app_client_version', serverVersionString);
@@ -191,7 +198,6 @@
     .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
     @keyframes bounceIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
     
-    /* Tối ưu định dạng nội dung HTML trả về từ server */
     :global(.custom-content ul) { list-style-type: disc; padding-left: 1.5rem; margin-top: 0.5rem; }
     :global(.custom-content p) { margin-bottom: 0.5rem; }
     :global(.custom-content strong) { color: #1e293b; }
@@ -199,7 +205,7 @@
     :global(.custom-content h2), 
     :global(.custom-content h3), 
     :global(.custom-content h4) {
-        color: #1d4ed8; /* blue-700 */
+        color: #1d4ed8;
         font-weight: 800;
         text-transform: uppercase;
         margin-top: 1rem;
@@ -208,9 +214,7 @@
     :global(.custom-content h1:first-child), 
     :global(.custom-content h2:first-child), 
     :global(.custom-content h3:first-child), 
-    :global(.custom-content h4:first-child) {
-        margin-top: 0;
-    }
+    :global(.custom-content h4:first-child) { margin-top: 0; }
 
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

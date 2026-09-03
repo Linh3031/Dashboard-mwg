@@ -87,13 +87,22 @@
         return 'text-red-600';
     }
 
+    // [PHẪU THUẬT LOGIC]: Ưu tiên loại SL/DT theo Link Data Nhân Viên admin đã xác nhận thủ công,
+    // chỉ dùng cách so khớp tên .endsWith() làm dự phòng khi chương trình chưa được admin link.
+    $: linkedTypeMap = ($competitionData || []).reduce((acc, item) => {
+        const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
+        const linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : null;
+        if (linkedEmpProg) acc[linkedEmpProg] = item.type;
+        return acc;
+    }, {});
+
     function getDynamicMetricValue(comp, colTenGoc) {
         if (!comp) return 0;
-        if (comp.giaTri !== undefined) return comp.giaTri; 
-        
-        const isQuantity = ($competitionData || []).some(c => {
-            return c.name.endsWith(colTenGoc) && c.type === 'soLuong';
-        });
+        if (comp.giaTri !== undefined) return comp.giaTri;
+
+        const isQuantity = linkedTypeMap.hasOwnProperty(colTenGoc)
+            ? linkedTypeMap[colTenGoc] === 'soLuong'
+            : ($competitionData || []).some(c => c.name.endsWith(colTenGoc) && c.type === 'soLuong');
 
         return isQuantity ? (comp.soLuong || 0) : (comp.doanhThu || 0);
     }

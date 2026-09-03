@@ -10,9 +10,9 @@
         red: { text: 'text-red-600', bg: 'bg-red-500', border: 'border-red-500' }
     };
 
-    $: isProjectedCompleted = item.hoanThanhValue >= 100;
+    $: isProjectedCompleted = (item.hoanThanhDuKienValue || item.hoanThanhValue) >= 100;
     $: isActualCompleted = item.luyKe >= item.target;
-    $: colorKey = isProjectedCompleted ? 'blue' : (item.hoanThanhValue >= 80 ? 'yellow' : 'red');
+    $: colorKey = isProjectedCompleted ? 'blue' : ((item.hoanThanhDuKienValue || item.hoanThanhValue) >= 80 ? 'yellow' : 'red');
     $: colors = COLOR_MAP[colorKey];
     
     $: dkColorKey = (item.hoanThanhDuKienValue || item.hoanThanhValue) >= 100 ? 'blue' : ((item.hoanThanhDuKienValue || item.hoanThanhValue) >= 80 ? 'yellow' : 'red');

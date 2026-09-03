@@ -1,5 +1,5 @@
 // src/main.js
-// Version 5.3 - Phẫu Thuật Logic: Lưới Phòng Thủ Phiên Bản
+// Version 5.4 - Phẫu Thuật Logic: Lưới Phòng Thủ Phiên Bản & Cắt bỏ tàn tích Anonymous
 import './app.css'
 import App from './App.svelte'
 import { mount } from 'svelte'
@@ -83,17 +83,17 @@ async function startDataFlow() {
             return; 
         }
 
-        await auth.ensureAnonymousAuth();
-        const isLoggedIn = auth.initAuth();
-        
-        if (isLoggedIn) {
-            console.log("[Main] User logged in. Starting real data load sequence...");
+        // [PHẪU THUẬT LOGIC]: Đã dọn sạch auth.ensureAnonymousAuth() và auth.initAuth(). 
+        // Trạng thái xác thực Firebase thực tế sẽ do App.svelte xử lý độc lập.
+        // Tại cấp độ root, chỉ kiểm tra dấu vết đăng nhập để mồi dữ liệu Local (Hydration).
+        const email = localStorage.getItem('userEmail');
+
+        if (email) {
+            console.log("[Main] Đã thấy phiên đăng nhập cũ trong Cache. Bắt đầu mồi data (Hydration)...");
             await dataService.loadAllFromCache();
-            
-            const email = localStorage.getItem('userEmail');
-            if(email) analyticsService.upsertUserRecord(email);
+            analyticsService.upsertUserRecord(email).catch(e => console.error(e));
         } else {
-            console.log("[Main] User not logged in. Data load deferred.");
+            console.log("[Main] Chưa có phiên đăng nhập. Chờ App.svelte xử lý Auth UI.");
         }
 
     } catch (e) {

@@ -93,21 +93,25 @@ export const fileHandler = {
             if (mapping.normalizeType === 'thiduanv_excel') {
                 const grouped = {};
                 const uniquePrograms = new Set();
-                
+
+                // [FIX] Gom danh sách chương trình từ TOÀN BỘ dữ liệu gốc, không phụ thuộc lọc theo DSNV
+                normalizedData.forEach(row => {
+                    const progName = String(row.chuongTrinh || '').trim();
+                    if (progName) uniquePrograms.add(progName);
+                });
+
                 const currentDSNV = get(danhSachNhanVien) || [];
                 const validEmpCodes = new Set(currentDSNV.map(e => String(e.ma_nv || e.maNV).trim()));
 
                 normalizedData.forEach(row => {
                     const empCode = String(row.maNV || '').trim();
                     if (!empCode) return;
-                    
+
                     if (validEmpCodes.size > 0 && !validEmpCodes.has(empCode)) return;
 
                     if (!grouped[empCode]) grouped[empCode] = { maNV: empCode, competitions: [] };
-                    
-                    const progName = String(row.chuongTrinh || '').trim();
-                    if (progName) uniquePrograms.add(progName);
 
+                    const progName = String(row.chuongTrinh || '').trim();
                     grouped[empCode].competitions.push({
                         tenGoc: progName,
                         doanhThu: parseFloat(row.doanhThu) || 0,

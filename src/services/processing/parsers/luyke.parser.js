@@ -1,5 +1,6 @@
 import { competitionData, luykeNameMappings } from '../../../stores.js';
 import { get } from 'svelte/store';
+import { competitionProcessor } from '../logic/competition.processor.js';
 
 export const luykeParser = {
     // --- BỘ GIẢI MÃ BÁO CÁO TỔNG HỢP CỤM (V4.0) ---
@@ -232,6 +233,9 @@ export const luykeParser = {
         if (hasChanges) {
             luykeNameMappings.set(currentMappings);
         }
+
+        // [AUTO-LINK] ST vừa có dữ liệu mới -> thử ghép tự động với các chương trình NV chưa có link
+        competitionProcessor.autoLinkPrograms(results);
 
         return results;
     }

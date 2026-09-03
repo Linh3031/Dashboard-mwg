@@ -13,7 +13,8 @@
       warehouseList,
       isDemoMode,
       declarations,
-      masterReportData
+      masterReportData,
+      currentUser
   } from './stores.js';
   import { get } from 'svelte/store';
   import { authService } from './services/auth.service.js';
@@ -31,7 +32,6 @@
   import RealtimeSection from './components/realtime/RealtimeSection.svelte';
   import DeclarationSection from './components/DeclarationSection.svelte';
 
-  // [GENESIS SURGERY] Nhúng Component ToolsSection
   import ToolsSection from './components/ToolsSection.svelte';
 
   // --- COMMON UI ---
@@ -54,97 +54,74 @@
   import CustomerDetailModal from './components/modals/CustomerDetailModal.svelte';
   import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
 
-  // [GENESIS SURGERY] Import Siêu Modal Hợp Nhất
   import UnifiedConfigModal from './components/modals/UnifiedConfigModal.svelte';
-
-  // [GENESIS IMPORT] Import cửa sổ Xem trước Ảnh
   import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
   
-  // import DemoWelcomeModal from './components/modals/DemoWelcomeModal.svelte';
-  // <-- [TẮT DEMO] Comment import
-
-  // Kiểm tra localStorage ngay khi khởi tạo
   let isBootingDemo = false;
-  // <-- [TẮT DEMO] Luôn ép về false để chạy chế độ thật
-  
-  // Nếu đang boot demo thì chưa sẵn sàng (false)
   let isAppReady = !isBootingDemo;
+  let isAuthChecking = true; 
+  let hasLoadedSystemConfig = false;
 
   onMount(async () => {
-    // [LOGIC PHÂN LUỒNG]
     if (isBootingDemo) {
-        // --- LUỒNG 1: CHẾ ĐỘ DEMO (OFFLINE FIRST) ---
         await initDemoMode();
     } else {
-        // --- LUỒNG 2: CHẾ ĐỘ THỰC (ONLINE) ---
-        // Đảm bảo xóa cờ demo nếu lỡ còn lưu
         if (typeof localStorage !== 'undefined') localStorage.removeItem('isDemoMode');
-      
         await initRealMode();
     }
   });
 
-  // [FIX] Hàm khởi tạo riêng cho Demo - Bỏ qua Auth và Fetch Server
   async function initDemoMode() {
       console.log("🚀 [Bootloader] Đang khởi động chế độ Demo...");
       isDemoMode.set(true);
       
       try {
-          // 1. Nạp Snapshot
           await demoService.loadSnapshot(DEMO_SNAPSHOT);
-          // 2. Chờ Store cập nhật
           await tick();
-          // 3. Chọn kho mặc định từ dữ liệu vừa nạp
           const currentList = get(danhSachNhanVien);
           if (currentList && currentList.length > 0) {
               const firstWarehouse = currentList[0].maKho || "908";
               selectedWarehouse.set(firstWarehouse);
-              // Cập nhật danh sách kho cho Select Box
               warehouseList.set([firstWarehouse]);
           } else {
               selectedWarehouse.set("908");
           }
           
-          // 4. Mở khóa giao diện
           isAppReady = true;
+          isAuthChecking = false;
           console.log("✅ [Bootloader] Demo Ready -> Unlocking UI");
 
-          // 5. Chuyển Tab (Delay nhẹ để UI render xong)
           setTimeout(() => {
               activeTab.set('realtime-section');
           }, 200);
       } catch (e) {
           console.error("❌ Lỗi nạp Demo:", e);
           alert("Không thể nạp dữ liệu Demo. Vui lòng thử lại.");
-          // Fallback về chế độ thật nếu lỗi
           localStorage.removeItem('isDemoMode');
           window.location.reload();
       }
   }
 
-  // [FIX] Hàm khởi tạo cho App thật
   async function initRealMode() {
-      try { 
-          await authService.ensureAnonymousAuth();
-      } catch (e) { 
-          console.error("Firebase Auth Error:", e);
-      }
-      
-      const isLoggedIn = authService.initAuth();
-      if (!isLoggedIn) modalState.update(s => ({ ...s, activeModal: 'login-modal' }));
+      authService.initAuthListener(async () => {
+          // [PHẪU THUẬT LOGIC]: Giải phóng giao diện mạng lập tức (Tắt màn hình đen)
+          isAuthChecking = false; 
 
-      // Load cấu hình từ Server (Chỉ chạy ở chế độ thật)
-      await loadGlobalSystemConfig();
-      await loadInitialTables();
-      
-      // Mở khóa giao diện ngay lập tức
-      isAppReady = true;
+          // Dữ liệu vẫn sẽ chạy ngầm, lúc này giao diện đã hiện ra với spinner nhỏ bên trong
+          const user = get(currentUser);
+          if (user && !hasLoadedSystemConfig) {
+              await loadGlobalSystemConfig();
+              await loadInitialTables();
+              hasLoadedSystemConfig = true; 
+          }
+          
+          // Khi data kéo xong, giải phóng nốt spinner nội dung
+          isAppReady = true;
+      });
   }
 
-  // Hàm tải cấu hình hệ thống (CHỈ DÙNG CHO REAL MODE)
   async function loadGlobalSystemConfig() {
       try {
-          // [VÁ LỖI LOGIC] Tải Declarations cho user thường ở ngay đây
           const declData = await adminService.loadDeclarationsFromFirestore();
           if (declData) {
               declarations.set(declData);
@@ -155,7 +132,6 @@
               adminService.loadEfficiencyConfig(),
               adminService.loadSpecialProductList(),
               adminService.loadHomeConfig(),
-              // [PHẪU THUẬT LOGIC]: Bổ sung lệnh nạp dữ liệu Video Hướng Dẫn khi F5 khởi động app
               (typeof adminService.loadHelpContent === 'function') ? adminService.loadHelpContent() : Promise.resolve()
           ]);
       } catch (error) {
@@ -253,12 +229,10 @@
       }
   }
 
-  // [GENESIS SURGERY] Bộ chuyển mạch cho UnifiedConfigModal
   function handleUnifiedSave(event) {
       const { type, payload } = event.detail;
       const activeModal = get(modalState).activeModal;
       
-      // Giả lập lại event cũ để gọi đúng các hàm lưu đã có sẵn của bạn
       const fakeEvent = { detail: payload };
 
       if (type === 'INDICATOR' || activeModal === 'add-efficiency-modal' || activeModal === 'add-metric-modal') {
@@ -294,101 +268,112 @@
 </script>
 
 <GlobalNotification />
-<VersionManager />
-<FastTagPicker />
 
-<InterfaceDrawer />
-<GoalDrawer />
-
-<AdminModal />
-<LoginModal />
-<QuickGoalModal />
-<UserCompetitionModal />
-<UserSpecialProgramModal />
-<ComposerModal /> 
-<StEmpCompetitionModal />
-
-{#if $modalState.activeModal === 'capture-preview'}
-    <CapturePreviewModal payload={$modalState.payload} />
-{/if}
-
-{#if $modalState.activeModal === 'unexported-detail-modal'}
-    <UnexportedDetailModal 
-        unexportedDetails={$modalState.payload?.unexportedDetails || []}
-        on:close={closeModal}
-    />
-{/if}
-
-{#if $modalState.activeModal === 'customer-detail-modal'}
-    <CustomerDetailModal 
-        customers={$modalState.payload?.customers || []}
-        mucTieu={$modalState.payload?.mucTieu || {}}
-        on:close={closeModal}
-    />
-{/if}
-
-<UnifiedConfigModal 
-    isOpen={['add-revenue-table-modal', 'add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
-    editItem={$modalState.payload}
-    isSystem={$modalState.isSystem || $activeTab === 'declaration-section'}
-    on:close={closeModal}
-    on:save={handleUnifiedSave}
-/>
-
-{#if $isDemoMode}
-<div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-indigo-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-500 animate-bounce-in">
-    <div class="flex flex-col">
-        <span class="text-xs font-bold text-indigo-300 uppercase tracking-wider">Môi trường</span>
-        <span class="font-bold">ĐANG CHẠY DEMO</span>
+{#if isAuthChecking}
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
+        <div class="flex flex-col items-center">
+            <svg class="animate-spin h-10 w-10 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            <span class="text-white text-sm font-semibold tracking-wide">Đang xác thực phiên đăng nhập...</span>
+        </div>
     </div>
-    <div class="h-8 w-[1px] bg-indigo-700 mx-1"></div>
-    <button 
-        on:click={exitDemoMode}
-        class="bg-white text-indigo-900 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors"
-    >
-        Thoát
-    </button>
-</div>
-{/if}
+{:else if !$currentUser}
+    <LoginModal />
+{:else}
+    <VersionManager />
+    <FastTagPicker />
 
-<div class="flex min-h-screen">
-  <div id="sidebar-container">
-    <Sidebar />
-  </div>
+    <InterfaceDrawer />
+    <GoalDrawer />
 
-  <main id="main-content">
-    <div class="flex-1 p-6">
-      <div class="max-w-full mx-auto">
-        {#if isAppReady}
-            <HomeSection activeTab={$activeTab} />
-            <DataSection activeTab={$activeTab} />
-            <HealthSection activeTab={$activeTab} />
-            <HealthEmployeeSection activeTab={$activeTab} />
-            <RealtimeSection activeTab={$activeTab} />
-            <DeclarationSection activeTab={$activeTab} />
-            
-            <ToolsSection activeTab={$activeTab} />
-        {:else}
-            <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
-                <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p class="font-medium">Đang thiết lập môi trường...</p>
-            </div>
-        {/if}
+    <AdminModal />
+    <QuickGoalModal />
+    <UserCompetitionModal />
+    <UserSpecialProgramModal />
+    <ComposerModal /> 
+    <StEmpCompetitionModal />
+
+    {#if $modalState.activeModal === 'capture-preview'}
+        <CapturePreviewModal payload={$modalState.payload} />
+    {/if}
+
+    {#if $modalState.activeModal === 'unexported-detail-modal'}
+        <UnexportedDetailModal 
+            unexportedDetails={$modalState.payload?.unexportedDetails || []}
+            on:close={closeModal}
+        />
+    {/if}
+
+    {#if $modalState.activeModal === 'customer-detail-modal'}
+        <CustomerDetailModal 
+            customers={$modalState.payload?.customers || []}
+            mucTieu={$modalState.payload?.mucTieu || {}}
+            on:close={closeModal}
+        />
+    {/if}
+
+    <UnifiedConfigModal 
+        isOpen={['add-revenue-table-modal', 'add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
+        editItem={$modalState.payload}
+        isSystem={$modalState.isSystem || $activeTab === 'declaration-section'}
+        on:close={closeModal}
+        on:save={handleUnifiedSave}
+    />
+
+    {#if $isDemoMode}
+    <div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-indigo-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-500 animate-bounce-in">
+        <div class="flex flex-col">
+            <span class="text-xs font-bold text-indigo-300 uppercase tracking-wider">Môi trường</span>
+            <span class="font-bold">ĐANG CHẠY DEMO</span>
+        </div>
+        <div class="h-8 w-[1px] bg-indigo-700 mx-1"></div>
+        <button 
+            on:click={exitDemoMode}
+            class="bg-white text-indigo-900 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors"
+        >
+            Thoát
+        </button>
+    </div>
+    {/if}
+
+    <div class="flex min-h-screen">
+      <div id="sidebar-container">
+        <Sidebar />
       </div>
-    </div>
-  </main>
-</div> 
 
-<div id="modal-force-update-container"></div>
-<div id="modal-help-container"></div>
-<div id="modal-chart-container"></div>
-<div id="modal-preview-container"></div>
-<div id="modal-selection-container"></div>
-<div id="modal-customer-detail-container"></div>
-<div id="modal-unexported-detail-container"></div>
+      <main id="main-content">
+        <div class="flex-1 p-6">
+          <div class="max-w-full mx-auto">
+            {#if isAppReady}
+                <HomeSection activeTab={$activeTab} />
+                <DataSection activeTab={$activeTab} />
+                <HealthSection activeTab={$activeTab} />
+                <HealthEmployeeSection activeTab={$activeTab} />
+                <RealtimeSection activeTab={$activeTab} />
+                <DeclarationSection activeTab={$activeTab} />
+                
+                <ToolsSection activeTab={$activeTab} />
+            {:else}
+                <div class="flex flex-col items-center justify-center h-[80vh] text-gray-400">
+                    <svg class="animate-spin h-10 w-10 mb-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="font-medium">Đang thiết lập môi trường...</p>
+                </div>
+            {/if}
+          </div>
+        </div>
+      </main>
+    </div> 
+
+    <div id="modal-force-update-container"></div>
+    <div id="modal-help-container"></div>
+    <div id="modal-chart-container"></div>
+    <div id="modal-preview-container"></div>
+    <div id="modal-selection-container"></div>
+    <div id="modal-customer-detail-container"></div>
+    <div id="modal-unexported-detail-container"></div>
+{/if}
 
 <style>
   :global(#main-content) { 
