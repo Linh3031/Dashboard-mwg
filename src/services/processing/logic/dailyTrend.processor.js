@@ -74,10 +74,20 @@ export const dailyTrendProcessor = {
             const row = ycxData[i];
 
             const trangThaiHuy = String(row.trangThaiHuy || row['Trạng thái hủy'] || '').trim().toLowerCase();
-            if (trangThaiHuy === 'đã hủy' || trangThaiHuy === 'hủy') continue; 
+            if (trangThaiHuy === 'đã hủy' || trangThaiHuy === 'hủy') continue;
+
+            const trangThaiThuTien = String(row.trangThaiThuTien || row['Trạng thái thu tiền'] || '').trim();
+            if (trangThaiThuTien !== 'Đã thu') continue;
+
+            const tinhTrangTra = String(row.tinhTrangTra || row['Tình trạng trả'] || '').trim();
+            if (tinhTrangTra !== 'Chưa trả') continue;
+
+            const trangThaiXuat = String(row.trangThaiXuat || row['Trạng thái xuất'] || '').trim();
+            const isDaXuat = !trangThaiXuat || trangThaiXuat === 'Đã xuất' || trangThaiXuat === 'Đã giao';
+            if (!isDaXuat) continue;
 
             const htxRaw = String(row.hinhThucXuat || row['Hình thức xuất'] || '').trim().toLowerCase();
-            if (settings.viewMode !== 'RAW' && !validHTXLower.has(htxRaw)) continue; 
+            if (settings.viewMode !== 'RAW' && !validHTXLower.has(htxRaw)) continue;
 
             if (settings.warehouse && settings.warehouse !== 'ALL') {
                 const wh = row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'];
@@ -127,9 +137,14 @@ export const dailyTrendProcessor = {
             const nhomId = extractId(nhomHang);
             const nganhId = extractId(nganhHang);
 
-            let hs = heSoMap[nhomId] !== undefined ? heSoMap[nhomId] : 1;
-            if (isTraGop) hs += 0.3;
-            const revenueQuyDoi = revenue * hs;
+            let revenueQuyDoi;
+            if (row.revenueQuyDoi !== undefined) {
+                revenueQuyDoi = parseFloat(String(row.revenueQuyDoi).replace(/[^0-9.-]+/g, "")) || 0;
+            } else {
+                let hs = helpers.getHeSoForCategory(nhomHang, nganhHang, heSoMap);
+                if (isTraGop) hs += 0.3;
+                revenueQuyDoi = revenue * hs;
+            }
 
             if (!cell.doanhThuTheoNhomHang[nhomId]) cell.doanhThuTheoNhomHang[nhomId] = { quantity: 0, revenue: 0, revenueQuyDoi: 0 };
             cell.doanhThuTheoNhomHang[nhomId].quantity += quantity;
@@ -186,13 +201,19 @@ export const dailyTrendProcessor = {
                         if (isMatch) {
                             const quantity = parseInt(row.soLuong || 0);
                             let revenue = parseFloat(String(row.thanhTien || 0).replace(/[^0-9.-]+/g, "")) || 0;
-                            
-                            let hs = heSoMap[extractId(row.nhomHang)] !== undefined ? heSoMap[extractId(row.nhomHang)] : 1;
-                            const htxStr = String(row.hinhThucXuat || row['Hình thức xuất'] || '').toLowerCase();
-                            if (htxStr.includes('trả') || htxStr.includes('chậm')) hs += 0.3;
+
+                            let rowRevenueQuyDoi;
+                            if (row.revenueQuyDoi !== undefined) {
+                                rowRevenueQuyDoi = parseFloat(String(row.revenueQuyDoi).replace(/[^0-9.-]+/g, "")) || 0;
+                            } else {
+                                let hs = helpers.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoMap);
+                                const htxStr = String(row.hinhThucXuat || row['Hình thức xuất'] || '').toLowerCase();
+                                if (htxStr.includes('trả') || htxStr.includes('chậm')) hs += 0.3;
+                                rowRevenueQuyDoi = revenue * hs;
+                            }
 
                             if (settings.rawType === 'quantity') cellRawSum += quantity;
-                            else if (settings.rawType === 'revenueQuyDoi') cellRawSum += (revenue * hs);
+                            else if (settings.rawType === 'revenueQuyDoi') cellRawSum += rowRevenueQuyDoi;
                             else if (settings.rawType === 'unitPrice') {
                                 cellTempRev += revenue;
                                 cellTempQty += quantity;
