@@ -14,13 +14,30 @@
   import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
   // [NEW] Import tab Địa chỉ Realtime
   import RealtimeAddressTab from './address/RealtimeAddressTab.svelte';
+  import MicroTutorialModal from '../modals/MicroTutorialModal.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-realtime-sieu-thi';
+  let tutorialModal;
+
+  const subTabHelpLabels = {
+      'subtab-realtime-sieu-thi': 'Siêu thị Real',
+      'subtab-realtime-nhan-vien': 'DT NV Real',
+      'subtab-realtime-hieu-qua-nhan-vien': 'Hiệu quả NV Real',
+      'subtab-realtime-hang-ban': 'Chi tiết YCX Real',
+      'subtab-realtime-thi-dua': 'Thi đua NV Real',
+      'subtab-realtime-tragop': 'Trả chậm Real',
+      'subtab-realtime-dia-chi': 'Địa chỉ Real'
+  };
+  $: activeSubTabHelpLabel = subTabHelpLabels[activeSubTabId] || '';
 
   function handleSubTabClick(event) {
       const button = event.currentTarget;
       activeSubTabId = button.dataset.target;
+  }
+
+  function handleOpenTutorial() {
+      if (tutorialModal) tutorialModal.open(activeSubTabId);
   }
 
   function handleWarehouseChange(event) {
@@ -59,7 +76,7 @@
                 
                 <div class="flex items-center gap-2">
                     <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Doanh Thu Realtime</h2>
-                    <button class="page-header__help-btn" data-help-id="realtime" title="Xem hướng dẫn">
+                    <button class="page-header__help-btn" data-help-id="realtime" title="Xem hướng dẫn: {activeSubTabHelpLabel}" on:click={handleOpenTutorial}>
                         <i data-feather="help-circle"></i>
                     </button>
                 </div>
@@ -241,6 +258,7 @@
         </div>
     </div>
 
+    <MicroTutorialModal bind:this={tutorialModal} />
 </section>
 
 <style>

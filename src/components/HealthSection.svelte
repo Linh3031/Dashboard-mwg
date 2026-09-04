@@ -23,9 +23,25 @@
   import LuykeCategoryView from './luyke/sub/LuykeCategoryView.svelte';
   import LuykeDtCkNam from './luyke/LuykeDtCkNam.svelte';
   import AddressYtdView from './luyke/address/AddressYtdView.svelte';
+  import MicroTutorialModal from './modals/MicroTutorialModal.svelte';
 
   export let activeTab;
   let activeSubTabId = 'subtab-luyke-sieu-thi';
+  let tutorialModal;
+
+  const subTabHelpLabels = {
+      'subtab-luyke-sieu-thi': 'Siêu thị Lũy kế',
+      'subtab-luyke-thi-dua': 'Thi đua ST Lũy kế',
+      'subtab-luyke-category': 'Chi tiết Ngành hàng',
+      'subtab-luyke-thidua-vung': 'Thi Đua Vùng TNB-HCM',
+      'subtab-dt-ck-nam': 'SSG',
+      'subtab-luyke-address': 'Thống kê địa chỉ'
+  };
+  $: activeSubTabHelpLabel = subTabHelpLabels[activeSubTabId] || '';
+
+  function handleOpenTutorial() {
+      if (tutorialModal) tutorialModal.open(activeSubTabId);
+  }
   
   let showPlaceholder = true;
   $: showPlaceholder = ($danhSachNhanVien.length === 0);
@@ -120,8 +136,8 @@
                     <i data-feather="activity" class="main-icon hidden sm:block"></i>
              
                     <div class="flex items-center gap-2">
-                        <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2> 
-                        <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn"><i data-feather="help-circle"></i></button>
+                        <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Siêu Thị</h2>
+                        <button class="page-header__help-btn" data-help-id="luyke" title="Xem hướng dẫn: {activeSubTabHelpLabel}" on:click={handleOpenTutorial}><i data-feather="help-circle"></i></button>
                     </div>
        
                     <div class="flex items-center gap-2 pl-4 border-l-2 border-blue-100 ml-2">
@@ -210,4 +226,5 @@
             </div>
         </div>
     </div>
+    <MicroTutorialModal bind:this={tutorialModal} />
 </section>

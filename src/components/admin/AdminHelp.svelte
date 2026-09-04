@@ -16,7 +16,30 @@
         { id: 'ycx-thang-truoc', label: 'Khối 3: YCX Lũy Kế tháng trước' },
         { id: 'thuong-nong-thang-truoc', label: 'Khối 3: Thưởng nóng tháng trước' },
         { id: 'ycx-cung-ky-nam', label: 'Khối 3: YCX Lũy kế năm trước' },
-        { id: 'thuong-erp-thang-truoc', label: 'Khối 3: Thưởng ERP tháng trước' }
+        { id: 'thuong-erp-thang-truoc', label: 'Khối 3: Thưởng ERP tháng trước' },
+
+        { id: 'subtab-luyke-sieu-thi', label: 'Sức khỏe siêu thị: Siêu thị Lũy kế' },
+        { id: 'subtab-luyke-thi-dua', label: 'Sức khỏe siêu thị: Thi đua ST Lũy kế' },
+        { id: 'subtab-luyke-category', label: 'Sức khỏe siêu thị: Chi tiết Ngành hàng' },
+        { id: 'subtab-luyke-thidua-vung', label: 'Sức khỏe siêu thị: Thi Đua Vùng TNB-HCM' },
+        { id: 'subtab-dt-ck-nam', label: 'Sức khỏe siêu thị: SSG' },
+        { id: 'subtab-luyke-address', label: 'Sức khỏe siêu thị: Thống kê địa chỉ' },
+
+        { id: 'sknv', label: 'Sức khỏe nhân viên: SKNV' },
+        { id: 'doanhthu', label: 'Sức khỏe nhân viên: Doanh thu LK' },
+        { id: 'thunhap', label: 'Sức khỏe nhân viên: Thu nhập' },
+        { id: 'hieuqua', label: 'Sức khỏe nhân viên: Hiệu quả NV LK' },
+        { id: 'daily-trend', label: 'Sức khỏe nhân viên: Xu hướng ngày' },
+        { id: 'thidua', label: 'Sức khỏe nhân viên: Thi đua NV LK' },
+        { id: 'tragop', label: 'Sức khỏe nhân viên: Trả chậm' },
+
+        { id: 'subtab-realtime-sieu-thi', label: 'Doanh thu Realtime: Siêu thị Real' },
+        { id: 'subtab-realtime-nhan-vien', label: 'Doanh thu Realtime: DT NV Real' },
+        { id: 'subtab-realtime-hieu-qua-nhan-vien', label: 'Doanh thu Realtime: Hiệu quả NV Real' },
+        { id: 'subtab-realtime-hang-ban', label: 'Doanh thu Realtime: Chi tiết YCX Real' },
+        { id: 'subtab-realtime-thi-dua', label: 'Doanh thu Realtime: Thi đua NV Real' },
+        { id: 'subtab-realtime-tragop', label: 'Doanh thu Realtime: Trả chậm Real' },
+        { id: 'subtab-realtime-dia-chi', label: 'Doanh thu Realtime: Địa chỉ Real' }
     ];
 
     let localHelpContent = {};

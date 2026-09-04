@@ -26,12 +26,14 @@
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
   import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
   import InstallmentView from './health-staff/installment/InstallmentView.svelte';
-  
+
   // [NEW] Import tab Xu Hướng Ngày
   import DailyTrendTab from './health-staff/daily-trend/DailyTrendTab.svelte';
+  import MicroTutorialModal from './modals/MicroTutorialModal.svelte';
 
   export let activeTab;
   let activeSubTab = 'sknv';
+  let tutorialModal;
   let viewingDetailId = null;
   let processedReport = [];
   let isMultiMonthMode = false;
@@ -216,6 +218,11 @@
   }
 
   function switchSubTab(tabId) { activeSubTab = tabId; viewingDetailId = null; }
+
+  $: activeSubTabHelpLabel = tabs.find(t => t.id === activeSubTab)?.label || '';
+  function handleOpenTutorial() {
+      if (tutorialModal) tutorialModal.open(activeSubTab);
+  }
   function handleEmployeeClick(event) { viewingDetailId = event.detail.employeeId; }
   function handleBackToSummary() { viewingDetailId = null; }
   function handleWarehouseChange(event) { selectedWarehouse.set(event.target.value); }
@@ -237,7 +244,7 @@
                 
                 <div class="flex items-center gap-2">
                     <h2 class="page-title text-xl sm:text-2xl font-bold text-blue-800">Sức Khỏe Nhân Viên</h2>
-                    <button class="page-header__help-btn" data-help-id="sknv" title="Xem hướng dẫn">
+                    <button class="page-header__help-btn" data-help-id="sknv" title="Xem hướng dẫn: {activeSubTabHelpLabel}" on:click={handleOpenTutorial}>
                         <i data-feather="help-circle"></i>
                     </button>
                 </div>
@@ -440,4 +447,5 @@
             </div>
         </div>
     </div>
+    <MicroTutorialModal bind:this={tutorialModal} />
 </section>
