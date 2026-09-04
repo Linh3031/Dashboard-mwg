@@ -137,6 +137,11 @@
 
   $: rawSyncState = $fileSyncState[saveKey];
 
+  $: downloadProgress = rawSyncState?.metadata?.progress || null;
+  $: progressPercent = (downloadProgress && downloadProgress.total > 0)
+      ? Math.min(100, Math.round((downloadProgress.current / downloadProgress.total) * 100))
+      : null;
+
   $: activeSyncState = (() => {
       if (localMetaFallback && (!rawSyncState || rawSyncState.status === 'cached' || !rawSyncState.metadata)) {
           return {
@@ -483,7 +488,7 @@
         
         {#if isLoading || (activeSyncState && activeSyncState.status === 'downloading')}
             <div class="progress-bar-container mt-2">
-                <div class="progress-bar" style="width: 100%; background-color: #3b82f6;"></div>
+                <div class="progress-bar" style="width: {progressPercent !== null ? progressPercent : 100}%; background-color: #3b82f6;"></div>
             </div>
         {/if}
     </div> 

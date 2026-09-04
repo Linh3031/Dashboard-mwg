@@ -321,9 +321,23 @@ export const syncHandler = {
                      filesToDownload = [{ meta: state.metadata, wh: warehouse }];
                 }
 
-                for (const { meta: fileMeta, wh: fileWh } of filesToDownload) {
+                // [FIX] Hiện tiến độ theo từng file/tháng thay vì 1 thanh chờ chung không rõ đang tới đâu.
+                const totalFilesToDownload = filesToDownload.length;
+                const commitToStore = (partialStore) => {
+                    if ((baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') && get(selectedWarehouse) !== 'ALL') {
+                        mapping.store.update(curr => {
+                            const existing = curr || [];
+                            const filtered = existing.filter(item => String(item.maKho) !== String(warehouse));
+                            return [...filtered, ...partialStore];
+                        });
+                    } else {
+                        mapping.store.set(partialStore);
+                    }
+                };
+
+                for (const [fileIdx, { meta: fileMeta, wh: fileWh }] of filesToDownload.entries()) {
                     if (!fileMeta.downloadURL) continue;
-                    
+
                     const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
                     const response = await fetch(cacheBusterUrl);
                     const blob = await response.blob();
@@ -370,6 +384,14 @@ export const syncHandler = {
                          }
                     }
                     allDataForStore = [...allDataForStore, ...dataForStore];
+
+                    commitToStore(allDataForStore);
+                    updateSyncState(
+                        stateKey,
+                        'downloading',
+                        totalFilesToDownload > 1 ? `Đang tải xuống... (${fileIdx + 1}/${totalFilesToDownload})` : 'Đang tải xuống...',
+                        { ...state.metadata, progress: { current: fileIdx + 1, total: totalFilesToDownload } }
+                    );
                 }
 
                 if (state.metadata.deletedWarehouses && state.metadata.deletedWarehouses.length > 0) {
@@ -388,15 +410,7 @@ export const syncHandler = {
                 // [FIX] "Doanh thu BI"/"Thi đua NV (Excel)" gộp dữ liệu nhiều kho trong cùng 1 store
                 // (xem fileHandler.js lúc upload). Ở chế độ 1 kho, chỉ thay dữ liệu của đúng kho đó,
                 // tránh ghi đè mất dữ liệu các kho khác đã đồng bộ trước đó trong cùng store.
-                if ((baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') && get(selectedWarehouse) !== 'ALL') {
-                    mapping.store.update(curr => {
-                        const existing = curr || [];
-                        const filtered = existing.filter(item => String(item.maKho) !== String(warehouse));
-                        return [...filtered, ...allDataForStore];
-                    });
-                } else {
-                    mapping.store.set(allDataForStore);
-                }
+                commitToStore(allDataForStore);
 
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_FILE');
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
