@@ -1,7 +1,7 @@
 /* global XLSX */
 import { get } from 'svelte/store';
 import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competitionData, pastedThiDuaReportData, thuongERPData, thuongERPDataThangTruoc, danhSachNhanVien } from '../../stores.js';
-import { datasyncService } from '../datasync.service.js';
+import { datasyncService, MULTI_MODE_KEYS } from '../datasync.service.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { FILE_MAPPING, PASTE_MAPPING } from './constants.js';
@@ -282,9 +282,16 @@ export const syncHandler = {
         
         try {
             if (!isPaste) {
-                let allDataForStorage = []; 
-                let allDataForStore = [];   
-                
+                let allDataForStorage = [];
+                let allDataForStore = [];
+
+                // [FIX] Chỉ loại "update thêm" (YCX lũy kế/tháng trước/cùng kỳ năm — xem MULTI_MODE_KEYS)
+                // mới cần chụp lại dữ liệu đang có để so sánh: với loại này, tải về ít hơn máy đang có
+                // là bất thường (nghi Cloud đang thiếu dữ liệu), khác với loại "ghi đè" vốn ít hơn là chuyện thường.
+                const isAccumulateType = MULTI_MODE_KEYS.includes(baseKey);
+                const previousLocalData = isAccumulateType ? (get(mapping.store) || []) : null;
+                const previousStorageData = isAccumulateType ? (await storage.getItem(stateKey)) : null;
+
                 let userAllowedWarehouses = [];
                 const dsnvData = get(danhSachNhanVien);
                 if (dsnvData && dsnvData.length > 0) {
@@ -357,11 +364,16 @@ export const syncHandler = {
 
                     normalizedData = applyDataShield(rawData, normalizedData, baseKey);
 
+                    // [FIX] Ưu tiên mã kho đã được ghi thẳng vào metadata lúc upload (assignedWarehouse) —
+                    // đáng tin hơn suy luận từ ngữ cảnh tải về. Vẫn giữ fileWh làm phương án dự phòng
+                    // cho các file đã upload từ trước khi có field này.
+                    const effectiveWh = fileMeta.assignedWarehouse || fileWh;
+
                     let dataForStorage;
                     if (baseKey === 'saved_thiduanv_excel') {
-                        dataForStorage = groupThiDuaNVExcelRows(normalizedData, fileWh);
+                        dataForStorage = groupThiDuaNVExcelRows(normalizedData, effectiveWh);
                     } else {
-                        normalizedData = applyWarehouseFallback(normalizedData, baseKey, fileWh);
+                        normalizedData = applyWarehouseFallback(normalizedData, baseKey, effectiveWh);
                         dataForStorage = normalizedData;
                         if (userAllowedWarehouses.length > 0) {
                              dataForStorage = normalizedData.filter(d => {
@@ -403,6 +415,30 @@ export const syncHandler = {
                         const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                         return !state.metadata.deletedWarehouses.includes(whCode);
                     });
+                }
+
+                // [FIX] Loại "update thêm": nếu Cloud trả về ÍT dòng hơn máy đang có sẵn, đây là dấu
+                // hiệu bất thường (lẽ ra chỉ tăng dần theo tháng) — hỏi lại trước khi ghi đè, và khôi
+                // phục nguyên trạng máy nếu người dùng huỷ (kể cả phần đã cập nhật tạm lúc hiện tiến độ).
+                if (isAccumulateType && previousLocalData && previousLocalData.length > 0 && allDataForStore.length < previousLocalData.length) {
+                    const proceed = confirm(
+                        `Dữ liệu tải về từ Cloud (${allDataForStore.length} dòng) đang ÍT HƠN dữ liệu máy này đang có (${previousLocalData.length} dòng).\n\n` +
+                        `Có thể Cloud đang thiếu dữ liệu (lỗi đồng bộ trước đó). Ghi đè có thể làm mất dữ liệu đang có trên máy này.\n\n` +
+                        `Bạn có chắc muốn ghi đè không?`
+                    );
+                    if (!proceed) {
+                        commitToStore(previousLocalData);
+                        if (previousStorageData !== null && previousStorageData !== undefined) {
+                            await storage.setItem(stateKey, previousStorageData);
+                        }
+                        updateSyncState(
+                            stateKey,
+                            'update_available',
+                            `Đã huỷ tải về vì Cloud đang ít dữ liệu hơn máy (${allDataForStore.length} so với ${previousLocalData.length} dòng đang có).`,
+                            state.metadata
+                        );
+                        return { success: false, message: 'Đã huỷ vì dữ liệu Cloud ít hơn dữ liệu máy đang có.' };
+                    }
                 }
 
                 await storage.setItem(stateKey, allDataForStorage);

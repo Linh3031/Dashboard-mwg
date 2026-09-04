@@ -1,5 +1,5 @@
 // src/services/datasync.service.js
-import { doc, setDoc, getDoc, serverTimestamp, writeBatch } from "firebase/firestore"; 
+import { doc, setDoc, getDoc, serverTimestamp, writeBatch, runTransaction } from "firebase/firestore";
 import {
     firebaseStore,
     currentUser,
@@ -25,6 +25,11 @@ const getDB = () => {
     const fb = get(firebaseStore);
     return fb.db;
 };
+
+// [FIX] Danh sách khoá "gộp nhiều tháng" — dùng chung giữa saveWarehouseMetadata (ghi) và
+// syncHandler.js (đọc, để biết khi nào cần chặn ghi đè ít dữ liệu hơn). Trước đây khai báo
+// riêng lẻ trong từng hàm, dễ quên đồng bộ khi thêm loại dữ liệu mới.
+export const MULTI_MODE_KEYS = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
 
 const getCurrentUserEmail = () => {
     const user = get(currentUser);
@@ -333,10 +338,9 @@ export const datasyncService = {
         if (!db || !kho) return false;
         if (!(await isWarehouseAllowedFresh(kho))) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return false; }
         const khoRef = doc(db, "warehouseData", kho);
-        const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
 
         try {
-            if (multiModeKeys.includes(key)) {
+            if (MULTI_MODE_KEYS.includes(key)) {
                 if (metadata.isDeleted) {
                     const dataToSave = {
                         [key]: {
@@ -352,39 +356,57 @@ export const datasyncService = {
                     return true;
                 }
 
-                const docSnap = await getDoc(khoRef);
-                let existingFiles = [];
-                if (docSnap.exists() && docSnap.data()[key]) {
-                    const existingData = docSnap.data()[key];
-                    if (Array.isArray(existingData.files)) existingFiles = existingData.files;
-                    else if (existingData.downloadURL) existingFiles = [existingData];
-                }
-                
-                if (metadata.uploadedMonths && metadata.uploadedMonths.length > 0) {
-                    existingFiles = existingFiles.filter(f => {
-                        if (!f.uploadedMonths) return f.fileName !== metadata.fileName;
-                        return !f.uploadedMonths.some(m => metadata.uploadedMonths.includes(m));
-                    });
-                } else {
-                    existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
-                }
-                
-                existingFiles.push({ ...metadata, updatedAt: new Date().toISOString(), updatedBy: getCurrentUserEmail() });
-                
-                const dataToSave = { 
-                    [key]: { 
-                        files: existingFiles, 
-                        isMulti: true, 
-                        isDeleted: false,
-                        timestamp: Date.now(), 
-                        updatedAt: serverTimestamp(), 
-                        updatedBy: getCurrentUserEmail() 
-                    } 
-                };
-                await setDoc(khoRef, dataToSave, { merge: true });
+                // [FIX] Đọc-sửa-ghi mảng `files` giờ chạy trong 1 giao dịch (transaction): nếu có
+                // lượt ghi khác xen vào giữa lúc đọc và ghi (2 tab/2 người test gần nhau), Firestore
+                // tự đọc lại bản mới nhất và chạy lại hàm này thay vì để 1 bên ghi đè mất tháng của bên kia.
+                await runTransaction(db, async (transaction) => {
+                    const docSnap = await transaction.get(khoRef);
+                    let existingFiles = [];
+                    if (docSnap.exists() && docSnap.data()[key]) {
+                        const existingData = docSnap.data()[key];
+                        if (Array.isArray(existingData.files)) existingFiles = existingData.files;
+                        else if (existingData.downloadURL) existingFiles = [existingData];
+                    }
+
+                    if (metadata.uploadedMonths && metadata.uploadedMonths.length > 0) {
+                        existingFiles = existingFiles.filter(f => {
+                            if (!f.uploadedMonths) return f.fileName !== metadata.fileName;
+                            return !f.uploadedMonths.some(m => metadata.uploadedMonths.includes(m));
+                        });
+                    } else {
+                        existingFiles = existingFiles.filter(f => f.fileName !== metadata.fileName);
+                    }
+
+                    existingFiles.push({ ...metadata, updatedAt: new Date().toISOString(), updatedBy: getCurrentUserEmail() });
+
+                    const dataToSave = {
+                        [key]: {
+                            files: existingFiles,
+                            isMulti: true,
+                            isDeleted: false,
+                            timestamp: Date.now(),
+                            updatedAt: serverTimestamp(),
+                            updatedBy: getCurrentUserEmail()
+                        }
+                    };
+                    transaction.set(khoRef, dataToSave, { merge: true });
+                });
                 return true;
 
             } else {
+                // [FIX] Loại "ghi đè" (giờ công, thưởng nóng, doanh thu BI, thi đua NV...): ít dòng hơn
+                // lần trước là bình thường nên không chặn, nhưng nếu phát hiện bản đang có trên Cloud
+                // MỚI hơn bản sắp ghi (dấu hiệu 1 lượt ghi cũ đến muộn do độ trễ mạng), vẫn ghi theo
+                // đúng thao tác người dùng vừa làm nhưng trả thêm cảnh báo để hiển thị minh bạch.
+                let warning = null;
+                try {
+                    const existingSnap = await getDoc(khoRef);
+                    const existingData = existingSnap.exists() ? existingSnap.data()[key] : null;
+                    if (existingData && typeof existingData.timestamp === 'number' && typeof metadata.timestamp === 'number' && existingData.timestamp > metadata.timestamp) {
+                        warning = `Đã ghi đè, nhưng phát hiện bản cập nhật lúc ${new Date(existingData.timestamp).toLocaleString('vi-VN')} bởi ${existingData.updatedBy || '?'} mới hơn bản vừa tải lên. Kiểm tra lại nếu cần.`;
+                    }
+                } catch (e) { /* không chặn ghi chỉ vì lỗi đọc kiểm tra thêm */ }
+
                 const dataToSave = {
                     [key]: {
                         ...metadata,
@@ -394,7 +416,7 @@ export const datasyncService = {
                     }
                 };
                 await setDoc(khoRef, dataToSave, { merge: true });
-                return true;
+                return warning ? { success: true, warning } : true;
             }
         } catch (error) { throw error; }
     },

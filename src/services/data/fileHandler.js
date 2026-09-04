@@ -213,13 +213,18 @@ export const fileHandler = {
                             timestamp: now,
                             updatedBy: get(currentUser)?.email || 'Tôi',
                             uploadedMonths: isMultiMode ? currentMonths : null,
-                            isMulti: isMultiMode
+                            isMulti: isMultiMode,
+                            // [FIX] Ghi rõ mã kho đã gán lúc upload vào metadata, để máy khác tải về đọc
+                            // thẳng thay vì phải suy luận lại từ ngữ cảnh (dễ sai với file không có cột mã kho).
+                            assignedWarehouse: currentWh
                         };
 
                         let deniedWh = null;
+                        let writeWarning = null;
                         for (const wh of validWarehouses) {
                             const ok = await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
                             if (!ok) { deniedWh = wh; break; }
+                            if (ok && typeof ok === 'object' && ok.warning) writeWarning = ok.warning;
                             localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
                         }
 
@@ -239,6 +244,7 @@ export const fileHandler = {
                         } else {
                             successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} nhân viên)`;
                         }
+                        if (writeWarning) successMsg += ` — ⚠️ ${writeWarning}`;
 
                         updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
