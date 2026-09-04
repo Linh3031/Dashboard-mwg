@@ -72,6 +72,58 @@ function applyDataShield(rawData, normalizedData, baseKey) {
     });
 }
 
+// [FIX] "Doanh thu BI" / "Giờ công" / "Thưởng nóng" có thể không có cột mã kho trong file gốc
+// (kho được suy ra từ kho đang chọn lúc upload). Khi tải lại file này ở máy khác, phải bù mã kho
+// giống hệt fileHandler.js lúc upload, nếu không mọi dòng sẽ bị lọc mất vì không khớp mã kho nào.
+function applyWarehouseFallback(normalizedData, baseKey, wh) {
+    if (!wh || !['saved_giocong', 'saved_thuongnong', 'saved_doanhthu_bi'].includes(baseKey)) {
+        return normalizedData;
+    }
+    return normalizedData.map(row => {
+        const maKhoRow = String(row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'] || row.MA_KHO_TAO || row.MA_KHO || '').trim();
+        return maKhoRow ? row : { ...row, maKho: wh };
+    });
+}
+
+// [FIX] "Thi đua NV (Excel)" không có cột mã kho và được lưu ở dạng gom nhóm theo mã NV
+// ({ maNV, competitions, maKho }), không phải dữ liệu theo dòng thô. Tải về phải gom nhóm lại
+// y hệt logic upload ở fileHandler.js (dòng ~93-127) để đúng hình dạng dữ liệu.
+function groupThiDuaNVExcelRows(normalizedData, wh) {
+    const grouped = {};
+    const uniquePrograms = new Set();
+
+    normalizedData.forEach(row => {
+        const progName = String(row.chuongTrinh || '').trim();
+        if (progName) uniquePrograms.add(progName);
+    });
+
+    const currentDSNV = get(danhSachNhanVien) || [];
+    const validEmpCodes = new Set(currentDSNV.map(e => String(e.ma_nv || e.maNV).trim()));
+
+    normalizedData.forEach(row => {
+        const empCode = String(row.maNV || '').trim();
+        if (!empCode) return;
+        if (validEmpCodes.size > 0 && !validEmpCodes.has(empCode)) return;
+
+        if (!grouped[empCode]) grouped[empCode] = { maNV: empCode, competitions: [] };
+
+        const progName = String(row.chuongTrinh || '').trim();
+        grouped[empCode].competitions.push({
+            tenGoc: progName,
+            doanhThu: parseFloat(row.doanhThu) || 0,
+            soLuong: parseFloat(row.soLuong) || 0,
+            dtQuyDoi: parseFloat(row.dtQuyDoi) || 0,
+            hang: parseInt(row.hangVung) || 0
+        });
+    });
+
+    if (dataProcessing.updateCompetitionNameMappings) {
+        dataProcessing.updateCompetitionNameMappings(Array.from(uniquePrograms));
+    }
+
+    return Object.values(grouped).map(emp => ({ ...emp, maKho: wh }));
+}
+
 function getStateKey(key, wh) {
     if (['daily_paste_luyke', 'daily_paste_thiduanv', 'saved_giocong', 'saved_thuongnong', 'saved_thiduanv_excel', 'saved_doanhthu_bi'].includes(key) && wh !== 'ALL' && !wh.startsWith('CLUSTER_')) {
         return `${key}_${wh}`;
@@ -161,7 +213,10 @@ export const syncHandler = {
                 const currentStoreData = get(mapping.store);
                 const isStoreEmpty = !currentStoreData || currentStoreData.length === 0;
 
-                if (isNewer) {
+                if (isNewer && cloudMeta.isDeleted) {
+                    updateSyncState(stateKey, 'downloading', 'Đang tự động tải về...', cloudMeta);
+                    await syncHandler.downloadFileFromCloud(stateKey);
+                } else if (isNewer) {
                     const msg = isMyUpload ? `Có bản mới từ bạn ${timeAgo}` : `Có cập nhật mới từ ${cloudMeta.updatedBy} ${timeAgo}`;
                     updateSyncState(stateKey, 'update_available', msg, cloudMeta);
                 } else {
@@ -248,25 +303,25 @@ export const syncHandler = {
                              try {
                                  const sm = JSON.parse(singleMetaStr);
                                  if (sm.files && Array.isArray(sm.files)) {
-                                     filesToDownload.push(...sm.files.filter(f => !f.isDeleted && f.downloadURL));
+                                     filesToDownload.push(...sm.files.filter(f => !f.isDeleted && f.downloadURL).map(f => ({ meta: f, wh })));
                                  } else if (!sm.isDeleted && sm.downloadURL) {
-                                     filesToDownload.push(sm);
+                                     filesToDownload.push({ meta: sm, wh });
                                  }
                              } catch(e){}
                          }
                      }
                      if(filesToDownload.length === 0 && state.metadata.files) {
-                         filesToDownload = state.metadata.files;
+                         filesToDownload = state.metadata.files.map(f => ({ meta: f, wh: null }));
                      } else if (filesToDownload.length === 0 && state.metadata.downloadURL) {
-                         filesToDownload = [state.metadata];
+                         filesToDownload = [{ meta: state.metadata, wh: null }];
                      }
                 } else if (state.metadata.isMulti && Array.isArray(state.metadata.files)) {
-                     filesToDownload = state.metadata.files;
+                     filesToDownload = state.metadata.files.map(f => ({ meta: f, wh: warehouse }));
                 } else if (state.metadata.downloadURL) {
-                     filesToDownload = [state.metadata];
+                     filesToDownload = [{ meta: state.metadata, wh: warehouse }];
                 }
 
-                for (const fileMeta of filesToDownload) {
+                for (const { meta: fileMeta, wh: fileWh } of filesToDownload) {
                     if (!fileMeta.downloadURL) continue;
                     
                     const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
@@ -285,24 +340,34 @@ export const syncHandler = {
                     
                     const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
                     let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
-                    
+
                     normalizedData = applyDataShield(rawData, normalizedData, baseKey);
-                    
-                    let dataForStorage = normalizedData;
-                    if (userAllowedWarehouses.length > 0) {
-                         dataForStorage = normalizedData.filter(d => {
-                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                            return userAllowedWarehouses.includes(whCode);
-                         });
+
+                    let dataForStorage;
+                    if (baseKey === 'saved_thiduanv_excel') {
+                        dataForStorage = groupThiDuaNVExcelRows(normalizedData, fileWh);
+                    } else {
+                        normalizedData = applyWarehouseFallback(normalizedData, baseKey, fileWh);
+                        dataForStorage = normalizedData;
+                        if (userAllowedWarehouses.length > 0) {
+                             dataForStorage = normalizedData.filter(d => {
+                                const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                                return userAllowedWarehouses.includes(whCode);
+                             });
+                        }
                     }
                     allDataForStorage = [...allDataForStorage, ...dataForStorage];
 
                     let dataForStore = dataForStorage;
                     if (get(selectedWarehouse) !== 'ALL') {
-                         dataForStore = dataForStorage.filter(d => {
-                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
-                            return whCode === get(selectedWarehouse);
-                         });
+                         if (baseKey === 'saved_thiduanv_excel') {
+                             dataForStore = dataForStorage.filter(d => String(d.maKho) === get(selectedWarehouse));
+                         } else {
+                             dataForStore = dataForStorage.filter(d => {
+                                const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                                return whCode === get(selectedWarehouse);
+                             });
+                         }
                     }
                     allDataForStore = [...allDataForStore, ...dataForStore];
                 }
@@ -319,8 +384,20 @@ export const syncHandler = {
                 }
 
                 await storage.setItem(stateKey, allDataForStorage);
-                mapping.store.set(allDataForStore);
-                
+
+                // [FIX] "Doanh thu BI"/"Thi đua NV (Excel)" gộp dữ liệu nhiều kho trong cùng 1 store
+                // (xem fileHandler.js lúc upload). Ở chế độ 1 kho, chỉ thay dữ liệu của đúng kho đó,
+                // tránh ghi đè mất dữ liệu các kho khác đã đồng bộ trước đó trong cùng store.
+                if ((baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') && get(selectedWarehouse) !== 'ALL') {
+                    mapping.store.update(curr => {
+                        const existing = curr || [];
+                        const filtered = existing.filter(item => String(item.maKho) !== String(warehouse));
+                        return [...filtered, ...allDataForStore];
+                    });
+                } else {
+                    mapping.store.set(allDataForStore);
+                }
+
                 const savedTimestamp = getMetaTimestamp(state.metadata, 'SAVE_FILE');
                 const metaToSave = { ...state.metadata, timestamp: savedTimestamp || Date.now() };
                 

@@ -19,7 +19,8 @@ export const FILE_MAPPING = {
     'saved_thuongnong_thangtruoc': { store: thuongNongDataThangTruoc, normalizeType: 'thuongnong', name: 'Thưởng nóng TT' },
     'saved_ycx_cungkynam': { store: ycxDataCungKyNam, normalizeType: 'ycx', name: 'YCX Cùng kỳ năm' },
     // [PHẪU THUẬT LOGIC]: Tích hợp Doanh thu siêu thị BI
-    'saved_doanhthu_bi': { store: doanhThuBIData, normalizeType: 'doanhthu_bi', name: 'Doanh thu siêu thị BI' }
+    'saved_doanhthu_bi': { store: doanhThuBIData, normalizeType: 'doanhthu_bi', name: 'Doanh thu siêu thị BI' },
+    'saved_thiduanv_excel': { store: pastedThiDuaReportData, normalizeType: 'thiduanv_excel', name: 'Thi đua NV (Excel)' }
 };
 
 export const PASTE_MAPPING = {

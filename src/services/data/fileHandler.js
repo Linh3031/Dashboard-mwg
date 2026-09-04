@@ -125,21 +125,37 @@ export const fileHandler = {
                     ...emp,
                     maKho: currentWh
                 }));
-                
+
                 if (dataProcessing.updateCompetitionNameMappings) {
                     dataProcessing.updateCompetitionNameMappings(Array.from(uniquePrograms));
+                }
+
+                if (normalizedData.length > 0 && dataToStore.length === 0) {
+                    const msg = `Không có Mã NV nào trong file khớp với Danh sách nhân viên đang tải (kho ${currentWh}). Kiểm tra lại DSNV hoặc định dạng Mã NV.`;
+                    updateSyncState(saveKey, 'error', msg);
+                    return { success: false, message: msg };
                 }
             }
 
             if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv' && mapping.normalizeType !== 'thiduanv_excel') {
+                const beforeFilterCount = dataToStore.length;
+                const foundMaKhoValues = new Set();
                 dataToStore = dataToStore.filter(row => {
                     const maKhoRow = String(row.maKhoTao || row.maKho || row['Mã kho tạo'] || row['Kho tạo'] || row.MA_KHO_TAO || row.MA_KHO || '').trim();
+                    if (maKhoRow) foundMaKhoValues.add(maKhoRow);
                     if (!maKhoRow && (baseKey === 'saved_giocong' || baseKey === 'saved_thuongnong' || baseKey === 'saved_doanhthu_bi')) {
                         row.maKho = currentWh;
-                        return true; 
+                        return true;
                     }
                     return maKhoRow === currentWh;
                 });
+
+                if (beforeFilterCount > 0 && dataToStore.length === 0) {
+                    const foundList = foundMaKhoValues.size > 0 ? Array.from(foundMaKhoValues).join(', ') : '(không tìm thấy cột mã kho)';
+                    const msg = `Không có dòng nào khớp mã kho đang chọn (${currentWh}). Mã kho tìm thấy trong file: ${foundList}.`;
+                    updateSyncState(saveKey, 'error', msg);
+                    return { success: false, message: msg };
+                }
             }
 
             let filesArray = [];
@@ -183,9 +199,13 @@ export const fileHandler = {
                         : [currentWh];
 
                     if (validWarehouses.length > 0) {
+                        const primaryWh = validWarehouses[0];
+                        const path = `warehouse_data/${primaryWh}/${baseKey}_${Date.now()}.xlsx`;
+                        const downloadUrl = await storageService.uploadFileToStorage(file, path);
+
                         const now = Date.now();
                         const metadata = {
-                            downloadURL: null,
+                            downloadURL: downloadUrl,
                             fileName: file.name,
                             fileType: 'excel',
                             rowCount: dataToStore.length,
@@ -196,8 +216,17 @@ export const fileHandler = {
                             isMulti: isMultiMode
                         };
 
+                        let deniedWh = null;
                         for (const wh of validWarehouses) {
+                            const ok = await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
+                            if (!ok) { deniedWh = wh; break; }
                             localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
+                        }
+
+                        if (deniedWh) {
+                            const msg = `Không có quyền ghi dữ liệu cho kho ${deniedWh}. Liên hệ admin để cấp quyền (allowedWarehouses) cho tài khoản này.`;
+                            updateSyncState(saveKey, 'error', msg);
+                            return { success: false, message: msg };
                         }
 
                         let successMsg = '';
@@ -210,7 +239,7 @@ export const fileHandler = {
                         } else {
                             successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} nhân viên)`;
                         }
-                        
+
                         updateSyncState(saveKey, 'synced', successMsg, metadata);
                     }
 

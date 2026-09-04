@@ -42,6 +42,30 @@ const isWarehouseAllowed = (kho) => {
     return (profile.allowedWarehouses || []).includes(kho);
 };
 
+// [Chống hồ sơ cache cũ ngay sau F5] userProfile có thể đang là bản cache cũ trong localStorage
+// (từ trước khi role/allowedWarehouses được cập nhật), trong lúc bản mới thật từ Firestore chưa
+// kịp tải xong ở nền. Trước khi thực sự CHẶN ghi (isWarehouseAllowed trả về false), xác nhận lại
+// 1 lần trực tiếp với Firestore để tránh chặn nhầm chỉ vì cache tạm thời chưa đồng bộ kịp.
+// Chỉ dùng cho saveWarehouseMetadata - không thay isWarehouseAllowed ở các chỗ gọi đồng bộ khác.
+const isWarehouseAllowedFresh = async (kho) => {
+    if (isWarehouseAllowed(kho)) return true;
+    const user = get(currentUser);
+    const db = getDB();
+    if (!user || !db) return false;
+    try {
+        const snap = await getDoc(doc(db, "users", user.email));
+        if (snap.exists()) {
+            const freshProfile = snap.data();
+            userProfile.set(freshProfile);
+            if (freshProfile.role === 'admin') return true;
+            return (freshProfile.allowedWarehouses || []).includes(kho);
+        }
+    } catch (e) {
+        console.error('[DataSync] Lỗi xác nhận lại quyền kho:', e);
+    }
+    return false;
+};
+
 // [PHẪU THUẬT LOGIC]: Hàm vũ khí chuẩn hóa ngày tháng đa năng chống lỗi Serialize từ Cloud
 const parseSafeDate = (d) => {
     if (!d) return null;
@@ -306,26 +330,26 @@ export const datasyncService = {
 
     async saveWarehouseMetadata(kho, key, metadata) {
         const db = getDB();
-        if (!db || !kho) return;
-        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
+        if (!db || !kho) return false;
+        if (!(await isWarehouseAllowedFresh(kho))) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return false; }
         const khoRef = doc(db, "warehouseData", kho);
         const multiModeKeys = ['saved_ycx_cungkynam', 'saved_ycx_thangtruoc', 'saved_dt_ck_nam', 'saved_ycx'];
-        
+
         try {
             if (multiModeKeys.includes(key)) {
                 if (metadata.isDeleted) {
-                    const dataToSave = { 
-                        [key]: { 
-                            files: [], 
-                            isDeleted: true, 
-                            isMulti: true, 
-                            timestamp: Date.now(), 
-                            updatedAt: serverTimestamp(), 
-                            updatedBy: getCurrentUserEmail() 
-                        } 
+                    const dataToSave = {
+                        [key]: {
+                            files: [],
+                            isDeleted: true,
+                            isMulti: true,
+                            timestamp: Date.now(),
+                            updatedAt: serverTimestamp(),
+                            updatedBy: getCurrentUserEmail()
+                        }
                     };
                     await setDoc(khoRef, dataToSave, { merge: true });
-                    return; 
+                    return true;
                 }
 
                 const docSnap = await getDoc(khoRef);
@@ -358,17 +382,19 @@ export const datasyncService = {
                     } 
                 };
                 await setDoc(khoRef, dataToSave, { merge: true });
-                
+                return true;
+
             } else {
-                const dataToSave = { 
-                    [key]: { 
-                        ...metadata, 
-                        isDeleted: metadata.isDeleted || false, 
-                        updatedAt: serverTimestamp(), 
-                        updatedBy: getCurrentUserEmail() 
-                    } 
+                const dataToSave = {
+                    [key]: {
+                        ...metadata,
+                        isDeleted: metadata.isDeleted || false,
+                        updatedAt: serverTimestamp(),
+                        updatedBy: getCurrentUserEmail()
+                    }
                 };
                 await setDoc(khoRef, dataToSave, { merge: true });
+                return true;
             }
         } catch (error) { throw error; }
     },
