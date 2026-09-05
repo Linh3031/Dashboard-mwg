@@ -219,13 +219,27 @@ export const fileHandler = {
                             assignedWarehouse: currentWh
                         };
 
+                        // [FIX] Giờ công đa kho: 1 file có thể gộp nhiều mã kho (cột "Mã siêu thị").
+                        // Nếu ghi chung 1 rowCount tổng cho mọi kho, kho A sẽ hiện nhầm số dòng của
+                        // TOÀN BỘ file thay vì số dòng thực tế của riêng kho A. Tính lại theo mã kho
+                        // của từng dòng để ghi đúng số dòng vào metadata của từng kho.
+                        let rowCountByWh = null;
+                        if (mapping.normalizeType === 'giocong' && validWarehouses.length > 1) {
+                            rowCountByWh = {};
+                            dataToStore.forEach(row => {
+                                const whOfRow = String(row.maKho || '').trim() || primaryWh;
+                                rowCountByWh[whOfRow] = (rowCountByWh[whOfRow] || 0) + 1;
+                            });
+                        }
+
                         let deniedWh = null;
                         let writeWarning = null;
                         for (const wh of validWarehouses) {
-                            const ok = await datasyncService.saveWarehouseMetadata(wh, baseKey, metadata);
+                            const whMetadata = rowCountByWh ? { ...metadata, rowCount: rowCountByWh[wh] || 0 } : metadata;
+                            const ok = await datasyncService.saveWarehouseMetadata(wh, baseKey, whMetadata);
                             if (!ok) { deniedWh = wh; break; }
                             if (ok && typeof ok === 'object' && ok.warning) writeWarning = ok.warning;
-                            localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(metadata));
+                            localStorage.setItem(`_meta_${wh}_${baseKey}`, JSON.stringify(whMetadata));
                         }
 
                         if (deniedWh) {
@@ -241,6 +255,10 @@ export const fileHandler = {
                             successMsg = `✓ Đã đồng bộ (${dataToStore.length} nhân viên)`;
                         } else if (mapping.normalizeType === 'doanhthu_bi') {
                             successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
+                        } else if (mapping.normalizeType === 'giocong') {
+                            successMsg = rowCountByWh
+                                ? `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng - ${Object.entries(rowCountByWh).map(([wh, c]) => `${wh}: ${c}`).join(', ')})`
+                                : `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
                         } else {
                             successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} nhân viên)`;
                         }

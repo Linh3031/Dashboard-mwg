@@ -34,9 +34,11 @@ export const config = {
         },
         giocong: {
             maKho: { required: false, displayName: 'Mã siêu thị', aliases: ['mã siêu thị', 'masieuthi', 'mã kho'] },
+            ngay: { required: false, displayName: 'Ngày', aliases: ['ngày', 'ngay'] },
+            thang: { required: false, displayName: 'Tháng', aliases: ['tháng', 'thang'] },
             maNV: { required: false, displayName: 'Mã NV', aliases: ['mã nv', 'msnv'] },
             hoTen: { required: false, displayName: 'Tên NV', aliases: ['tên nv', 'tennv'] },
-            tongGioCong: { required: true, displayName: 'Tổng giờ công', aliases: ['tổng giờ công (x.nhận) total', 'tổng giờ công'] }
+            tongGioCong: { required: true, displayName: 'Tổng giờ công', aliases: ['tổng giờ công (x.nhận) total', 'tổng giờ công (x.nhận)', 'tổng giờ công'] }
         },
         thuongnong: {
             maNV: { required: false, displayName: 'Mã NV', aliases: ['manv', 'mã nv'] },
