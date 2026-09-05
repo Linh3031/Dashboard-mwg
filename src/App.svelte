@@ -118,7 +118,8 @@
 
           // Dữ liệu vẫn sẽ chạy ngầm, lúc này giao diện đã hiện ra với spinner nhỏ bên trong
           const user = get(currentUser);
-          if (user && !hasLoadedSystemConfig) {
+          const hasSession = user || config.REQUIRE_LOGIN === false;
+          if (hasSession && !hasLoadedSystemConfig) {
               await loadGlobalSystemConfig();
               await loadInitialTables();
               hasLoadedSystemConfig = true; 

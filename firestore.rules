@@ -59,7 +59,7 @@ service cloud.firestore {
     // Cấu hình dùng chung toàn hệ thống (cấu trúc ngành hàng, mapping tên, help content...):
     // ai đăng nhập cũng cần đọc được để app hiển thị đúng, nhưng chỉ admin mới sửa.
     match /declarations/{docId} {
-      allow read: if isSignedIn();
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
