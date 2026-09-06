@@ -70,7 +70,6 @@
   const tabs = [
       { id: 'sknv', label: 'SKNV', icon: 'users', title: 'SucKhoeNhanVien' },
       { id: 'doanhthu', label: 'Doanh thu LK', icon: 'dollar-sign', title: 'DoanhThuLuyKe' },
-      { id: 'thunhap', label: 'Thu nhập', icon: 'briefcase', title: 'ThuNhapNhanVien' },
       { id: 'hieuqua', label: 'Hiệu quả NV LK', icon: 'bar-chart-2', title: 'HieuQuaKhaiThac' },
       { id: 'daily-trend', label: 'Xu hướng ngày', icon: 'trending-up', title: 'XuHuongHieuQuaTheoNgay' }, // [NEW] Thêm tab mới
       { id: 'thidua', label: 'Thi đua NV LK', icon: 'award', title: 'ThiDuaNhanVien' },

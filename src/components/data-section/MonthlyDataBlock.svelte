@@ -1,7 +1,6 @@
 <script>
     import { createEventDispatcher } from 'svelte';
     import FileInput from '../common/FileInput.svelte';
-    import PasteInput from '../common/PasteInput.svelte';
 
     const dispatch = createEventDispatcher();
 </script>
@@ -53,19 +52,6 @@
                 <div class="h-fit w-full mt-1" data-tour="input-ycx-thang-truoc">
                     <FileInput label="YCX Lũy Kế tháng trước" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx_thangtruoc" isMultiMode={true} />
                 </div>
-
-                <div class="flex justify-between items-center px-1 pb-1 border-b border-yellow-200/50 mt-2">
-                    <span class="text-[12px] font-extrabold text-yellow-900 uppercase tracking-wide">Thưởng nóng tháng trước</span>
-                    <button on:click={() => dispatch('openTutorial', 'thuong-nong-thang-truoc')} class="group flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-2.5 py-0.5 rounded-full transition-all text-[10px] font-bold shadow-sm" title="Xem video hướng dẫn">
-                        <span class="relative flex h-2 w-2">
-                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-                          <span class="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
-                        </span>
-                        <span>HƯỚNG DẪN</span>
-                        <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
-                    </button>
-                </div>
-                <FileInput label="Thưởng nóng tháng trước" icon="gift" link="https://report.mwgroup.vn/home/dashboard/105" saveKey="saved_thuongnong_thangtruoc" />
             </div>
             <div class="space-y-2">
                 <div class="flex justify-between items-center px-1 pb-1 border-b border-yellow-200/50">
@@ -82,19 +68,6 @@
                 <div class="h-fit w-full mt-1" data-tour="input-ycx-nam-truoc">
                     <FileInput label="YCX Lũy kế năm trước" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx_cungkynam" isMultiMode={true} />
                 </div>
-
-                <div class="flex justify-between items-center px-1 pb-1 border-b border-yellow-200/50 mt-2">
-                    <span class="text-[12px] font-extrabold text-yellow-900 uppercase tracking-wide">Thưởng ERP tháng trước</span>
-                    <button on:click={() => dispatch('openTutorial', 'thuong-erp-thang-truoc')} class="group flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 px-2.5 py-0.5 rounded-full transition-all text-[10px] font-bold shadow-sm" title="Xem video hướng dẫn">
-                        <span class="relative flex h-2 w-2">
-                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-                          <span class="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
-                        </span>
-                        <span>HƯỚNG DẪN</span>
-                        <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
-                    </button>
-                </div>
-                <PasteInput label="Thưởng ERP tháng trước" icon="clipboard" link="https://bi.thegioididong.com/reward?id=-1&tab=1" saveKeyPaste="saved_thuongerp_thangtruoc" />
            </div>
        </div>
    </div>
