@@ -96,12 +96,12 @@
     <div class="kpi-card-solid card-6">
         <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
         {#if competitionBreakdown && competitionBreakdown.length > 0}
-            <div class="flex divide-x divide-white/20 mt-1 -mx-1">
+            <div class="flex-1 flex items-center divide-x divide-white/25 -mx-1">
                 {#each competitionBreakdown as item}
-                    <div class="flex-1 px-2 flex flex-col items-center text-center overflow-hidden">
-                        <span class="text-[10px] font-bold opacity-80 uppercase truncate w-full" title={item.tenKho}>{item.maKho}</span>
-                        <span class="text-lg font-black leading-tight">{item.dat}/{item.total}</span>
-                        <span class="text-[10px] opacity-90">{formatters.formatPercentage(item.tyLeDat)}</span>
+                    <div class="flex-1 px-2 flex flex-col items-center justify-center text-center overflow-hidden gap-1">
+                        <span class="text-xs font-bold opacity-80 uppercase truncate w-full" title={item.tenKho}>{item.maKho}</span>
+                        <span class="font-black leading-none {competitionBreakdown.length <= 2 ? 'text-4xl' : competitionBreakdown.length === 3 ? 'text-2xl' : 'text-lg'}">{item.dat}/{item.total}</span>
+                        <span class="text-xs opacity-90 font-semibold">{formatters.formatPercentage(item.tyLeDat)}</span>
                     </div>
                 {/each}
             </div>
