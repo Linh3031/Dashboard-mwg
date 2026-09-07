@@ -1,14 +1,16 @@
 /* global XLSX */
 import { get } from 'svelte/store';
-import { 
-    selectedWarehouse, currentUser, realtimeYCXData, 
+import {
+    selectedWarehouse, currentUser, realtimeYCXData,
     categoryStructure, brandList, specialProductList,
     warehouseList, virtualProductList,
     pastedThiDuaReportData,
-    danhSachNhanVien 
+    danhSachNhanVien,
+    luykeNameMappings
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { helpers } from '../processing/helpers.js';
+import { competitionProcessor } from '../processing/logic/competition.processor.js';
 import { storage, storageService } from '../storage.service.js';
 import { datasyncService } from '../datasync.service.js';
 import { analyticsService } from '../analytics.service.js';
@@ -223,6 +225,23 @@ export const fileHandler = {
                 });
 
                 dataToStore = results;
+
+                // [FIX] Luồng dán bảng cũ (parseCompetitionDataFromLuyKe) luôn tự đăng ký tên
+                // chương trình mới vào luykeNameMappings rồi gọi autoLinkPrograms để tự ghép với
+                // dữ liệu Thi đua NV — luồng Excel mới thiếu 2 bước này nên thẻ ngành hàng không
+                // có "Link Data Nhân Viên", bấm vào không mở được chi tiết nhân viên.
+                const currentLuykeMappings = get(luykeNameMappings) || {};
+                let hasNewLuykeMapping = false;
+                results.forEach(item => {
+                    if (!currentLuykeMappings[item.name]) {
+                        currentLuykeMappings[item.name] = item.name;
+                        hasNewLuykeMapping = true;
+                    }
+                });
+                if (hasNewLuykeMapping) {
+                    luykeNameMappings.set(currentLuykeMappings);
+                }
+                competitionProcessor.autoLinkPrograms(results);
 
                 if (unresolvedTenKho.size > 0) {
                     missingColumns = [...(missingColumns || []), `Tên kho chưa khớp DSNV: ${Array.from(unresolvedTenKho).join(', ')}`];
