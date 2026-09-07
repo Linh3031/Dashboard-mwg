@@ -1,20 +1,24 @@
 <script>
   import { onMount, afterUpdate } from 'svelte';
-  import { 
-    competitionData, 
+  import {
+    competitionData,
     selectedWarehouse,
+    warehouseList,
+    doanhThuBIData,
+    danhSachNhanVien,
+    luykeGoalSettings,
     macroCategoryConfig,
-    macroProductGroupConfig, 
+    macroProductGroupConfig,
     efficiencyConfig,
     qdcConfigStore,
     modalState,
-    warehouseCustomMetrics,
-    clusterSummaryData
+    warehouseCustomMetrics
   } from '../../stores.js';
   import { formatters } from '../../utils/formatters.js';
   import { reportService } from '../../services/reportService.js';
   import { adminService } from '../../services/admin.service.js';
   import { datasyncService } from '../../services/datasync.service.js';
+  import { settingsService } from '../../services/settings.service.js';
   
   import KpiBoard from './KpiBoard.svelte';
   import LuykeEfficiencyTable from './LuykeEfficiencyTable.svelte';
@@ -36,8 +40,9 @@
   
   let chuaXuatReport = [];
   let categoryItems = [];
-  let qdcItems = []; 
-  let uniqueChiTietKho = []; 
+  let qdcItems = [];
+  let uniqueChiTietKho = [];
+  let competitionBreakdown = [];
 
   let channelStats = { dxm: { val: 0, pct: 0 }, tgdd: { val: 0, pct: 0 } };
   let combinedEfficiencyItems = [];
@@ -62,67 +67,122 @@
       ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false, target: goals?.[i.id] || i.target }))
   ];
 
-  // Hàm tiện ích cắt đuôi số lẻ cho %
-  const roundPct = (str) => {
-      if (!str || str.includes('undefined')) return '0%';
-      const num = parseFloat(str.replace(/,/g, '').replace('%', ''));
-      return isNaN(num) ? '0%' : Math.round(num) + '%';
-  };
+  function getTenKho(maKho) {
+      const found = ($danhSachNhanVien || []).find(e => String(e.maKho || e.ma_kho || '').trim() === String(maKho).trim());
+      return (found && (found.tenKho || found.ten_kho)) || `Siêu thị ${maKho}`;
+  }
+
+  // Đảm bảo đã tải Mục tiêu (Target) của từng kho trong cụm — loadGoalsFromCloud ở component cha
+  // chỉ tải theo $selectedWarehouse, mà ở đây $selectedWarehouse = 'ALL' không phải kho thật.
+  $: {
+      const khoList = ($warehouseList || []).filter(w => w && w !== 'ALL' && !String(w).startsWith('CLUSTER_'));
+      khoList.forEach(kho => {
+          if (!$luykeGoalSettings[kho]) settingsService.loadGoalsFromCloud(kho);
+      });
+  }
 
   $: {
     localSupermarketReport = supermarketReport || {};
-    localGoals = goals || {};
 
-    const cluster = $clusterSummaryData || {};
-    
-    const finalDtThuc = (cluster.doanhThuThuc || 0) * 1000000;
-    const finalDtQd = (cluster.doanhThuQuyDoi || 0) * 1000000;
-    const finalDtGop = (cluster.dtTraCham || 0) * 1000000;
-    const dtDuKienRaw = (cluster.doanhThuThucDuKien || 0) * 1000000;
-    const dtQdDuKienRaw = (cluster.doanhThuQuyDoiDuKien || 0) * 1000000;
-    
-    const finalTyLeQd = finalDtThuc > 0 ? (finalDtQd / finalDtThuc) - 1 : 0;
-    const finalTyLeGop = parseFloat(String(cluster.tyLeTraCham || '0').replace('%', '')) / 100;
-    
-    const targetThuc = parseFloat(localGoals?.doanhThuThuc || 0) * 1000000;
-    const targetQD = (cluster.targetDTQD || 0) * 1000000; 
+    // [MỚI] Doanh thu BI thay thế Báo cáo Cụm dán tay (đã bỏ) — tổng hợp trực tiếp từng kho trong
+    // cụm rồi cộng lại, dùng đúng công thức đã chạy đúng ở màn hình 1 siêu thị (LuykeSieuThi.svelte).
+    const khoList = ($warehouseList || []).filter(w => w && w !== 'ALL' && !String(w).startsWith('CLUSTER_'));
 
-    const phanTramTargetQd = parseFloat(String(cluster.tyLeHoanThanh || '0').replace('%', '')) / 100;
-    const phanTramTargetThuc = targetThuc > 0 ? (dtDuKienRaw / targetThuc) : 0;
+    const now = new Date();
+    const pastDays = now.getDate() > 1 ? now.getDate() - 1 : 1;
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    const compData = $competitionData || [];
-    competitionSummary.total = compData.length;
-    competitionSummary.dat = compData.filter(d => (parseFloat(String(d.hoanThanh).replace('%','')) || 0) >= 100).length;
-    const tyLeThiDuaDat = competitionSummary.total > 0 ? competitionSummary.dat / competitionSummary.total : 0;
+    let sumDtThuc = 0, sumDtQd = 0, sumDtGop = 0, sumTb3ThangQD = 0;
+    let sumTargetThuc = 0, sumTargetQD = 0, sumDtDuKien = 0, sumDtQdDuKien = 0;
+    let compTotalAll = 0, compDatAll = 0;
+    const chiTietList = [];
+    const compBreakdownList = [];
 
-    luykeCardData = {
-      dtThucLK: finalDtThuc, dtQdLK: finalDtQd, phanTramQd: finalTyLeQd, dtGop: finalDtGop,
-      phanTramGop: finalTyLeGop, dtThucDuKien: dtDuKienRaw, dtQdDuKien: dtQdDuKienRaw, 
-      phanTramTargetQd: phanTramTargetQd, phanTramTargetThuc: phanTramTargetThuc, 
-      chuaXuatQuyDoi: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0,
-      tyLeThiDuaDat: tyLeThiDuaDat, targetQD: targetQD 
+    khoList.forEach(kho => {
+        const rows = ($doanhThuBIData || []).filter(r => String(r.maKho) === String(kho));
+        let dtThuc = 0, dtQd = 0, dtGop = 0, tb3ThangQD = 0;
+        rows.forEach(row => {
+            // Mẫu file mới (1 dòng/siêu thị, không cột Cấp dòng) cộng thẳng; mẫu cũ (nhiều dòng
+            // Cấp dòng=CATEGORY) vẫn tương thích ngược — giống hệt LuykeSieuThi.svelte.
+            if (!row.capDong || String(row.capDong).toUpperCase() === 'CATEGORY') {
+                dtThuc += parseFloat(row.doanhThu || 0);
+                dtQd += parseFloat(row.doanhThuQD || 0);
+                dtGop += parseFloat(row.dtTraGop || 0);
+                tb3ThangQD += parseFloat(row.tb3ThangQD || 0);
+            }
+        });
+
+        const khoGoals = $luykeGoalSettings[kho] || {};
+        const targetThuc = parseFloat(khoGoals.doanhThuThuc || 0);
+        const targetQD = parseFloat(khoGoals.doanhThuQD || 0);
+
+        const dtDuKien = (dtThuc / pastDays) * daysInMonth;
+        const dtQdDuKien = (dtQd / pastDays) * daysInMonth;
+
+        sumDtThuc += dtThuc; sumDtQd += dtQd; sumDtGop += dtGop; sumTb3ThangQD += tb3ThangQD;
+        sumTargetThuc += targetThuc; sumTargetQD += targetQD;
+        sumDtDuKien += dtDuKien; sumDtQdDuKien += dtQdDuKien;
+
+        // Thi đua ngành hàng không cộng dồn được vì mỗi kho có chương trình khác nhau — chỉ cộng
+        // số đạt/tổng để hiển thị 1 thẻ chung, đồng thời giữ riêng theo từng kho để tách thẻ.
+        const compForKho = ($competitionData || []).filter(d => String(d.maKho || '').trim() === String(kho));
+        const datForKho = compForKho.filter(d => (parseFloat(String(d.hoanThanhDuKien || '0').replace('%','')) || 0) >= 100).length;
+        compTotalAll += compForKho.length;
+        compDatAll += datForKho;
+        compBreakdownList.push({
+            maKho: kho,
+            tenKho: getTenKho(kho),
+            dat: datForKho,
+            total: compForKho.length,
+            tyLeDat: compForKho.length > 0 ? (datForKho / compForKho.length) : 0
+        });
+
+        const tangTruongTB3T = tb3ThangQD > 0 ? (dtQd / tb3ThangQD) - 1 : 0;
+        chiTietList.push({
+            maKho: kho,
+            tenKho: getTenKho(kho),
+            dtqdLK: dtQd,
+            dtThucLK: dtThuc,
+            tyTrongTraCham: dtThuc > 0 ? `${Math.round((dtGop / dtThuc) * 100)}%` : '0%',
+            tangTruongTB3T: `${(tangTruongTB3T * 100).toFixed(1)}%`,
+            tyLeTargetDuKien: targetQD > 0 ? `${Math.round((dtQdDuKien / targetQD) * 100)}%` : '0%'
+        });
+    });
+
+    const finalTyLeQd = sumDtThuc > 0 ? (sumDtQd / sumDtThuc) - 1 : 0;
+    const finalTyLeGop = sumDtThuc > 0 ? (sumDtGop / sumDtThuc) : 0;
+    const phanTramTargetQd = sumTargetQD > 0 ? (sumDtQdDuKien / sumTargetQD) : 0;
+    const phanTramTargetThuc = sumTargetThuc > 0 ? (sumDtDuKien / sumTargetThuc) : 0;
+
+    // Mục tiêu % ngưỡng (Hiệu quả QĐ / Trả chậm) là cấu hình riêng theo từng kho — lấy trung bình
+    // các kho đã cấu hình trong cụm để hiển thị tham chiếu chung.
+    const avgGoalPct = (field) => {
+        const vals = khoList.map(k => parseFloat(($luykeGoalSettings[k] || {})[field] || 0)).filter(v => v > 0);
+        return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     };
 
-    comparisonData = { value: cluster.dtckThangGiaTri || 0, percentage: cluster.dtckThangTangTruong || '0%' };
-    luotKhachData = { value: cluster.luotKhachCKGiaTri || 0, percentage: cluster.luotKhachCKTangTruong || '0%' };
+    localGoals = { ...(goals || {}), doanhThuThuc: sumTargetThuc, doanhThuQD: sumTargetQD, phanTramQD: avgGoalPct('phanTramQD'), phanTramTC: avgGoalPct('phanTramTC') };
 
-    // Lọc trùng và Cắt số lẻ
-    if (cluster.chiTietKho && Array.isArray(cluster.chiTietKho)) {
-        const seenNames = new Set();
-        uniqueChiTietKho = cluster.chiTietKho.filter(kho => {
-            const normalizedName = kho.tenKho.trim().toLowerCase();
-            if (seenNames.has(normalizedName)) return false;
-            seenNames.add(normalizedName);
-            return true;
-        }).map(kho => ({
-            ...kho,
-            tyTrongTraCham: roundPct(kho.tyTrongTraCham),
-            tangTruongDTQDCungKy: roundPct(kho.tangTruongDTQDCungKy),
-            tyLeTargetDuKien: roundPct(kho.tyLeTargetDuKien)
-        }));
-    } else {
-        uniqueChiTietKho = [];
-    }
+    competitionSummary.total = compTotalAll;
+    competitionSummary.dat = compDatAll;
+    const tyLeThiDuaDat = compTotalAll > 0 ? compDatAll / compTotalAll : 0;
+
+    luykeCardData = {
+      dtThucLK: sumDtThuc, dtQdLK: sumDtQd, phanTramQd: finalTyLeQd, dtGop: sumDtGop,
+      phanTramGop: finalTyLeGop, dtThucDuKien: sumDtDuKien, dtQdDuKien: sumDtQdDuKien,
+      phanTramTargetQd: phanTramTargetQd, phanTramTargetThuc: phanTramTargetThuc,
+      chuaXuatQuyDoi: localSupermarketReport.doanhThuQuyDoiChuaXuat || 0,
+      tyLeThiDuaDat: tyLeThiDuaDat, targetQD: sumTargetQD
+    };
+
+    const tangTruongTB3TTotal = sumTb3ThangQD > 0 ? (sumDtQd / sumTb3ThangQD) - 1 : 0;
+    comparisonData = {
+        value: sumDtQd - sumTb3ThangQD,
+        percentage: sumTb3ThangQD > 0 ? `${(tangTruongTB3TTotal * 100).toFixed(1)}%` : '0.0%'
+    };
+
+    uniqueChiTietKho = chiTietList;
+    competitionBreakdown = compBreakdownList;
 
     const calcChannelStat = (keywords) => {
         const groupConfig = ($macroCategoryConfig || []).find(g => {
@@ -172,15 +232,16 @@
       </h2>
 
       <div class="exclusive-sieuthi-capture">
-          <KpiBoard 
+          <KpiBoard
               {luykeCardData}
               {localGoals}
               {competitionSummary}
               {comparisonData}
               {luotKhachData}
               {channelStats}
+              {competitionBreakdown}
               captureFilename="TongHopCum"
-              targetQdValue={luykeCardData.targetQD} 
+              targetQdValue={luykeCardData.targetQD}
           />
       </div>
   </div>
@@ -213,11 +274,7 @@
                     </div>
                     
                     <!-- Phân khu 2: Lưới Chỉ Số (Giữa) - Gắn class capture-kho-stats -->
-                    <div class="flex-grow grid grid-cols-2 md:grid-cols-5 gap-y-3 gap-x-2 w-full text-sm capture-kho-stats">
-                        <div class="flex flex-col">
-                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">DT Hôm Qua</span>
-                            <span class="font-bold text-gray-800 text-sm">{formatters.formatNumber(kho.dtHomQua, 0)}</span>
-                        </div>
+                    <div class="flex-grow grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-2 w-full text-sm capture-kho-stats">
                         <div class="flex flex-col">
                             <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">DTQĐ Lũy Kế</span>
                             <span class="font-black text-blue-700 text-sm">{formatters.formatNumber(kho.dtqdLK, 0)}</span>
@@ -231,10 +288,10 @@
                             <span class="font-bold text-orange-600 text-sm">{kho.tyTrongTraCham}</span>
                         </div>
                         <div class="flex flex-col">
-                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Tăng trưởng CK</span>
-                            <span class="font-bold text-sm {kho.tangTruongDTQDCungKy.includes('-') ? 'text-red-500' : 'text-green-600'} flex items-center gap-1">
-                                {#if kho.tangTruongDTQDCungKy.includes('-')}<i data-feather="trending-down" class="w-3 h-3"></i>{:else}<i data-feather="trending-up" class="w-3 h-3"></i>{/if}
-                                {kho.tangTruongDTQDCungKy}
+                            <span class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Tăng trưởng TB3T</span>
+                            <span class="font-bold text-sm {kho.tangTruongTB3T.includes('-') ? 'text-red-500' : 'text-green-600'} flex items-center gap-1">
+                                {#if kho.tangTruongTB3T.includes('-')}<i data-feather="trending-down" class="w-3 h-3"></i>{:else}<i data-feather="trending-up" class="w-3 h-3"></i>{/if}
+                                {kho.tangTruongTB3T}
                             </span>
                         </div>
                     </div>

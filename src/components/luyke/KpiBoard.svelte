@@ -10,6 +10,9 @@
     export let channelStats = { dxm: { val: 0, pct: 0 }, tgdd: { val: 0, pct: 0 } };
     export let captureFilename = "BaoCaoLuyKe";
     export let targetQdValue = 0;
+    // [MỚI] Khi có nhiều kho (Báo cáo Cụm), thi đua ngành hàng không cộng dồn được vì mỗi kho có
+    // chương trình đạt khác nhau — truyền mảng này để tách thẻ ra theo từng kho.
+    export let competitionBreakdown = [];
 
     // Hàm gọi Modal Quick Goal
     function openQuickGoal(fieldId, title, currentValue) {
@@ -92,10 +95,22 @@
 
     <div class="kpi-card-solid card-6">
         <div class="kpi-solid-header">Thi đua đạt <i data-feather="award"></i></div>
-        <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
-        <div class="kpi-solid-sub">
-            <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
-        </div>
+        {#if competitionBreakdown && competitionBreakdown.length > 0}
+            <div class="flex divide-x divide-white/20 mt-1 -mx-1">
+                {#each competitionBreakdown as item}
+                    <div class="flex-1 px-2 flex flex-col items-center text-center overflow-hidden">
+                        <span class="text-[10px] font-bold opacity-80 uppercase truncate w-full" title={item.tenKho}>{item.maKho}</span>
+                        <span class="text-lg font-black leading-tight">{item.dat}/{item.total}</span>
+                        <span class="text-[10px] opacity-90">{formatters.formatPercentage(item.tyLeDat)}</span>
+                    </div>
+                {/each}
+            </div>
+        {:else}
+            <div class="kpi-solid-value">{competitionSummary.dat}/{competitionSummary.total}</div>
+            <div class="kpi-solid-sub">
+                <span>Tỷ lệ đạt: {formatters.formatPercentage(luykeCardData.tyLeThiDuaDat)}</span>
+            </div>
+        {/if}
         <div class="kpi-bg-icon"><i data-feather="award"></i></div>
     </div>
 
