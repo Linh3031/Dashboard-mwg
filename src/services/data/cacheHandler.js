@@ -84,17 +84,31 @@ export const cacheHandler = {
             let aggregatedErpTT = [];
             
             const allExcelThiDua = await storage.getItem('saved_thiduanv_excel') || [];
+            const allExcelThiDuaSt = await storage.getItem('saved_thidua_st_excel') || [];
 
             if (allowedWarehouses.length > 0) {
                 for (const kho of allowedWarehouses) {
-                    const luykeText = localStorage.getItem(`daily_paste_luyke_${kho}`);
-                    if (luykeText) {
-                        dataProcessing.parseLuyKePastedData(luykeText); 
-                        const comps = dataProcessing.parseCompetitionDataFromLuyKe(luykeText);
-                        
-                        const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: kho })) : [];
-                        aggregatedLuykeComps = [...aggregatedLuykeComps, ...labeledComps];
-                        updateSyncState(`daily_paste_luyke_${kho}`, 'cached', `(Local)`, null);
+                    // [MỚI] Thi đua ST: ưu tiên dữ liệu Excel đã upload cho kho này; chỉ dùng lại
+                    // dữ liệu dán bảng cũ (nếu còn sót) cho kho nào chưa có bản Excel mới.
+                    const excelStForKho = Array.isArray(allExcelThiDuaSt)
+                        ? allExcelThiDuaSt.filter(d => String(d.maKho) === String(kho))
+                        : [];
+
+                    if (excelStForKho.length > 0) {
+                        aggregatedLuykeComps = [...aggregatedLuykeComps, ...excelStForKho];
+                        const metaStr = localStorage.getItem(`_meta_${kho}_saved_thidua_st_excel`);
+                        const meta = metaStr ? JSON.parse(metaStr) : null;
+                        updateSyncState(`saved_thidua_st_excel_${kho}`, 'cached', `✓ Đã tải (${excelStForKho.length} chương trình)`, meta);
+                    } else {
+                        const luykeText = localStorage.getItem(`daily_paste_luyke_${kho}`);
+                        if (luykeText) {
+                            dataProcessing.parseLuyKePastedData(luykeText);
+                            const comps = dataProcessing.parseCompetitionDataFromLuyKe(luykeText);
+
+                            const labeledComps = Array.isArray(comps) ? comps.map(c => ({ ...c, maKho: kho })) : [];
+                            aggregatedLuykeComps = [...aggregatedLuykeComps, ...labeledComps];
+                            updateSyncState(`daily_paste_luyke_${kho}`, 'cached', `(Local)`, null);
+                        }
                     }
 
                     const erpText = localStorage.getItem(`daily_paste_thuongerp_${kho}`) || localStorage.getItem(`daily_paste_thuongerp`); 

@@ -10,8 +10,9 @@ import {
     efficiencyConfig,
     qdcConfigStore,
     competitionNameMappings,
-    luykeNameMappings, 
-    virtualProductList // [NEW] Import store Sản phẩm đặc thù
+    luykeNameMappings,
+    virtualProductList, // [NEW] Import store Sản phẩm đặc thù
+    quantityCompetitionTypeCodes
 } from '../../stores.js';
 import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
 
@@ -70,26 +71,28 @@ export const categoryService = {
                 return d.data || d.items || d.mappings || d.configs || d.list || defaultVal;
             };
             const docsToLoad = [
-                "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping", 
-                "groupNameMapping", "brandNameMapping", "efficiencyConfig", 
+                "macroCategoryConfig", "macroProductGroupConfig", "categoryNameMapping",
+                "groupNameMapping", "brandNameMapping", "efficiencyConfig",
                 "qdcConfig", "competitionNameMappings", "categoryStructure", "brandList",
-                "luykeNameMappings", "virtualProductList" // [NEW] Thêm file cấu hình SP Đặc thù vào tiến trình tải
+                "luykeNameMappings", "virtualProductList", // [NEW] Thêm file cấu hình SP Đặc thù vào tiến trình tải
+                "quantityCompetitionTypeCodes" // [MỚI] Mã Loại TĐ tính theo Số Lượng
             ];
             const promises = docsToLoad.map(id => getDoc(doc(db, "declarations", id)));
             const results = await Promise.all(promises);
-            
+
             macroCategoryConfig.set(safeGet(results[0]));
             macroProductGroupConfig.set(safeGet(results[1]));
             categoryNameMapping.set(safeGet(results[2], {}));
             groupNameMapping.set(safeGet(results[3], {}));
             brandNameMapping.set(safeGet(results[4], {}));
-            efficiencyConfig.set(safeGet(results[5])); 
+            efficiencyConfig.set(safeGet(results[5]));
             qdcConfigStore.set(safeGet(results[6]));
             competitionNameMappings.set(safeGet(results[7], {}));
             categoryStructure.set(safeGet(results[8]));
             brandList.set(safeGet(results[9]));
-            luykeNameMappings.set(safeGet(results[10], {})); 
+            luykeNameMappings.set(safeGet(results[10], {}));
             virtualProductList.set(safeGet(results[11])); // [NEW] Nạp dữ liệu vào store SP Đặc thù
+            quantityCompetitionTypeCodes.set(safeGet(results[12], [2, 6])); // [MỚI]
 
             console.log("[declarations.category] Đã tải xong Mapping & Configs.");
         } catch (error) {
@@ -215,6 +218,38 @@ export const categoryService = {
         } catch (error) {
             console.error("Lỗi khi tải Tên rút gọn Thi đua Siêu thị:", error);
             return {};
+        }
+    },
+
+    // [MỚI] Khai báo mã Loại TĐ nào tính theo Số Lượng (còn lại mặc định tính theo Doanh Thu)
+    async saveQuantityCompetitionTypeCodes(codes) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        try {
+            const docRef = doc(db, "declarations", "quantityCompetitionTypeCodes");
+            await setDoc(docRef, { data: sanitizeForFirestore(codes) });
+            notify('Đã lưu Mã Loại TĐ tính theo Số Lượng thành công!', 'success');
+        } catch (error) {
+            console.error("Lỗi khi lưu Mã Loại TĐ tính theo Số Lượng:", error);
+            notify('Lỗi khi lưu cấu hình lên cloud.', 'error');
+        }
+    },
+
+    async loadQuantityCompetitionTypeCodes() {
+        const db = getDB();
+        if (!db) return [2, 6];
+        try {
+            const docRef = doc(db, "declarations", "quantityCompetitionTypeCodes");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.data || [2, 6];
+            }
+            return [2, 6];
+        } catch (error) {
+            console.error("Lỗi khi tải Mã Loại TĐ tính theo Số Lượng:", error);
+            return [2, 6];
         }
     },
 

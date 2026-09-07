@@ -8,6 +8,7 @@ import {
     competitionNameMappings
 } from '../stores.js';
 import { datasyncService } from './datasync.service.js'; // [MỚI] Import
+import { helpers } from './processing/helpers.js';
 
 // ... (Giữ nguyên các hằng số ALL_EFFICIENCY_ITEMS, PASTED_COMPETITION_SETTINGS_KEY) ...
 const ALL_EFFICIENCY_ITEMS = [
@@ -191,40 +192,51 @@ export const settingsService = {
         // (trước đây chỉ đọc pastedDataStoreValue[0].competitions nên bị thiếu chương trình
         // nếu nhân viên đầu tiên trong file không có đủ dữ liệu ở mọi chương trình).
         const nameMappings = get(competitionNameMappings) || {};
-        const uniqueCompMap = new Map();
+        // [FIX] Gộp theo tên đã chuẩn hoá (bỏ dấu/hoa-thường) vì cùng 1 chương trình có thể
+        // được lưu dưới 2 cách viết khác nhau (VD: "Sim Tổng" / "SIM TỔNG") do dữ liệu từng
+        // được nhập bằng cả 2 cách (dán bảng và upload Excel) — nếu gộp theo tên gốc y nguyên
+        // sẽ bị đếm thành 2 chương trình riêng dù thực tế chỉ có 1.
+        const uniqueCompMap = new Map(); // key: tên đã chuẩn hoá -> { tenGoc, comp }
         pastedDataStoreValue.forEach(emp => {
             (emp.competitions || []).forEach(comp => {
-                if (comp.tenGoc && !uniqueCompMap.has(comp.tenGoc)) {
-                    uniqueCompMap.set(comp.tenGoc, comp);
+                if (!comp.tenGoc) return;
+                const key = helpers.normalizeCompetitionKey(comp.tenGoc);
+                const existing = uniqueCompMap.get(key);
+                // Ưu tiên giữ biến thể không phải toàn chữ hoa làm tên đại diện cho đẹp hiển thị
+                const isCurrentAllCaps = comp.tenGoc === comp.tenGoc.toUpperCase();
+                if (!existing || (existing.tenGoc === existing.tenGoc.toUpperCase() && !isCurrentAllCaps)) {
+                    uniqueCompMap.set(key, { tenGoc: comp.tenGoc, comp });
                 }
             });
         });
 
-        const masterColumns = Array.from(uniqueCompMap.entries()).map(([tenGoc, comp], index) => ({
+        const masterColumns = Array.from(uniqueCompMap.values()).map(({ tenGoc, comp }, index) => ({
             id: `comp_${index}`,
             label: nameMappings[tenGoc] || comp.tenNganhHang || tenGoc,
             tenGoc: tenGoc,
             loaiSoLieu: comp.loaiSoLieu,
             visible: true
         }));
-        const masterMap = new Map(masterColumns.map(item => [item.tenGoc, item]));
+        const masterMap = new Map(masterColumns.map(item => [helpers.normalizeCompetitionKey(item.tenGoc), item]));
 
         let savedItems = [];
         try {
             savedItems = JSON.parse(localStorage.getItem(PASTED_COMPETITION_SETTINGS_KEY) || '[]');
         } catch (e) { savedItems = []; }
 
-        const savedMap = new Map(savedItems.map(item => [item.tenGoc, item]));
+        const savedMap = new Map(savedItems.map(item => [helpers.normalizeCompetitionKey(item.tenGoc), item]));
         const finalSettings = [];
-        
+
         savedItems.forEach(savedItem => {
-            if (masterMap.has(savedItem.tenGoc)) {
-                const masterItem = masterMap.get(savedItem.tenGoc);
-                finalSettings.push({ ...savedItem, id: masterItem.id, label: masterItem.label });
+            const key = helpers.normalizeCompetitionKey(savedItem.tenGoc);
+            if (masterMap.has(key)) {
+                const masterItem = masterMap.get(key);
+                finalSettings.push({ ...savedItem, id: masterItem.id, label: masterItem.label, tenGoc: masterItem.tenGoc });
             }
         });
         masterColumns.forEach(masterItem => {
-            if (!savedMap.has(masterItem.tenGoc)) finalSettings.push(masterItem);
+            const key = helpers.normalizeCompetitionKey(masterItem.tenGoc);
+            if (!savedMap.has(key)) finalSettings.push(masterItem);
         });
         return finalSettings;
     }

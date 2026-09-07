@@ -105,7 +105,9 @@
     if ($doanhThuBIData && $doanhThuBIData.length > 0) {
         $doanhThuBIData.forEach(row => {
             if (currentKho && String(row.maKho) !== String(currentKho)) return;
-            if (String(row.capDong || '').toUpperCase() === 'CATEGORY') {
+            // [FIX] Mẫu file mới (1 dòng/siêu thị, không còn cột Cấp dòng) — cộng thẳng; mẫu file
+            // cũ (nhiều dòng Cấp dòng=CATEGORY cộng dồn thành tổng siêu thị) vẫn tương thích ngược.
+            if (!row.capDong || String(row.capDong).toUpperCase() === 'CATEGORY') {
                 dtThuc += parseFloat(row.doanhThu || 0);
                 dtQd += parseFloat(row.doanhThuQD || 0);
                 dtGop += parseFloat(row.dtTraGop || 0);

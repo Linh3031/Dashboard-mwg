@@ -8,6 +8,7 @@ import {
     danhSachNhanVien 
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
+import { helpers } from '../processing/helpers.js';
 import { storage, storageService } from '../storage.service.js';
 import { datasyncService } from '../datasync.service.js';
 import { analyticsService } from '../analytics.service.js';
@@ -27,6 +28,23 @@ async function _handleFileRead(fileBlob) {
         reader.onerror = () => reject(new Error("Không thể đọc file."));
         reader.readAsArrayBuffer(fileBlob);
     });
+}
+
+// [MỚI] Một số file (Thi đua ST, Doanh thu BI) không có cột mã kho, chỉ có tên siêu thị dạng
+// tự do (VD "TGD_TGI_MTH - 25 Ấp Bắc") — tra mã kho bằng cách so khớp với cột "Tên Kho" đã
+// khai báo trong DSNV.
+function buildTenKhoToMaKhoMap() {
+    const currentDSNV = get(danhSachNhanVien) || [];
+    const tenKhoToMaKho = new Map();
+    currentDSNV.forEach(nv => {
+        const maKhoNv = String(nv.maKho || '').trim();
+        const tenKhoNv = String(nv.tenKho || '').trim();
+        if (maKhoNv && tenKhoNv) {
+            const key = helpers.normalizeCompetitionKey(tenKhoNv);
+            if (!tenKhoToMaKho.has(key)) tenKhoToMaKho.set(key, maKhoNv);
+        }
+    });
+    return tenKhoToMaKho;
 }
 
 const getMonthYear = (dateStr) => {
@@ -82,6 +100,13 @@ export const fileHandler = {
 
             let { normalizedData, missingColumns, error } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
 
+            // [FIX] Trường hợp thiếu cột bắt buộc, normalizeData chỉ trả về missingColumns chứ
+            // không gán `error` — nếu không kiểm tra thêm ở đây, upload sẽ ÂM THẦM không báo gì
+            // và không cập nhật dữ liệu (dataToStore rỗng) thay vì báo rõ file thiếu cột gì.
+            if (!error && missingColumns && missingColumns.length > 0) {
+                error = `File thiếu các cột bắt buộc: ${missingColumns.join(', ')}`;
+            }
+
             if (error) {
                 updateSyncState(saveKey, 'error', `Lỗi: ${error}`);
                 return { success: false, message: `Lỗi: ${error}` };
@@ -112,13 +137,32 @@ export const fileHandler = {
                     if (!grouped[empCode]) grouped[empCode] = { maNV: empCode, competitions: [] };
 
                     const progName = String(row.chuongTrinh || '').trim();
-                    grouped[empCode].competitions.push({
+                    const loaiTdRaw = row.loaiTd;
+                    const loaiTd = (loaiTdRaw !== undefined && loaiTdRaw !== null && String(loaiTdRaw).trim() !== '')
+                        ? parseInt(loaiTdRaw, 10)
+                        : null;
+                    const newEntry = {
                         tenGoc: progName,
+                        loaiTd: loaiTd,
                         doanhThu: parseFloat(row.doanhThu) || 0,
                         soLuong: parseFloat(row.soLuong) || 0,
                         dtQuyDoi: parseFloat(row.dtQuyDoi) || 0,
                         hang: parseInt(row.hangVung) || 0
-                    });
+                    };
+
+                    // [FIX] Dữ liệu tải từ công ty đôi khi bị lỗi, khiến 1 chương trình có 2 dòng
+                    // số liệu khác nhau cho cùng 1 nhân viên (khác Loại TĐ) — chỉ giữ dòng có số
+                    // liệu lớn hơn (theo đúng cột SL/DT do Loại TĐ của dòng đó quyết định).
+                    const normKey = helpers.normalizeCompetitionKey(progName);
+                    const existingIndex = grouped[empCode].competitions.findIndex(c => helpers.normalizeCompetitionKey(c.tenGoc) === normKey);
+                    if (existingIndex === -1) {
+                        grouped[empCode].competitions.push(newEntry);
+                    } else {
+                        const getCompareValue = (entry) => helpers.isQuantityCompetitionType(entry.loaiTd) ? entry.soLuong : entry.doanhThu;
+                        if (getCompareValue(newEntry) > getCompareValue(grouped[empCode].competitions[existingIndex])) {
+                            grouped[empCode].competitions[existingIndex] = newEntry;
+                        }
+                    }
                 });
                 
                 dataToStore = Object.values(grouped).map(emp => ({
@@ -137,7 +181,122 @@ export const fileHandler = {
                 }
             }
 
-            if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv' && mapping.normalizeType !== 'thiduanv_excel') {
+            if (mapping.normalizeType === 'thidua_st_excel') {
+                // [MỚI] File Thi đua ST không có cột mã kho, chỉ có tên siêu thị (cột ĐƠN VỊ/NHÂN
+                // VIÊN) — tra mã kho bằng cách so khớp với cột "Tên Kho" đã khai báo trong DSNV.
+                const tenKhoToMaKho = buildTenKhoToMaKhoMap();
+
+                const results = [];
+                const unresolvedTenKho = new Set();
+
+                normalizedData.forEach(row => {
+                    const tenKhoRaw = String(row.donVi || '').trim();
+                    if (!tenKhoRaw) return;
+
+                    const maKhoResolved = tenKhoToMaKho.get(helpers.normalizeCompetitionKey(tenKhoRaw));
+                    if (!maKhoResolved) {
+                        unresolvedTenKho.add(tenKhoRaw);
+                        return;
+                    }
+
+                    const progName = String(row.chuongTrinh || '').trim();
+                    if (!progName) return;
+
+                    const loaiTdRaw = row.loaiTd;
+                    const loaiTd = (loaiTdRaw !== undefined && loaiTdRaw !== null && String(loaiTdRaw).trim() !== '')
+                        ? parseInt(loaiTdRaw, 10)
+                        : null;
+                    const isQty = helpers.isQuantityCompetitionType(loaiTd);
+                    const pctHtThang = parseFloat(row.pctHtThang) || 0;
+                    const pctDuBao = parseFloat(row.pctDuBao) || 0;
+
+                    results.push({
+                        name: progName,
+                        loaiTd: loaiTd,
+                        type: isQty ? 'soLuong' : 'doanhThu',
+                        luyKe: isQty ? (parseFloat(row.soLuong) || 0) : (parseFloat(row.doanhThu) || 0),
+                        target: parseFloat(row.target) || 0,
+                        hoanThanh: `${pctHtThang}%`,
+                        hoanThanhDuKien: `${pctDuBao}%`,
+                        maKho: maKhoResolved
+                    });
+                });
+
+                dataToStore = results;
+
+                if (unresolvedTenKho.size > 0) {
+                    missingColumns = [...(missingColumns || []), `Tên kho chưa khớp DSNV: ${Array.from(unresolvedTenKho).join(', ')}`];
+                }
+
+                if (normalizedData.length > 0 && dataToStore.length === 0) {
+                    const msg = `Không có dòng nào khớp được mã kho. Kiểm tra lại cột "Tên Kho" trong DSNV cho khớp đúng với cột ĐƠN VỊ/NHÂN VIÊN trong file.`;
+                    updateSyncState(saveKey, 'error', msg);
+                    return { success: false, message: msg };
+                }
+            }
+
+            if (mapping.normalizeType === 'doanhthu_bi') {
+                // [MỚI] Doanh thu BI chuyển sang 1 file gồm nhiều siêu thị — tra mã kho qua "Tên
+                // Kho" trong DSNV (giống Thi đua ST), đồng thời tự động điền Target vào Mục tiêu
+                // Lũy kế của từng kho (vẫn cho sửa tay sau đó qua màn hình Mục tiêu như bình thường).
+                const tenKhoToMaKho = buildTenKhoToMaKhoMap();
+                const results = [];
+                const unresolvedTenKho = new Set();
+                const goalUpdatesByKho = new Map();
+
+                normalizedData.forEach(row => {
+                    const tenKhoRaw = String(row.tenDonVi || '').trim();
+                    if (!tenKhoRaw) return;
+
+                    const maKhoResolved = tenKhoToMaKho.get(helpers.normalizeCompetitionKey(tenKhoRaw));
+                    if (!maKhoResolved) {
+                        unresolvedTenKho.add(tenKhoRaw);
+                        return;
+                    }
+
+                    results.push({
+                        tenDonVi: tenKhoRaw,
+                        doanhThu: parseFloat(row.doanhThu) || 0,
+                        doanhThuQD: parseFloat(row.doanhThuQD) || 0,
+                        tb3Thang: parseFloat(row.tb3Thang) || 0,
+                        tb3ThangQD: parseFloat(row.tb3ThangQD) || 0,
+                        dtTraGop: parseFloat(row.dtTraGop) || 0,
+                        dtTraGopQD: parseFloat(row.dtTraGopQD) || 0,
+                        luyKeToiNgay: row.luyKeToiNgay || null,
+                        maKho: maKhoResolved
+                    });
+
+                    const targetThuc = parseFloat(row.target) || 0;
+                    const targetQD = parseFloat(row.targetQD) || 0;
+                    if (targetThuc > 0 || targetQD > 0) {
+                        goalUpdatesByKho.set(maKhoResolved, { doanhThuThuc: targetThuc, doanhThuQD: targetQD });
+                    }
+                });
+
+                dataToStore = results;
+
+                if (unresolvedTenKho.size > 0) {
+                    missingColumns = [...(missingColumns || []), `Tên kho chưa khớp DSNV: ${Array.from(unresolvedTenKho).join(', ')}`];
+                }
+
+                if (normalizedData.length > 0 && dataToStore.length === 0) {
+                    const msg = `Không có dòng nào khớp được mã kho. Kiểm tra lại cột "Tên Kho" trong DSNV cho khớp đúng với cột TÊN ĐƠN VỊ trong file.`;
+                    updateSyncState(saveKey, 'error', msg);
+                    return { success: false, message: msg };
+                }
+
+                if (goalUpdatesByKho.size > 0) {
+                    await Promise.all(Array.from(goalUpdatesByKho.entries()).map(async ([kho, targets]) => {
+                        try {
+                            const existing = await datasyncService.loadGoalSettings(kho);
+                            const mergedLuyke = { ...(existing.luyke || {}), doanhThuThuc: targets.doanhThuThuc, doanhThuQD: targets.doanhThuQD };
+                            await datasyncService.saveGoalSettings(kho, 'luyke', mergedLuyke);
+                        } catch (e) { console.error('Lỗi tự động cập nhật Target Lũy kế từ Doanh thu BI:', e); }
+                    }));
+                }
+            }
+
+            if (currentWh !== 'ALL' && mapping.normalizeType !== 'danhsachnv' && mapping.normalizeType !== 'thiduanv_excel' && mapping.normalizeType !== 'thidua_st_excel' && mapping.normalizeType !== 'doanhthu_bi') {
                 const beforeFilterCount = dataToStore.length;
                 const foundMaKhoValues = new Set();
                 dataToStore = dataToStore.filter(row => {
@@ -176,7 +335,16 @@ export const fileHandler = {
                 dataToStore = [...existingData, ...dataToStore];
             }
 
-            if (baseKey === 'saved_thiduanv_excel' || baseKey === 'saved_doanhthu_bi') {
+            if (baseKey === 'saved_thidua_st_excel' || baseKey === 'saved_doanhthu_bi') {
+                 // [MỚI] 1 file có thể chứa nhiều kho cùng lúc — chỉ thay thế đúng các kho có
+                 // mặt trong file này, giữ nguyên dữ liệu của những kho khác chưa upload lại.
+                 const uploadedKhoSet = new Set(dataToStore.map(item => item.maKho));
+                 mapping.store.update(curr => {
+                     const existing = curr || [];
+                     const filtered = existing.filter(item => !uploadedKhoSet.has(item.maKho));
+                     return [...filtered, ...dataToStore];
+                 });
+            } else if (baseKey === 'saved_thiduanv_excel') {
                  mapping.store.update(curr => {
                      const existing = curr || [];
                      const filtered = existing.filter(item => String(item.maKho) !== String(currentWh));
@@ -194,9 +362,14 @@ export const fileHandler = {
 
             if (!mapping.localOnly) {
                 try {
-                    const validWarehouses = currentWh === 'ALL' 
-                        ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
-                        : [currentWh];
+                    // [MỚI] Thi đua ST / Doanh thu BI: mã kho được tra ra từ nội dung file (không
+                    // theo lựa chọn kho trên giao diện) — luôn lấy đúng tập hợp các kho thực sự
+                    // có trong file.
+                    const validWarehouses = (mapping.normalizeType === 'thidua_st_excel' || mapping.normalizeType === 'doanhthu_bi')
+                        ? Array.from(new Set(dataToStore.map(item => item.maKho).filter(Boolean)))
+                        : (currentWh === 'ALL'
+                            ? get(warehouseList).filter(w => w !== 'ALL' && !w.startsWith('CLUSTER_'))
+                            : [currentWh]);
 
                     if (validWarehouses.length > 0) {
                         const primaryWh = validWarehouses[0];
@@ -224,7 +397,7 @@ export const fileHandler = {
                         // TOÀN BỘ file thay vì số dòng thực tế của riêng kho A. Tính lại theo mã kho
                         // của từng dòng để ghi đúng số dòng vào metadata của từng kho.
                         let rowCountByWh = null;
-                        if (mapping.normalizeType === 'giocong' && validWarehouses.length > 1) {
+                        if ((mapping.normalizeType === 'giocong' || mapping.normalizeType === 'thidua_st_excel' || mapping.normalizeType === 'doanhthu_bi') && validWarehouses.length > 1) {
                             rowCountByWh = {};
                             dataToStore.forEach(row => {
                                 const whOfRow = String(row.maKho || '').trim() || primaryWh;
@@ -253,8 +426,10 @@ export const fileHandler = {
                             successMsg = `✓ Đã lưu tháng: ${currentMonths.join(', ')} (${dataToStore.length} dòng)`;
                         } else if (mapping.normalizeType === 'thiduanv_excel') {
                             successMsg = `✓ Đã đồng bộ (${dataToStore.length} nhân viên)`;
+                        } else if (mapping.normalizeType === 'thidua_st_excel') {
+                            successMsg = `✓ Đã đồng bộ (${dataToStore.length} chương trình - ${validWarehouses.length} kho)`;
                         } else if (mapping.normalizeType === 'doanhthu_bi') {
-                            successMsg = `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng)`;
+                            successMsg = `✓ Đã đồng bộ (${dataToStore.length} siêu thị - ${validWarehouses.length} kho)`;
                         } else if (mapping.normalizeType === 'giocong') {
                             successMsg = rowCountByWh
                                 ? `✓ Đã đồng bộ lên Cloud (${dataToStore.length} dòng - ${Object.entries(rowCountByWh).map(([wh, c]) => `${wh}: ${c}`).join(', ')})`

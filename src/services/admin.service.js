@@ -43,6 +43,10 @@ export const adminService = {
     saveLuykeNameMappings: categoryService.saveLuykeNameMappings,
     loadLuykeNameMappings: categoryService.loadLuykeNameMappings,
 
+    // [MỚI] Khai báo mã Loại TĐ tính theo Số Lượng
+    saveQuantityCompetitionTypeCodes: categoryService.saveQuantityCompetitionTypeCodes,
+    loadQuantityCompetitionTypeCodes: categoryService.loadQuantityCompetitionTypeCodes,
+
     // --- 6. LOGIC & CALCULATION ---
     loadDeclarationsFromFirestore: performanceService.loadDeclarationsFromFirestore,
     saveDeclarationsToFirestore: performanceService.saveDeclarationsToFirestore,

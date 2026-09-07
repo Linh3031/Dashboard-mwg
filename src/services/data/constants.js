@@ -20,7 +20,9 @@ export const FILE_MAPPING = {
     'saved_ycx_cungkynam': { store: ycxDataCungKyNam, normalizeType: 'ycx', name: 'YCX Cùng kỳ năm' },
     // [PHẪU THUẬT LOGIC]: Tích hợp Doanh thu siêu thị BI
     'saved_doanhthu_bi': { store: doanhThuBIData, normalizeType: 'doanhthu_bi', name: 'Doanh thu siêu thị BI' },
-    'saved_thiduanv_excel': { store: pastedThiDuaReportData, normalizeType: 'thiduanv_excel', name: 'Thi đua NV (Excel)' }
+    'saved_thiduanv_excel': { store: pastedThiDuaReportData, normalizeType: 'thiduanv_excel', name: 'Thi đua NV (Excel)' },
+    // [MỚI] Thi đua ST chuyển từ dán bảng sang upload Excel — 1 file có thể gồm nhiều siêu thị
+    'saved_thidua_st_excel': { store: competitionData, normalizeType: 'thidua_st_excel', name: 'Thi đua ST (Excel)' }
 };
 
 export const PASTE_MAPPING = {

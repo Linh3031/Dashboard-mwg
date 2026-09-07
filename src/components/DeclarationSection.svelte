@@ -12,6 +12,7 @@
     import AdminCategory from './admin/AdminCategory.svelte';
     import AdminMappings from './admin/AdminMappings.svelte';
     import AdminCompetition from './admin/AdminCompetition.svelte';
+    import AdminCompetitionTypeConfig from './admin/AdminCompetitionTypeConfig.svelte';
     import AdminSpecialProducts from './admin/AdminSpecialProducts.svelte';
     import AdminCalculation from './admin/AdminCalculation.svelte';
     import AdminUserStats from './admin/AdminUserStats.svelte';
@@ -104,6 +105,7 @@
                 <div in:fade={{ duration: 200 }}>
                     <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Khai báo Thi đua</h3>
                     <div class="space-y-8">
+                        <AdminCompetitionTypeConfig />
                         <AdminMappings />
                         <AdminCompetition />
                     </div>

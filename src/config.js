@@ -47,11 +47,23 @@ export const config = {
         },
         thiduanv_excel: {
             chuongTrinh: { required: true, displayName: 'Chương trình', aliases: ['chương trình', 'chuong trinh'] },
+            loaiTd: { required: false, displayName: 'Loại TĐ', aliases: ['loại tđ', 'loai td'] },
             maNV: { required: true, displayName: 'Mã NV', aliases: ['mã nv', 'manv'] },
             dtQuyDoi: { required: false, displayName: 'DT Quy đổi (TR)', aliases: ['dt quy đổi (tr)', 'dt quy doi', 'dt quy đổi'] },
             soLuong: { required: false, displayName: 'Số lượng', aliases: ['số lượng', 'so luong'] },
             doanhThu: { required: true, displayName: 'Doanh thu (TR)', aliases: ['doanh thu (tr)', 'doanh thu', 'doanhthu'] },
             hangVung: { required: false, displayName: 'Hạng vùng', aliases: ['hạng vùng', 'hang vung'] }
+        },
+        thidua_st_excel: {
+            chuongTrinh: { required: true, displayName: 'Chương trình', aliases: ['chương trình', 'chuong trinh'] },
+            loaiTd: { required: false, displayName: 'Loại TĐ', aliases: ['loại tđ', 'loai td'] },
+            donVi: { required: true, displayName: 'Đơn vị / Nhân viên', aliases: ['đơn vị / nhân viên', 'don vi / nhan vien', 'đơn vị/nhân viên'] },
+            dtQuyDoi: { required: false, displayName: 'DT Quy đổi (TR)', aliases: ['dt quy đổi (tr)', 'dt quy doi', 'dt quy đổi'] },
+            soLuong: { required: false, displayName: 'Số lượng', aliases: ['số lượng', 'so luong'] },
+            doanhThu: { required: false, displayName: 'Doanh thu (TR)', aliases: ['doanh thu (tr)', 'doanh thu', 'doanhthu'] },
+            target: { required: false, displayName: 'Target', aliases: ['target (tr/sl theo loại tđ)', 'target'] },
+            pctHtThang: { required: false, displayName: '% HT Tháng', aliases: ['% ht tháng', '% ht thang'] },
+            pctDuBao: { required: false, displayName: '% Dự báo', aliases: ['% dự báo', '% du bao'] }
         },
         doanhthu_bi: {
             capDong: { required: false, displayName: 'Cấp dòng', aliases: ['cấp dòng', 'cap dong'] },
@@ -60,6 +72,8 @@ export const config = {
             soLuong: { required: false, displayName: 'Số lượng', aliases: ['số lượng', 'so luong'] },
             doanhThu: { required: false, displayName: 'Doanh thu (TR)', aliases: ['doanh thu(tr)', 'doanh thu (tr)', 'doanh thu thực'] },
             doanhThuQD: { required: false, displayName: 'Doanh thu QĐ (TR)', aliases: ['doanh thu qđ (tr)', 'doanh thu quy đổi'] },
+            target: { required: false, displayName: 'Target (TR)', aliases: ['target (tr)', 'target'] },
+            targetQD: { required: false, displayName: 'Target QĐ (TR)', aliases: ['target qđ (tr)', 'target quy đổi'] },
             tb3Thang: { required: false, displayName: 'TB 3 tháng (TR)', aliases: ['tb 3 tháng (tr)', 'trung bình 3 tháng'] },
             tb3ThangQD: { required: false, displayName: 'TB 3 tháng QĐ (TR)', aliases: ['tb 3 tháng qđ (tr)'] },
             dtTraGop: { required: false, displayName: 'DT trả góp (TR)', aliases: ['dt trả góp (tr)', 'doanh thu trả góp'] },

@@ -106,19 +106,11 @@
                      <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
                  </button>
             </div>
-            {#if $selectedWarehouse === 'ALL'}
-                {#each $warehouseList as kho}
-                    {#if kho !== 'ALL'}
-                        <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
-                            <FileInput label={`Doanh thu BI (${kho})`} icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey={`saved_doanhthu_bi_${kho}`} />
-                        </div>
-                    {/if}
-                {/each}
-            {:else}
-                <div class="h-fit w-full overflow-hidden mt-1">
-                    <FileInput label={`Doanh thu BI (${$selectedWarehouse})`} icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey={`saved_doanhthu_bi_${$selectedWarehouse}`} />
-                </div>
-            {/if}
+            <!-- [MỚI] Doanh thu BI chuyển sang 1 ô upload chung — 1 file có thể gồm nhiều siêu
+                 thị, mã kho được tra tự động qua cột "Tên Kho" trong DSNV. -->
+            <div class="h-fit w-full overflow-hidden mt-1">
+                <FileInput label="Doanh thu BI" icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey="saved_doanhthu_bi" showWarehouseTags={true} />
+            </div>
         </div>
 
         <!-- 3. Thi đua nhân viên -->
@@ -164,26 +156,18 @@
                      <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
                  </button>
             </div>
-            {#if $selectedWarehouse === 'ALL'}
-                {#each $warehouseList as kho}
-                    {#if kho !== 'ALL'}
-                        <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
-                            <PasteInput label={`Thi đua ST lũy kế (${kho})`} icon="clipboard" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKeyPaste={`daily_paste_luyke_${kho}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: kho })} />
-                        </div>
-                    {/if}
-                {/each}
-            {:else}
-                {#if isClusterMode}
-                    <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative w-full overflow-hidden mb-4 mt-2">
-                        <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
-                        <PasteInput label="Thi đua siêu thị lũy kế" icon="layers" link="#" placeholder="Paste dữ liệu thi đua cụm..." saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`} on:paste={(e) => dispatch('pasteCompetition', e.detail)} />
-                        <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1"><i data-feather="info" class="w-3 h-3"></i>Dành cho quản lý Cụm {currentClusterCode}</p>
-                    </div>
-                {/if}
-                <div class="h-fit w-full overflow-hidden mt-1">
-                    <PasteInput label={isClusterMode ? `Thi đua ST lũy kế (Cụm ${currentClusterCode})` : `Thi đua siêu thị lũy kế (${$selectedWarehouse})`} icon="clipboard" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKeyPaste={isClusterMode ? `cluster_paste_luyke_${currentClusterCode}` : `daily_paste_luyke_${$selectedWarehouse}`} on:paste={(e) => dispatch('pasteCumulative', { text: e.detail, kho: $selectedWarehouse })} />
+            {#if $selectedWarehouse !== 'ALL' && isClusterMode}
+                <div class="animate-fade-in p-3 bg-indigo-50 border border-indigo-200 rounded-lg relative w-full overflow-hidden mb-4 mt-2">
+                    <div class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">MỚI</div>
+                    <PasteInput label="Thi đua siêu thị lũy kế" icon="layers" link="#" placeholder="Paste dữ liệu thi đua cụm..." saveKeyPaste={`cluster_paste_comp_${currentClusterCode}`} on:paste={(e) => dispatch('pasteCompetition', e.detail)} />
+                    <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1"><i data-feather="info" class="w-3 h-3"></i>Dành cho quản lý Cụm {currentClusterCode}</p>
                 </div>
             {/if}
+            <!-- [MỚI] Thi đua ST chuyển từ dán bảng sang upload Excel — 1 file có thể gồm nhiều
+                 siêu thị, mã kho được tra tự động qua cột "Tên Kho" trong DSNV. -->
+            <div class="h-fit w-full overflow-hidden mt-1">
+                <FileInput label="Thi đua ST (Excel)" icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey="saved_thidua_st_excel" showWarehouseTags={true} />
+            </div>
         </div>
     </div>
 </div>

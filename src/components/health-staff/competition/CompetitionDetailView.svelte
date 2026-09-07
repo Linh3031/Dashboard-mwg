@@ -4,6 +4,7 @@
     import { competitionNameMappings, ycxData, competitionData, danhSachNhanVien, selectedWarehouse, luykeNameMappings } from '../../../stores.js';
     import { settingsService } from '../../../services/settings.service.js';
     import { datasyncService } from '../../../services/datasync.service.js';
+    import { helpers } from '../../../services/processing/helpers.js';
 
     export let employeeId;
     export let allReportData = []; 
@@ -81,10 +82,11 @@
 
     // [PHẪU THUẬT LOGIC]: Ưu tiên loại SL/DT theo Link Data Nhân Viên admin đã xác nhận thủ công,
     // chỉ dùng cách so khớp tên .endsWith() làm dự phòng khi chương trình chưa được admin link.
+    // [FIX] Key theo tên đã chuẩn hoá (xem lý do ở khối tính categoryTargets phía dưới).
     $: linkedTypeMap = ($competitionData || []).reduce((acc, item) => {
         const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
         const linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : null;
-        if (linkedEmpProg) acc[linkedEmpProg] = item.type;
+        if (linkedEmpProg) acc[helpers.normalizeCompetitionKey(linkedEmpProg)] = item.type;
         return acc;
     }, {});
 
@@ -92,11 +94,30 @@
         if (!comp) return 0;
         if (comp.giaTri !== undefined) return comp.giaTri;
 
-        const isQuantity = (typeMap || {}).hasOwnProperty(colTenGoc)
-            ? typeMap[colTenGoc] === 'soLuong'
+        // [FIX] Ưu tiên đọc trực tiếp Loại TĐ của chính dòng dữ liệu (file Excel Thi đua NV có
+        // cột LOẠI TĐ) thay vì đoán qua liên kết chéo với Thi đua ST — chính xác hơn và không
+        // phụ thuộc việc admin đã link đúng chương trình ST↔NV hay chưa. Dữ liệu cũ chưa có
+        // Loại TĐ (upload từ trước khi có cột này) vẫn dùng cách đoán cũ làm dự phòng.
+        if (comp.loaiTd !== undefined && comp.loaiTd !== null) {
+            return helpers.isQuantityCompetitionType(comp.loaiTd) ? (comp.soLuong || 0) : (comp.doanhThu || 0);
+        }
+
+        const key = helpers.normalizeCompetitionKey(colTenGoc);
+        const isQuantity = (typeMap || {}).hasOwnProperty(key)
+            ? typeMap[key] === 'soLuong'
             : ($competitionData || []).some(c => c.name.endsWith(colTenGoc) && c.type === 'soLuong');
 
         return isQuantity ? (comp.soLuong || 0) : (comp.doanhThu || 0);
+    }
+
+    // [FIX] Tìm bản ghi thi đua của nhân viên cho 1 cột theo tên đã chuẩn hoá (không phân biệt
+    // hoa/thường/dấu) — nếu nhân viên có nhiều bản ghi trùng tên do lệch cách viết hoa/thường,
+    // ưu tiên bản ghi có số liệu khác 0.
+    function findCompForColumn(competitions, colTenGoc, typeMap) {
+        const key = helpers.normalizeCompetitionKey(colTenGoc);
+        const matches = (competitions || []).filter(c => helpers.normalizeCompetitionKey(c.tenGoc) === key);
+        if (matches.length <= 1) return matches[0];
+        return matches.find(c => getDynamicMetricValue(c, colTenGoc, typeMap) > 0) || matches[0];
     }
 
     // [PHẪU THUẬT LOGIC]: Tối ưu trích xuất tên NV chuẩn xác
@@ -133,6 +154,9 @@
                 // riêng trước đây) để tránh race điều kiện thứ tự chạy giữa 2 khối reactive —
                 // trước đây có lúc khối này chạy trước khi categoryTargets kịp có kết quả, khiến
                 // mọi chương trình tạm bị coi là "chưa có target" => tự động tính "đạt", gây nhảy số.
+                // [FIX] Key theo tên đã chuẩn hoá vì "Link Data Nhân Viên" bên Admin có thể trỏ
+                // tới một biến thể hoa/thường khác với tenGoc đang dùng ở cột — so khớp tuyệt đối
+                // sẽ luôn ra Target = 0.
                 const stMappedData = {};
                 ($competitionData || []).forEach(item => {
                     const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
@@ -142,12 +166,12 @@
                         const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
                         const isQty = item.type === 'soLuong';
                         const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
-                        stMappedData[linkedEmpProg] = pTarget;
+                        stMappedData[helpers.normalizeCompetitionKey(linkedEmpProg)] = pTarget;
                     }
                 });
                 const categoryTargets = {};
                 columnSettings.forEach(col => {
-                    categoryTargets[col.tenGoc] = stMappedData[col.tenGoc] || 0;
+                    categoryTargets[col.tenGoc] = stMappedData[helpers.normalizeCompetitionKey(col.tenGoc)] || 0;
                 });
 
                 const activeColumns = columnSettings.filter(col => col.visible).map(col => ({
@@ -158,7 +182,7 @@
                 const empComps = employee.competitions || [];
 
                 activeColumns.forEach(col => {
-                    const compData = empComps.find(c => c.tenGoc === col.tenGoc);
+                    const compData = findCompForColumn(empComps, col.tenGoc, linkedTypeMap);
                     const val = getDynamicMetricValue(compData, col.tenGoc, linkedTypeMap);
                     const target = categoryTargets[col.tenGoc] || 0;
                     const projectedVal = (val / currentDay) * daysInMonth;

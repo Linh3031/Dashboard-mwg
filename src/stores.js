@@ -143,6 +143,8 @@ export const localCompetitionConfigs = writable([]);
 export const globalCompetitionConfigs = writable([]); 
 export const globalSpecialPrograms = writable([]); 
 export const qdcConfigStore = writable([]);
+// [MỚI] Mã Loại TĐ (số nguyên) được admin khai báo là tính theo Số Lượng — còn lại mặc định tính theo Doanh Thu
+export const quantityCompetitionTypeCodes = writable([2, 6]);
 export const warehouseCustomMetrics = writable([]);
 export const customRevenueTables = writable([]);
 export const customPerformanceTables = writable([]);

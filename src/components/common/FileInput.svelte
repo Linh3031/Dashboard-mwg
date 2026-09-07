@@ -11,14 +11,18 @@
       fileSyncState,
       selectedWarehouse,
       pastedThiDuaReportData,
-      doanhThuBIData 
+      doanhThuBIData,
+      competitionData
   } from '../../stores.js';
 
   export let label = "Chưa có nhãn";
   export let icon = "file";
   export let saveKey = "";
   export let link = "";
-  export let isMultiMode = false; 
+  export let isMultiMode = false;
+  // [MỚI] Hiện thẻ "Mã Kho" như file YCX cho các loại file gộp nhiều kho trong 1 lần upload
+  // nhưng KHÔNG dùng cơ chế gộp theo tháng của isMultiMode (VD: Thi đua ST Excel).
+  export let showWarehouseTags = false;
 
   let fileName = "Chưa thêm file";
   let statusHTML = "";
@@ -39,7 +43,8 @@
       'saved_thuongnong_thangtruoc': thuongNongDataThangTruoc,
       'saved_ycx_cungkynam': ycxDataCungKyNam,
       'saved_thiduanv_excel': pastedThiDuaReportData,
-      'saved_doanhthu_bi': doanhThuBIData
+      'saved_doanhthu_bi': doanhThuBIData,
+      'saved_thidua_st_excel': competitionData
   };
 
   function getBaseKey(sk) {
@@ -63,7 +68,9 @@
   $: localDataCount = (() => {
       if (!$dataStore) return 0;
       const kho = saveKey.split('_').pop();
-      if (kho && kho !== 'ALL' && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
+      // [FIX] Chỉ áp dụng lọc theo kho khi saveKey THỰC SỰ có hậu tố mã kho (khác baseKey) —
+      // tránh việc key trơn không hậu tố (VD "saved_doanhthu_bi") bị hiểu nhầm "bi" là mã kho.
+      if (saveKey !== baseKey && kho && kho !== 'ALL' && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
           return $dataStore.filter(d => String(d.maKho) === String(kho)).length;
       }
       return $dataStore.length;
@@ -74,7 +81,7 @@
       return d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || d['Mã Kho Tạo'] || d.makho || d.makhotao;
   }
 
-  $: uniqueWarehouses = (isMultiMode && $dataStore) 
+  $: uniqueWarehouses = ((isMultiMode || showWarehouseTags) && $dataStore)
         ? [...new Set($dataStore.map(d => getWhCode(d)).filter(Boolean).map(c => String(c).trim()))] 
         : [];
 
@@ -84,7 +91,7 @@
         
         let maxTs = 0;
         $dataStore.forEach(d => {
-            if (kho && kho !== 'ALL' && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
+            if (saveKey !== baseKey && kho && kho !== 'ALL' && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
                  if (String(d.maKho) !== String(kho)) return;
             }
             const dateVal = d.ngayTao || d['Ngày tạo'] || d.NGAY_TAO || d.luyKeToiNgay || d['Lũy kế tới ngày'];
@@ -321,7 +328,9 @@
           isLoading = true;
           const khoToClear = saveKey.split('_').pop();
 
-          if (saveKey.includes('thiduanv') || saveKey.includes('doanhthu')) {
+          // [FIX] Chỉ xoá riêng theo kho khi saveKey THỰC SỰ có hậu tố mã kho (khác baseKey) —
+          // key trơn không hậu tố (VD "saved_doanhthu_bi") thì "Xóa tất cả" phải xoá sạch toàn bộ.
+          if (saveKey !== baseKey && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'))) {
               dataStore.update(curr => curr.filter(d => String(d.maKho) !== String(khoToClear)));
           } else {
               dataStore.set([]);
@@ -426,7 +435,7 @@
             <span class="data-input-group__status-text {statusClass}">{@html statusHTML}</span> 
         </div> 
 
-        {#if isMultiMode && (uniqueWarehouses.length > 0 || (uniqueMonths.length > 0 && showMonthSummary))}
+        {#if (isMultiMode || showWarehouseTags) && (uniqueWarehouses.length > 0 || (uniqueMonths.length > 0 && showMonthSummary))}
             <div class="mt-3 flex flex-col gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-inner pointer-events-auto relative z-10">
                 
                 <div class="flex justify-between items-center border-b border-slate-200 pb-2">

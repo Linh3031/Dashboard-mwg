@@ -1,10 +1,11 @@
 <script>
   import { onMount } from 'svelte';
-  import { 
-      ycxData, 
-      globalCompetitionConfigs, 
+  import {
+      ycxData,
+      globalCompetitionConfigs,
       localCompetitionConfigs,
-      pastedThiDuaReportData 
+      pastedThiDuaReportData,
+      processedEmployeeCompetitionData
   } from '../../stores.js';
   import { services } from '../../services.js';
 
@@ -51,7 +52,9 @@
       const mode = event.target.value;
       if (!mode) return;
 
-      const baseData = $pastedThiDuaReportData || [];
+      // [FIX] Dùng processedEmployeeCompetitionData (đã lọc đúng theo mã kho của từng nhân viên)
+      // thay vì pastedThiDuaReportData thô, để trang chi tiết luôn khớp với bảng tổng hợp.
+      const baseData = $processedEmployeeCompetitionData || [];
       let targetData = [];
 
       if (mode === 'top5') targetData = baseData.slice(0, 5);
@@ -120,7 +123,7 @@
             {#if isDetailView && selectedEmployeeId}
                 <CompetitionDetailView
                     employeeId={selectedEmployeeId}
-                    allReportData={$pastedThiDuaReportData}
+                    allReportData={$processedEmployeeCompetitionData}
                      on:back={handleBackToList}
                 />
             {/if}

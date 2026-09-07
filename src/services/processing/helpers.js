@@ -1,7 +1,7 @@
 /* global XLSX */
 import { get } from 'svelte/store';
 import { config } from '../../config.js';
-import { declarations, efficiencyConfig } from '../../stores.js';
+import { declarations, efficiencyConfig, quantityCompetitionTypeCodes } from '../../stores.js';
 
 // [CODEGENESIS] Hàm vũ khí: Chuẩn hóa chuỗi (Xóa dấu tiếng Việt, viết thường, xóa khoảng trắng)
 const normalizeStr = (str) => {
@@ -128,6 +128,22 @@ export const helpers = {
 
     cleanCompetitionName(name) {
         return name.replace(/thi đua doanh thu bán hàng|thi đua doanh thu|thi đua số lượng/gi, "").trim();
+    },
+
+    // [FIX] Chuẩn hoá tên chương trình thi đua NV để so khớp/gộp khi cùng 1 chương trình
+    // bị lưu dưới nhiều cách viết hoa/thường khác nhau (VD: "Sim Tổng" vs "SIM TỔNG") do
+    // dữ liệu từng được nhập bằng cả 2 cách (dán bảng và upload Excel) ở các thời điểm khác nhau.
+    normalizeCompetitionKey(name) {
+        return normalizeStr(name).replace(/\s+/g, ' ');
+    },
+
+    // [MỚI] Xác định 1 chương trình thi đua tính theo Số Lượng hay Doanh Thu, dựa vào mã
+    // Loại TĐ (cột "LOẠI TĐ" trong file nguồn) đối chiếu với danh sách mã admin đã khai báo
+    // là Số Lượng (quantityCompetitionTypeCodes) — mã nào không có trong danh sách thì mặc
+    // định tính theo Doanh Thu.
+    isQuantityCompetitionType(loaiTdCode) {
+        const codes = get(quantityCompetitionTypeCodes) || [];
+        return codes.map(Number).includes(Number(loaiTdCode));
     },
 
     classifyInsurance: (productName) => {
