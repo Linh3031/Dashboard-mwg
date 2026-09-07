@@ -356,25 +356,34 @@ export const fileHandler = {
             }
 
             if (baseKey === 'saved_thidua_st_excel' || baseKey === 'saved_doanhthu_bi') {
-                 // [MỚI] 1 file có thể chứa nhiều kho cùng lúc — chỉ thay thế đúng các kho có
-                 // mặt trong file này, giữ nguyên dữ liệu của những kho khác chưa upload lại.
+                 // [FIX] Dùng dữ liệu GỐC trong cache offline (storage.getItem) làm nền để gộp —
+                 // KHÔNG dùng store đang hiển thị (mapping.store), vì store đó có thể đã bị lọc chỉ
+                 // còn đúng các kho trong DSNV hiện tại (xem cacheHandler.js). Nếu lấy store đã lọc
+                 // làm nền rồi ghi đè lại cache, dữ liệu của các kho khác ngoài DSNV hiện tại sẽ bị
+                 // xoá vĩnh viễn khỏi cache offline ngay từ lần upload tiếp theo.
                  const uploadedKhoSet = new Set(dataToStore.map(item => item.maKho));
-                 mapping.store.update(curr => {
-                     const existing = curr || [];
-                     const filtered = existing.filter(item => !uploadedKhoSet.has(item.maKho));
-                     return [...filtered, ...dataToStore];
-                 });
+                 const existingFull = (await storage.getItem(baseKey)) || [];
+                 const mergedFull = [...existingFull.filter(item => !uploadedKhoSet.has(item.maKho)), ...dataToStore];
+                 await storage.setItem(baseKey, mergedFull);
+
+                 // Store hiển thị: vẫn chỉ hiện đúng các kho trong DSNV hiện tại (giữ nguyên hành vi
+                 // chống lẫn kho cũ đã sửa trước đó), nhưng cache offline luôn giữ đủ dữ liệu mọi kho.
+                 const dsnv = get(danhSachNhanVien) || [];
+                 const allowedWarehouses = dsnv.length > 0
+                     ? [...new Set(dsnv.map(e => String(e.maKho || '').trim()).filter(Boolean))]
+                     : null;
+                 mapping.store.set(allowedWarehouses ? mergedFull.filter(item => allowedWarehouses.includes(String(item.maKho || '').trim())) : mergedFull);
             } else if (baseKey === 'saved_thiduanv_excel') {
-                 mapping.store.update(curr => {
-                     const existing = curr || [];
-                     const filtered = existing.filter(item => String(item.maKho) !== String(currentWh));
-                     return [...filtered, ...dataToStore];
-                 });
+                 // [FIX] Tương tự trên — gộp trên dữ liệu gốc trong cache offline, không dùng store
+                 // đang hiển thị làm nền, để không xoá mất dữ liệu kho khác khi ghi đè cache.
+                 const existingFull = (await storage.getItem(baseKey)) || [];
+                 const mergedFull = [...existingFull.filter(item => String(item.maKho) !== String(currentWh)), ...dataToStore];
+                 await storage.setItem(baseKey, mergedFull);
+                 mapping.store.set(mergedFull);
             } else {
                  mapping.store.set(dataToStore);
+                 await storage.setItem(baseKey, get(mapping.store));
             }
-            
-            await storage.setItem(baseKey, get(mapping.store));
 
             if (saveKey === 'saved_danhsachnv') {
                 localStorage.setItem(LOCAL_DSNV_FILENAME_KEY, file.name);
