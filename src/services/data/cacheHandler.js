@@ -41,7 +41,15 @@ export const cacheHandler = {
                             const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
                             return allowedWarehouses.includes(whCode);
                          });
-                         try { await storage.setItem(key, data); } catch(e){} 
+                         try { await storage.setItem(key, data); } catch(e){}
+                    } else if (key === 'saved_doanhthu_bi' && allowedWarehouses.length > 0) {
+                         // Doanh thu BI gộp lũy kế nhiều kho qua nhiều lần upload (không xoá kho cũ
+                         // khi upload kho mới) — nên chỉ lọc HIỂN THỊ theo DSNV hiện tại, không ghi
+                         // đè cache, để tránh mất dữ liệu của kho khác khi đổi DSNV rồi đổi lại.
+                         data = data.filter(d => {
+                            const whCode = String(d.maKhoTao || d.maKho || d['Mã kho tạo'] || d['Kho tạo'] || d.MA_KHO_TAO || d.MA_KHO || '').trim();
+                            return allowedWarehouses.includes(whCode);
+                         });
                     }
 
                     let displayData = data;

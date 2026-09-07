@@ -79,17 +79,6 @@
              <div class="h-fit w-full mt-1">
                 <FileInput label="Yêu cầu xuất lũy kế" icon="file-text" link="https://report.mwgroup.vn/home/dashboard/077" saveKey="saved_ycx" isMultiMode={true} />
             </div>
-            
-            {#if $selectedWarehouse === 'ALL'}
-                <div class="h-fit animate-fade-in border border-blue-200 rounded-lg bg-blue-50/50 p-2 overflow-hidden flex flex-col w-full max-w-full mt-2">
-                    <h4 class="text-sm font-bold text-blue-800 mb-2 px-1 flex items-center gap-2">
-                        <i data-feather="pie-chart" class="w-4 h-4"></i> BC Tổng Hợp Cụm
-                    </h4>
-                    <div class="w-full overflow-hidden">
-                        <PasteInput label="Dán Báo cáo Cụm" icon="clipboard" link="#" saveKeyPaste={isClusterMode && currentClusterCode ? `cluster_summary_data_CLUSTER_${currentClusterCode}` : "cluster_summary_data_CLUSTER_UNKNOWN"} on:paste={(e) => dispatch('pasteClusterSummary', e.detail)} />
-                    </div>
-                </div>
-            {/if}
         </div>
 
         <!-- 2. Doanh thu BI -->

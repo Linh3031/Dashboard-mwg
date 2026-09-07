@@ -16,6 +16,7 @@ import { datasyncService } from '../datasync.service.js';
 import { analyticsService } from '../analytics.service.js';
 import { FILE_MAPPING, LOCAL_DSNV_FILENAME_KEY } from './constants.js';
 import { updateSyncState } from './syncHandler.js';
+import { cacheHandler } from './cacheHandler.js';
 
 async function _handleFileRead(fileBlob) {
     return new Promise((resolve, reject) => {
@@ -470,6 +471,13 @@ export const fileHandler = {
             }
 
             analyticsService.trackAction();
+
+            if (saveKey === 'saved_danhsachnv') {
+                // Đổi DSNV = đổi danh sách kho hợp lệ — nạp lại các store đang gộp theo kho
+                // (Thi đua ST, Thi đua NV, Doanh thu BI, ERP...) để bỏ ngay dữ liệu kho cũ không
+                // còn trong DSNV, không cần F5.
+                await cacheHandler.loadAllFromCache();
+            }
 
             if (missingColumns && missingColumns.length > 0) {
                 return { success: true, message: `Thành công (Thiếu cột: ${missingColumns.join(', ')})`, count: dataToStore.length };
