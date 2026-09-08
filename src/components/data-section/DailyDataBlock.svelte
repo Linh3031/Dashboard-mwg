@@ -3,11 +3,16 @@
     import { warehouseList, selectedWarehouse, masterReportData } from '../../stores.js';
     import FileInput from '../common/FileInput.svelte';
     import PasteInput from '../common/PasteInput.svelte';
+    import BiRevenuePasteInput from './BiRevenuePasteInput.svelte';
     import { datasyncService } from '../../services/datasync.service.js';
 
     export let isClusterMode = false;
     export let currentClusterCode = '';
     const dispatch = createEventDispatcher();
+
+    // [MỚI] Công ty đang chặn xuất Excel ở trang BI — chuyển mặc định sang ô dán. Vẫn giữ nguyên
+    // ô Excel cũ trong code, chỉ ẩn UI, phòng trường hợp công ty mở lại export Excel.
+    let showBiExcelFallback = false;
 
     let syncState = 'idle'; 
     let syncProgress = 0;
@@ -95,11 +100,19 @@
                      <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
                  </button>
             </div>
-            <!-- [MỚI] Doanh thu BI chuyển sang 1 ô upload chung — 1 file có thể gồm nhiều siêu
-                 thị, mã kho được tra tự động qua cột "Tên Kho" trong DSNV. -->
+            <!-- [MỚI] Công ty chặn xuất Excel ở trang BI — chuyển sang ô dán trực tiếp, tự trích
+                 xuất nhiều siêu thị/mã kho trong 1 lần dán. Ô Excel cũ giữ nguyên, ẩn mặc định. -->
             <div class="h-fit w-full overflow-hidden mt-1">
-                <FileInput label="Doanh thu BI" icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey="saved_doanhthu_bi" showWarehouseTags={true} />
+                <BiRevenuePasteInput />
             </div>
+            <button type="button" on:click={() => showBiExcelFallback = !showBiExcelFallback} class="text-[10px] text-blue-500 hover:text-blue-700 underline text-left w-max">
+                {showBiExcelFallback ? 'Ẩn ô tải Excel' : 'Công ty cho xuất Excel lại? Bấm vào đây'}
+            </button>
+            {#if showBiExcelFallback}
+                <div class="h-fit w-full overflow-hidden mt-1">
+                    <FileInput label="Doanh thu BI (Excel)" icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey="saved_doanhthu_bi" showWarehouseTags={true} />
+                </div>
+            {/if}
         </div>
 
         <!-- 3. Thi đua nhân viên -->

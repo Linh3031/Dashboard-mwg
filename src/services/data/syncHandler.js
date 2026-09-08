@@ -4,6 +4,8 @@ import { fileSyncState, selectedWarehouse, warehouseList, currentUser, competiti
 import { datasyncService, MULTI_MODE_KEYS } from '../datasync.service.js';
 import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
+import { resolveThiDuaStRows, resolveDoanhThuBiRows } from '../processing/logic/biExcel.processor.js';
+import { parseDoanhThuBiPasted } from '../processing/parsers/biPaste.parser.js';
 import { FILE_MAPPING, PASTE_MAPPING } from './constants.js';
 
 export function updateSyncState(key, status, message, metadata = null) {
@@ -346,9 +348,18 @@ export const syncHandler = {
                     if (!fileMeta.downloadURL) continue;
 
                     const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
+
+                    // [MỚI] Doanh thu BI dán tay lưu Cloud dưới dạng .txt (đánh dấu fileType) thay vì
+                    // .xlsx — phải đọc lại bằng parser dán, không phải XLSX.read, nếu không sẽ lỗi.
+                    let dataForStorage;
+                    if (baseKey === 'saved_doanhthu_bi' && fileMeta.fileType === 'text_bi_paste') {
+                        const response = await fetch(cacheBusterUrl);
+                        const textContent = await response.text();
+                        dataForStorage = parseDoanhThuBiPasted(textContent).results;
+                    } else {
                     const response = await fetch(cacheBusterUrl);
                     const blob = await response.blob();
-                    
+
                     const workbook = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = (e) => {
@@ -358,7 +369,7 @@ export const syncHandler = {
                         reader.onerror = reject;
                         reader.readAsArrayBuffer(blob);
                     });
-                    
+
                     const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: null });
                     let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
 
@@ -369,9 +380,15 @@ export const syncHandler = {
                     // cho các file đã upload từ trước khi có field này.
                     const effectiveWh = fileMeta.assignedWarehouse || fileWh;
 
-                    let dataForStorage;
                     if (baseKey === 'saved_thiduanv_excel') {
                         dataForStorage = groupThiDuaNVExcelRows(normalizedData, effectiveWh);
+                    } else if (baseKey === 'saved_thidua_st_excel') {
+                        // [FIX] File Thi đua ST không có cột mã kho — phải dò qua "Tên Kho" (DSNV)
+                        // giống hệt lúc upload tay (fileHandler.js, dùng chung 1 hàm), nếu không mọi
+                        // dòng sẽ bị loại vì maKho rỗng → hiện "0 dòng" dù tải file thành công.
+                        dataForStorage = resolveThiDuaStRows(normalizedData).results;
+                    } else if (baseKey === 'saved_doanhthu_bi') {
+                        dataForStorage = resolveDoanhThuBiRows(normalizedData).results;
                     } else {
                         normalizedData = applyWarehouseFallback(normalizedData, baseKey, effectiveWh);
                         dataForStorage = normalizedData;
@@ -381,6 +398,7 @@ export const syncHandler = {
                                 return userAllowedWarehouses.includes(whCode);
                              });
                         }
+                    }
                     }
                     allDataForStorage = [...allDataForStorage, ...dataForStorage];
 

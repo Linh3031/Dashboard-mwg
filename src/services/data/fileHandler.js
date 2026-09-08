@@ -5,12 +5,11 @@ import {
     categoryStructure, brandList, specialProductList,
     warehouseList, virtualProductList,
     pastedThiDuaReportData,
-    danhSachNhanVien,
-    luykeNameMappings
+    danhSachNhanVien
 } from '../../stores.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { helpers } from '../processing/helpers.js';
-import { competitionProcessor } from '../processing/logic/competition.processor.js';
+import { resolveThiDuaStRows, resolveDoanhThuBiRows } from '../processing/logic/biExcel.processor.js';
 import { storage, storageService } from '../storage.service.js';
 import { datasyncService } from '../datasync.service.js';
 import { analyticsService } from '../analytics.service.js';
@@ -31,23 +30,6 @@ async function _handleFileRead(fileBlob) {
         reader.onerror = () => reject(new Error("Không thể đọc file."));
         reader.readAsArrayBuffer(fileBlob);
     });
-}
-
-// [MỚI] Một số file (Thi đua ST, Doanh thu BI) không có cột mã kho, chỉ có tên siêu thị dạng
-// tự do (VD "TGD_TGI_MTH - 25 Ấp Bắc") — tra mã kho bằng cách so khớp với cột "Tên Kho" đã
-// khai báo trong DSNV.
-function buildTenKhoToMaKhoMap() {
-    const currentDSNV = get(danhSachNhanVien) || [];
-    const tenKhoToMaKho = new Map();
-    currentDSNV.forEach(nv => {
-        const maKhoNv = String(nv.maKho || '').trim();
-        const tenKhoNv = String(nv.tenKho || '').trim();
-        if (maKhoNv && tenKhoNv) {
-            const key = helpers.normalizeCompetitionKey(tenKhoNv);
-            if (!tenKhoToMaKho.has(key)) tenKhoToMaKho.set(key, maKhoNv);
-        }
-    });
-    return tenKhoToMaKho;
 }
 
 const getMonthYear = (dateStr) => {
@@ -187,62 +169,10 @@ export const fileHandler = {
             if (mapping.normalizeType === 'thidua_st_excel') {
                 // [MỚI] File Thi đua ST không có cột mã kho, chỉ có tên siêu thị (cột ĐƠN VỊ/NHÂN
                 // VIÊN) — tra mã kho bằng cách so khớp với cột "Tên Kho" đã khai báo trong DSNV.
-                const tenKhoToMaKho = buildTenKhoToMaKhoMap();
-
-                const results = [];
-                const unresolvedTenKho = new Set();
-
-                normalizedData.forEach(row => {
-                    const tenKhoRaw = String(row.donVi || '').trim();
-                    if (!tenKhoRaw) return;
-
-                    const maKhoResolved = tenKhoToMaKho.get(helpers.normalizeCompetitionKey(tenKhoRaw));
-                    if (!maKhoResolved) {
-                        unresolvedTenKho.add(tenKhoRaw);
-                        return;
-                    }
-
-                    const progName = String(row.chuongTrinh || '').trim();
-                    if (!progName) return;
-
-                    const loaiTdRaw = row.loaiTd;
-                    const loaiTd = (loaiTdRaw !== undefined && loaiTdRaw !== null && String(loaiTdRaw).trim() !== '')
-                        ? parseInt(loaiTdRaw, 10)
-                        : null;
-                    const isQty = helpers.isQuantityCompetitionType(loaiTd);
-                    const pctHtThang = parseFloat(row.pctHtThang) || 0;
-                    const pctDuBao = parseFloat(row.pctDuBao) || 0;
-
-                    results.push({
-                        name: progName,
-                        loaiTd: loaiTd,
-                        type: isQty ? 'soLuong' : 'doanhThu',
-                        luyKe: isQty ? (parseFloat(row.soLuong) || 0) : (parseFloat(row.doanhThu) || 0),
-                        target: parseFloat(row.target) || 0,
-                        hoanThanh: `${pctHtThang}%`,
-                        hoanThanhDuKien: `${pctDuBao}%`,
-                        maKho: maKhoResolved
-                    });
-                });
+                // Logic dò kho dùng CHUNG với lúc tự đồng bộ lại từ Cloud (xem syncHandler.js).
+                const { results, unresolvedTenKho } = resolveThiDuaStRows(normalizedData);
 
                 dataToStore = results;
-
-                // [FIX] Luồng dán bảng cũ (parseCompetitionDataFromLuyKe) luôn tự đăng ký tên
-                // chương trình mới vào luykeNameMappings rồi gọi autoLinkPrograms để tự ghép với
-                // dữ liệu Thi đua NV — luồng Excel mới thiếu 2 bước này nên thẻ ngành hàng không
-                // có "Link Data Nhân Viên", bấm vào không mở được chi tiết nhân viên.
-                const currentLuykeMappings = get(luykeNameMappings) || {};
-                let hasNewLuykeMapping = false;
-                results.forEach(item => {
-                    if (!currentLuykeMappings[item.name]) {
-                        currentLuykeMappings[item.name] = item.name;
-                        hasNewLuykeMapping = true;
-                    }
-                });
-                if (hasNewLuykeMapping) {
-                    luykeNameMappings.set(currentLuykeMappings);
-                }
-                competitionProcessor.autoLinkPrograms(results);
 
                 if (unresolvedTenKho.size > 0) {
                     missingColumns = [...(missingColumns || []), `Tên kho chưa khớp DSNV: ${Array.from(unresolvedTenKho).join(', ')}`];
@@ -257,41 +187,10 @@ export const fileHandler = {
 
             if (mapping.normalizeType === 'doanhthu_bi') {
                 // [MỚI] Doanh thu BI chuyển sang 1 file gồm nhiều siêu thị — tra mã kho qua "Tên
-                // Kho" trong DSNV (giống Thi đua ST), đồng thời tự động điền Target vào Mục tiêu
-                // Lũy kế của từng kho (vẫn cho sửa tay sau đó qua màn hình Mục tiêu như bình thường).
-                const tenKhoToMaKho = buildTenKhoToMaKhoMap();
-                const results = [];
-                const unresolvedTenKho = new Set();
-                const goalUpdatesByKho = new Map();
-
-                normalizedData.forEach(row => {
-                    const tenKhoRaw = String(row.tenDonVi || '').trim();
-                    if (!tenKhoRaw) return;
-
-                    const maKhoResolved = tenKhoToMaKho.get(helpers.normalizeCompetitionKey(tenKhoRaw));
-                    if (!maKhoResolved) {
-                        unresolvedTenKho.add(tenKhoRaw);
-                        return;
-                    }
-
-                    results.push({
-                        tenDonVi: tenKhoRaw,
-                        doanhThu: parseFloat(row.doanhThu) || 0,
-                        doanhThuQD: parseFloat(row.doanhThuQD) || 0,
-                        tb3Thang: parseFloat(row.tb3Thang) || 0,
-                        tb3ThangQD: parseFloat(row.tb3ThangQD) || 0,
-                        dtTraGop: parseFloat(row.dtTraGop) || 0,
-                        dtTraGopQD: parseFloat(row.dtTraGopQD) || 0,
-                        luyKeToiNgay: row.luyKeToiNgay || null,
-                        maKho: maKhoResolved
-                    });
-
-                    const targetThuc = parseFloat(row.target) || 0;
-                    const targetQD = parseFloat(row.targetQD) || 0;
-                    if (targetThuc > 0 || targetQD > 0) {
-                        goalUpdatesByKho.set(maKhoResolved, { doanhThuThuc: targetThuc, doanhThuQD: targetQD });
-                    }
-                });
+                // Kho" trong DSNV (giống Thi đua ST, dùng chung logic với syncHandler.js), đồng thời
+                // tự động điền Target vào Mục tiêu Lũy kế của từng kho (vẫn cho sửa tay sau đó qua
+                // màn hình Mục tiêu như bình thường).
+                const { results, unresolvedTenKho, goalUpdatesByKho } = resolveDoanhThuBiRows(normalizedData);
 
                 dataToStore = results;
 
