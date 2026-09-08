@@ -2,8 +2,9 @@
   /* global feather */
   import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
-  import { competitionData, fileSyncState } from '../../stores.js';
+  import { danhSachNhanVien, competitionData, fileSyncState, selectedWarehouse } from '../../stores.js';
   import { processThiDuaStPaste } from '../../services/data/thiDuaStPasteHandler.js';
+  import { parseThiDuaStPasted } from '../../services/processing/parsers/thiduaStPaste.parser.js';
   import { dataService } from '../../services/dataService.js';
 
   const RAW_TEXT_KEY = 'saved_thidua_st_paste_text';
@@ -14,7 +15,38 @@
   let localError = '';
   let unresolvedTenKho = [];
 
-  $: syncState = $fileSyncState[BASE_KEY];
+  function formatTimeAgo(dateInput) {
+      if (!dateInput) return '';
+      try {
+          const date = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
+          if (isNaN(date.getTime())) return '';
+          const seconds = Math.floor((new Date() - date) / 1000);
+          let interval = seconds / 3600;
+          if (interval > 1) return Math.floor(interval) + " giờ trước";
+          interval = seconds / 60;
+          if (interval > 1) return Math.floor(interval) + " phút trước";
+          return "vừa xong";
+      } catch (e) { return ''; }
+  }
+
+  // [FIX] cacheHandler.js/syncHandler.js có thể lưu trạng thái theo key riêng từng kho
+  // (`saved_thidua_st_excel_{kho}`) trong khi ô này gộp nhiều kho nên luôn đọc key gộp — dễ lệch.
+  // Dự phòng đọc thẳng meta lưu máy (đúng kiểu FileInput.svelte đã làm) để không hiện trống dù
+  // dữ liệu vẫn còn nguyên.
+  let localMetaFallback = null;
+  function reloadLocalMeta() {
+      try {
+          const wh = get(selectedWarehouse) || 'ALL';
+          const metaStr = localStorage.getItem(`_meta_${wh}_${BASE_KEY}`);
+          localMetaFallback = metaStr ? JSON.parse(metaStr) : null;
+      } catch (e) { localMetaFallback = null; }
+  }
+  $: $selectedWarehouse, reloadLocalMeta();
+
+  $: rawSyncState = $fileSyncState[BASE_KEY];
+  $: syncState = (!rawSyncState || !rawSyncState.metadata) && localMetaFallback
+      ? { status: 'synced', message: `✓ Đã đồng bộ ${formatTimeAgo(localMetaFallback.timestamp || localMetaFallback.updatedAt)}`, metadata: localMetaFallback }
+      : rawSyncState;
   $: uniqueWarehouses = [...new Set(($competitionData || []).map(d => d.maKho).filter(Boolean).map(c => String(c).trim()))];
 
   let pasteTimer;
@@ -65,13 +97,19 @@
       }
   }
 
+  // [FIX] Không xử lý ngay lúc mount nữa — lúc đó DSNV có thể chưa tải xong nên so khớp tên kho ra
+  // rỗng, im lặng bỏ qua. Chờ đúng lúc DSNV thật sự có dữ liệu ($danhSachNhanVien đổi từ rỗng
+  // sang có) mới thử nạp lại cục bộ, và chỉ khi store hiển thị vẫn đang trống.
+  $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0 && pastedText && $competitionData.length === 0) {
+      const { results } = parseThiDuaStPasted(pastedText);
+      if (results.length > 0) {
+          const uploadedKho = new Set(results.map(r => r.maKho));
+          competitionData.update(curr => [...(curr || []).filter(d => !uploadedKho.has(d.maKho)), ...results]);
+      }
+  }
+
   onMount(() => {
       pastedText = localStorage.getItem(RAW_TEXT_KEY) || '';
-      // [FIX] Chỉ hiện lại chữ đã lưu không tự nạp lại dữ liệu — nếu sau F5 mà store đang trống
-      // (cacheHandler chưa kịp/không nạp được), xử lý lại ngay text đã có, không bắt gõ tay mới chạy.
-      if (pastedText && get(competitionData).length === 0) {
-          processText(pastedText);
-      }
       if (typeof feather !== 'undefined') feather.replace();
   });
 

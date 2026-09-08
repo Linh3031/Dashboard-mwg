@@ -2,8 +2,9 @@
   /* global feather */
   import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
-  import { doanhThuBIData, fileSyncState } from '../../stores.js';
+  import { danhSachNhanVien, doanhThuBIData, fileSyncState, selectedWarehouse } from '../../stores.js';
   import { processDoanhThuBiPaste } from '../../services/data/biPasteHandler.js';
+  import { parseDoanhThuBiPasted } from '../../services/processing/parsers/biPaste.parser.js';
   import { dataService } from '../../services/dataService.js';
 
   const RAW_TEXT_KEY = 'saved_doanhthu_bi_paste_text';
@@ -15,7 +16,38 @@
   let unresolvedMaKho = [];
   let totalMismatch = false;
 
-  $: syncState = $fileSyncState[BASE_KEY];
+  function formatTimeAgo(dateInput) {
+      if (!dateInput) return '';
+      try {
+          const date = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
+          if (isNaN(date.getTime())) return '';
+          const seconds = Math.floor((new Date() - date) / 1000);
+          let interval = seconds / 3600;
+          if (interval > 1) return Math.floor(interval) + " giờ trước";
+          interval = seconds / 60;
+          if (interval > 1) return Math.floor(interval) + " phút trước";
+          return "vừa xong";
+      } catch (e) { return ''; }
+  }
+
+  // [FIX] Cơ chế kiểm tra đồng bộ có sẵn của app (syncHandler.js) lưu trạng thái dưới key khác
+  // nhau tuỳ đang lọc "Tất cả kho" hay 1 kho cụ thể (`saved_doanhthu_bi` vs `saved_doanhthu_bi_{kho}`),
+  // trong khi ô này gộp nhiều kho nên luôn đọc key gộp — dễ lệch. Dự phòng đọc thẳng meta lưu máy
+  // (đúng kiểu FileInput.svelte đã làm) để không hiện trống dù dữ liệu vẫn còn nguyên.
+  let localMetaFallback = null;
+  function reloadLocalMeta() {
+      try {
+          const wh = get(selectedWarehouse) || 'ALL';
+          const metaStr = localStorage.getItem(`_meta_${wh}_${BASE_KEY}`);
+          localMetaFallback = metaStr ? JSON.parse(metaStr) : null;
+      } catch (e) { localMetaFallback = null; }
+  }
+  $: $selectedWarehouse, reloadLocalMeta();
+
+  $: rawSyncState = $fileSyncState[BASE_KEY];
+  $: syncState = (!rawSyncState || !rawSyncState.metadata) && localMetaFallback
+      ? { status: 'synced', message: `✓ Đã đồng bộ ${formatTimeAgo(localMetaFallback.timestamp || localMetaFallback.updatedAt)}`, metadata: localMetaFallback }
+      : rawSyncState;
   $: uniqueWarehouses = [...new Set(($doanhThuBIData || []).map(d => d.maKho).filter(Boolean).map(c => String(c).trim()))];
 
   let pasteTimer;
@@ -69,13 +101,19 @@
       }
   }
 
+  // [FIX] Không xử lý ngay lúc mount nữa — lúc đó DSNV có thể chưa tải xong nên so khớp mã kho ra
+  // rỗng, im lặng bỏ qua. Chờ đúng lúc DSNV thật sự có dữ liệu ($danhSachNhanVien đổi từ rỗng
+  // sang có) mới thử nạp lại cục bộ, và chỉ khi store hiển thị vẫn đang trống.
+  $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0 && pastedText && $doanhThuBIData.length === 0) {
+      const { results } = parseDoanhThuBiPasted(pastedText);
+      if (results.length > 0) {
+          const uploadedKho = new Set(results.map(r => r.maKho));
+          doanhThuBIData.update(curr => [...(curr || []).filter(d => !uploadedKho.has(d.maKho)), ...results]);
+      }
+  }
+
   onMount(() => {
       pastedText = localStorage.getItem(RAW_TEXT_KEY) || '';
-      // [FIX] Chỉ hiện lại chữ đã lưu không tự nạp lại dữ liệu — nếu sau F5 mà store đang trống
-      // (cacheHandler chưa kịp/không nạp được), xử lý lại ngay text đã có, không bắt gõ tay mới chạy.
-      if (pastedText && get(doanhThuBIData).length === 0) {
-          processText(pastedText);
-      }
       if (typeof feather !== 'undefined') feather.replace();
   });
 

@@ -2,8 +2,9 @@
   /* global feather */
   import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
-  import { fileSyncState, pastedThiDuaReportData } from '../../stores.js';
+  import { danhSachNhanVien, fileSyncState, pastedThiDuaReportData } from '../../stores.js';
   import { processThiDuaNvPaste } from '../../services/data/thiDuaNvPasteHandler.js';
+  import { parseThiDuaNvPasted } from '../../services/processing/parsers/thiduaNvPaste.parser.js';
   import { dataService } from '../../services/dataService.js';
 
   export let targetKho = '';
@@ -19,7 +20,31 @@
   let wrongKhoEmployees = [];
   let loadedForKho = '';
 
-  $: syncState = $fileSyncState[stateKey];
+  function formatTimeAgo(dateInput) {
+      if (!dateInput) return '';
+      try {
+          const date = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
+          if (isNaN(date.getTime())) return '';
+          const seconds = Math.floor((new Date() - date) / 1000);
+          let interval = seconds / 3600;
+          if (interval > 1) return Math.floor(interval) + " giờ trước";
+          interval = seconds / 60;
+          if (interval > 1) return Math.floor(interval) + " phút trước";
+          return "vừa xong";
+      } catch (e) { return ''; }
+  }
+
+  // [FIX] Lúc lọc "Tất cả kho", syncHandler.js kiểm tra đồng bộ theo lô và lưu trạng thái dưới key
+  // gộp `saved_thiduanv_excel` (không có hậu tố kho), khác với key riêng từng kho ô này đang đọc
+  // (`saved_thiduanv_excel_{kho}`) — nên đổi bộ lọc mới thấy khác nhau dù dữ liệu vẫn còn nguyên.
+  // Dự phòng đọc thẳng meta lưu máy theo đúng kho của ô này (đúng kiểu FileInput.svelte đã làm).
+  $: localMetaStr = (() => { try { return localStorage.getItem(`_meta_${targetKho}_${baseKey}`); } catch (e) { return null; } })();
+  $: localMetaFallback = (() => { try { return localMetaStr ? JSON.parse(localMetaStr) : null; } catch (e) { return null; } })();
+
+  $: rawSyncState = $fileSyncState[stateKey];
+  $: syncState = (!rawSyncState || !rawSyncState.metadata) && localMetaFallback
+      ? { status: 'synced', message: `✓ Đã đồng bộ ${formatTimeAgo(localMetaFallback.timestamp || localMetaFallback.updatedAt)}`, metadata: localMetaFallback }
+      : rawSyncState;
 
   let pasteTimer;
   function processText(text) {
@@ -74,11 +99,16 @@
   $: if (targetKho && targetKho !== loadedForKho) {
       loadedForKho = targetKho;
       pastedText = localStorage.getItem(rawTextKey) || '';
-      // [FIX] Chỉ hiện lại chữ đã lưu không tự nạp lại dữ liệu — nếu sau F5 mà store đang trống
-      // đúng kho này (cacheHandler chưa kịp/không nạp được), xử lý lại ngay text đã có, không bắt
-      // gõ tay mới chạy.
-      if (pastedText && get(pastedThiDuaReportData).filter(e => String(e.maKho) === String(targetKho)).length === 0) {
-          processText(pastedText);
+  }
+
+  // [FIX] Không xử lý ngay lúc đổi kho/mount nữa — lúc đó DSNV có thể chưa tải xong nên so khớp
+  // MSNV↔kho ra rỗng, im lặng bỏ qua. Chờ đúng lúc DSNV thật sự có dữ liệu ($danhSachNhanVien đổi
+  // từ rỗng sang có) mới thử nạp lại cục bộ, và chỉ khi store hiển thị vẫn đang trống đúng kho này.
+  $: if ($danhSachNhanVien && $danhSachNhanVien.length > 0 && targetKho && pastedText &&
+         $pastedThiDuaReportData.filter(e => String(e.maKho) === String(targetKho)).length === 0) {
+      const { results } = parseThiDuaNvPasted(pastedText, targetKho);
+      if (results.length > 0) {
+          pastedThiDuaReportData.update(curr => [...(curr || []).filter(e => String(e.maKho) !== String(targetKho)), ...results]);
       }
   }
 
