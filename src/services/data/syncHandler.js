@@ -6,6 +6,8 @@ import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { resolveThiDuaStRows, resolveDoanhThuBiRows } from '../processing/logic/biExcel.processor.js';
 import { parseDoanhThuBiPasted } from '../processing/parsers/biPaste.parser.js';
+import { parseThiDuaNvPasted } from '../processing/parsers/thiduaNvPaste.parser.js';
+import { parseThiDuaStPasted } from '../processing/parsers/thiduaStPaste.parser.js';
 import { FILE_MAPPING, PASTE_MAPPING } from './constants.js';
 
 export function updateSyncState(key, status, message, metadata = null) {
@@ -349,13 +351,27 @@ export const syncHandler = {
 
                     const cacheBusterUrl = `${fileMeta.downloadURL}${fileMeta.downloadURL.includes('?') ? '&' : '?'}t=${Date.now()}`;
 
-                    // [MỚI] Doanh thu BI dán tay lưu Cloud dưới dạng .txt (đánh dấu fileType) thay vì
-                    // .xlsx — phải đọc lại bằng parser dán, không phải XLSX.read, nếu không sẽ lỗi.
+                    // [FIX] Ưu tiên mã kho đã được ghi thẳng vào metadata lúc upload (assignedWarehouse) —
+                    // đáng tin hơn suy luận từ ngữ cảnh tải về. Vẫn giữ fileWh làm phương án dự phòng
+                    // cho các file đã upload từ trước khi có field này.
+                    const effectiveWh = fileMeta.assignedWarehouse || fileWh;
+
+                    // [MỚI] Doanh thu BI / Thi đua NV / Thi đua ST dán tay lưu Cloud dưới dạng .txt
+                    // (đánh dấu fileType) thay vì .xlsx — phải đọc lại bằng parser dán, không phải
+                    // XLSX.read, nếu không sẽ lỗi.
                     let dataForStorage;
                     if (baseKey === 'saved_doanhthu_bi' && fileMeta.fileType === 'text_bi_paste') {
                         const response = await fetch(cacheBusterUrl);
                         const textContent = await response.text();
                         dataForStorage = parseDoanhThuBiPasted(textContent).results;
+                    } else if (baseKey === 'saved_thiduanv_excel' && fileMeta.fileType === 'text_thidua_nv_paste') {
+                        const response = await fetch(cacheBusterUrl);
+                        const textContent = await response.text();
+                        dataForStorage = parseThiDuaNvPasted(textContent, effectiveWh).results;
+                    } else if (baseKey === 'saved_thidua_st_excel' && fileMeta.fileType === 'text_thidua_st_paste') {
+                        const response = await fetch(cacheBusterUrl);
+                        const textContent = await response.text();
+                        dataForStorage = parseThiDuaStPasted(textContent).results;
                     } else {
                     const response = await fetch(cacheBusterUrl);
                     const blob = await response.blob();
@@ -374,11 +390,6 @@ export const syncHandler = {
                     let { normalizedData } = dataProcessing.normalizeData(rawData, mapping.normalizeType);
 
                     normalizedData = applyDataShield(rawData, normalizedData, baseKey);
-
-                    // [FIX] Ưu tiên mã kho đã được ghi thẳng vào metadata lúc upload (assignedWarehouse) —
-                    // đáng tin hơn suy luận từ ngữ cảnh tải về. Vẫn giữ fileWh làm phương án dự phòng
-                    // cho các file đã upload từ trước khi có field này.
-                    const effectiveWh = fileMeta.assignedWarehouse || fileWh;
 
                     if (baseKey === 'saved_thiduanv_excel') {
                         dataForStorage = groupThiDuaNVExcelRows(normalizedData, effectiveWh);

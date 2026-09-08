@@ -2,28 +2,26 @@
   /* global feather */
   import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
-  import { doanhThuBIData, fileSyncState } from '../../stores.js';
-  import { processDoanhThuBiPaste } from '../../services/data/biPasteHandler.js';
+  import { competitionData, fileSyncState } from '../../stores.js';
+  import { processThiDuaStPaste } from '../../services/data/thiDuaStPasteHandler.js';
   import { dataService } from '../../services/dataService.js';
 
-  const RAW_TEXT_KEY = 'saved_doanhthu_bi_paste_text';
-  const BASE_KEY = 'saved_doanhthu_bi';
+  const RAW_TEXT_KEY = 'saved_thidua_st_paste_text';
+  const BASE_KEY = 'saved_thidua_st_excel';
 
   let pastedText = '';
   let isLoading = false;
   let localError = '';
-  let unresolvedMaKho = [];
-  let totalMismatch = false;
+  let unresolvedTenKho = [];
 
   $: syncState = $fileSyncState[BASE_KEY];
-  $: uniqueWarehouses = [...new Set(($doanhThuBIData || []).map(d => d.maKho).filter(Boolean).map(c => String(c).trim()))];
+  $: uniqueWarehouses = [...new Set(($competitionData || []).map(d => d.maKho).filter(Boolean).map(c => String(c).trim()))];
 
   let pasteTimer;
   function processText(text) {
       pastedText = text;
       localError = '';
-      unresolvedMaKho = [];
-      totalMismatch = false;
+      unresolvedTenKho = [];
       localStorage.setItem(RAW_TEXT_KEY, text);
       clearTimeout(pasteTimer);
       if (!text || text.trim().length < 10) return;
@@ -31,13 +29,11 @@
       isLoading = true;
       pasteTimer = setTimeout(async () => {
           try {
-              const result = await processDoanhThuBiPaste(text);
+              const result = await processThiDuaStPaste(text);
               if (!result.success) {
                   localError = result.message;
-              } else {
-                  unresolvedMaKho = result.unresolvedMaKho || [];
-                  totalMismatch = !!result.totalMismatch;
               }
+              unresolvedTenKho = result.unresolvedTenKho || [];
           } catch (err) {
               localError = `Lỗi: ${err.message}`;
           } finally {
@@ -73,7 +69,7 @@
       pastedText = localStorage.getItem(RAW_TEXT_KEY) || '';
       // [FIX] Chỉ hiện lại chữ đã lưu không tự nạp lại dữ liệu — nếu sau F5 mà store đang trống
       // (cacheHandler chưa kịp/không nạp được), xử lý lại ngay text đã có, không bắt gõ tay mới chạy.
-      if (pastedText && get(doanhThuBIData).length === 0) {
+      if (pastedText && get(competitionData).length === 0) {
           processText(pastedText);
       }
       if (typeof feather !== 'undefined') feather.replace();
@@ -84,14 +80,14 @@
 
 <div class="data-input-group input-group--blue h-full">
     <div class="data-input-group__label">
-        <i data-feather="bar-chart-2" class="h-5 w-5 feather"></i>
-        <span>Doanh thu BI: <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ BI)</span></span>
+        <i data-feather="layers" class="h-5 w-5 feather"></i>
+        <span>Thi đua ST: <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ BI)</span></span>
     </div>
     <div class="data-input-group__content flex flex-col flex-grow">
         <textarea
             rows="5"
             class="data-textarea flex-grow mb-1"
-            placeholder="Dán dữ liệu Doanh thu BI đã copy vào đây..."
+            placeholder="Dán dữ liệu Thi đua siêu thị đã copy vào đây..."
             on:input={handleInput}
             value={pastedText}
             disabled={isLoading}
@@ -112,14 +108,9 @@
             {/if}
         </div>
 
-        {#if totalMismatch}
-            <div class="text-[11px] text-amber-600 font-bold mt-1 flex items-center gap-1">
-                <i data-feather="alert-triangle" class="w-3 h-3"></i> Số tổng cụm không khớp — kiểm tra lại dữ liệu đã dán.
-            </div>
-        {/if}
-        {#if unresolvedMaKho.length > 0}
+        {#if unresolvedTenKho.length > 0}
             <div class="text-[11px] text-red-600 font-bold mt-1 flex items-center gap-1">
-                <i data-feather="alert-circle" class="w-3 h-3"></i> Mã kho chưa khớp DSNV: {unresolvedMaKho.join(', ')}
+                <i data-feather="alert-circle" class="w-3 h-3"></i> Tên kho chưa khớp DSNV: {unresolvedTenKho.join(', ')}
             </div>
         {/if}
 

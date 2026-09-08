@@ -4,6 +4,8 @@
     import FileInput from '../common/FileInput.svelte';
     import PasteInput from '../common/PasteInput.svelte';
     import BiRevenuePasteInput from './BiRevenuePasteInput.svelte';
+    import ThiDuaNvPasteInput from './ThiDuaNvPasteInput.svelte';
+    import ThiDuaStPasteInput from './ThiDuaStPasteInput.svelte';
     import { datasyncService } from '../../services/datasync.service.js';
 
     export let isClusterMode = false;
@@ -13,6 +15,8 @@
     // [MỚI] Công ty đang chặn xuất Excel ở trang BI — chuyển mặc định sang ô dán. Vẫn giữ nguyên
     // ô Excel cũ trong code, chỉ ẩn UI, phòng trường hợp công ty mở lại export Excel.
     let showBiExcelFallback = false;
+    let showThiDuaNvExcelFallback = false;
+    let showThiDuaStExcelFallback = false;
 
     let syncState = 'idle'; 
     let syncProgress = 0;
@@ -105,9 +109,6 @@
             <div class="h-fit w-full overflow-hidden mt-1">
                 <BiRevenuePasteInput />
             </div>
-            <button type="button" on:click={() => showBiExcelFallback = !showBiExcelFallback} class="text-[10px] text-blue-500 hover:text-blue-700 underline text-left w-max">
-                {showBiExcelFallback ? 'Ẩn ô tải Excel' : 'Công ty cho xuất Excel lại? Bấm vào đây'}
-            </button>
             {#if showBiExcelFallback}
                 <div class="h-fit w-full overflow-hidden mt-1">
                     <FileInput label="Doanh thu BI (Excel)" icon="bar-chart-2" link="https://baocao.dienmayxanh.com/dashboard/revenue-consolidated" saveKey="saved_doanhthu_bi" showWarehouseTags={true} />
@@ -129,18 +130,31 @@
                      <i data-feather="play-circle" class="w-3 h-3 group-hover:scale-110 transition-transform"></i>
                  </button>
             </div>
+            <!-- [MỚI] Công ty chặn xuất Excel ở trang BI — chuyển sang ô dán trực tiếp theo từng
+                 kho, tự so khớp MSNV với DSNV để cảnh báo nếu dán nhầm dữ liệu kho khác. Ô Excel
+                 cũ giữ nguyên, ẩn hẳn (bật lại bằng cách sửa showThiDuaNvExcelFallback trong code). -->
             {#if $selectedWarehouse === 'ALL'}
                 {#each $warehouseList as kho}
                     {#if kho !== 'ALL'}
                         <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
-                            <FileInput label={`Thi đua nhân viên (${kho})`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${kho}`} />
+                            <ThiDuaNvPasteInput targetKho={kho} />
                         </div>
+                        {#if showThiDuaNvExcelFallback}
+                            <div class="h-fit w-full overflow-hidden mt-1">
+                                <FileInput label={`Thi đua nhân viên (${kho}, Excel)`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${kho}`} />
+                            </div>
+                        {/if}
                     {/if}
                 {/each}
             {:else}
                 <div class="h-fit w-full overflow-hidden mt-1">
-                    <FileInput label={`Thi đua nhân viên (${$selectedWarehouse})`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${$selectedWarehouse}`} />
+                    <ThiDuaNvPasteInput targetKho={$selectedWarehouse} />
                 </div>
+                {#if showThiDuaNvExcelFallback}
+                    <div class="h-fit w-full overflow-hidden mt-1">
+                        <FileInput label={`Thi đua nhân viên (${$selectedWarehouse}, Excel)`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${$selectedWarehouse}`} />
+                    </div>
+                {/if}
             {/if}
         </div>
 
@@ -165,11 +179,17 @@
                     <p class="text-xs text-indigo-600 mt-2 flex items-center gap-1"><i data-feather="info" class="w-3 h-3"></i>Dành cho quản lý Cụm {currentClusterCode}</p>
                 </div>
             {/if}
-            <!-- [MỚI] Thi đua ST chuyển từ dán bảng sang upload Excel — 1 file có thể gồm nhiều
-                 siêu thị, mã kho được tra tự động qua cột "Tên Kho" trong DSNV. -->
+            <!-- [MỚI] Công ty chặn xuất Excel ở trang BI — chuyển sang ô dán trực tiếp, tự trích
+                 xuất nhiều siêu thị/mã kho trong 1 lần dán qua so khớp "Tên Kho" trong DSNV. Ô
+                 Excel cũ giữ nguyên, ẩn hẳn (bật lại bằng cách sửa showThiDuaStExcelFallback). -->
             <div class="h-fit w-full overflow-hidden mt-1">
-                <FileInput label="Thi đua ST (Excel)" icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey="saved_thidua_st_excel" showWarehouseTags={true} />
+                <ThiDuaStPasteInput />
             </div>
+            {#if showThiDuaStExcelFallback}
+                <div class="h-fit w-full overflow-hidden mt-1">
+                    <FileInput label="Thi đua ST (Excel)" icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey="saved_thidua_st_excel" showWarehouseTags={true} />
+                </div>
+            {/if}
         </div>
     </div>
 </div>

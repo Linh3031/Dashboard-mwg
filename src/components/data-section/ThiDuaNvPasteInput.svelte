@@ -2,42 +2,44 @@
   /* global feather */
   import { onMount, afterUpdate } from 'svelte';
   import { get } from 'svelte/store';
-  import { doanhThuBIData, fileSyncState } from '../../stores.js';
-  import { processDoanhThuBiPaste } from '../../services/data/biPasteHandler.js';
+  import { fileSyncState, pastedThiDuaReportData } from '../../stores.js';
+  import { processThiDuaNvPaste } from '../../services/data/thiDuaNvPasteHandler.js';
   import { dataService } from '../../services/dataService.js';
 
-  const RAW_TEXT_KEY = 'saved_doanhthu_bi_paste_text';
-  const BASE_KEY = 'saved_doanhthu_bi';
+  export let targetKho = '';
+
+  $: rawTextKey = `saved_thiduanv_excel_paste_text_${targetKho}`;
+  $: baseKey = 'saved_thiduanv_excel';
+  $: stateKey = `${baseKey}_${targetKho}`;
 
   let pastedText = '';
   let isLoading = false;
   let localError = '';
-  let unresolvedMaKho = [];
-  let totalMismatch = false;
+  let unresolvedMaNV = [];
+  let wrongKhoEmployees = [];
+  let loadedForKho = '';
 
-  $: syncState = $fileSyncState[BASE_KEY];
-  $: uniqueWarehouses = [...new Set(($doanhThuBIData || []).map(d => d.maKho).filter(Boolean).map(c => String(c).trim()))];
+  $: syncState = $fileSyncState[stateKey];
 
   let pasteTimer;
   function processText(text) {
       pastedText = text;
       localError = '';
-      unresolvedMaKho = [];
-      totalMismatch = false;
-      localStorage.setItem(RAW_TEXT_KEY, text);
+      unresolvedMaNV = [];
+      wrongKhoEmployees = [];
+      localStorage.setItem(rawTextKey, text);
       clearTimeout(pasteTimer);
       if (!text || text.trim().length < 10) return;
 
       isLoading = true;
       pasteTimer = setTimeout(async () => {
           try {
-              const result = await processDoanhThuBiPaste(text);
+              const result = await processThiDuaNvPaste(text, targetKho);
               if (!result.success) {
                   localError = result.message;
-              } else {
-                  unresolvedMaKho = result.unresolvedMaKho || [];
-                  totalMismatch = !!result.totalMismatch;
               }
+              unresolvedMaNV = result.unresolvedMaNV || [];
+              wrongKhoEmployees = result.wrongKhoEmployees || [];
           } catch (err) {
               localError = `Lỗi: ${err.message}`;
           } finally {
@@ -54,28 +56,33 @@
   async function handleDownloadFromCloud() {
       isDownloading = true;
       try {
-          await dataService.downloadFileFromCloud(BASE_KEY);
+          await dataService.downloadFileFromCloud(stateKey);
           // [FIX] downloadFileFromCloud chỉ nạp dữ liệu vào store, không tự điền lại ô dán —
           // tải luôn nội dung gốc từ downloadURL để ô dán không trông như "chưa tải được".
-          const downloadURL = get(fileSyncState)[BASE_KEY]?.metadata?.downloadURL;
+          const downloadURL = get(fileSyncState)[stateKey]?.metadata?.downloadURL;
           if (downloadURL) {
               const res = await fetch(downloadURL);
               const text = await res.text();
               pastedText = text;
-              localStorage.setItem(RAW_TEXT_KEY, text);
+              localStorage.setItem(rawTextKey, text);
           }
       } finally {
           isDownloading = false;
       }
   }
 
-  onMount(() => {
-      pastedText = localStorage.getItem(RAW_TEXT_KEY) || '';
+  $: if (targetKho && targetKho !== loadedForKho) {
+      loadedForKho = targetKho;
+      pastedText = localStorage.getItem(rawTextKey) || '';
       // [FIX] Chỉ hiện lại chữ đã lưu không tự nạp lại dữ liệu — nếu sau F5 mà store đang trống
-      // (cacheHandler chưa kịp/không nạp được), xử lý lại ngay text đã có, không bắt gõ tay mới chạy.
-      if (pastedText && get(doanhThuBIData).length === 0) {
+      // đúng kho này (cacheHandler chưa kịp/không nạp được), xử lý lại ngay text đã có, không bắt
+      // gõ tay mới chạy.
+      if (pastedText && get(pastedThiDuaReportData).filter(e => String(e.maKho) === String(targetKho)).length === 0) {
           processText(pastedText);
       }
+  }
+
+  onMount(() => {
       if (typeof feather !== 'undefined') feather.replace();
   });
 
@@ -84,14 +91,14 @@
 
 <div class="data-input-group input-group--blue h-full">
     <div class="data-input-group__label">
-        <i data-feather="bar-chart-2" class="h-5 w-5 feather"></i>
-        <span>Doanh thu BI: <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ BI)</span></span>
+        <i data-feather="file-text" class="h-5 w-5 feather"></i>
+        <span>Thi đua nhân viên ({targetKho}): <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ BI)</span></span>
     </div>
     <div class="data-input-group__content flex flex-col flex-grow">
         <textarea
             rows="5"
             class="data-textarea flex-grow mb-1"
-            placeholder="Dán dữ liệu Doanh thu BI đã copy vào đây..."
+            placeholder="Dán dữ liệu Thi đua nhân viên đã copy vào đây..."
             on:input={handleInput}
             value={pastedText}
             disabled={isLoading}
@@ -112,29 +119,19 @@
             {/if}
         </div>
 
-        {#if totalMismatch}
-            <div class="text-[11px] text-amber-600 font-bold mt-1 flex items-center gap-1">
-                <i data-feather="alert-triangle" class="w-3 h-3"></i> Số tổng cụm không khớp — kiểm tra lại dữ liệu đã dán.
-            </div>
-        {/if}
-        {#if unresolvedMaKho.length > 0}
-            <div class="text-[11px] text-red-600 font-bold mt-1 flex items-center gap-1">
-                <i data-feather="alert-circle" class="w-3 h-3"></i> Mã kho chưa khớp DSNV: {unresolvedMaKho.join(', ')}
-            </div>
-        {/if}
-
-        {#if uniqueWarehouses.length > 0}
-            <div class="mt-2">
-                <div class="text-[10px] text-indigo-500 w-full font-bold uppercase mb-1.5 flex items-center gap-1">
-                    <i data-feather="home" class="w-3 h-3"></i> Mã Kho ({uniqueWarehouses.length}):
-                </div>
-                <div class="flex flex-wrap gap-2">
-                    {#each uniqueWarehouses as whCode}
-                        <div class="flex items-center gap-1 bg-white border border-indigo-200 px-2 py-1 rounded shadow-sm text-xs font-bold text-indigo-800">
-                            {whCode}
-                        </div>
+        {#if wrongKhoEmployees.length > 0}
+            <div class="text-[11px] text-red-600 font-bold mt-1">
+                <div class="flex items-center gap-1"><i data-feather="alert-circle" class="w-3 h-3"></i> Nhân viên không thuộc kho {targetKho}:</div>
+                <ul class="ml-4 list-disc">
+                    {#each wrongKhoEmployees as e}
+                        <li>{e.maNV} - {e.hoTen} (thuộc kho {e.actualKho})</li>
                     {/each}
-                </div>
+                </ul>
+            </div>
+        {/if}
+        {#if unresolvedMaNV.length > 0}
+            <div class="text-[11px] text-amber-600 font-bold mt-1 flex items-center gap-1">
+                <i data-feather="alert-triangle" class="w-3 h-3"></i> MSNV chưa có trong DSNV: {unresolvedMaNV.join(', ')}
             </div>
         {/if}
     </div>
