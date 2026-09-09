@@ -6,12 +6,13 @@
     import { userStats, firebaseStore, currentUser, userProfile } from '../../stores.js';
 
     import { analyticsService } from '../../services/analytics.service.js';
-    import { adminAuthService } from '../../services/adminAuth.service.js';
+    import { adminAuthService, computeExpireAt } from '../../services/adminAuth.service.js';
     import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
     import AdminUserCharts from './AdminUserCharts.svelte';
     import AdminUserForm from './AdminUserForm.svelte';
     import AdminUserTable from './AdminUserTable.svelte';
+    import AdminUserExcelImport from './AdminUserExcelImport.svelte';
 
     const NO_WAREHOUSE = '__NONE__';
 
@@ -23,8 +24,10 @@
     let selectedEmails = [];
 
     let showCreateForm = false;
+    let showExcelImport = false;
     let isEditMode = false;
     let isCreating = false;
+    let isImportingExcel = false;
 
     let formEmail = '';
     let formRole = 'user';
@@ -45,18 +48,6 @@
             userStats.set(userList);
         } catch (error) { console.error(error); }
         finally { isLoading = false; }
-    }
-
-    // Tính hạn dùng dựa trên gói (Tier) - dùng chung cho tạo mới, sửa 1 user, sửa hàng loạt theo kho
-    function computeExpireAt(tier) {
-        const now = new Date();
-        if (tier === '1_day') return new Date(now.getTime() + 86400000);
-        if (tier === '3_days') return new Date(now.getTime() + 3 * 86400000);
-        if (tier === '1_month') return new Date(now.setMonth(now.getMonth() + 1));
-        if (tier === '3_months') return new Date(now.setMonth(now.getMonth() + 3));
-        if (tier === '6_months') return new Date(now.setMonth(now.getMonth() + 6));
-        if (tier === '12_months') return new Date(now.setFullYear(now.getFullYear() + 1));
-        return null; // lifetime / trial
     }
 
     function toggleForm() {
@@ -321,6 +312,38 @@
         }
     }
 
+    function toggleExcelImport() {
+        showExcelImport = !showExcelImport;
+    }
+
+    // Nhận danh sách dòng hợp lệ đã được AdminUserExcelImport parse + validate sẵn
+    // (mỗi dòng: {email, allowedWarehouses, tier, role}), gọi service tạo mới/cập nhật hàng loạt.
+    async function handleImportExcelRows(event) {
+        const rows = event.detail;
+        if (!rows || rows.length === 0) return;
+
+        isImportingExcel = true;
+        try {
+            const result = await adminAuthService.upsertUsersFromRows(rows);
+            await loadUsers();
+
+            const parts = [];
+            if (result.created.length > 0) parts.push(`Tạo mới ${result.created.length}`);
+            if (result.updated.length > 0) parts.push(`Cập nhật ${result.updated.length}`);
+            if (result.failed.length > 0) parts.push(`Lỗi ${result.failed.length}: ${result.failed.map(f => `${f.email} (${f.message})`).join('; ')}`);
+
+            alert(parts.length > 0 ? parts.join(' | ') : 'Không có dòng nào được xử lý.');
+
+            if (result.failed.length === 0) {
+                showExcelImport = false;
+            }
+        } catch (error) {
+            alert('Lỗi khi import Excel: ' + error.message);
+        } finally {
+            isImportingExcel = false;
+        }
+    }
+
     async function handleSort(event) {
         const key = event.detail;
         if (sortKey === key) { sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'; }
@@ -432,12 +455,25 @@
                 </button>
             {/if}
 
+            <button on:click={toggleExcelImport} class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-emerald-700 flex items-center justify-center gap-2 transition-all whitespace-nowrap">
+                <i data-feather="upload" class="w-4 h-4"></i>
+                <span>Nhập từ Excel</span>
+            </button>
+
             <button on:click={toggleForm} class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700 flex items-center justify-center gap-2 transition-all whitespace-nowrap">
                 <i data-feather={showCreateForm ? "x-circle" : "user-plus"} class="w-4 h-4"></i>
                 <span>{showCreateForm ? "Đóng Form" : "Tạo Mới User"}</span>
             </button>
         </div>
     </div>
+
+    {#if showExcelImport}
+        <AdminUserExcelImport
+            bind:isImporting={isImportingExcel}
+            on:import={handleImportExcelRows}
+            on:cancel={toggleExcelImport}
+        />
+    {/if}
 
     {#if showCreateForm}
         <AdminUserForm

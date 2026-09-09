@@ -122,7 +122,7 @@
 <div class="data-input-group input-group--blue h-full">
     <div class="data-input-group__label">
         <i data-feather="file-text" class="h-5 w-5 feather"></i>
-        <span>Thi đua nhân viên ({targetKho}): <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ BI)</span></span>
+        <span><a href="https://baocao.dienmayxanh.com/dashboard/thi-dua" target="_blank" rel="noopener noreferrer" class="hover:underline">Thi đua nhân viên</a> ({targetKho}): <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ BI)</span></span>
     </div>
     <div class="data-input-group__content flex flex-col flex-grow">
         <textarea
