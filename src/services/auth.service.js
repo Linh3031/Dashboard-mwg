@@ -6,7 +6,7 @@ import { analyticsService } from './analytics.service.js';
 import { config } from '../config.js';
 import { getAuth, signInWithEmailAndPassword, signInAnonymously, sendPasswordResetEmail, signOut, onAuthStateChanged } from "firebase/auth";
 // [ATOMIC] Import Firestore API để kéo Profile
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDocFromServer } from "firebase/firestore";
 
 export const authService = {
     /**
@@ -90,12 +90,18 @@ export const authService = {
                 }
 
                 // --- TẢI THÔNG TIN PHÂN QUYỀN (PROFILE) CHẠY NGẦM ---
+                // [FIX] Firestore luôn ưu tiên hiển thị lại đúng bản ghi đang chờ xác nhận của
+                // CHÍNH client này (kể cả khi đọc thẳng từ server bằng getDocFromServer) - nên nếu
+                // lệnh ghi thống kê đăng nhập (upsertUserRecord, chỉ có email/lastLogin/loginCount)
+                // chạy CÙNG LÚC với lệnh đọc hồ sơ bên dưới, bản đọc sẽ bị "nhiễm" đúng các field
+                // đang ghi đó và mất role/allowedWarehouses thật. Vì vậy bắt buộc đọc hồ sơ XONG
+                // rồi mới được ghi thống kê đăng nhập, không được chạy song song.
                 const db = get(firebaseStore).db;
                 if (db) {
                     const userRef = doc(db, "users", user.email);
-                    getDoc(userRef).then(snap => {
+                    getDocFromServer(userRef).then(snap => {
                         if (snap.exists()) {
-                            userProfile.set(snap.data()); 
+                            userProfile.set(snap.data());
                             console.log("[AuthService] Đã cập nhật quyền Gatekeeper ngầm.");
                         } else {
                             console.warn("[AuthService] Cảnh báo: User không có cấu hình phân quyền trong Database.");
@@ -103,11 +109,13 @@ export const authService = {
                         }
                     }).catch(e => {
                         console.error("[AuthService] Lỗi khi kéo thông tin phân quyền ngầm:", e);
+                    }).finally(() => {
+                        // Ghi nhận truy cập - chỉ chạy sau khi đã đọc xong hồ sơ ở trên
+                        analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
                     });
+                } else {
+                    analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
                 }
-
-                // Ghi nhận truy cập
-                analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
             } else {
                 // 3. User null (Token đã chết hoặc user chủ động đăng xuất)
                 console.log("[AuthService] Firebase báo Token null. Đang dọn dẹp phiên...");

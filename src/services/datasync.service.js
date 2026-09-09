@@ -1,5 +1,5 @@
 // src/services/datasync.service.js
-import { doc, setDoc, getDoc, serverTimestamp, writeBatch, runTransaction } from "firebase/firestore";
+import { doc, setDoc, getDoc, getDocFromServer, serverTimestamp, writeBatch, runTransaction } from "firebase/firestore";
 import {
     firebaseStore,
     currentUser,
@@ -58,7 +58,10 @@ const isWarehouseAllowedFresh = async (kho) => {
     const db = getDB();
     if (!user || !db) return false;
     try {
-        const snap = await getDoc(doc(db, "users", user.email));
+        // [FIX] getDocFromServer để tránh nhận nhầm bản xem cục bộ tạm thời của 1 lệnh ghi
+        // (vd upsertUserRecord ở fast-boot) đang chờ server xác nhận - xem chi tiết trong
+        // auth.service.js.
+        const snap = await getDocFromServer(doc(db, "users", user.email));
         if (snap.exists()) {
             const freshProfile = snap.data();
             userProfile.set(freshProfile);

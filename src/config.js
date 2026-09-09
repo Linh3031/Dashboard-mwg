@@ -3,7 +3,7 @@
 
 export const config = {
     ADMIN_PASSWORD: "Linh3010",
-    REQUIRE_LOGIN: false, // false = khách vào thẳng app không cần tài khoản (tạm thời khi đang test, bật lại true khi hoàn thiện phần đăng nhập)
+    REQUIRE_LOGIN: true, // true = bắt buộc đăng nhập bằng tài khoản do admin tạo, khách vào thẳng (ẩn danh) không còn được nữa
     COLUMN_MAPPINGS: {
         danhsachnv: {
             maKho: { required: true, displayName: 'Mã Kho', aliases: ['mã kho', 'makho', 'kho'] },

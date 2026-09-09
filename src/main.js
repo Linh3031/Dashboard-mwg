@@ -7,8 +7,7 @@ import { firebaseService } from './services/firebase.service.js';
 import feather from 'feather-icons';
 import './services/employeeService.js'; 
 import { authService as auth } from './services/auth.service.js'; 
-import { dataService } from './services/dataService.js'; 
-import { analyticsService } from './services/analytics.service.js';
+import { dataService } from './services/dataService.js';
 
 // [GENESIS FIX] Import Store để lấy dữ liệu trạm phát sóng
 import { get } from 'svelte/store';
@@ -91,7 +90,10 @@ async function startDataFlow() {
         if (email) {
             console.log("[Main] Đã thấy phiên đăng nhập cũ trong Cache. Bắt đầu mồi data (Hydration)...");
             await dataService.loadAllFromCache();
-            analyticsService.upsertUserRecord(email).catch(e => console.error(e));
+            // [FIX] Không tự gọi upsertUserRecord ở đây nữa - auth.service.js đã tự ghi nhận
+            // đúng lúc (sau khi đọc xong hồ sơ phân quyền). Gọi song song ở đây từng làm bản ghi
+            // đang chờ xác nhận đè lên kết quả đọc hồ sơ (mất role/allowedWarehouses), và còn
+            // khiến loginCount bị cộng dư 2 lần mỗi phiên.
         } else {
             console.log("[Main] Chưa có phiên đăng nhập. Chờ App.svelte xử lý Auth UI.");
         }
