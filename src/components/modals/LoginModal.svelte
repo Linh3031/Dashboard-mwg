@@ -106,8 +106,8 @@
                 <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg mb-3">
                     <i data-feather="database" class="w-8 h-8 text-blue-700"></i>
                 </div>
-                <h2 class="text-xl font-extrabold text-white tracking-wide">QUẢN LÝ DỮ LIỆU KHO</h2>
-                <p class="text-blue-100 text-sm mt-1">Hệ thống phân tích & Báo cáo nội bộ</p>
+                <h2 class="text-xl font-extrabold text-white tracking-wide">CÔNG CỤ HỖ TRỢ PHÂN TÍCH DỮ LIỆU</h2>
+                <p class="text-blue-100 text-sm mt-1">Sắp xếp và Tạo mẫu báo cáo</p>
             </div>
         </div>
 
@@ -235,7 +235,7 @@
                 <div>
                     <h4 class="text-sm font-bold text-slate-700">Chưa có tài khoản?</h4>
                     <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Hệ thống cấp quyền sử dụng nội bộ. Vui lòng liên hệ Admin qua Zalo hoặc Line để được tạo tài khoản và phân quyền Mã Kho quản lý.
+                        Vui lòng liên hệ Admin qua Zalo hoặc Line để được tạo tài khoản.
                     </p>
                 </div>
             </div>
@@ -244,18 +244,18 @@
             <div class="flex justify-center items-center gap-8 pt-3 border-t border-slate-200/60">
                 <div class="text-center">
                     <!-- THAY ĐƯỜNG LINK ẢNH QR ZALO VÀO CHỖ SRC BÊN DƯỚI -->
-                    <img 
-                        src="https://placehold.co/200x200?text=QR+Zalo" 
-                        alt="Zalo QR" 
+                    <img
+                        src="/images/qr-zalo.jpg"
+                        alt="Zalo QR"
                         class="w-20 h-20 mx-auto rounded border border-slate-200 object-cover bg-white p-1 shadow-sm hover:scale-105 transition-transform" 
                     />
                     <span class="text-[11px] font-extrabold text-blue-600 mt-1.5 block tracking-wide">ZALO</span>
                 </div>
                 <div class="text-center">
                     <!-- THAY ĐƯỜNG LINK ẢNH QR LINE VÀO CHỖ SRC BÊN DƯỚI -->
-                    <img 
-                        src="https://placehold.co/200x200?text=QR+Line" 
-                        alt="Line QR" 
+                    <img
+                        src="/images/qr-line.png"
+                        alt="Line QR"
                         class="w-20 h-20 mx-auto rounded border border-slate-200 object-cover bg-white p-1 shadow-sm hover:scale-105 transition-transform" 
                     />
                     <span class="text-[11px] font-extrabold text-green-600 mt-1.5 block tracking-wide">LINE</span>
