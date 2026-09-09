@@ -1,12 +1,17 @@
 // src/services/auth.service.js
 import { get } from 'svelte/store';
 // [ATOMIC] Import thêm userProfile và firebaseStore để kích hoạt màng lọc phân quyền
-import { currentUser, isAdmin, userProfile, firebaseStore } from '../stores.js';
+import { currentUser, isAdmin, userProfile, firebaseStore, notificationStore } from '../stores.js';
 import { analyticsService } from './analytics.service.js';
 import { config } from '../config.js';
 import { getAuth, signInWithEmailAndPassword, signInAnonymously, sendPasswordResetEmail, signOut, onAuthStateChanged } from "firebase/auth";
 // [ATOMIC] Import Firestore API để kéo Profile
 import { doc, getDocFromServer } from "firebase/firestore";
+
+// [MỚI] Admin không bao giờ bị coi là hết hạn, bất kể expireAt.
+const isProfileExpired = (profile) => {
+    return !!profile && profile.role !== 'admin' && !!profile.expireAt && Date.now() > profile.expireAt;
+};
 
 export const authService = {
     /**
@@ -80,41 +85,55 @@ export const authService = {
             // 2. Chỉ chấp nhận User có Email đàng hoàng
             if (user && user.email) {
                 console.log("[AuthService] Firebase xác thực ngầm thành công:", user.email);
-                currentUser.set({ email: user.email, uid: user.uid });
-                localStorage.setItem('userEmail', user.email);
 
-                // Nếu chưa Fast Boot (trường hợp đăng nhập lần đầu tiên máy mới), giải phóng UI
-                if (isFirstCheck) {
-                    isFirstCheck = false;
-                    if (typeof onResolved === 'function') onResolved();
-                }
+                // [FIX] KHÔNG cấp quyền vào app (currentUser.set) ngay ở đây nữa. Trước đây làm vậy
+                // khiến app mở khoá tức thì rồi mới kiểm tra hạn dùng, dẫn tới hiện tượng "vào được
+                // app 1 nhịp rồi mới bị đá ra" và LoginModal cũ bị huỷ giữa chừng làm mất luôn
+                // thông báo lỗi. Giờ đợi đọc xong hồ sơ (xác nhận KHÔNG hết hạn) mới thật sự mở khoá.
+                const finalizeLogin = (profile) => {
+                    currentUser.set({ email: user.email, uid: user.uid });
+                    localStorage.setItem('userEmail', user.email);
+                    userProfile.set(profile);
+                    if (isFirstCheck) {
+                        isFirstCheck = false;
+                        if (typeof onResolved === 'function') onResolved();
+                    }
+                    // Ghi nhận truy cập - chỉ chạy sau khi đã đọc xong hồ sơ và xác nhận hợp lệ
+                    analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
+                };
 
-                // --- TẢI THÔNG TIN PHÂN QUYỀN (PROFILE) CHẠY NGẦM ---
-                // [FIX] Firestore luôn ưu tiên hiển thị lại đúng bản ghi đang chờ xác nhận của
-                // CHÍNH client này (kể cả khi đọc thẳng từ server bằng getDocFromServer) - nên nếu
-                // lệnh ghi thống kê đăng nhập (upsertUserRecord, chỉ có email/lastLogin/loginCount)
-                // chạy CÙNG LÚC với lệnh đọc hồ sơ bên dưới, bản đọc sẽ bị "nhiễm" đúng các field
-                // đang ghi đó và mất role/allowedWarehouses thật. Vì vậy bắt buộc đọc hồ sơ XONG
-                // rồi mới được ghi thống kê đăng nhập, không được chạy song song.
                 const db = get(firebaseStore).db;
                 if (db) {
                     const userRef = doc(db, "users", user.email);
                     getDocFromServer(userRef).then(snap => {
-                        if (snap.exists()) {
-                            userProfile.set(snap.data());
-                            console.log("[AuthService] Đã cập nhật quyền Gatekeeper ngầm.");
-                        } else {
+                        const profile = snap.exists() ? snap.data() : { role: 'user', allowedWarehouses: [] };
+                        if (!snap.exists()) {
                             console.warn("[AuthService] Cảnh báo: User không có cấu hình phân quyền trong Database.");
-                            userProfile.set({ role: 'user', allowedWarehouses: [] });
                         }
+
+                        // [MỚI] Hết hạn (vd đăng nhập lại từ trước, mở tab qua luôn ngày hết hạn)
+                        // -> không mở khoá app, đăng xuất ngay, không chờ F5 hay đăng nhập lại.
+                        if (isProfileExpired(profile)) {
+                            console.warn("[AuthService] Tài khoản đã hết hạn, chặn truy cập.");
+                            notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Tài khoản đã hết hạn sử dụng. Vui lòng liên hệ Admin để gia hạn.' }));
+                            signOut(auth);
+                            if (isFirstCheck) {
+                                isFirstCheck = false;
+                                if (typeof onResolved === 'function') onResolved();
+                            }
+                            return;
+                        }
+
+                        console.log("[AuthService] Đã cập nhật quyền Gatekeeper ngầm.");
+                        finalizeLogin(profile);
                     }).catch(e => {
                         console.error("[AuthService] Lỗi khi kéo thông tin phân quyền ngầm:", e);
-                    }).finally(() => {
-                        // Ghi nhận truy cập - chỉ chạy sau khi đã đọc xong hồ sơ ở trên
-                        analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
+                        // Không đọc được hồ sơ (vd mất mạng tạm thời) -> vẫn cho vào như user thường,
+                        // tránh khoá nhầm người dùng hợp lệ chỉ vì 1 lần đọc lỗi.
+                        finalizeLogin({ role: 'user', allowedWarehouses: [] });
                     });
                 } else {
-                    analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
+                    finalizeLogin({ role: 'user', allowedWarehouses: [] });
                 }
             } else {
                 // 3. User null (Token đã chết hoặc user chủ động đăng xuất)
@@ -147,12 +166,27 @@ export const authService = {
         const auth = getAuth();
         try {
             const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+
+            // [MỚI] Chặn thật ngay lúc đăng nhập nếu tài khoản đã hết hạn sử dụng.
+            const db = get(firebaseStore).db;
+            if (db) {
+                const snap = await getDocFromServer(doc(db, "users", userCredential.user.email));
+                if (snap.exists() && isProfileExpired(snap.data())) {
+                    await signOut(auth);
+                    const expiredError = new Error("Tài khoản đã hết hạn sử dụng. Vui lòng liên hệ Admin để gia hạn.");
+                    expiredError.code = 'app/account-expired';
+                    throw expiredError;
+                }
+            }
+
             return { success: true, user: userCredential.user };
         } catch (error) {
             console.error("[AuthService] Lỗi đăng nhập:", error);
             let msg = "Đăng nhập thất bại. Vui lòng thử lại.";
-            
-            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+
+            if (error.code === 'app/account-expired') {
+                msg = error.message;
+            } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
                 msg = "Tài khoản hoặc mật khẩu không chính xác.";
             } else if (error.code === 'auth/too-many-requests') {
                 msg = "Tài khoản bị tạm khóa do nhập sai nhiều lần. Vui lòng thử lại sau.";
