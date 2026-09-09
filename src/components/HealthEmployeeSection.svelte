@@ -1,14 +1,15 @@
 <script>
   import { onMount, afterUpdate } from 'svelte';
-  import { 
-    masterReportData, 
-    ycxData, 
+  import {
+    masterReportData,
+    ycxData,
     ycxDataThangTruoc,
-    danhSachNhanVien, 
-    luykeGoalSettings, 
+    danhSachNhanVien,
+    luykeGoalSettings,
     selectedWarehouse,
     warehouseList,
-    modalState
+    modalState,
+    rawGioCongData
   } from '../stores.js';
   import { sknvService } from '../services/sknv.service.js';
   import { reportService } from '../services/reportService.js';
@@ -194,7 +195,7 @@
   // Re-generate report dựa trên Data đã lọc chuẩn
   $: {
       if ($danhSachNhanVien.length > 0 && filteredYcxData.length > 0) {
-          const currentHash = `${$danhSachNhanVien.length}-${filteredYcxData.length}-${$selectedWarehouse}-${selectedStartDate}-${selectedEndDate}`;
+          const currentHash = `${$danhSachNhanVien.length}-${filteredYcxData.length}-${$rawGioCongData.length}-${$selectedWarehouse}-${selectedStartDate}-${selectedEndDate}`;
           if (currentHash !== lastDataHash) {
               lastDataHash = currentHash;
               const goals = ($luykeGoalSettings && $selectedWarehouse) ? $luykeGoalSettings[$selectedWarehouse] || {} : {};

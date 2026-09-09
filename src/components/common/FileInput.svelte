@@ -222,9 +222,13 @@
               }
           }
           if (!localError) fileName = files.length > 1 ? `Đã nạp ${files.length} file dữ liệu` : files[0].name;
-          
-          const kho = saveKey.split('_').pop(); 
-          const targetWh = (get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
+
+          const kho = saveKey.split('_').pop();
+          // [FIX] Chỉ suy ra "kho" từ hậu tố saveKey khi saveKey THỰC SỰ có hậu tố mã kho —
+          // tránh key trơn không hậu tố (VD "saved_giocong") bị hiểu nhầm "giocong" là mã kho,
+          // khiến tra sai key `_meta_giocong_...` (không tồn tại) nên mất tên file + trạng thái Cloud.
+          const hasWhSuffix = saveKey !== baseKey && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'));
+          const targetWh = (hasWhSuffix && get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
           const metaStr = localStorage.getItem(`_meta_${targetWh}_${getBaseKey(saveKey)}`);
           if (metaStr) localMetaFallback = JSON.parse(metaStr);
 
@@ -377,10 +381,13 @@
      if (typeof feather !== 'undefined') feather.replace();
      
      try {
-         const kho = saveKey.split('_').pop(); 
-         const targetWh = (get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
+         const kho = saveKey.split('_').pop();
+         // [FIX] Cùng guard với handleChange — tránh key trơn (VD "saved_giocong") bị hiểu nhầm
+         // hậu tố tên key thành mã kho khi tra meta lúc mount.
+         const hasWhSuffix = saveKey !== baseKey && (saveKey.includes('thiduanv') || saveKey.includes('doanhthu'));
+         const targetWh = (hasWhSuffix && get(selectedWarehouse) === 'ALL' && kho && kho !== 'ALL') ? kho : (get(selectedWarehouse) || 'ALL');
          const metaStr = localStorage.getItem(`_meta_${targetWh}_${getBaseKey(saveKey)}`);
-         
+
          if (metaStr) {
              localMetaFallback = JSON.parse(metaStr);
          }
