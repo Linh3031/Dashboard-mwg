@@ -90,7 +90,7 @@
                 <div>
                     <!-- svelte-ignore a11y-no-static-element-interactions -->
                     <div
-                        class="w-full flex items-center justify-between gap-3 px-4 py-3 bg-slate-50/70 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                        class="w-full flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 bg-slate-50/70 hover:bg-slate-100 transition-colors text-left cursor-pointer"
                         role="button"
                         tabindex="0"
                         on:click={() => toggleGroup(group.code)}

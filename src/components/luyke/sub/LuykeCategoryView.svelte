@@ -2,9 +2,10 @@
     import { onMount } from 'svelte';
     import { cleanCategoryName } from '../../../utils.js';
     import { dataProcessing } from '../../../services/dataProcessing.js';
+    import { adminService } from '../../../services/admin.service.js';
     import { filterDataByDate, transformVelocityTree } from '../../../services/processing/logic/salesVelocity.helper.js';
     import { formatters } from '../../../utils/formatters.js';
-    import { ycxDataThangTruoc } from '../../../stores.js';
+    import { ycxDataThangTruoc, efficiencyConfig } from '../../../stores.js';
     
     import LuykeCategoryTreeTable from './LuykeCategoryTreeTable.svelte';
     import InventoryToolbar from '../inventory/InventoryToolbar.svelte';
@@ -62,6 +63,13 @@
         return true;
     });
     
+    // [FIX] Tab này thiếu bước tự nạp lại bảng hệ số so với các tab anh em (LuykeSieuThi,
+    // LuykeCumSieuThi), khiến nếu mở thẳng vào tab này thì dễ dính hệ số cũ/rỗng.
+    onMount(async () => {
+        const savedEffConfig = await adminService.loadEfficiencyConfig();
+        if (savedEffConfig.length > 0) efficiencyConfig.set(savedEffConfig);
+    });
+
     onMount(() => {
         const saved = sessionStorage.getItem(STORAGE_KEY);
         if (saved) {

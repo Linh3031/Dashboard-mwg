@@ -48,7 +48,7 @@ export const authService = {
      */
     initAuthListener(onResolved) {
         const auth = getAuth();
-        let isFirstCheck = true;
+        const resolve = () => { if (typeof onResolved === 'function') onResolved(); };
 
         // --- [PHẪU THUẬT FAST BOOT] ---
         // Nếu đã có cache email đăng nhập trước đó, dỡ bỏ màn hình Loading NGAY LẬP TỨC (0ms)
@@ -57,22 +57,25 @@ export const authService = {
             const cachedEmail = localStorage.getItem('userEmail');
             if (cachedEmail) {
                 console.log("[AuthService] Fast Boot: Phát hiện Cache, giải phóng UI loading tức thì.");
-                isFirstCheck = false;
-                if (typeof onResolved === 'function') onResolved();
+                resolve();
             }
         }
         // ------------------------------
 
+        // [FIX] Trước đây dùng cờ `isFirstCheck` để chỉ gọi onResolved() đúng 1 lần duy nhất trong
+        // cả vòng đời listener - nhưng lượt "null" đầu tiên (bình thường, chỉ để hiện form đăng nhập)
+        // lại tiêu mất luôn lượt gọi cho lần ĐĂNG NHẬP THẬT SỰ thành công sau đó, khiến
+        // loadGlobalSystemConfig() (nạp bảng hệ số quy đổi, khai báo...) không bao giờ chạy nếu người
+        // dùng phải đăng nhập lại trong phiên (vd tài khoản hết hạn rồi thử đăng nhập lại thành công).
+        // Gọi onResolved() vô điều kiện ở mọi nhánh: hàm này ở App.svelte đã tự chống tải trùng
+        // (cờ hasLoadedSystemConfig) nên gọi nhiều lần là an toàn.
         onAuthStateChanged(auth, (user) => { // Không dùng async nữa, xử lý .then() bên trong
             // 1. Phanh phui và tiêu diệt tài khoản ẩn danh cũ
             // (Bỏ qua khi config.REQUIRE_LOGIN=false: lúc đó phiên ẩn danh là cơ chế
             // chủ đích để Storage/Firestore hoạt động cho khách chưa đăng nhập thật.)
             if (user && user.isAnonymous) {
                 if (config.REQUIRE_LOGIN === false) {
-                    if (isFirstCheck) {
-                        isFirstCheck = false;
-                        if (typeof onResolved === 'function') onResolved();
-                    }
+                    resolve();
                     return;
                 }
                 console.log("[AuthService] Phát hiện tài khoản ẩn danh cũ. Đang dọn dẹp...");
@@ -94,10 +97,7 @@ export const authService = {
                     currentUser.set({ email: user.email, uid: user.uid });
                     localStorage.setItem('userEmail', user.email);
                     userProfile.set(profile);
-                    if (isFirstCheck) {
-                        isFirstCheck = false;
-                        if (typeof onResolved === 'function') onResolved();
-                    }
+                    resolve();
                     // Ghi nhận truy cập - chỉ chạy sau khi đã đọc xong hồ sơ và xác nhận hợp lệ
                     analyticsService.upsertUserRecord(user.email).catch(e => console.error(e));
                 };
@@ -117,10 +117,7 @@ export const authService = {
                             console.warn("[AuthService] Tài khoản đã hết hạn, chặn truy cập.");
                             notificationStore.update(s => ({ ...s, visible: true, type: 'error', message: 'Tài khoản đã hết hạn sử dụng. Vui lòng liên hệ Admin để gia hạn.' }));
                             signOut(auth);
-                            if (isFirstCheck) {
-                                isFirstCheck = false;
-                                if (typeof onResolved === 'function') onResolved();
-                            }
+                            resolve();
                             return;
                         }
 
@@ -141,12 +138,7 @@ export const authService = {
                 currentUser.set(null);
                 userProfile.set(null); // Xóa profile
                 localStorage.removeItem('userEmail');
-                
-                // Self-correct (Tự sửa lỗi): Nếu Fast Boot đã lỡ cho vào, giờ tước quyền và giật UI lại
-                if (isFirstCheck) {
-                    isFirstCheck = false;
-                    if (typeof onResolved === 'function') onResolved();
-                }
+                resolve();
             }
         });
     },

@@ -120,9 +120,12 @@
           const user = get(currentUser);
           const hasSession = user || config.REQUIRE_LOGIN === false;
           if (hasSession && !hasLoadedSystemConfig) {
+              // [FIX] Đánh dấu đã tải TRƯỚC khi await, tránh 2 lượt onResolved() gọi sát nhau
+              // (vd đăng nhập thất bại rồi thành công ngay sau) cùng lọt qua điều kiện này và
+              // gọi loadGlobalSystemConfig() chồng nhau.
+              hasLoadedSystemConfig = true;
               await loadGlobalSystemConfig();
               await loadInitialTables();
-              hasLoadedSystemConfig = true; 
           }
           
           // Khi data kéo xong, giải phóng nốt spinner nội dung

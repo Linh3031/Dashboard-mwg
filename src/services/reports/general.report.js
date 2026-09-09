@@ -74,7 +74,7 @@ export const generalReportLogic = {
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 
                 // [HOTFIX] Đã map đúng hàm getHeSoForCategory qua helpers
-                const heSo = helpers.getHeSoForCategory(row.nhomHang, heSoQuyDoi);
+                const heSo = helpers.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoQuyDoi);
                 
                 // [FIX] Dùng revenueQuyDoi từ normalizer
                 const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
@@ -119,7 +119,7 @@ export const generalReportLogic = {
                 const nganhHangName = utils.cleanCategoryName(row.nganhHang);
                 
                 // [HOTFIX] Đã map đúng hàm getHeSoForCategory qua helpers
-                const heSo = helpers.getHeSoForCategory(row.nhomHang, heSoQuyDoi);
+                const heSo = helpers.getHeSoForCategory(row.nhomHang, row.nganhHang, heSoQuyDoi);
                 
                 // [FIX] Dùng revenueQuyDoi từ normalizer
                 const revenueQuyDoi = row.revenueQuyDoi !== undefined ? row.revenueQuyDoi : (thanhTien * heSo);
