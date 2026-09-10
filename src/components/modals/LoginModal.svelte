@@ -107,7 +107,7 @@
                     <i data-feather="database" class="w-8 h-8 text-blue-700"></i>
                 </div>
                 <h2 class="text-xl font-extrabold text-white tracking-wide">CÔNG CỤ HỖ TRỢ PHÂN TÍCH DỮ LIỆU</h2>
-                <p class="text-blue-100 text-sm mt-1">Sắp xếp và Tạo mẫu báo cáo</p>
+                <p class="text-blue-100 text-sm mt-1">Sắp xếp và Tạo mẫu báo cáo cá nhân</p>
             </div>
         </div>
 
@@ -235,7 +235,7 @@
                 <div>
                     <h4 class="text-sm font-bold text-slate-700">Chưa có tài khoản?</h4>
                     <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                        Vui lòng liên hệ Admin qua Zalo hoặc Line để được tạo tài khoản.
+                        Vui lòng liên hệ Admin cung cấp email và mã kho để được tạo tài khoản.
                     </p>
                 </div>
             </div>
