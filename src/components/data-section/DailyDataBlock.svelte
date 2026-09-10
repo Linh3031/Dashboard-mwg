@@ -12,6 +12,10 @@
     export let currentClusterCode = '';
     const dispatch = createEventDispatcher();
 
+    // Danh sách kho thật (bỏ 'ALL') khi đang ở chế độ xem tất cả kho — dùng để quyết định xếp
+    // các ô "Thi đua nhân viên" ngang hàng riêng bên dưới thay vì chồng dọc trong cột hẹp.
+    $: multiKhoList = ($warehouseList || []).filter(k => k !== 'ALL');
+
     // [MỚI] Công ty đang chặn xuất Excel ở trang BI — chuyển mặc định sang ô dán. Vẫn giữ nguyên
     // ô Excel cũ trong code, chỉ ẩn UI, phòng trường hợp công ty mở lại export Excel.
     let showBiExcelFallback = false;
@@ -132,8 +136,11 @@
             </div>
             <!-- [MỚI] Công ty chặn xuất Excel ở trang BI — chuyển sang ô dán trực tiếp theo từng
                  kho, tự so khớp MSNV với DSNV để cảnh báo nếu dán nhầm dữ liệu kho khác. Ô Excel
-                 cũ giữ nguyên, ẩn hẳn (bật lại bằng cách sửa showThiDuaNvExcelFallback trong code). -->
-            {#if $selectedWarehouse === 'ALL'}
+                 cũ giữ nguyên, ẩn hẳn (bật lại bằng cách sửa showThiDuaNvExcelFallback trong code).
+                 Từ 2 kho trở lên khi chọn "Tất cả các kho": các ô dán được đưa xuống khối riêng,
+                 xếp ngang bên dưới lưới 4 cột (xem khối "Thi đua cá nhân theo kho") để tránh kéo
+                 dài cột này so với 3 cột còn lại chỉ có 1 ô. -->
+            {#if $selectedWarehouse === 'ALL' && multiKhoList.length <= 1}
                 {#each $warehouseList as kho}
                     {#if kho !== 'ALL'}
                         <div class="h-fit animate-fade-in w-full overflow-hidden mt-1">
@@ -146,6 +153,11 @@
                         {/if}
                     {/if}
                 {/each}
+            {:else if $selectedWarehouse === 'ALL'}
+                <div class="h-fit w-full overflow-hidden mt-1 flex items-center gap-2 text-[12px] text-blue-700 italic px-2.5 py-3 border border-dashed border-blue-200 rounded-lg bg-blue-50/60">
+                    <i data-feather="arrow-down-circle" class="w-4 h-4 shrink-0"></i>
+                    <span>{multiKhoList.length} kho — xem các ô dán ở khối "Thi đua cá nhân theo kho" bên dưới</span>
+                </div>
             {:else}
                 <div class="h-fit w-full overflow-hidden mt-1">
                     <ThiDuaNvPasteInput targetKho={$selectedWarehouse} />
@@ -192,6 +204,27 @@
             {/if}
         </div>
     </div>
+
+    {#if $selectedWarehouse === 'ALL' && multiKhoList.length > 1}
+        <div class="w-full overflow-hidden" data-tour="input-thidua-nv-multi">
+            <div class="flex items-center gap-2 px-1 pb-1 border-b border-blue-100/50 mb-2">
+                <i data-feather="users" class="h-4 w-4 feather text-blue-900"></i>
+                <span class="text-[12px] font-extrabold text-blue-900 uppercase tracking-wide">Thi đua cá nhân theo kho ({multiKhoList.length} kho)</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {#each multiKhoList as kho (kho)}
+                    <div class="h-fit animate-fade-in w-full overflow-hidden">
+                        <ThiDuaNvPasteInput targetKho={kho} />
+                    </div>
+                    {#if showThiDuaNvExcelFallback}
+                        <div class="h-fit w-full overflow-hidden mt-1">
+                            <FileInput label={`Thi đua nhân viên (${kho}, Excel)`} icon="file-text" link="https://baocao.dienmayxanh.com/dashboard/thi-dua" saveKey={`saved_thiduanv_excel_${kho}`} />
+                        </div>
+                    {/if}
+                {/each}
+            </div>
+        </div>
+    {/if}
 </div>
 
 <style>
