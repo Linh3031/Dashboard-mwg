@@ -90,7 +90,7 @@
                   if (!tk) {
                       for (const key in nv) {
                           const val = String(nv[key] || '').trim();
-                          if (['ĐML', 'ĐMM', 'ĐMS', 'ĐMS3', 'TGD', 'TGDD', 'DMX', 'ARR'].some(kw => val.toUpperCase().includes(kw))) {
+                          if (['ĐML', 'ĐMM', 'ĐMS', 'ĐMS3', 'TGD', 'TGDD', 'DMX', 'AAR'].some(kw => val.toUpperCase().includes(kw))) {
                               tk = val;
                               break; 
                           }

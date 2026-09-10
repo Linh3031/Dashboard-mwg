@@ -5,7 +5,7 @@
 import { get } from 'svelte/store';
 import { danhSachNhanVien } from '../../../stores.js';
 
-const STORE_LINE_REGEX = /^(\d+)\s*-\s*((?:ĐMS|TGD|ĐML|ĐMM)[^\t]*)/;
+const STORE_LINE_REGEX = /^(\d+)\s*-\s*((?:ĐMS|TGD|ĐML|ĐMM|AAR)[^\t]*)/;
 const TOTAL_LINE_REGEX = /^Tổng\s*\(\s*\d+\s*dòng\s*\)/i;
 
 function parseNum(v) {

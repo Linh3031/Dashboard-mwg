@@ -33,7 +33,7 @@
     let formRole = 'user';
     let formWarehouses = '';
     let formSubscription = '1_month';
-    let formUserRows = [{ email: '', password: '', role: 'user' }];
+    let formUserRows = [{ email: '', password: '123456', role: 'user' }];
     let formMessage = { text: '', type: '' };
 
     onMount(async () => {
@@ -57,7 +57,7 @@
         } else {
             isEditMode = false;
             formEmail = ''; formWarehouses = ''; formSubscription = '1_month'; formRole = 'user';
-            formUserRows = [{ email: '', password: '', role: 'user' }];
+            formUserRows = [{ email: '', password: '123456', role: 'user' }];
             formMessage = { text: '', type: '' };
             showCreateForm = true;
         }
@@ -85,7 +85,7 @@
         formEmail = ''; formRole = 'user';
         formWarehouses = code;
         formSubscription = '1_month';
-        formUserRows = [{ email: '', password: '', role: 'user' }];
+        formUserRows = [{ email: '', password: '123456', role: 'user' }];
         formMessage = { text: '', type: '' };
         showCreateForm = true;
 
@@ -198,7 +198,7 @@
 
         if (failed.length === 0) {
             formMessage = { text: `✅ Đã tạo thành công ${succeeded.length} tài khoản cho mã kho ${whArray.join(', ')}`, type: 'success' };
-            formUserRows = [{ email: '', password: '', role: 'user' }];
+            formUserRows = [{ email: '', password: '123456', role: 'user' }];
         } else if (succeeded.length === 0) {
             formMessage = { text: `❌ Không tạo được tài khoản nào: ${failed.map(f => `${f.row.email} (${f.message})`).join('; ')}`, type: 'error' };
             formUserRows = rows;

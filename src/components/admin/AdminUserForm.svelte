@@ -10,13 +10,13 @@
     export let formRole = 'user';
     export let formWarehouses = '';
     export let formSubscription = '1_month';
-    export let formUserRows = [{ email: '', password: '', role: 'user' }];
+    export let formUserRows = [{ email: '', password: '123456', role: 'user' }];
 
     function handleSave() { dispatch('save'); }
     function handleCancel() { dispatch('cancel'); }
 
     function addRow() {
-        formUserRows = [...formUserRows, { email: '', password: '', role: 'user' }];
+        formUserRows = [...formUserRows, { email: '', password: '123456', role: 'user' }];
     }
 
     function removeRow(index) {

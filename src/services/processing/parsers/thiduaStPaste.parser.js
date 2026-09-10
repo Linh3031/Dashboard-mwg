@@ -10,7 +10,7 @@ import { buildTenKhoToMaKhoMap } from '../logic/biExcel.processor.js';
 import { competitionProcessor } from '../logic/competition.processor.js';
 
 const ANCHOR = 'Toàn công ty';
-const STORE_PREFIX_REGEX = /^(ĐMS|TGD|ĐML|ĐMM)/;
+const STORE_PREFIX_REGEX = /^(ĐMS|TGD|ĐML|ĐMM|AAR)/;
 
 function isNumericLine(line) {
     return /^\d+([.,]\d+)?$/.test(line.trim());

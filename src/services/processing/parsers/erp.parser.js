@@ -9,7 +9,7 @@ export const erpParser = {
         
         const results = [];
         // Regex giữ nguyên logic cũ
-        const regex = /(ĐML_|TGD|ĐMM|ĐMS).*?(BP .*?)(?:Nhân Viên|Trưởng Ca)(.*?)([\d,]+)$/;
+        const regex = /(ĐML_|TGD|ĐMM|ĐMS|AAR).*?(BP .*?)(?:Nhân Viên|Trưởng Ca)(.*?)([\d,]+)$/;
         
         lines.forEach(line => {
             // Vì đã trim() ở trên, dòng này sạch.

@@ -45,7 +45,7 @@ export const luykeParser = {
                 result.dtTraCham = parseFloat(nextLine.replace(/,/g, '')) || 0;
             }
             
-            if (/^(ĐML|ĐMM|ĐMS|TGD)/.test(line)) {
+            if (/^(ĐML|ĐMM|ĐMS|TGD|AAR)/.test(line)) {
                 let storeName = "";
                 let valuesArray = [];
 
@@ -57,13 +57,13 @@ export const luykeParser = {
                 else if (i + 1 < lines.length && /^[-0-9]/.test(lines[i + 1])) {
                     storeName = line;
                     let j = i + 1;
-                    while (j < lines.length && !/^(ĐML|ĐMM|ĐMS|TGD|Tổng)/.test(lines[j]) && /^[-\d]/.test(lines[j])) {
+                    while (j < lines.length && !/^(ĐML|ĐMM|ĐMS|TGD|AAR|Tổng)/.test(lines[j]) && /^[-\d]/.test(lines[j])) {
                         valuesArray.push(lines[j]);
                         j++;
                     }
                 } 
                 else {
-                    const match = line.match(/^(ĐML|ĐMM|ĐMS|TGD.*?[a-zA-ZáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ()]+)\s*(.*)/i);
+                    const match = line.match(/^(ĐML|ĐMM|ĐMS|AAR|TGD.*?[a-zA-ZáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ()]+)\s*(.*)/i);
                     if (match) {
                         storeName = match[1].trim();
                         const numbersStr = match[2];
@@ -197,7 +197,7 @@ export const luykeParser = {
                 let shopName = lines[i+2];
                 let dataLine = lines[i+3];
 
-                if (!shopName.match(/(ĐML|ĐMS|ĐMM|TGD)/i)) continue;
+                if (!shopName.match(/(ĐML|ĐMS|ĐMM|TGD|AAR)/i)) continue;
 
                 let parts = dataLine.split(/\s+/).filter(p => p);
                 
