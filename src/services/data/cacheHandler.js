@@ -10,7 +10,7 @@ export const cacheHandler = {
     async loadAllFromCache() {
         try { await storage.openDB(); } catch (err) { console.error("Lỗi DB:", err); }
 
-        adminService.loadMappingsGlobal();
+        await adminService.loadMappingsGlobal();
 
         console.log("[DataService] Bắt đầu tải DSNV từ cache...");
         const dsnvData = await storage.getItem('saved_danhsachnv');
