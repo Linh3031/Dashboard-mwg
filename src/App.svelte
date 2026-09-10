@@ -14,7 +14,8 @@
       isDemoMode,
       declarations,
       masterReportData,
-      currentUser
+      currentUser,
+      userProfile
   } from './stores.js';
   import { get } from 'svelte/store';
   import { config } from './config.js';
@@ -265,6 +266,7 @@
   $: if ($currentUser && $modalState.activeModal === 'login-overlay') closeModal();
 
   $: {
+      $userProfile;
       if ($danhSachNhanVien && $danhSachNhanVien.length > 0) {
           const uniqueWarehouses = [...new Set($danhSachNhanVien
               .map(nv => nv.maKho)

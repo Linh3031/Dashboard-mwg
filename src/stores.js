@@ -252,8 +252,8 @@ export const selectedWarehouse = {
         const profile = get(userProfile);
         if (profile && profile.role === 'user') {
             const allowed = profile.allowedWarehouses || [];
-            if (val === 'ALL' || (val && !allowed.includes(val))) {
-                rawSelectedWarehouse.set(allowed.length > 0 ? allowed[0] : null); 
+            if (val && val !== 'ALL' && !allowed.includes(val)) {
+                rawSelectedWarehouse.set(allowed.length > 0 ? allowed[0] : null);
                 return;
             }
         }
