@@ -211,7 +211,7 @@
                 <i data-feather="users" class="h-4 w-4 feather text-blue-900"></i>
                 <span class="text-[12px] font-extrabold text-blue-900 uppercase tracking-wide">Thi đua cá nhân theo kho ({multiKhoList.length} kho)</span>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div class="grid grid-flow-col gap-4 overflow-x-auto pb-1" style="grid-auto-columns: minmax(220px, 1fr);">
                 {#each multiKhoList as kho (kho)}
                     <div class="h-fit animate-fade-in w-full overflow-hidden">
                         <ThiDuaNvPasteInput targetKho={kho} />
