@@ -71,8 +71,16 @@
     }
 
     $: emps = $danhSachNhanVien || [];
-    $: filteredEmps = $selectedWarehouse ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) : emps;
-    $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
+
+    // [FIX] Số nhân viên để chia target phải tính theo ĐÚNG kho của nhân viên đang xem chi
+    // tiết, không phải theo bộ lọc kho đang chọn trên màn hình (trước đây khi xem "ALL", bộ lọc
+    // này lọc theo maKho === 'ALL' nên ra 0 người, tụt về chia cho 1 — tức target hiển thị bằng
+    // nguyên target của cả kho, không chia gì cả).
+    $: employeeCountByKho = emps.reduce((acc, e) => {
+        const kho = String(e.maKho || e.MAKHO || '').trim();
+        if (kho) acc[kho] = (acc[kho] || 0) + 1;
+        return acc;
+    }, {});
 
     function getColorClass(percent) {
         if (percent >= 100) return 'text-blue-600';
@@ -154,21 +162,12 @@
                 // riêng trước đây) để tránh race điều kiện thứ tự chạy giữa 2 khối reactive —
                 // trước đây có lúc khối này chạy trước khi categoryTargets kịp có kết quả, khiến
                 // mọi chương trình tạm bị coi là "chưa có target" => tự động tính "đạt", gây nhảy số.
-                // [FIX] Key theo tên đã chuẩn hoá vì "Link Data Nhân Viên" bên Admin có thể trỏ
-                // tới một biến thể hoa/thường khác với tenGoc đang dùng ở cột — so khớp tuyệt đối
-                // sẽ luôn ra Target = 0.
-                const stMappedData = {};
-                ($competitionData || []).forEach(item => {
-                    const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
-                    let linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
-
-                    if (linkedEmpProg) {
-                        const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
-                        const isQty = item.type === 'soLuong';
-                        const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
-                        stMappedData[helpers.normalizeCompetitionKey(linkedEmpProg)] = pTarget;
-                    }
-                });
+                // [FIX] Tính target theo ĐÚNG kho của nhân viên này (employee.maKho, lấy từ
+                // processedEmployeeCompetitionData nên luôn có sẵn), không phải theo kho đang
+                // chọn trên bộ lọc màn hình — trước đây nhiều kho trong cùng cụm bị gộp chung,
+                // kho đọc sau cùng ghi đè kho đọc trước.
+                const empKho = String(employee.maKho || employee.MAKHO || '').trim();
+                const stMappedData = helpers.computeCategoryTargetsForStore($competitionData, $luykeNameMappings, empKho, employeeCountByKho[empKho], targetRatio);
                 const categoryTargets = {};
                 columnSettings.forEach(col => {
                     categoryTargets[col.tenGoc] = stMappedData[helpers.normalizeCompetitionKey(col.tenGoc)] || 0;

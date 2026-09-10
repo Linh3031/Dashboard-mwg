@@ -146,6 +146,31 @@ export const helpers = {
         return codes.map(Number).includes(Number(loaiTdCode));
     },
 
+    // [FIX] Tính target thi đua/người cho ĐÚNG 1 kho. Trước đây các màn hình "Thi đua NV" duyệt
+    // qua toàn bộ competitionData (nhiều kho trong 1 cụm) mà không lọc theo maKho, nên kho đọc
+    // sau cùng ghi đè kho đọc trước và mọi nhân viên trong cụm bị gán chung 1 target sai — không
+    // phải target của kho họ đang làm việc. Trả về map { tên chương trình NV đã chuẩn hoá: target/người }.
+    computeCategoryTargetsForStore(competitionData, luykeNameMappings, maKho, employeeCountForKho, ratioPct = 100) {
+        const result = {};
+        const kho = String(maKho || '').trim();
+        if (!kho || !employeeCountForKho || employeeCountForKho <= 0) return result;
+
+        (competitionData || []).forEach(item => {
+            if (String(item.maKho || '').trim() !== kho) return;
+
+            const luykeMap = luykeNameMappings && luykeNameMappings[item.name];
+            const linkedEmpProg = (typeof luykeMap === 'object' && luykeMap !== null) ? luykeMap.linkedEmpProgram : '';
+            if (!linkedEmpProg) return;
+
+            const rawTarget = (parseFloat(item.target) || 0) * (ratioPct / 100);
+            const isQty = item.type === 'soLuong';
+            const pTarget = isQty ? Math.ceil(rawTarget / employeeCountForKho) : Math.round(rawTarget / employeeCountForKho);
+            result[helpers.normalizeCompetitionKey(linkedEmpProg)] = pTarget;
+        });
+
+        return result;
+    },
+
     classifyInsurance: (productName) => {
         if (!productName || typeof productName !== 'string') return null;
         const name = productName.trim().toLowerCase();

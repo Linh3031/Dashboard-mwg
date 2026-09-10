@@ -43,7 +43,6 @@
   let sortDirection = 'desc';
   let allEmployees = [];
   let targetRatio = 100;
-  let categoryTargets = {};
 
   let isTargetLoaded = false;
 
@@ -70,10 +69,18 @@
   }
 
   $: emps = $danhSachNhanVien || [];
-  $: filteredEmps = $selectedWarehouse && $selectedWarehouse !== 'ALL' 
-        ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse)) 
+  $: filteredEmps = $selectedWarehouse && $selectedWarehouse !== 'ALL'
+        ? emps.filter(e => String(e.maKho) === String($selectedWarehouse) || String(e.MAKHO) === String($selectedWarehouse))
         : emps;
-  $: totalEmployees = filteredEmps.length > 0 ? filteredEmps.length : 1;
+
+  // [FIX] Số nhân viên để chia target phải tính RIÊNG theo từng kho (không phải theo bộ lọc
+  // đang xem trên màn hình) — dùng để chia target đúng cho kho của từng người, kể cả khi đang
+  // xem "ALL"/cả cụm. Luôn tính trên toàn bộ danh sách NV (emps), không dùng filteredEmps.
+  $: employeeCountByKho = emps.reduce((acc, e) => {
+      const kho = String(e.maKho || e.MAKHO || '').trim();
+      if (kho) acc[kho] = (acc[kho] || 0) + 1;
+      return acc;
+  }, {});
 
   $: {
       let savedSettings = settingsService.loadPastedCompetitionViewSettings();
@@ -84,29 +91,21 @@
       }));
   }
 
-  $: {
-      // [FIX] Key theo tên đã chuẩn hoá vì "Link Data Nhân Viên" bên Admin có thể trỏ tới
-      // một biến thể hoa/thường khác với tenGoc đang dùng ở cột (do dữ liệu NV từng nhập
-      // bằng cả 2 cách dán bảng/upload Excel) — so khớp tuyệt đối sẽ luôn ra Target = 0.
-      const stMappedData = {};
-      ($competitionData || []).forEach(item => {
-          const luykeMap = $luykeNameMappings && $luykeNameMappings[item.name];
-          let linkedEmpProg = '';
-          if (typeof luykeMap === 'object' && luykeMap !== null) linkedEmpProg = luykeMap.linkedEmpProgram;
-          if (linkedEmpProg) {
-              const rawTarget = (parseFloat(item.target) || 0) * (targetRatio / 100);
-              const isQty = item.type === 'soLuong';
-              const pTarget = totalEmployees > 0 ? (isQty ? Math.ceil(rawTarget / totalEmployees) : Math.round(rawTarget / totalEmployees)) : 0;
-              stMappedData[helpers.normalizeCompetitionKey(linkedEmpProg)] = pTarget;
-          }
-      });
+  // [FIX] Target giờ tính RIÊNG cho từng kho (map: mã kho -> {chương trình: target/người}),
+  // thay vì 1 object dùng chung cho cả bảng — trước đây khi cụm có nhiều kho, dòng target của
+  // kho đọc sau cùng ghi đè dòng trước cùng tên chương trình, khiến mọi nhân viên trong cụm
+  // (bất kể kho nào) đều nhận chung 1 con số sai.
+  $: categoryTargetsByKho = Object.keys(employeeCountByKho).reduce((acc, kho) => {
+      acc[kho] = helpers.computeCategoryTargetsForStore($competitionData, $luykeNameMappings, kho, employeeCountByKho[kho], targetRatio);
+      return acc;
+  }, {});
 
-      const newTargets = {};
-      (columnSettings || []).forEach(col => {
-          newTargets[col.tenGoc] = stMappedData[helpers.normalizeCompetitionKey(col.tenGoc)] || 0;
-      });
-      categoryTargets = newTargets;
-  }
+  // Target hiển thị ở dòng tổng "TARGET CÁ NHÂN": chỉ có ý nghĩa là 1 con số duy nhất khi đang
+  // xem đúng 1 kho cụ thể (mọi nhân viên hiển thị đều cùng kho đó). Khi xem "ALL"/cả cụm, mỗi
+  // nhân viên có target riêng theo kho của họ (xem ở từng dòng), nên không hiển thị 1 số chung.
+  $: footerCategoryTargets = ($selectedWarehouse && $selectedWarehouse !== 'ALL')
+      ? (categoryTargetsByKho[String($selectedWarehouse).trim()] || {})
+      : null;
 
   const headerColors = [
       'bg-red-100 text-red-900 border-red-200', 'bg-orange-100 text-orange-900 border-orange-200',
@@ -171,20 +170,26 @@
               .filter(emp => validEmpCodes.has(String(emp.maNV).trim()))
               .map(emp => {
                   let score = 0;
-                  emp._staticMetrics = {}; 
-                  
+                  emp._staticMetrics = {};
+
+                  // [FIX] Lấy target theo ĐÚNG kho của chính nhân viên này, không phải theo kho
+                  // đang chọn trên bộ lọc màn hình.
+                  const empKho = String(emp.maKho || emp.MAKHO || '').trim();
+                  const empTargets = categoryTargetsByKho[empKho] || {};
+                  emp._categoryTargets = empTargets;
+
                   (columnSettings || []).forEach(col => {
                       const comp = findCompForColumn(emp.competitions, col.tenGoc, isQuantityMap);
                       const val = getDynamicMetricValue(comp, col.tenGoc, isQuantityMap);
-                      emp._staticMetrics[col.tenGoc] = val; 
-                      
-                      const pTarget = categoryTargets[col.tenGoc] || 0;
+                      emp._staticMetrics[col.tenGoc] = val;
+
+                      const pTarget = empTargets[helpers.normalizeCompetitionKey(col.tenGoc)] || 0;
                       const projectedVal = (val / currentDay) * daysInMonth;
                       if ((pTarget > 0 && projectedVal >= pTarget) || (pTarget === 0 && val > 0)) {
                           score++;
                       }
                   });
-                  emp._cachedScore = score; 
+                  emp._cachedScore = score;
 
                   const dsnvMatch = filteredEmps.find(e => String(e.maNV || e.ma_nv).trim() === String(emp.maNV).trim());
                   if (dsnvMatch) {
@@ -388,7 +393,7 @@
 
                                 {#each visibleColumns as col}
                                     {@const val = item._staticMetrics ? (item._staticMetrics[col.tenGoc] || 0) : 0}
-                                    {@const pTarget = categoryTargets[col.tenGoc] || 0}
+                                    {@const pTarget = item._categoryTargets ? (item._categoryTargets[helpers.normalizeCompetitionKey(col.tenGoc)] || 0) : 0}
                                     {@const projectedVal = (val / currentDay) * daysInMonth}
                                     {@const isBelow = pTarget > 0 && projectedVal < pTarget}
                                     
@@ -417,9 +422,9 @@
                                 -
                             </td>
                             {#each visibleColumns as col}
-                                {@const pTarget = categoryTargets[col.tenGoc] || 0}
-                                <td class="px-1 py-2 text-right border-r border-indigo-200 text-[13px] bg-indigo-50 text-indigo-700">
-                                    {pTarget > 0 ? formatters.formatNumber(pTarget) : '0'}
+                                {@const pTarget = footerCategoryTargets ? (footerCategoryTargets[helpers.normalizeCompetitionKey(col.tenGoc)] || 0) : null}
+                                <td class="px-1 py-2 text-right border-r border-indigo-200 text-[13px] bg-indigo-50 text-indigo-700" title={footerCategoryTargets === null ? 'Đang xem nhiều kho — mỗi nhân viên có target riêng theo kho, xem ở từng dòng' : ''}>
+                                    {pTarget === null ? '-' : (pTarget > 0 ? formatters.formatNumber(pTarget) : '0')}
                                 </td>
                             {/each}
                         </tr>
