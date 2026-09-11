@@ -36,10 +36,16 @@
             const perTables = await datasyncService.loadPersonalPerformanceTables(kho);
             // 3. Load trạng thái ẩn/hiện local
             const hiddenIds = JSON.parse(localStorage.getItem('hiddenPerformanceTableIds') || '[]');
-            // 4. Merge theo id — bản cá nhân (nếu có) ghi đè hiển thị bản hệ thống cùng id
+            // 4. Merge theo id — bản cá nhân (nếu có) ghi đè hiển thị bản hệ thống cùng id.
+            // Bản ghi cá nhân dạng { id, deleted: true } là "đã xóa hẳn" 1 bảng hệ thống khỏi
+            // hiển thị của kho này — loại nó ra hoàn toàn, không hiển thị lại cho tới khi
+            // "Khôi phục mặc định".
             const merged = new Map();
             sysTables.forEach(t => merged.set(t.id, { ...t, isSystem: true, isVisible: !hiddenIds.includes(t.id) }));
-            perTables.forEach(t => merged.set(t.id, { ...t, isSystem: false, isVisible: true }));
+            perTables.forEach(t => {
+                if (t.deleted) { merged.delete(t.id); return; }
+                merged.set(t.id, { ...t, isSystem: false, isVisible: true });
+            });
             customPerformanceTables.set(Array.from(merged.values()));
             lastLoadedWarehouse = kho;
 
@@ -79,13 +85,19 @@
     }
 
     // --- CRUD ACTIONS ---
+    // Bảng cá nhân/bản ghi đè lưu theo TỪNG kho -> phải chọn đích danh 1 kho, không phải "Tất cả"/Cụm
+    function isSpecificWarehouse(wh) {
+        return !!wh && wh !== 'ALL' && !String(wh).startsWith('CLUSTER_');
+    }
+
     function openAddModal() {
-        if (!$selectedWarehouse) return alert("Vui lòng chọn Kho trước.");
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để tạo bảng cá nhân.");
         // Mở modal tạo mới (User context)
         modalState.update(s => ({ ...s, activeModal: 'add-performance-table-modal', payload: null, isSystem: false }));
     }
 
     function editTable(table) {
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để sửa bảng này.");
         // Sửa 1 bảng hệ thống ở đây sẽ tạo bản ghi đè cá nhân theo kho (xem handleSavePerformanceTable
         // trong App.svelte), không đụng bảng gốc của Admin — giống cách chỉ số hiệu quả hoạt động.
         modalState.update(s => ({
@@ -99,9 +111,17 @@
     async function deleteTable(id) {
         const table = $customPerformanceTables.find(t => t.id === id);
         if (!table) return;
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để xóa bảng này.");
 
         if (table.isSystem) {
-            alert("Đây là bảng hệ thống, bạn không thể xóa. Hãy dùng nút ẩn/hiện ở thanh công cụ để ẩn nó đi.");
+            // Bảng hệ thống gốc (chưa có bản ghi đè cá nhân) -> xóa hẳn khỏi hiển thị của kho này
+            // bằng 1 bản ghi đánh dấu "deleted", không đụng cấu hình gốc của Admin. Chỉ "Khôi phục
+            // mặc định" mới đưa nó hiện lại.
+            if (!confirm("Xóa bảng này khỏi hiển thị? Dùng nút \"Khôi phục mặc định\" nếu sau này cần xem lại.")) return;
+            const currentPersonal = $customPerformanceTables.filter(t => !t.isSystem);
+            const newPersonal = [...currentPersonal, { id, deleted: true }];
+            await datasyncService.savePersonalPerformanceTables($selectedWarehouse, newPersonal);
+            customPerformanceTables.update(items => items.filter(t => t.id !== id));
             return;
         }
 
@@ -113,9 +133,15 @@
     }
 
     async function restoreDefaults() {
-        if (!$selectedWarehouse) return;
-        if (!confirm("Khôi phục danh sách bảng về đúng cấu hình Admin? Mọi chỉnh sửa/bảng riêng của kho này sẽ mất.")) return;
-        await datasyncService.savePersonalPerformanceTables($selectedWarehouse, []);
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để khôi phục.");
+        if (!confirm("Khôi phục các bảng hệ thống về đúng cấu hình Admin? Bảng cá nhân bạn tự tạo mới vẫn được giữ nguyên.")) return;
+        // Chỉ gỡ các bản ghi cá nhân TRÙNG id với bảng hệ thống (override/đánh dấu xóa) — giữ
+        // nguyên các bảng cá nhân hoàn toàn tự tạo (id không trùng bảng hệ thống nào).
+        const sysTables = await adminService.loadSystemPerformanceTables();
+        const sysIds = new Set(sysTables.map(t => t.id));
+        const rawPersonal = await datasyncService.loadPersonalPerformanceTables($selectedWarehouse);
+        const kept = rawPersonal.filter(t => !sysIds.has(t.id));
+        await datasyncService.savePersonalPerformanceTables($selectedWarehouse, kept);
         localStorage.removeItem('hiddenPerformanceTableIds');
         await loadData($selectedWarehouse);
     }

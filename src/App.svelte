@@ -183,10 +183,11 @@
           }
           warehouseCustomMetrics.set(currentLocal);
           const wh = get(selectedWarehouse);
-          if(wh) {
+          // Chỉ số cá nhân lưu theo TỪNG kho -> cần đích danh 1 kho, không phải "Tất cả"/Cụm
+          if (wh && wh !== 'ALL' && !String(wh).startsWith('CLUSTER_')) {
                datasyncService.saveCustomMetrics(wh, currentLocal);
           } else {
-              alert("Vui lòng chọn Kho để lưu chỉ số này.");
+              alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để lưu chỉ số này.");
           }
       }
   }
@@ -212,11 +213,12 @@
           await adminService.saveSystemPerformanceTables(systemTables);
       } else {
           const wh = get(selectedWarehouse);
-          if (wh) {
+          // Bảng cá nhân lưu theo TỪNG kho -> cần đích danh 1 kho, không phải "Tất cả"/Cụm
+          if (wh && wh !== 'ALL' && !String(wh).startsWith('CLUSTER_')) {
               const personalTables = get(customPerformanceTables).filter(t => !t.isSystem);
               await datasyncService.savePersonalPerformanceTables(wh, personalTables);
           } else {
-              alert("Vui lòng chọn Kho để lưu bảng cá nhân.");
+              alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để lưu bảng cá nhân.");
           }
       }
   }

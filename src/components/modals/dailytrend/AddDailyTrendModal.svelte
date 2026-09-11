@@ -100,7 +100,9 @@
     async function handleSave() {
         if (!title.trim()) return alert("Vui lòng nhập tên bảng!");
         if (dateMode === 'custom' && (!customStartDate || !customEndDate)) return alert("Vui lòng chọn mốc ngày bắt đầu và kết thúc!");
-        if (!isSystem && !$selectedWarehouse) return alert("Vui lòng chọn kho trước khi lưu!");
+        if (!isSystem && (!$selectedWarehouse || $selectedWarehouse === 'ALL' || String($selectedWarehouse).startsWith('CLUSTER_'))) {
+            return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) trước khi lưu!");
+        }
 
         isSaving = true;
         try {

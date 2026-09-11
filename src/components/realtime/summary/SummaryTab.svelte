@@ -43,42 +43,53 @@
       warehouseCustomMetrics.set(localData);
   }
 
+  // [id, deleted:true] trong warehouseCustomMetrics = đã xóa hẳn 1 chỉ số hệ thống khỏi kho này
+  $: deletedSystemIds = new Set(($warehouseCustomMetrics || []).filter(i => i.deleted).map(i => i.id));
   $: combinedEfficiencyItems = [
-      ...($efficiencyConfig || []).map(i => ({ ...i, isSystem: true })),
-      ...($warehouseCustomMetrics || []).map(i => ({ ...i, isSystem: false }))
+      ...($efficiencyConfig || []).filter(i => !deletedSystemIds.has(i.id)).map(i => ({ ...i, isSystem: true })),
+      ...($warehouseCustomMetrics || []).filter(i => !i.deleted).map(i => ({ ...i, isSystem: false }))
   ];
+
+  // Chỉ số cá nhân lưu theo TỪNG kho -> phải chọn đích danh 1 kho, không phải "Tất cả"/Cụm
+  function isSpecificWarehouse(wh) { return !!wh && wh !== 'ALL' && !String(wh).startsWith('CLUSTER_'); }
 
   async function handleDeleteMetric(event) {
       const id = event.detail;
       const item = combinedEfficiencyItems.find(i => i.id === id);
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để xóa chỉ số này.");
 
       if (item && item.isSystem) {
-          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          if (!confirm("Xóa chỉ số này khỏi hiển thị? Dùng nút \"Khôi phục mặc định\" nếu sau này cần xem lại.")) return;
+          const newLocalMetrics = [...$warehouseCustomMetrics.filter(i => i.id !== id), { id, deleted: true }];
+          warehouseCustomMetrics.set(newLocalMetrics);
+          await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
           return;
       }
 
       if (confirm("Xóa chỉ số cá nhân này?")) {
           const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
           warehouseCustomMetrics.set(newLocalMetrics);
-          if ($selectedWarehouse) {
-              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
-          }
+          await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
       }
   }
 
   function openAddEffModal() {
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để tạo chỉ số riêng.");
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
   }
 
   function handleEditEffConfig(event) {
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để sửa chỉ số này.");
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
   }
 
   async function handleRestoreDefaultMetrics() {
-      if (!$selectedWarehouse) return;
-      if (!confirm("Khôi phục về chỉ số mặc định của Admin? Toàn bộ chỉnh sửa/chỉ số riêng của kho này sẽ mất.")) return;
-      warehouseCustomMetrics.set([]);
-      await datasyncService.saveCustomMetrics($selectedWarehouse, []);
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để khôi phục.");
+      if (!confirm("Khôi phục các chỉ số hệ thống về đúng cấu hình Admin? Chỉ số cá nhân bạn tự tạo mới vẫn được giữ nguyên.")) return;
+      const sysIds = new Set(($efficiencyConfig || []).map(i => i.id));
+      const kept = ($warehouseCustomMetrics || []).filter(i => !sysIds.has(i.id));
+      warehouseCustomMetrics.set(kept);
+      await datasyncService.saveCustomMetrics($selectedWarehouse, kept);
   }
 
   // --- [PHẪU THUẬT NGUYÊN TỬ]: TỪ ĐIỂN QUÉT TRUY VẾT TÊN SIÊU THỊ TOÀN DIỆN ---

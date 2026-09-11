@@ -31,10 +31,15 @@
             // 1. Load bảng hệ thống (Admin) + bảng cá nhân theo kho
             const sysTables = await adminService.loadSystemDailyTrendConfigs();
             const perTables = await datasyncService.loadDailyTrendConfigs(kho);
-            // 2. Merge theo id — bản cá nhân (nếu có) ghi đè hiển thị bản hệ thống cùng id
+            // 2. Merge theo id — bản cá nhân (nếu có) ghi đè hiển thị bản hệ thống cùng id.
+            // Bản ghi { id, deleted: true } là "đã xóa hẳn" 1 bảng hệ thống khỏi kho này — loại
+            // hoàn toàn, chỉ "Khôi phục mặc định" mới đưa nó hiện lại.
             const merged = new Map();
             sysTables.forEach(t => merged.set(t.id, { ...t, isSystem: true }));
-            perTables.forEach(t => merged.set(t.id, { ...t, isSystem: false }));
+            perTables.forEach(t => {
+                if (t.deleted) { merged.delete(t.id); return; }
+                merged.set(t.id, { ...t, isSystem: false });
+            });
             dailyTrendConfigs.set(Array.from(merged.values()));
             lastLoadedWarehouse = kho;
         } catch (error) {
@@ -44,12 +49,15 @@
         }
     }
 
+    // Bảng cá nhân lưu theo TỪNG kho -> phải chọn đích danh 1 kho, không phải "Tất cả"/Cụm
+    function isSpecificWarehouse(wh) { return !!wh && wh !== 'ALL' && !String(wh).startsWith('CLUSTER_'); }
+
     async function toggleTableVisibility(tableId) {
         const target = $dailyTrendConfigs.find(t => t.id === tableId);
         if (!target) return;
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để ẩn/hiện bảng này.");
         const updated = $dailyTrendConfigs.map(t => t.id === tableId ? { ...t, isSystem: false, visible: !t.visible } : t);
         dailyTrendConfigs.set(updated);
-        if (!$selectedWarehouse) return;
         const personalTables = updated.filter(t => !t.isSystem);
         try { await datasyncService.saveDailyTrendConfigs($selectedWarehouse, personalTables); } catch (e) { console.error(e); }
     }
@@ -57,10 +65,19 @@
     async function deleteTable(tableId) {
         const table = $dailyTrendConfigs.find(t => t.id === tableId);
         if (!table) return;
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để xóa bảng này.");
+
         if (table.isSystem) {
-            alert("Đây là bảng hệ thống, bạn không thể xóa. Hãy dùng nút ẩn ở thanh 'Bảng hiển thị' để ẩn nó đi.");
+            // Bảng hệ thống gốc (chưa có bản ghi đè cá nhân) -> xóa hẳn khỏi hiển thị của kho này
+            // bằng 1 bản ghi đánh dấu "deleted", không đụng cấu hình gốc của Admin.
+            if (!confirm('Xóa bảng này khỏi hiển thị? Dùng nút "Khôi phục mặc định" nếu sau này cần xem lại.')) return;
+            const currentPersonal = $dailyTrendConfigs.filter(t => !t.isSystem);
+            const newPersonal = [...currentPersonal, { id: tableId, deleted: true }];
+            dailyTrendConfigs.update(items => items.filter(t => t.id !== tableId));
+            try { await datasyncService.saveDailyTrendConfigs($selectedWarehouse, newPersonal); } catch (e) { console.error(e); }
             return;
         }
+
         if (!confirm('Bạn có chắc chắn muốn xóa bảng phân tích này?')) return;
         const updated = $dailyTrendConfigs.filter(t => t.id !== tableId);
         dailyTrendConfigs.set(updated);
@@ -69,17 +86,25 @@
     }
 
     async function restoreDefaults() {
-        if (!$selectedWarehouse) return;
-        if (!confirm("Khôi phục danh sách bảng về đúng cấu hình Admin? Mọi chỉnh sửa/bảng riêng của kho này sẽ mất.")) return;
-        await datasyncService.saveDailyTrendConfigs($selectedWarehouse, []);
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để khôi phục.");
+        if (!confirm("Khôi phục các bảng hệ thống về đúng cấu hình Admin? Bảng cá nhân bạn tự tạo mới vẫn được giữ nguyên.")) return;
+        // Chỉ gỡ các bản ghi cá nhân TRÙNG id với bảng hệ thống (override/đánh dấu xóa) — giữ
+        // nguyên các bảng cá nhân hoàn toàn tự tạo (id không trùng bảng hệ thống nào).
+        const sysTables = await adminService.loadSystemDailyTrendConfigs();
+        const sysIds = new Set(sysTables.map(t => t.id));
+        const rawPersonal = await datasyncService.loadDailyTrendConfigs($selectedWarehouse);
+        const kept = rawPersonal.filter(t => !sysIds.has(t.id));
+        await datasyncService.saveDailyTrendConfigs($selectedWarehouse, kept);
         await loadData($selectedWarehouse);
     }
 
     function openAddModal() {
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để tạo bảng.");
         modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: null, isSystem: false }));
     }
 
     function openEditModal(tableConfig) {
+        if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để sửa bảng này.");
         // Sửa 1 bảng hệ thống ở đây sẽ tạo bản ghi đè cá nhân theo kho (isSystem:false), không
         // đụng bảng gốc của Admin — giống cách chỉ số hiệu quả/bảng hiệu quả hoạt động.
         modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: tableConfig, isSystem: false }));

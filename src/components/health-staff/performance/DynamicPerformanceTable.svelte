@@ -2,7 +2,6 @@
     import { createEventDispatcher } from 'svelte';
     import { formatters } from '../../../utils/formatters.js';
     import { dynamicTableProcessor } from '../../../services/processing/logic/dynamicTable.processor.js';
-    import { isAdmin } from '../../../stores.js';
     import SortableTh from '../../common/SortableTh.svelte';
 
     export let config = {};
@@ -94,14 +93,12 @@
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col transition-all hover:shadow-md relative group/card">
     
     <div class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity flex gap-1 z-20 bg-white/90 backdrop-blur rounded-lg p-1 shadow-sm border border-gray-100">
-        {#if !config.isSystem || $isAdmin}
-            <button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Sửa" on:click|stopPropagation={() => dispatch('edit', config)}>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-            </button>
-            <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title="Xóa" on:click|stopPropagation={() => dispatch('delete', config.id)}>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-            </button>
-        {/if}
+        <button class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50" title="Sửa" on:click|stopPropagation={() => dispatch('edit', config)}>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+        </button>
+        <button class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50" title="Xóa" on:click|stopPropagation={() => dispatch('delete', config.id)}>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        </button>
     </div>
 
     <div class="px-5 py-3 border-b {theme.header} flex justify-between items-center">

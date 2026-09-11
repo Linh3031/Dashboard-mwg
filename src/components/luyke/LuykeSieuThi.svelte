@@ -68,16 +68,19 @@
       warehouseCustomMetrics.set(localData);
   }
 
+  // [id, deleted:true] trong warehouseCustomMetrics = đã xóa hẳn 1 chỉ số hệ thống khỏi kho này
+  // -> loại hoàn toàn khỏi danh sách hiển thị, không lẫn vào chỉ số cá nhân.
+  $: deletedSystemIds = new Set(($warehouseCustomMetrics || []).filter(i => i.deleted).map(i => i.id));
   $: combinedEfficiencyItems = [
-      ...($efficiencyConfig || []).map(i => ({ 
-          ...i, 
+      ...($efficiencyConfig || []).filter(i => !deletedSystemIds.has(i.id)).map(i => ({
+          ...i,
           isSystem: true,
-          target: goals?.[i.id] || i.target 
+          target: goals?.[i.id] || i.target
       })),
-      ...($warehouseCustomMetrics || []).map(i => ({ 
-          ...i, 
+      ...($warehouseCustomMetrics || []).filter(i => !i.deleted).map(i => ({
+          ...i,
           isSystem: false,
-          target: goals?.[i.id] || i.target 
+          target: goals?.[i.id] || i.target
       }))
   ];
 
@@ -212,37 +215,51 @@
       }));
   }
 
+  // Chỉ số cá nhân lưu theo TỪNG kho -> phải chọn đích danh 1 kho, không phải "Tất cả"/Cụm
+  function isSpecificWarehouse(wh) { return !!wh && wh !== 'ALL' && !String(wh).startsWith('CLUSTER_'); }
+
   function openAddEffModal() {
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để tạo chỉ số riêng.");
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
   }
 
   function handleEditEffConfig(event) {
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để sửa chỉ số này.");
       modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
   }
 
   async function handleDeleteEffConfig(event) {
       const id = event.detail;
       const isSystem = $efficiencyConfig.some(i => i.id === id);
-      
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để xóa chỉ số này.");
+
       if (isSystem) {
-          alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
+          // Chỉ số hệ thống gốc (chưa có bản ghi đè cá nhân) -> xóa hẳn khỏi hiển thị của kho này
+          // bằng 1 bản ghi đánh dấu "deleted", không đụng cấu hình gốc của Admin. Chỉ "Khôi phục
+          // mặc định" mới đưa nó hiện lại.
+          if (!confirm("Xóa chỉ số này khỏi hiển thị? Dùng nút \"Khôi phục mặc định\" nếu sau này cần xem lại.")) return;
+          const newLocalMetrics = [...$warehouseCustomMetrics.filter(i => i.id !== id), { id, deleted: true }];
+          warehouseCustomMetrics.set(newLocalMetrics);
+          await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
           return;
       }
 
       if (confirm("Xóa chỉ số cá nhân này?")) {
           const newLocalMetrics = $warehouseCustomMetrics.filter(i => i.id !== id);
           warehouseCustomMetrics.set(newLocalMetrics);
-          if ($selectedWarehouse) {
-              await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
-          }
+          await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
       }
   }
 
   async function handleRestoreDefaultMetrics() {
-      if (!$selectedWarehouse) return;
-      if (!confirm("Khôi phục về chỉ số mặc định của Admin? Toàn bộ chỉnh sửa/chỉ số riêng của kho này sẽ mất.")) return;
-      warehouseCustomMetrics.set([]);
-      await datasyncService.saveCustomMetrics($selectedWarehouse, []);
+      if (!isSpecificWarehouse($selectedWarehouse)) return alert("Vui lòng chọn đích danh 1 Kho (không phải Tất cả/Cụm) để khôi phục.");
+      if (!confirm("Khôi phục các chỉ số hệ thống về đúng cấu hình Admin? Chỉ số cá nhân bạn tự tạo mới vẫn được giữ nguyên.")) return;
+      // Chỉ gỡ các bản ghi cá nhân TRÙNG id với chỉ số hệ thống (override/đánh dấu xóa) — giữ
+      // nguyên các chỉ số cá nhân hoàn toàn tự tạo (id không trùng chỉ số hệ thống nào).
+      const sysIds = new Set(($efficiencyConfig || []).map(i => i.id));
+      const kept = ($warehouseCustomMetrics || []).filter(i => !sysIds.has(i.id));
+      warehouseCustomMetrics.set(kept);
+      await datasyncService.saveCustomMetrics($selectedWarehouse, kept);
   }
 
   afterUpdate(() => {
