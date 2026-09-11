@@ -40,6 +40,39 @@
         activeSubIndex = index;
         dispatch('contextChange', { ctx, index });
     }
+
+    // --- Kéo thả sắp xếp lại vị trí cột ---
+    let draggedIndex = null;
+
+    function handleDragStart(e, index) {
+        draggedIndex = index;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(index));
+    }
+
+    function handleDrop(index) {
+        if (draggedIndex === null || draggedIndex === index) return;
+        const newCols = [...subColumns];
+        const [moved] = newCols.splice(draggedIndex, 1);
+        newCols.splice(index, 0, moved);
+        subColumns = newCols;
+
+        // Giữ đúng cột đang chọn (activeSubIndex) sau khi vị trí trong mảng đổi
+        if (activeContext.startsWith('sub')) {
+            if (activeSubIndex === draggedIndex) {
+                activeSubIndex = index;
+            } else if (draggedIndex < activeSubIndex && index >= activeSubIndex) {
+                activeSubIndex--;
+            } else if (draggedIndex > activeSubIndex && index <= activeSubIndex) {
+                activeSubIndex++;
+            }
+        }
+        draggedIndex = null;
+    }
+
+    function handleDragEnd() {
+        draggedIndex = null;
+    }
 </script>
 
 <div class="flex flex-col gap-3">
@@ -78,10 +111,13 @@
         
         <div class="flex-1 overflow-y-auto max-h-[400px] p-2 space-y-2 custom-scrollbar">
             {#each subColumns as col, i}
-                <div 
+                <div
                     class="p-2.5 rounded-lg cursor-pointer transition-all border-2 group flex justify-between items-center
-                    {activeContext.startsWith('sub') && activeSubIndex === i ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-100 bg-white hover:border-blue-300'}"
+                    {activeContext.startsWith('sub') && activeSubIndex === i ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-100 bg-white hover:border-blue-300'}
+                    {draggedIndex === i ? 'opacity-40' : ''}"
                     on:click={() => { if(col.type !== 'PERCENT') setContext('sub_items', i); else setContext('sub_num', i); }}
+                    on:dragover|preventDefault
+                    on:drop|preventDefault={() => handleDrop(i)}
                 >
                     <div class="flex-1 min-w-0 pr-2">
                         <div class="flex items-center gap-1.5 mb-1">
@@ -94,13 +130,25 @@
                         </div>
                     </div>
                     
-                    <button 
-                        on:click|stopPropagation={() => removeSubColumn(i)} 
-                        class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0" 
-                        title="Xóa cột"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
+                    <div class="flex items-center gap-0.5 flex-shrink-0">
+                        <div
+                            class="p-1.5 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
+                            draggable="true"
+                            on:click|stopPropagation
+                            on:dragstart={(e) => handleDragStart(e, i)}
+                            on:dragend={handleDragEnd}
+                            title="Kéo để sắp xếp"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8M8 12h8M8 17h8" /></svg>
+                        </div>
+                        <button
+                            on:click|stopPropagation={() => removeSubColumn(i)}
+                            class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                            title="Xóa cột"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
                 </div>
             {/each}
         </div>

@@ -11,19 +11,55 @@
 
   let isSettingsOpen = false;
   let filterSearch = '';
-  let hiddenIds = new Set(); 
+  let hiddenIds = new Set();
+  let orderIds = [];
+  let draggedId = null;
 
   const STORAGE_KEY = 'luyke_efficiency_hidden_ids';
+  const ORDER_KEY = 'luyke_efficiency_order';
 
   onMount(() => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
           try { hiddenIds = new Set(JSON.parse(saved)); } catch (e) {}
       }
+      const savedOrder = localStorage.getItem(ORDER_KEY);
+      if (savedOrder) {
+          try { orderIds = JSON.parse(savedOrder); } catch (e) {}
+      }
   });
 
   function saveHiddenState() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...hiddenIds]));
+  }
+
+  function saveOrder() {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(orderIds));
+  }
+
+  // --- Kéo thả sắp xếp vị trí chỉ số (lưu theo trình duyệt, giống cơ chế ẩn/hiện) ---
+  function handleDragStart(e, id) {
+      draggedId = id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+  }
+
+  function handleDrop(targetId) {
+      if (!draggedId || draggedId === targetId) return;
+      const ids = displayItems.map(i => i.id);
+      const fromIndex = ids.indexOf(draggedId);
+      const toIndex = ids.indexOf(targetId);
+      if (fromIndex === -1 || toIndex === -1) return;
+      const newIds = [...ids];
+      const [moved] = newIds.splice(fromIndex, 1);
+      newIds.splice(toIndex, 0, moved);
+      orderIds = newIds;
+      saveOrder();
+      draggedId = null;
+  }
+
+  function handleDragEnd() {
+      draggedId = null;
   }
 
   const iconMap = {
@@ -60,7 +96,14 @@
           });
       });
 
-      return Array.from(uniqueMap.values());
+      const list = Array.from(uniqueMap.values());
+      if (orderIds.length === 0) return list;
+      const orderIndex = new Map(orderIds.map((id, idx) => [id, idx]));
+      return [...list].sort((a, b) => {
+          const ai = orderIndex.has(a.id) ? orderIndex.get(a.id) : Infinity;
+          const bi = orderIndex.has(b.id) ? orderIndex.get(b.id) : Infinity;
+          return ai - bi;
+      });
   })();
 
   // [CRITICAL FIX] Sửa lỗi Crash .toLowerCase() khi label bị null/undefined
@@ -151,7 +194,20 @@
           {@const color = getProgressColor(item.value, item.target)}
           {@const percent = Math.min((item.value * 100), 100)}
           
-          <div class="eff-item-compact group relative hover:bg-gray-50 transition-colors">
+          <div
+            class="eff-item-compact group relative hover:bg-gray-50 transition-colors {draggedId === item.id ? 'opacity-40' : ''}"
+            on:dragover|preventDefault
+            on:drop|preventDefault={() => handleDrop(item.id)}
+          >
+            <div
+              class="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 flex-shrink-0"
+              draggable="true"
+              on:dragstart={(e) => handleDragStart(e, item.id)}
+              on:dragend={handleDragEnd}
+              title="Kéo để sắp xếp"
+            >
+                <i data-feather="move" class="w-3.5 h-3.5"></i>
+            </div>
             <div class="eff-icon-compact"><i data-feather={iconMap[item.id] || 'activity'} class="w-4 h-4"></i></div>
             <div class="eff-content-compact">
                 <div class="eff-row-top">
