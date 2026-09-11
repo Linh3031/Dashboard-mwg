@@ -3,8 +3,7 @@
   import { 
       activeTab, 
       modalState, 
-      efficiencyConfig, 
-      customRevenueTables, 
+      efficiencyConfig,
       customPerformanceTables,
       isAdmin, 
       warehouseCustomMetrics,
@@ -192,34 +191,13 @@
       }
   }
 
-  async function handleSaveCustomTable(event) {
-      const newItem = event.detail;
-      customRevenueTables.update(items => {
-          const idx = items.findIndex(i => i.id === newItem.id);
-          if (idx >= 0) { 
-              items[idx] = { ...items[idx], ...newItem }; 
-              return [...items]; 
-          } else { 
-              return [...items, newItem]; 
-          }
-      });
-      if (newItem.isSystem) {
-          const currentSystemTables = get(customRevenueTables).filter(t => t.isSystem);
-          await adminService.saveSystemRevenueTables(currentSystemTables);
-          console.log("Đã lưu bảng hệ thống lên Admin Cloud");
-      } else {
-          const currentPersonalTables = get(customRevenueTables).filter(t => !t.isSystem);
-          localStorage.setItem('customRevenueTables', JSON.stringify(currentPersonalTables));
-          const wh = get(selectedWarehouse);
-          if (wh) {
-              await datasyncService.savePersonalRevenueTables(wh, currentPersonalTables);
-          }
-          console.log("Đã lưu bảng cá nhân");
-      }
-  }
-
   async function handleSavePerformanceTable(event) {
       const newItem = event.detail;
+      // [PHẪU THUẬT] Nơi lưu quyết định bởi bối cảnh (đang ở trang Admin hay không),
+      // không dựa vào newItem.isSystem — để user sửa 1 bảng hệ thống từ tab Lũy kế/Realtime
+      // sẽ tạo bản ghi đè cá nhân theo kho, không đụng bảng gốc của Admin (giống chỉ số hiệu quả).
+      const isAdminContext = get(activeTab) === 'declaration-section';
+      newItem.isSystem = isAdminContext;
       customPerformanceTables.update(items => {
           const idx = items.findIndex(i => i.id === newItem.id);
           if (idx >= 0) {
@@ -229,13 +207,13 @@
              return [...items, newItem];
           }
       });
-      if (newItem.isSystem) {
+      if (isAdminContext) {
           const systemTables = get(customPerformanceTables).filter(t => t.isSystem);
           await adminService.saveSystemPerformanceTables(systemTables);
       } else {
-          const personalTables = get(customPerformanceTables).filter(t => !t.isSystem);
           const wh = get(selectedWarehouse);
           if (wh) {
+              const personalTables = get(customPerformanceTables).filter(t => !t.isSystem);
               await datasyncService.savePersonalPerformanceTables(wh, personalTables);
           } else {
               alert("Vui lòng chọn Kho để lưu bảng cá nhân.");
@@ -246,17 +224,15 @@
   function handleUnifiedSave(event) {
       const { type, payload } = event.detail;
       const activeModal = get(modalState).activeModal;
-      
+
       const fakeEvent = { detail: payload };
 
       if (type === 'INDICATOR' || activeModal === 'add-efficiency-modal' || activeModal === 'add-metric-modal') {
           handleSaveEffConfig(fakeEvent);
-      } else if (activeModal === 'add-performance-table-modal' || get(activeTab) === 'declaration-section') {
-          handleSavePerformanceTable(fakeEvent);
       } else {
-          handleSaveCustomTable(fakeEvent);
+          handleSavePerformanceTable(fakeEvent);
       }
-      
+
       closeModal();
   }
 
@@ -334,7 +310,7 @@
     {/if}
 
     <UnifiedConfigModal 
-        isOpen={['add-revenue-table-modal', 'add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
+        isOpen={['add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
         editItem={$modalState.payload}
         isSystem={$modalState.isSystem || $activeTab === 'declaration-section'}
         on:close={closeModal}

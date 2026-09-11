@@ -3,41 +3,6 @@ import { efficiencyConfig, qdcConfigStore } from '../../stores.js';
 import { getDB, notify, sanitizeForFirestore, checkAdmin } from './utils.js';
 
 export const performanceService = {
-    // --- SYSTEM REVENUE TABLES ---
-    async loadSystemRevenueTables() {
-        const db = getDB();
-        if (!db) return [];
-        try {
-            const docRef = doc(db, "declarations", "systemRevenueTables");
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                const tables = d.tables || d.data || d.items || [];
-                console.log(`[PerformanceService] Loaded ${tables.length} system revenue tables.`);
-                return tables;
-            }
-            return [];
-        } catch (e) {
-            console.error("Lỗi tải bảng hệ thống:", e);
-            return [];
-        }
-    },
-
-    async saveSystemRevenueTables(tables) {
-        const db = getDB();
-        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
-        if (!checkAdmin()) return;
-        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
-        try {
-            const docRef = doc(db, "declarations", "systemRevenueTables");
-            await setDoc(docRef, { tables: systemTables, updatedAt: serverTimestamp() });
-            notify(`Đã lưu ${systemTables.length} bảng doanh thu hệ thống lên Cloud!`, 'success');
-        } catch (error) { 
-            console.error("Firebase Error Full:", error);
-            notify('Lỗi lưu bảng hệ thống: ' + error.message, 'error'); 
-        }
-    },
-
     // --- SYSTEM PERFORMANCE TABLES ---
     async loadSystemPerformanceTables() {
         const db = getDB();
@@ -71,6 +36,39 @@ export const performanceService = {
         } catch (error) { 
             console.error("Lỗi lưu bảng hiệu quả hệ thống:", error);
             notify('Lỗi lưu bảng hiệu quả hệ thống: ' + error.message, 'error');
+        }
+    },
+
+    // --- SYSTEM DAILY TREND CONFIGS ---
+    async loadSystemDailyTrendConfigs() {
+        const db = getDB();
+        if (!db) return [];
+        try {
+            const docRef = doc(db, "declarations", "systemDailyTrendConfigs");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                return d.tables || d.data || [];
+            }
+            return [];
+        } catch (e) {
+            console.error("Lỗi tải bảng xu hướng ngày hệ thống:", e);
+            return [];
+        }
+    },
+
+    async saveSystemDailyTrendConfigs(tables) {
+        const db = getDB();
+        if (!db) { notify("Lỗi kết nối CSDL!", "error"); return; }
+        if (!checkAdmin()) return;
+        const systemTables = tables.filter(t => t.isSystem).map(t => sanitizeForFirestore(t));
+        try {
+            const docRef = doc(db, "declarations", "systemDailyTrendConfigs");
+            await setDoc(docRef, { tables: systemTables, updatedAt: serverTimestamp() });
+            notify(`Đã lưu ${systemTables.length} bảng xu hướng ngày hệ thống lên Cloud!`, 'success');
+        } catch (error) {
+            console.error("Lỗi lưu bảng xu hướng ngày hệ thống:", error);
+            notify('Lỗi lưu bảng xu hướng ngày hệ thống: ' + error.message, 'error');
         }
     },
 

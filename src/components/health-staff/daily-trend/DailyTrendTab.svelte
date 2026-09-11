@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { efficiencyConfig, warehouseCustomMetrics, selectedWarehouse, dailyTrendConfigs, modalState } from '../../../stores.js';
     import { datasyncService } from '../../../services/datasync.service.js';
+    import { adminService } from '../../../services/admin.service.js';
     
     import DailyTrendPivotGrid from './DailyTrendPivotGrid.svelte';
     import AddDailyTrendModal from '../../modals/dailytrend/AddDailyTrendModal.svelte';
@@ -27,8 +28,14 @@
     async function loadData(kho) {
         isLoading = true;
         try {
-            const configs = await datasyncService.loadDailyTrendConfigs(kho);
-            dailyTrendConfigs.set(configs || []);
+            // 1. Load bảng hệ thống (Admin) + bảng cá nhân theo kho
+            const sysTables = await adminService.loadSystemDailyTrendConfigs();
+            const perTables = await datasyncService.loadDailyTrendConfigs(kho);
+            // 2. Merge theo id — bản cá nhân (nếu có) ghi đè hiển thị bản hệ thống cùng id
+            const merged = new Map();
+            sysTables.forEach(t => merged.set(t.id, { ...t, isSystem: true }));
+            perTables.forEach(t => merged.set(t.id, { ...t, isSystem: false }));
+            dailyTrendConfigs.set(Array.from(merged.values()));
             lastLoadedWarehouse = kho;
         } catch (error) {
             console.error("Lỗi tải bảng xu hướng:", error);
@@ -38,24 +45,44 @@
     }
 
     async function toggleTableVisibility(tableId) {
-        const updated = $dailyTrendConfigs.map(t => t.id === tableId ? { ...t, visible: !t.visible } : t);
+        const target = $dailyTrendConfigs.find(t => t.id === tableId);
+        if (!target) return;
+        const updated = $dailyTrendConfigs.map(t => t.id === tableId ? { ...t, isSystem: false, visible: !t.visible } : t);
         dailyTrendConfigs.set(updated);
-        try { await datasyncService.saveDailyTrendConfigs($selectedWarehouse, updated); } catch (e) { console.error(e); }
+        if (!$selectedWarehouse) return;
+        const personalTables = updated.filter(t => !t.isSystem);
+        try { await datasyncService.saveDailyTrendConfigs($selectedWarehouse, personalTables); } catch (e) { console.error(e); }
     }
 
     async function deleteTable(tableId) {
+        const table = $dailyTrendConfigs.find(t => t.id === tableId);
+        if (!table) return;
+        if (table.isSystem) {
+            alert("Đây là bảng hệ thống, bạn không thể xóa. Hãy dùng nút ẩn ở thanh 'Bảng hiển thị' để ẩn nó đi.");
+            return;
+        }
         if (!confirm('Bạn có chắc chắn muốn xóa bảng phân tích này?')) return;
         const updated = $dailyTrendConfigs.filter(t => t.id !== tableId);
         dailyTrendConfigs.set(updated);
-        try { await datasyncService.saveDailyTrendConfigs($selectedWarehouse, updated); } catch (e) { console.error(e); }
+        const personalTables = updated.filter(t => !t.isSystem);
+        try { await datasyncService.saveDailyTrendConfigs($selectedWarehouse, personalTables); } catch (e) { console.error(e); }
+    }
+
+    async function restoreDefaults() {
+        if (!$selectedWarehouse) return;
+        if (!confirm("Khôi phục danh sách bảng về đúng cấu hình Admin? Mọi chỉnh sửa/bảng riêng của kho này sẽ mất.")) return;
+        await datasyncService.saveDailyTrendConfigs($selectedWarehouse, []);
+        await loadData($selectedWarehouse);
     }
 
     function openAddModal() {
-        modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: null }));
+        modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: null, isSystem: false }));
     }
 
     function openEditModal(tableConfig) {
-        modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: tableConfig }));
+        // Sửa 1 bảng hệ thống ở đây sẽ tạo bản ghi đè cá nhân theo kho (isSystem:false), không
+        // đụng bảng gốc của Admin — giống cách chỉ số hiệu quả/bảng hiệu quả hoạt động.
+        modalState.update(s => ({ ...(s || {}), activeModal: 'add-daily-trend-modal', payload: tableConfig, isSystem: false }));
     }
 
     // --- BỘ MÀU CHUYÊN NGHIỆP CHO TIÊU ĐỀ CARD (CARD HEADER THEMES) ---
@@ -96,7 +123,11 @@
             {/each}
         </div>
 
-        <button class="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-lg flex items-center gap-1 transition-colors ml-auto border border-blue-200" on:click={openAddModal}>
+        <button class="px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-lg flex items-center gap-1 transition-colors ml-auto border border-gray-300" on:click={restoreDefaults} title="Khôi phục danh sách bảng về đúng cấu hình Admin">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            Khôi phục mặc định
+        </button>
+        <button class="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-lg flex items-center gap-1 transition-colors border border-blue-200" on:click={openAddModal}>
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
             Tạo bảng mới
         </button>

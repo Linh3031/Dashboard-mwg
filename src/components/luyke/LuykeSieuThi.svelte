@@ -238,6 +238,13 @@
       }
   }
 
+  async function handleRestoreDefaultMetrics() {
+      if (!$selectedWarehouse) return;
+      if (!confirm("Khôi phục về chỉ số mặc định của Admin? Toàn bộ chỉnh sửa/chỉ số riêng của kho này sẽ mất.")) return;
+      warehouseCustomMetrics.set([]);
+      await datasyncService.saveCustomMetrics($selectedWarehouse, []);
+  }
+
   afterUpdate(() => {
     if (typeof feather !== 'undefined') feather.replace();
   });
@@ -278,8 +285,9 @@
           on:add={openAddEffModal}
           on:edit={handleEditEffConfig}
           on:delete={handleDeleteEffConfig}
+          on:restore={handleRestoreDefaultMetrics}
       />
-      <LuykeQdcTable 
+      <LuykeQdcTable
           items={qdcItems} 
           numDays={numDays} 
       />

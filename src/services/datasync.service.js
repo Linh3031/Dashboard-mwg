@@ -215,22 +215,6 @@ export const datasyncService = {
         try { const docSnap = await getDoc(khoRef); return (docSnap.exists() && docSnap.data().realtimeConfig) ? docSnap.data().realtimeConfig.hiddenCategories || [] : []; } catch (e) { return []; }
     },
 
-    async savePersonalRevenueTables(kho, tables) {
-        const db = getDB();
-        if (!db || !kho) return;
-        if (!isWarehouseAllowed(kho)) { console.warn(`[DataSync] Bỏ qua ghi dữ liệu: không có quyền với kho ${kho}`); return; }
-        const personalTables = tables.filter(t => !t.isSystem);
-        const khoRef = doc(db, "warehouseData", kho);
-        try { await setDoc(khoRef, { personalRevenueTables: personalTables, updatedAt: serverTimestamp() }, { merge: true }); } catch (error) { throw error; }
-    },
-
-    async loadPersonalRevenueTables(kho) {
-        const db = getDB();
-        if (!db || !kho) return [];
-        const khoRef = doc(db, "warehouseData", kho);
-        try { const docSnap = await getDoc(khoRef); return docSnap.exists() ? (docSnap.data().personalRevenueTables || []) : []; } catch(e) { return []; }
-    },
-
     async savePersonalPerformanceTables(kho, tables) {
         const db = getDB();
         if (!db || !kho) return;

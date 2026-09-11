@@ -8,7 +8,6 @@
   import SummaryTab from './summary/SummaryTab.svelte';
   import EmployeeTab from './employee/EmployeeTab.svelte';
   import EfficiencyTab from './efficiency/EfficiencyTab.svelte';
-  import CategoryTab from './category/CategoryTab.svelte';
   import BrandTab from './brand/BrandTab.svelte';
   import CompetitionTab from './competition/CompetitionTab.svelte';
   import InstallmentView from '../health-staff/installment/InstallmentView.svelte';
@@ -222,11 +221,6 @@
                 {:else if activeSubTabId === 'subtab-realtime-hieu-qua-nhan-vien'}
                     <div id="subtab-realtime-hieu-qua-nhan-vien" class="sub-tab-content" data-capture-preset="landscape-table">
                         <EfficiencyTab {selectedWarehouse} />
-                    </div>
-
-                {:else if activeSubTabId === 'subtab-realtime-nganh-hang'}
-                    <div id="subtab-realtime-nganh-hang" class="sub-tab-content" data-capture-preset="mobile-portrait">
-                        <CategoryTab {selectedWarehouse} />
                     </div>
 
                 {:else if activeSubTabId === 'subtab-realtime-hang-ban'}

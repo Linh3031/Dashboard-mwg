@@ -51,7 +51,7 @@
   async function handleDeleteMetric(event) {
       const id = event.detail;
       const item = combinedEfficiencyItems.find(i => i.id === id);
-      
+
       if (item && item.isSystem) {
           alert("Đây là chỉ số hệ thống, bạn không thể xóa. Hãy dùng bộ lọc để ẩn nó đi.");
           return;
@@ -64,6 +64,21 @@
               await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
           }
       }
+  }
+
+  function openAddEffModal() {
+      modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: null }));
+  }
+
+  function handleEditEffConfig(event) {
+      modalState.update(s => ({ ...s, activeModal: 'add-efficiency-modal', payload: event.detail }));
+  }
+
+  async function handleRestoreDefaultMetrics() {
+      if (!$selectedWarehouse) return;
+      if (!confirm("Khôi phục về chỉ số mặc định của Admin? Toàn bộ chỉnh sửa/chỉ số riêng của kho này sẽ mất.")) return;
+      warehouseCustomMetrics.set([]);
+      await datasyncService.saveCustomMetrics($selectedWarehouse, []);
   }
 
   // --- [PHẪU THUẬT NGUYÊN TỬ]: TỪ ĐIỂN QUÉT TRUY VẾT TÊN SIÊU THỊ TOÀN DIỆN ---
@@ -350,12 +365,15 @@
   {/if}
 
   <div class="luyke-tier-1-grid realtime-override">
-      <EfficiencyTable 
-          supermarketData={supermarketReport} 
-          dynamicItems={combinedEfficiencyItems} 
-          items={[]} 
+      <EfficiencyTable
+          supermarketData={supermarketReport}
+          dynamicItems={combinedEfficiencyItems}
+          items={[]}
           goals={goals}
+          on:add={openAddEffModal}
+          on:edit={handleEditEffConfig}
           on:delete={handleDeleteMetric}
+          on:restore={handleRestoreDefaultMetrics}
       />
       <QdcTable items={qdcItems} />
   </div>

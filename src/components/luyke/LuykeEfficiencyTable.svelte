@@ -114,6 +114,9 @@
         <button class="text-blue-600 hover:bg-blue-50 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-blue-200" on:click={() => dispatch('add')} title="Thêm chỉ số mới">
             <i data-feather="plus" class="w-3 h-3"></i> Thêm
         </button>
+        <button class="text-gray-500 hover:bg-gray-100 p-1.5 rounded text-xs font-bold flex items-center gap-1 border border-gray-200" on:click={() => dispatch('restore')} title="Khôi phục chỉ số mặc định của Admin">
+            <i data-feather="rotate-ccw" class="w-3 h-3"></i> Khôi phục
+        </button>
         <div class="relative filter-wrapper">
             <button class="luyke-icon-btn {isSettingsOpen ? 'active' : ''}" on:click={() => isSettingsOpen = !isSettingsOpen}><i data-feather="filter" class="w-4 h-4"></i></button>
             {#if isSettingsOpen}

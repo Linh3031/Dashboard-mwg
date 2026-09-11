@@ -220,6 +220,12 @@
           if ($selectedWarehouse) await datasyncService.saveCustomMetrics($selectedWarehouse, newLocalMetrics);
       }
   }
+  async function handleRestoreDefaultMetrics() {
+      if (!$selectedWarehouse) return;
+      if (!confirm("Khôi phục về chỉ số mặc định của Admin? Toàn bộ chỉnh sửa/chỉ số riêng của kho này sẽ mất.")) return;
+      warehouseCustomMetrics.set([]);
+      await datasyncService.saveCustomMetrics($selectedWarehouse, []);
+  }
 
   afterUpdate(() => { if (typeof feather !== 'undefined') feather.replace(); });
 </script>
@@ -310,7 +316,7 @@
   {/if}
 
   <div class="luyke-tier-1-grid exclusive-sieuthi-capture" data-capture-group="tier1" data-capture-filename="HIỆU QUẢ KHAI THÁC">
-      <LuykeEfficiencyTable items={[]} dynamicItems={combinedEfficiencyItems} supermarketData={localSupermarketReport} goals={localGoals} on:add={openAddEffModal} on:edit={handleEditEffConfig} on:delete={handleDeleteEffConfig}/>
+      <LuykeEfficiencyTable items={[]} dynamicItems={combinedEfficiencyItems} supermarketData={localSupermarketReport} goals={localGoals} on:add={openAddEffModal} on:edit={handleEditEffConfig} on:delete={handleDeleteEffConfig} on:restore={handleRestoreDefaultMetrics}/>
       <LuykeQdcTable items={qdcItems} numDays={numDays} />
   </div>
 

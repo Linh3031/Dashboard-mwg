@@ -71,7 +71,6 @@ export const DEMO_SNAPSHOT = {
     "efficiencyConfig": EFFICIENCY_CONFIG,
     "kpiStore": KPI_STORE,
     "masterReportData": FAKE_MASTER_REPORT, // Nạp sẵn báo cáo tổng hợp
-    "customRevenueTables": [],
     "customPerformanceTables": [],
     "warehouseCustomMetrics": [] // Thêm cái này để tránh lỗi
   }

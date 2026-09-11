@@ -1,6 +1,6 @@
 <script>
     import { onMount } from 'svelte';
-    import { customPerformanceTables, isAdmin, modalState, selectedWarehouse } from '../../../stores.js';
+    import { customPerformanceTables, modalState, selectedWarehouse } from '../../../stores.js';
     import { adminService } from '../../../services/admin.service.js';
     import { datasyncService } from '../../../services/datasync.service.js';
     
@@ -32,16 +32,15 @@
         try {
             // 1. Load System Tables (Admin)
             const sysTables = await adminService.loadSystemPerformanceTables();
-            // 2. Load Personal Tables (User)
+            // 2. Load Personal Tables (User) — có thể ghi đè bảng hệ thống cùng id
             const perTables = await datasyncService.loadPersonalPerformanceTables(kho);
             // 3. Load trạng thái ẩn/hiện local
             const hiddenIds = JSON.parse(localStorage.getItem('hiddenPerformanceTableIds') || '[]');
-            // 4. Merge
-            const merged = [
-                ...sysTables.map(t => ({ ...t, isSystem: true, isVisible: !hiddenIds.includes(t.id) })),
-                ...perTables.map(t => ({ ...t, isSystem: false, isVisible: true }))
-            ];
-            customPerformanceTables.set(merged);
+            // 4. Merge theo id — bản cá nhân (nếu có) ghi đè hiển thị bản hệ thống cùng id
+            const merged = new Map();
+            sysTables.forEach(t => merged.set(t.id, { ...t, isSystem: true, isVisible: !hiddenIds.includes(t.id) }));
+            perTables.forEach(t => merged.set(t.id, { ...t, isSystem: false, isVisible: true }));
+            customPerformanceTables.set(Array.from(merged.values()));
             lastLoadedWarehouse = kho;
 
         } catch (e) {
@@ -87,13 +86,13 @@
     }
 
     function editTable(table) {
-        // Check quyền
-        if (table.isSystem && !$isAdmin) return alert("Bạn không có quyền sửa bảng hệ thống.");
-        modalState.update(s => ({ 
-            ...s, 
-            activeModal: 'add-performance-table-modal', 
+        // Sửa 1 bảng hệ thống ở đây sẽ tạo bản ghi đè cá nhân theo kho (xem handleSavePerformanceTable
+        // trong App.svelte), không đụng bảng gốc của Admin — giống cách chỉ số hiệu quả hoạt động.
+        modalState.update(s => ({
+            ...s,
+            activeModal: 'add-performance-table-modal',
             payload: table,
-            isSystem: table.isSystem 
+            isSystem: table.isSystem
         }));
     }
 
@@ -102,17 +101,23 @@
         if (!table) return;
 
         if (table.isSystem) {
-            if (!$isAdmin) return alert("Bạn không có quyền xóa bảng hệ thống.");
-            if (!confirm("Xóa vĩnh viễn bảng hệ thống này?")) return;
-            const newTables = $customPerformanceTables.filter(t => t.id !== id && t.isSystem);
-            await adminService.saveSystemPerformanceTables(newTables);
-        } else {
-            if (!confirm("Xóa bảng cá nhân này?")) return;
-            const newTables = $customPerformanceTables.filter(t => t.id !== id && !t.isSystem);
-            await datasyncService.savePersonalPerformanceTables($selectedWarehouse, newTables);
+            alert("Đây là bảng hệ thống, bạn không thể xóa. Hãy dùng nút ẩn/hiện ở thanh công cụ để ẩn nó đi.");
+            return;
         }
+
+        if (!confirm("Xóa bảng cá nhân này?")) return;
+        const newTables = $customPerformanceTables.filter(t => t.id !== id && !t.isSystem);
+        await datasyncService.savePersonalPerformanceTables($selectedWarehouse, newTables);
         // Reload local store
         customPerformanceTables.update(items => items.filter(t => t.id !== id));
+    }
+
+    async function restoreDefaults() {
+        if (!$selectedWarehouse) return;
+        if (!confirm("Khôi phục danh sách bảng về đúng cấu hình Admin? Mọi chỉnh sửa/bảng riêng của kho này sẽ mất.")) return;
+        await datasyncService.savePersonalPerformanceTables($selectedWarehouse, []);
+        localStorage.removeItem('hiddenPerformanceTableIds');
+        await loadData($selectedWarehouse);
     }
 
     $: visibleTables = $customPerformanceTables.filter(t => t.isVisible);
@@ -149,6 +154,15 @@
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                     Hiện tất cả
                 {/if}
+            </button>
+
+            <button
+                class="px-2 py-1 mr-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-[10px] font-bold border border-gray-300 transition-colors flex items-center gap-1"
+                on:click={restoreDefaults}
+                title="Khôi phục danh sách bảng về đúng cấu hình Admin"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Khôi phục mặc định
             </button>
 
             {#each $customPerformanceTables as table}

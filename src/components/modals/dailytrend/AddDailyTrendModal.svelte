@@ -1,6 +1,7 @@
 <script>
     import { modalState, dailyTrendConfigs, selectedWarehouse, efficiencyConfig, warehouseCustomMetrics, ycxData } from '../../../stores.js';
     import { datasyncService } from '../../../services/datasync.service.js';
+    import { adminService } from '../../../services/admin.service.js';
     
     import DailyTrendRawFilter from './DailyTrendRawFilter.svelte';
     import DailyTrendMetricConfig from './DailyTrendMetricConfig.svelte';
@@ -13,7 +14,7 @@
     $: isOpen = $modalState?.activeModal === 'add-daily-trend-modal';
     let metricConfigRef;
 
-    let editId = null; let title = '';
+    let editId = null; let title = ''; let isSystem = false;
     let dateMode = 'rolling'; let rollingDays = 5;
     let customStartDate = ''; let customEndDate = '';
     let viewMode = 'METRIC';
@@ -60,7 +61,11 @@
     let wasOpen = false;
     $: if (isOpen && !wasOpen) {
         wasOpen = true;
+        // [QUAN TRỌNG] isSystem luôn theo bối cảnh mở modal (Admin hay tab Lũy kế), không theo
+        // cờ isSystem sẵn có trên bảng đang sửa — để sửa 1 bảng hệ thống từ tab Lũy kế luôn tạo
+        // bản ghi đè cá nhân, không ghi đè lên bảng gốc của Admin.
         if ($modalState?.payload) {
+            isSystem = !!$modalState.isSystem;
             const p = $modalState.payload;
             editId = p.id; title = p.title || ''; dateMode = p.dateMode || 'rolling'; rollingDays = p.rollingDays || 5;
             customStartDate = p.customStartDate || ''; customEndDate = p.customEndDate || '';
@@ -73,12 +78,15 @@
             const f = p.filters || { nganhHang: [], nhomHang: [], nhaSanXuat: [], tenSanPham: [] };
             selectedNganh = f.nganhHang || []; selectedNhom = f.nhomHang || [];
             selectedHang = f.nhaSanXuat || []; selectedSP = f.tenSanPham || [];
-        } else resetForm();
+        } else {
+            resetForm();
+            isSystem = !!$modalState.isSystem;
+        }
     }
     $: if (!isOpen) wasOpen = false;
 
     function resetForm() {
-        editId = null; title = ''; dateMode = 'rolling'; rollingDays = 5; customStartDate = ''; customEndDate = '';
+        editId = null; title = ''; isSystem = false; dateMode = 'rolling'; rollingDays = 5; customStartDate = ''; customEndDate = '';
         viewMode = 'METRIC'; metricId = 'TY_LE_QUY_DOI'; metricTarget = 0; rawType = 'revenue'; showTotalColumn = true; showAverageColumn = true;
         selectedNganh = []; selectedNhom = []; selectedHang = []; selectedSP = [];
         if (metricConfigRef) metricConfigRef.resetBuilder();
@@ -92,8 +100,8 @@
     async function handleSave() {
         if (!title.trim()) return alert("Vui lòng nhập tên bảng!");
         if (dateMode === 'custom' && (!customStartDate || !customEndDate)) return alert("Vui lòng chọn mốc ngày bắt đầu và kết thúc!");
-        if (!$selectedWarehouse) return alert("Vui lòng chọn kho trước khi lưu!");
-        
+        if (!isSystem && !$selectedWarehouse) return alert("Vui lòng chọn kho trước khi lưu!");
+
         isSaving = true;
         try {
             const packedFilters = {
@@ -103,15 +111,23 @@
                 tenSanPham: (selectedSP.length >= listSanPham.length || selectedSP.length > 5000) ? [] : selectedSP
             };
             const newTable = {
-                id: editId || `trend_${Date.now()}`, title: title.trim(), dateMode, rollingDays, customStartDate, customEndDate,
+                id: editId || `trend_${Date.now()}`, title: title.trim(), isSystem, dateMode, rollingDays, customStartDate, customEndDate,
                 viewMode, metricId, rawType, showTotalColumn, showAverageColumn, filters: packedFilters, visible: true,
                 targetConfig: metricTarget // [NEW]: Lưu mục tiêu vào CSDL
             };
-            let updatedConfigs;
-            if (editId) updatedConfigs = $dailyTrendConfigs.map(t => t.id === editId ? newTable : t);
-            else updatedConfigs = [...$dailyTrendConfigs, newTable];
-            
-            await datasyncService.saveDailyTrendConfigs($selectedWarehouse, updatedConfigs);
+
+            // Cập nhật toàn bộ danh sách hiển thị (hệ thống + cá nhân) theo id
+            const updatedConfigs = editId
+                ? $dailyTrendConfigs.map(t => t.id === editId ? newTable : t)
+                : [...$dailyTrendConfigs, newTable];
+
+            if (isSystem) {
+                const systemTables = updatedConfigs.filter(t => t.isSystem);
+                await adminService.saveSystemDailyTrendConfigs(systemTables);
+            } else {
+                const personalTables = updatedConfigs.filter(t => !t.isSystem);
+                await datasyncService.saveDailyTrendConfigs($selectedWarehouse, personalTables);
+            }
             dailyTrendConfigs.set(updatedConfigs);
             close();
         } catch (error) { alert("Lỗi khi lưu bảng: " + error.message); } finally { isSaving = false; }

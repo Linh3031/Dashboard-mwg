@@ -7,9 +7,8 @@ import {
     masterReportData, 
     declarations, 
     categoryStructure, 
-    kpiStore, 
-    efficiencyConfig, 
-    customRevenueTables, 
+    kpiStore,
+    efficiencyConfig,
     customPerformanceTables,
     isDemoMode,
     selectedWarehouse,
@@ -31,7 +30,6 @@ export const demoService = {
                 categoryStructure: get(categoryStructure),
                 kpiStore: get(kpiStore),
                 efficiencyConfig: get(efficiencyConfig),
-                customRevenueTables: get(customRevenueTables),
                 customPerformanceTables: get(customPerformanceTables)
             }
         };
@@ -81,7 +79,6 @@ export const demoService = {
         if (d.categoryStructure) categoryStructure.set(d.categoryStructure);
         if (d.kpiStore) kpiStore.set(d.kpiStore);
         if (d.efficiencyConfig) efficiencyConfig.set(d.efficiencyConfig);
-        if (d.customRevenueTables) customRevenueTables.set(d.customRevenueTables);
         if (d.customPerformanceTables) customPerformanceTables.set(d.customPerformanceTables);
 
         return true;

@@ -7,8 +7,8 @@
 
     // --- IMPORT TỪ FILE B (LOGIC CỐT LÕI) ---
     import AdminHomeConfig from './admin/AdminHomeConfig.svelte';
-    import AdminRevenueTables from './admin/AdminRevenueTables.svelte';
     import AdminEfficiency from './admin/AdminEfficiency.svelte';
+    import AdminDailyTrend from './admin/AdminDailyTrend.svelte';
     import AdminCategory from './admin/AdminCategory.svelte';
     import AdminMappings from './admin/AdminMappings.svelte';
     import AdminCompetition from './admin/AdminCompetition.svelte';
@@ -90,12 +90,12 @@
                 <div in:fade={{ duration: 200 }}>
                     <h3 class="text-lg font-bold text-slate-800 mb-6 pb-2 border-b border-slate-200">Cấu hình Bảng & Chỉ số</h3>
                     <div class="space-y-8">
-                        <AdminRevenueTables />
-
                         <AdminPerformanceTables />
 
+                        <AdminDailyTrend />
+
                         <AdminEfficiency />
-                        
+
                         <AdminCategory viewMode="config" />
                     </div>
                 </div>

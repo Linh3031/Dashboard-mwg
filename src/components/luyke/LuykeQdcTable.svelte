@@ -44,17 +44,33 @@
 
   $: filterList = allGroups.filter(g => g.name.toLowerCase().includes(filterSearch.toLowerCase()));
 
+  // [MẶC ĐỊNH] Kho chưa từng tùy chỉnh filter -> chỉ hiện Top 10 nhóm hàng doanh thu quy đổi cao nhất
+  function computeDefaultTopNames(n = 10) {
+      const macroConfigs = $macroProductGroupConfig || [];
+      const ranked = allGroups.map(g => {
+          if (g.type === 'macro') {
+              const config = macroConfigs.find(m => m.name === g.name);
+              const childIds = new Set(config?.items || []);
+              const revenue = items.filter(i => childIds.has(i.id)).reduce((sum, i) => sum + (i.dtqd || 0), 0);
+              return { name: g.name, revenue };
+          }
+          const item = items.find(i => i.name === g.name);
+          return { name: g.name, revenue: item?.dtqd || 0 };
+      });
+      return ranked.sort((a, b) => b.revenue - a.revenue).slice(0, n).map(g => g.name);
+  }
+
   $: if ($selectedWarehouse) { loadConfigForWarehouse($selectedWarehouse);
-  } else { localConfig = allGroups.map(g => g.name);
+  } else { localConfig = computeDefaultTopNames();
   }
 
   async function loadConfigForWarehouse(kho) {
       try {
           const savedConfig = await datasyncService.loadQdcConfig(kho);
-          if (savedConfig && Array.isArray(savedConfig)) { localConfig = savedConfig; } 
-          else { localConfig = allGroups.map(g => g.name);
+          if (savedConfig && Array.isArray(savedConfig)) { localConfig = savedConfig; }
+          else { localConfig = computeDefaultTopNames();
           }
-      } catch (e) { localConfig = allGroups.map(g => g.name);
+      } catch (e) { localConfig = computeDefaultTopNames();
       }
   }
 

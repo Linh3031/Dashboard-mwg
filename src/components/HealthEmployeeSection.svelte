@@ -23,7 +23,6 @@
   import RevenueDetailView from './health-staff/revenue/RevenueDetailView.svelte';
   import IncomeTable from './health-staff/IncomeTable.svelte';
   import PerformanceView from './health-staff/performance/PerformanceView.svelte';
-  import CategoryRevenueView from './health-staff/CategoryRevenueView.svelte';
   import CompetitionTab from './health-staff/CompetitionTab.svelte';
   import ProgramGoalTables from './health-staff/ProgramGoalTables.svelte';
   import InstallmentView from './health-staff/installment/InstallmentView.svelte';
@@ -407,13 +406,6 @@
                         <DailyTrendTab />
                     </div>
 
-                {:else if activeSubTab === 'nganhhang'}
-                    <div id="subtab-nganhhang" class="sub-tab-content" data-capture-preset="mobile-portrait">
-                        <div id="category-revenue-report-container">
-                            <CategoryRevenueView reportData={processedReport} />
-                        </div>
-                    </div>
-                
                 {:else if activeSubTab === 'thidua'}
                     <div id="subtab-thidua" class="sub-tab-content">
                         <div id="competition-report-container-lk">

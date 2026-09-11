@@ -19,13 +19,13 @@ export const adminService = {
     saveCategoryDataToFirestore: categoryService.saveCategoryDataToFirestore,
     loadCategoryDataFromFirestore: categoryService.loadCategoryDataFromFirestore,
 
-    // --- 4. SYSTEM REVENUE TABLES ---
-    loadSystemRevenueTables: performanceService.loadSystemRevenueTables,
-    saveSystemRevenueTables: performanceService.saveSystemRevenueTables,
-
-    // --- 4.5. SYSTEM PERFORMANCE TABLES ---
+    // --- 4. SYSTEM PERFORMANCE TABLES ---
     loadSystemPerformanceTables: performanceService.loadSystemPerformanceTables,
     saveSystemPerformanceTables: performanceService.saveSystemPerformanceTables,
+
+    // --- 4.5. SYSTEM DAILY TREND CONFIGS ---
+    loadSystemDailyTrendConfigs: performanceService.loadSystemDailyTrendConfigs,
+    saveSystemDailyTrendConfigs: performanceService.saveSystemDailyTrendConfigs,
 
     // --- 5. MAPPINGS & CONFIGS GLOBAL ---
     loadMappingsGlobal: categoryService.loadMappingsGlobal,
