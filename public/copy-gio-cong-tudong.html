@@ -86,6 +86,18 @@
   .trouble p { margin: 0 0 10px; }
   .trouble strong { color: var(--ink); font-weight: 500; }
 
+  .note {
+    display: inline-block;
+    margin: 0 0 32px;
+    padding: 8px 14px;
+    background: #FFF4D6;
+    color: #8a5a00;
+    border: 1px solid #f0d896;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
   @media (max-width: 560px) {
     h1 { font-size: 1.9rem; }
     .drag-area { padding-left: 16px; }
@@ -98,6 +110,7 @@
 <main>
   <h1>Nút copy giờ công</h1>
   <p class="lead">Lấy toàn bộ bảng Giờ Công Làm Việc bằng một cú bấm, rồi dán vào bất cứ đâu. Cài một lần, dùng mãi.</p>
+  <p class="note">⚠️ Hoạt động tốt nhất trên trình duyệt <strong>Chrome</strong>.</p>
 
   <div class="browser" aria-hidden="true">
     <div class="toolbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="address"></span></div>
@@ -119,7 +132,7 @@
 
   <h2>Cài một lần</h2>
   <ol>
-    <li>Bật thanh dấu trang nếu chưa thấy: bấm <kbd class="k-bar">⌘⇧B</kbd>.</li>
+    <li>Bật thanh dấu trang nếu chưa thấy: bấm <kbd>⌘⇧B</kbd> (macOS) hoặc <kbd>Ctrl Shift B</kbd> (Windows).</li>
     <li>Kéo nút vàng ở trên thả vào thanh dấu trang. Nút mới hiện ra là xong.</li>
   </ol>
 
@@ -127,7 +140,7 @@
   <ol>
     <li>Mở trang Giờ Công Làm Việc, chọn ngày và khu vực hoặc siêu thị.</li>
     <li>Bấm nút <strong>📋 Copy giờ công</strong> trên thanh dấu trang. Đợi khung báo "Đã copy" ở góc phải dưới.</li>
-    <li>Sang trang cần dán, bấm <kbd class="k-paste">⌘V</kbd>.</li>
+    <li>Sang trang cần dán, bấm <kbd>⌘V</kbd> (macOS) hoặc <kbd>Ctrl V</kbd> (Windows).</li>
   </ol>
 
   <div class="trouble">
@@ -139,11 +152,6 @@
 </main>
 
 <script>
-  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  if (!isMac) {
-    document.querySelectorAll('.k-bar').forEach(k => k.textContent = 'Ctrl Shift B');
-    document.querySelectorAll('.k-paste').forEach(k => k.textContent = 'Ctrl V');
-  }
   const chip = document.getElementById('chip');
   const hint = document.getElementById('hint');
   const slot = document.getElementById('slot');
