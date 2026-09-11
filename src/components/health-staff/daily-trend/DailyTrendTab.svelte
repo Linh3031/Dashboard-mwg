@@ -5,8 +5,7 @@
     import { adminService } from '../../../services/admin.service.js';
     
     import DailyTrendPivotGrid from './DailyTrendPivotGrid.svelte';
-    import AddDailyTrendModal from '../../modals/dailytrend/AddDailyTrendModal.svelte';
-    
+
     let isLoading = true;
     let lastLoadedWarehouse = '';
 
@@ -141,7 +140,7 @@
         
         <div class="flex flex-wrap gap-2 flex-1">
             {#each $dailyTrendConfigs as table (table.id)}
-                <button class="px-4 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1 {table.visible ? 'bg-white text-blue-700 border-blue-200 shadow-sm' : 'bg-transparent text-gray-400 border-gray-300 hover:bg-gray-200'}" on:click={() => toggleTableVisibility(table.id)}>
+                <button class="px-4 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1 {table.visible ? 'bg-white text-blue-700 border-blue-200 shadow-sm' : 'bg-transparent text-gray-400 border-gray-300 hover:bg-gray-200'}" on:click={() => toggleTableVisibility(table.id)} title={table.note || ''}>
                     <span class="w-2 h-2 rounded-full {table.visible ? 'bg-blue-500' : 'bg-gray-400'}"></span>
                     {table.title} ({table.dateMode === 'custom' ? 'Tùy chỉnh' : `${table.rollingDays}d`})
                 </button>
@@ -186,7 +185,7 @@
                     <div class="px-5 py-3 border-b {theme.border} {theme.bg} flex justify-between items-center transition-colors">
                         <div class="flex items-center gap-2">
                             <span class="w-3 h-3 rounded-full {theme.dot}"></span>
-                            <h3 class="font-bold {theme.text} text-sm uppercase tracking-wide">{tableConfig.title}</h3>
+                            <h3 class="font-bold {theme.text} text-sm uppercase tracking-wide" title={tableConfig.note || ''}>{tableConfig.title}</h3>
                             <span class="text-[10px] font-bold {theme.badgeBg} {theme.badgeText} px-2 py-0.5 rounded ml-2">Cập nhật lúc {new Date().getHours()}:{new Date().getMinutes().toString().padStart(2, '0')}</span>
                         </div>
                         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -204,7 +203,6 @@
             {/each}
         </div>
     {/if}
- <AddDailyTrendModal /> 
 </div>
 
 <style>

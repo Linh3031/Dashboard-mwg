@@ -20,6 +20,7 @@
 
     // --- STATE BẢNG ---
     let tabName = '';
+    let tabNote = '';
     let tabMainCol = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], itemType: 'group', type: 'DT', showSL: false };
     let tabSubCols = [];
     let tabActiveContext = 'main';
@@ -48,7 +49,8 @@
             indDenominator = editItem?.groupB ? [...editItem.groupB] : []; indActiveContext = 'numerator';
         } else {
             tabName = editItem?.name || editItem?.tableName || editItem?.title || '';
-            
+            tabNote = editItem?.note || '';
+
             if (editItem && editItem.mainColumn && Object.keys(editItem.mainColumn).length > 0) {
                 tabMainCol = { ...editItem.mainColumn, show: true };
             } else {
@@ -323,8 +325,8 @@
             payload = {
                 id: editItem?.id || editItem?.tableId || `table_${Date.now()}`,
                 tableId: editItem?.tableId || editItem?.id || `table_${Date.now()}`,
-                name: tabName, tableName: tabName, title: tabName, isSystem: isSystem,
-                mainColumn: finalMainCol, subColumns: processedCols, columns: processedCols 
+                name: tabName, tableName: tabName, title: tabName, note: tabNote.trim(), isSystem: isSystem,
+                mainColumn: finalMainCol, subColumns: processedCols, columns: processedCols
             };
         }
         dispatch('save', { type: configType, payload });
@@ -372,8 +374,8 @@
                 </div>
             {:else}
                 <div class="w-1/4 p-3 overflow-y-auto custom-scrollbar bg-gray-50 border-r border-gray-300">
-                    <TableBuilder 
-                        bind:tableName={tabName} bind:mainColumn={tabMainCol} bind:subColumns={tabSubCols}
+                    <TableBuilder
+                        bind:tableName={tabName} bind:tableNote={tabNote} bind:mainColumn={tabMainCol} bind:subColumns={tabSubCols}
                         bind:activeContext={tabActiveContext} bind:activeSubIndex={tabActiveSubIndex}
                         on:contextChange={(e) => { tabActiveContext = e.detail.ctx; tabActiveSubIndex = e.detail.index; }}
                     />

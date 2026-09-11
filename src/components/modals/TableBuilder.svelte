@@ -3,6 +3,7 @@
     const dispatch = createEventDispatcher();
 
     export let tableName = '';
+    export let tableNote = '';
     // [Surgical Insert]: Bổ sung showSL: false cho Cột Tổng (mainColumn)
     export let mainColumn = { id: 'mainValue', header: 'Tổng cộng', show: false, items: [], type: 'DT', metrics: { sl: false, dt: true, dtqd: false }, showSL: false };
     export let subColumns = [];
@@ -78,10 +79,15 @@
 <div class="flex flex-col gap-3">
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-3">
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Tên bảng hiển thị</label>
-        <input 
-            type="text" bind:value={tableName} placeholder="VD: Bảng Hiệu quả..." 
+        <input
+            type="text" bind:value={tableName} placeholder="VD: Bảng Hiệu quả..."
             class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-blue-900 bg-blue-50/30"
         />
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1 mt-3">Ghi chú (hiện khi rê chuột vào tên bảng)</label>
+        <textarea
+            bind:value={tableNote} placeholder="VD: Bảng này dùng để theo dõi tỷ lệ bán kèm ngành ICT..." rows="2"
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm text-gray-700 resize-none"
+        ></textarea>
     </div>
 
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">

@@ -56,6 +56,7 @@
   import StEmpCompetitionModal from './components/modals/StEmpCompetitionModal.svelte';
 
   import UnifiedConfigModal from './components/modals/UnifiedConfigModal.svelte';
+  import AddDailyTrendModal from './components/modals/dailytrend/AddDailyTrendModal.svelte';
   import CapturePreviewModal from './components/modals/CapturePreviewModal.svelte';
   
   let isBootingDemo = false;
@@ -311,13 +312,15 @@
         />
     {/if}
 
-    <UnifiedConfigModal 
+    <UnifiedConfigModal
         isOpen={['add-performance-table-modal', 'add-efficiency-modal', 'add-metric-modal'].includes($modalState.activeModal)}
         editItem={$modalState.payload}
         isSystem={$modalState.isSystem || $activeTab === 'declaration-section'}
         on:close={closeModal}
         on:save={handleUnifiedSave}
     />
+
+    <AddDailyTrendModal />
 
     {#if $isDemoMode}
     <div class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 bg-indigo-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-500 animate-bounce-in">

@@ -102,7 +102,7 @@
     </div>
 
     <div class="px-5 py-3 border-b {theme.header} flex justify-between items-center">
-        <h4 class="text-base font-bold uppercase {theme.title} flex items-center gap-2" title={config.title}>
+        <h4 class="text-base font-bold uppercase {theme.title} flex items-center gap-2" title={config.note || config.title}>
             <i data-feather="bar-chart-2" class="w-4 h-4"></i> {config.title}
         </h4>
     </div>

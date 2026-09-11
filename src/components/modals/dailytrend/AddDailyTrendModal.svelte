@@ -14,7 +14,7 @@
     $: isOpen = $modalState?.activeModal === 'add-daily-trend-modal';
     let metricConfigRef;
 
-    let editId = null; let title = ''; let isSystem = false;
+    let editId = null; let title = ''; let note = ''; let isSystem = false;
     let dateMode = 'rolling'; let rollingDays = 5;
     let customStartDate = ''; let customEndDate = '';
     let viewMode = 'METRIC';
@@ -67,7 +67,7 @@
         if ($modalState?.payload) {
             isSystem = !!$modalState.isSystem;
             const p = $modalState.payload;
-            editId = p.id; title = p.title || ''; dateMode = p.dateMode || 'rolling'; rollingDays = p.rollingDays || 5;
+            editId = p.id; title = p.title || ''; note = p.note || ''; dateMode = p.dateMode || 'rolling'; rollingDays = p.rollingDays || 5;
             customStartDate = p.customStartDate || ''; customEndDate = p.customEndDate || '';
             viewMode = p.viewMode || 'METRIC'; metricId = p.metricId || 'TY_LE_QUY_DOI';
             metricTarget = p.targetConfig || 0; // Tải mục tiêu cũ
@@ -86,7 +86,7 @@
     $: if (!isOpen) wasOpen = false;
 
     function resetForm() {
-        editId = null; title = ''; isSystem = false; dateMode = 'rolling'; rollingDays = 5; customStartDate = ''; customEndDate = '';
+        editId = null; title = ''; note = ''; isSystem = false; dateMode = 'rolling'; rollingDays = 5; customStartDate = ''; customEndDate = '';
         viewMode = 'METRIC'; metricId = 'TY_LE_QUY_DOI'; metricTarget = 0; rawType = 'revenue'; showTotalColumn = true; showAverageColumn = true;
         selectedNganh = []; selectedNhom = []; selectedHang = []; selectedSP = [];
         if (metricConfigRef) metricConfigRef.resetBuilder();
@@ -113,7 +113,7 @@
                 tenSanPham: (selectedSP.length >= listSanPham.length || selectedSP.length > 5000) ? [] : selectedSP
             };
             const newTable = {
-                id: editId || `trend_${Date.now()}`, title: title.trim(), isSystem, dateMode, rollingDays, customStartDate, customEndDate,
+                id: editId || `trend_${Date.now()}`, title: title.trim(), note: note.trim(), isSystem, dateMode, rollingDays, customStartDate, customEndDate,
                 viewMode, metricId, rawType, showTotalColumn, showAverageColumn, filters: packedFilters, visible: true,
                 targetConfig: metricTarget // [NEW]: Lưu mục tiêu vào CSDL
             };
@@ -166,6 +166,10 @@
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tiêu đề bảng <span class="text-red-500">*</span></label>
                             <input type="text" bind:value={title} placeholder="VD: Xu hướng SIM..." class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-900" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Ghi chú (hiện khi rê chuột vào tên bảng)</label>
+                            <textarea bind:value={note} placeholder="VD: Bảng này theo dõi xu hướng bán SIM 5 ngày gần nhất..." rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm text-gray-700 resize-none"></textarea>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Thời gian dữ liệu</label>
