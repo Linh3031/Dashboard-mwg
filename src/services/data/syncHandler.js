@@ -6,6 +6,7 @@ import { storage } from '../storage.service.js';
 import { dataProcessing } from '../dataProcessing.js';
 import { resolveThiDuaStRows, resolveDoanhThuBiRows } from '../processing/logic/biExcel.processor.js';
 import { parseDoanhThuBiPasted } from '../processing/parsers/biPaste.parser.js';
+import { parseGioCongPasted } from '../processing/parsers/gioCongPaste.parser.js';
 import { parseThiDuaNvPasted } from '../processing/parsers/thiduaNvPaste.parser.js';
 import { parseThiDuaStPasted } from '../processing/parsers/thiduaStPaste.parser.js';
 import { FILE_MAPPING, PASTE_MAPPING } from './constants.js';
@@ -364,6 +365,10 @@ export const syncHandler = {
                         const response = await fetch(cacheBusterUrl);
                         const textContent = await response.text();
                         dataForStorage = parseDoanhThuBiPasted(textContent).results;
+                    } else if (baseKey === 'saved_giocong' && fileMeta.fileType === 'text_giocong_paste') {
+                        const response = await fetch(cacheBusterUrl);
+                        const textContent = await response.text();
+                        dataForStorage = parseGioCongPasted(textContent).results;
                     } else if (baseKey === 'saved_thiduanv_excel' && fileMeta.fileType === 'text_thidua_nv_paste') {
                         const response = await fetch(cacheBusterUrl);
                         const textContent = await response.text();

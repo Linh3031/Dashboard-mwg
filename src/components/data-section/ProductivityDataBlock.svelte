@@ -1,8 +1,13 @@
 <script>
     import { createEventDispatcher } from 'svelte';
     import FileInput from '../common/FileInput.svelte';
+    import GioCongPasteInput from './GioCongPasteInput.svelte';
 
     const dispatch = createEventDispatcher();
+
+    // Trang timekeeping bị công ty chặn xuất Excel — chuyển mặc định sang ô dán. Vẫn giữ nguyên
+    // ô Excel cũ trong code, chỉ ẩn UI, phòng trường hợp công ty mở lại export Excel.
+    let showGioCongExcelFallback = false;
 </script>
 
 <div class="content-card data-card--green flex flex-col gap-4 !mb-2 !mt-2" data-tour="block-green">
@@ -28,8 +33,13 @@
                 </button>
             </div>
             <div class="h-fit w-full overflow-hidden mt-1">
-                <FileInput label="Giờ công" icon="clock" link="https://baocao.dienmayxanh.com/dashboard/timekeeping" saveKey="saved_giocong"/>
+                <GioCongPasteInput />
             </div>
+            {#if showGioCongExcelFallback}
+                <div class="h-fit w-full overflow-hidden mt-1">
+                    <FileInput label="Giờ công" icon="clock" link="https://baocao.dienmayxanh.com/dashboard/timekeeping" saveKey="saved_giocong"/>
+                </div>
+            {/if}
         </div>
     </div>
 </div>
