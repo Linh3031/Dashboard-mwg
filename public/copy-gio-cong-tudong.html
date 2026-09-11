@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cài nút Copy giờ công</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #EEF2F6;
+    --ink: #1B2430;
+    --muted: #5B6675;
+    --line: #CFD6DF;
+    --blue: #1F5FD6;
+    --chip: #FFD23F;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.6 "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 660px; margin: 0 auto; padding: 56px 24px 72px; }
+  h1 { font-size: 2.4rem; line-height: 1.15; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .lead { color: var(--muted); font-size: 1.1rem; margin: 0 0 40px; max-width: 34em; }
+
+  /* Mô phỏng thanh dấu trang */
+  .browser {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px 12px 4px 4px;
+    overflow: hidden;
+  }
+  .toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .address { flex: 1; margin-left: 8px; height: 26px; border-radius: 13px; background: var(--paper); }
+  .bookmarks { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 13px; color: var(--muted); }
+  .fake { padding: 3px 10px; border-radius: 6px; background: var(--paper); }
+  .slot {
+    padding: 3px 14px;
+    border: 2px dashed var(--blue);
+    border-radius: 6px;
+    color: var(--blue);
+    font-weight: 500;
+    transition: background .15s;
+  }
+  .slot.hot { background: #dfe9fb; }
+
+  .drag-area { position: relative; padding: 18px 0 8px 120px; min-height: 120px; }
+  .arrow { position: absolute; left: 150px; top: -4px; width: 120px; height: 70px; color: var(--blue); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 58px;
+    padding: 12px 20px;
+    background: var(--chip);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 1.05rem;
+    text-decoration: none;
+    border-radius: 8px;
+    border: 1px solid #e3b820;
+    box-shadow: 0 3px 0 #d6aa10;
+    cursor: grab;
+  }
+  .chip:active { cursor: grabbing; }
+  .chip:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+  .hint { margin: 10px 0 0; font-size: 14px; color: var(--muted); min-height: 1.6em; }
+  .hint.warn { color: #b3261e; font-weight: 500; }
+
+  h2 { font-size: 1.3rem; margin: 48px 0 12px; }
+  ol { margin: 0; padding-left: 1.4em; }
+  li { margin: 0 0 10px; padding-left: 4px; }
+  kbd {
+    font: 500 0.9em "Be Vietnam Pro", system-ui, sans-serif;
+    padding: 1px 7px;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    background: #fff;
+    white-space: nowrap;
+  }
+  .trouble { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+  .trouble p { margin: 0 0 10px; }
+  .trouble strong { color: var(--ink); font-weight: 500; }
+
+  @media (max-width: 560px) {
+    h1 { font-size: 1.9rem; }
+    .drag-area { padding-left: 16px; }
+    .arrow { left: 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .slot { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Nút copy giờ công</h1>
+  <p class="lead">Lấy toàn bộ bảng Giờ Công Làm Việc bằng một cú bấm, rồi dán vào bất cứ đâu. Cài một lần, dùng mãi.</p>
+
+  <div class="browser" aria-hidden="true">
+    <div class="toolbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="address"></span></div>
+    <div class="bookmarks">
+      <span class="fake">Google Docs</span>
+      <span class="fake">MWG</span>
+      <span class="slot" id="slot">Thả vào đây</span>
+    </div>
+  </div>
+
+  <div class="drag-area">
+    <svg class="arrow" viewBox="0 0 120 70" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M8 66 C 20 30, 60 20, 96 10"/>
+      <path d="M84 4 L 97 10 L 87 21"/>
+    </svg>
+    <a class="chip" id="chip" href="javascript:(()%3D%3E%7Bconst%20t%3D%7B%22%2Fdashboard%2Ftimekeeping%22%3A%7Bapi%3A%22timekeeping-get%22%2Cname%3A%22Gi%E1%BB%9D%20c%C3%B4ng%22%7D%7D%5Blocation.pathname%5D%3Bif(!location.hostname.includes(%22baocao.dienmayxanh.com%22)%7C%7C!t)return%20void%20alert('M%E1%BB%9F%20trang%20%22Gi%E1%BB%9D%20C%C3%B4ng%20L%C3%A0m%20Vi%E1%BB%87c%22%20tr%C3%AAn%20baocao.dienmayxanh.com%20r%E1%BB%93i%20b%E1%BA%A5m%20l%E1%BA%A1i%20n%C3%BAt%20n%C3%A0y.')%3Bif(window.__gcTrigger)return%20void%20window.__gcTrigger()%3Bconst%20n%3Dwindow.fetch.bind(window)%2Ce%3Dt%3D%3Enew%20Promise(n%3D%3EsetTimeout(n%2Ct))%3Blet%20o%3D!1%2Ca%3Dnull%3Bfunction%20i(t)%7Bconst%20n%3Dnew%20Error(t)%3Breturn%20n.fatal%3D!0%2Cn%7Dasync%20function%20r(t%2Cn)%7Btry%7Breturn%20await%20navigator.clipboard.writeText(t)%2C!0%7Dcatch%7Bif(!n)return!1%3Bconst%20e%3Ddocument.createElement(%22textarea%22)%3Be.value%3Dt%2Ce.style.cssText%3D%22position%3Afixed%3Bopacity%3A0%22%2Cdocument.body.appendChild(e)%2Ce.select()%3Bconst%20o%3Ddocument.execCommand(%22copy%22)%3Breturn%20e.remove()%2Co%7D%7Dfunction%20c(t%2Cn%3D%7B%7D)%7Ba%7C%7C(a%3Ddocument.createElement(%22div%22)%2Ca.style.cssText%3D%22position%3Afixed%3Bright%3A20px%3Bbottom%3A20px%3Bz-index%3A2147483647%3Bmax-width%3A340px%3Bbackground%3A%23fff%3Bcolor%3A%231B2430%3Bborder%3A1px%20solid%20%23cfd6df%3Bborder-radius%3A10px%3Bpadding%3A14px%2016px%3Bbox-shadow%3A0%208px%2028px%20rgba(27%2C36%2C48%2C.2)%3Bfont%3A14px%2F1.45%20system-ui%2Csans-serif%22%2Cdocument.body.appendChild(a))%2Ca.innerHTML%3D%22%22%3Bconst%20e%3Ddocument.createElement(%22div%22)%3Bif(e.textContent%3Dt%2Ca.appendChild(e)%2Cn.busy)return%3Bconst%20o%3Ddocument.createElement(%22div%22)%3Bif(o.style.cssText%3D%22margin-top%3A10px%3Bdisplay%3Aflex%3Bgap%3A8px%22%2Ca.appendChild(o)%2Cn.tsv)%7Bconst%20t%3Ds(n.copied%3F%22Copy%20l%E1%BA%A1i%22%3A%22Copy%22%2C%22%231F5FD6%22%2Casync()%3D%3E%7Bconst%20e%3Dawait%20r(n.tsv%2C!0)%3Bt.textContent%3De%3F%22%C4%90%C3%A3%20copy%22%3A%22Kh%C3%B4ng%20copy%20%C4%91%C6%B0%E1%BB%A3c%22%7D)%3Bo.appendChild(t)%7Do.appendChild(s(%22%C4%90%C3%B3ng%22%2C%22%236b7582%22%2C()%3D%3E%7Ba.remove()%2Ca%3Dnull%7D))%7Dfunction%20s(t%2Cn%2Ce)%7Bconst%20o%3Ddocument.createElement(%22button%22)%3Breturn%20o.textContent%3Dt%2Co.style.cssText%3D%60background%3A%24%7Bn%7D%3Bcolor%3A%23fff%3Bborder%3A0%3Bborder-radius%3A6px%3Bpadding%3A6px%2012px%3Bcursor%3Apointer%3Bfont%3Ainherit%60%2Co.onclick%3De%2Co%7Dwindow.fetch%3Dasync%20function(a%2Cs)%7Blet%20d%3Dnull%3Btry%7Bconst%20n%3D%22string%22%3D%3Dtypeof%20a%3Fa%3Aa%20instanceof%20URL%3Fa.href%3Aa.url%3B!o%26%26n.includes(t.api)%26%26(d%3Dawait%20async%20function(t%2Cn%2Ce)%7Bconst%20o%3Dn%20instanceof%20Request%2Ca%3Dnew%20Headers(e%3F.headers%7C%7C(o%3Fn.headers%3Avoid%200))%3Blet%20i%3De%3F.body%3Bnull%3D%3Di%26%26o%26%26(i%3Dawait%20n.clone().text())%3Breturn%22string%22!%3Dtypeof%20i%3Fnull%3A%7Burl%3At%2Cmethod%3Ae%3F.method%7C%7C(o%3Fn.method%3A%22POST%22)%2Cheaders%3AObject.fromEntries(a.entries())%2Ccredentials%3Ae%3F.credentials%7C%7C(o%3Fn.credentials%3A%22same-origin%22)%2Cparams%3AJSON.parse(i)%7D%7D(n%2Ca%2Cs))%7Dcatch(t)%7Bconsole.warn(%22%5BCopy%5D%22%2Ct)%7Dconst%20l%3Dawait%20n(a%2Cs)%3Breturn%20d%26%261%3D%3D%3DNumber(d.params.PAGEINDEX)%26%26(o%3D!0%2Casync%20function(o)%7Bc(%60%C4%90ang%20l%E1%BA%A5y%20%24%7Bt.name%7D...%60%2C%7Bbusy%3A!0%7D)%3Bconst%20a%3Dasync(t%2Ce)%3D%3E%7Bconst%20a%3Dawait%20n(o.url%2C%7Bmethod%3Ao.method%2Cheaders%3Ao.headers%2Ccredentials%3Ao.credentials%2Cbody%3AJSON.stringify(%7B...o.params%2CPAGEINDEX%3At%2CPAGESIZE%3Ae%7D)%7D)%3Bif(401%3D%3D%3Da.status%7C%7C403%3D%3D%3Da.status)throw%20i(%22Phi%C3%AAn%20%C4%91%C4%83ng%20nh%E1%BA%ADp%20%C4%91%C3%A3%20h%E1%BA%BFt%20h%E1%BA%A1n.%20T%E1%BA%A3i%20l%E1%BA%A1i%20trang%2C%20%C4%91%C4%83ng%20nh%E1%BA%ADp%20r%E1%BB%93i%20b%E1%BA%A5m%20n%C3%BAt%20l%E1%BA%A7n%20n%E1%BB%AFa.%22)%3Bif(429%3D%3D%3Da.status)throw%20i(%22Server%20%C4%91ang%20t%E1%BA%A1m%20ch%E1%BA%B7n%20v%C3%AC%20g%E1%BB%8Di%20qu%C3%A1%20nhi%E1%BB%81u.%20%C4%90%E1%BB%A3i%20v%C3%A0i%20ph%C3%BAt%20r%E1%BB%93i%20th%E1%BB%AD%20l%E1%BA%A1i.%22)%3Bconst%20r%3Dawait%20a.json()%3Bif(!r.success)throw%20new%20Error(r.message%7C%7C%60Server%20b%C3%A1o%20l%E1%BB%97i%20(m%C3%A3%20%24%7Ba.status%7D).%60)%3Breturn%20r%7D%3Btry%7Blet%20n%2Ci%3D500%3Btry%7Bn%3Dawait%20a(1%2Ci)%7Dcatch(t)%7Bif(t.fatal)throw%20t%3Bi%3Do.params.PAGESIZE%2Cn%3Dawait%20a(1%2Ci)%7Dconst%20s%3DNumber(n.total)%7C%7C0%2Cd%3D%5B...n.data%7C%7C%5B%5D%5D%3Blet%20l%3D1%3Bfor(%3Bd.length%3Cs%26%26l%3C100%3B)%7Bl%2B%2B%2Cc(%60%C4%90ang%20l%E1%BA%A5y%20%24%7Bt.name%7D%3A%20%24%7Bd.length%7D%2F%24%7Bs%7D%20d%C3%B2ng...%60%2C%7Bbusy%3A!0%7D)%2Cawait%20e(400)%3Bconst%20n%3Dawait%20a(l%2Ci)%3Bif(!n.data%3F.length)break%3Bd.push(...n.data)%7Dif(!d.length)return%20void%20c(%22Kh%C3%B4ng%20c%C3%B3%20d%C3%B2ng%20n%C3%A0o%20v%E1%BB%9Bi%20b%E1%BB%99%20l%E1%BB%8Dc%20n%C3%A0y.%20%C4%90%E1%BB%95i%20ng%C3%A0y%20ho%E1%BA%B7c%20khu%20v%E1%BB%B1c%20r%E1%BB%93i%20b%E1%BA%A5m%20n%C3%BAt%20l%E1%BA%A1i.%22)%3Bconst%20p%3D%5B...new%20Set(d.flatMap(t%3D%3EObject.keys(t)))%5D%2Cu%3Dt%3D%3E(null%3D%3Dt%3F%22%22%3AString(t)).replace(%2F%5B%5Ct%5Cr%5Cn%5D%2B%2Fg%2C%22%20%22).trim()%2Cm%3D%5Bp.join(%22%5Ct%22)%2C...d.map(t%3D%3Ep.map(n%3D%3Eu(t%5Bn%5D)).join(%22%5Ct%22))%5D.join(%22%5Cn%22)%3Bwindow.__gioCong%3Dd%3Bconst%20g%3Dd.length%3D%3D%3Ds%3F%22%22%3A%60%20(thi%E1%BA%BFu%20so%20v%E1%BB%9Bi%20t%E1%BB%95ng%20%24%7Bs%7D)%60%2Ch%3Dawait%20r(m%2C!1)%3Bc(h%3F%60%C4%90%C3%A3%20copy%20%24%7Bd.length%7D%20d%C3%B2ng%20%24%7Bt.name%7D%24%7Bg%7D.%20Sang%20trang%20c%E1%BA%A7n%20d%C3%A1n%20v%C3%A0%20b%E1%BA%A5m%20%E2%8C%98V%20%2F%20Ctrl%2BV.%60%3A%60%C4%90%C3%A3%20l%E1%BA%A5y%20%24%7Bd.length%7D%20d%C3%B2ng%20%24%7Bt.name%7D%24%7Bg%7D.%20B%E1%BA%A5m%20Copy%20%C4%91%E1%BB%83%20ch%C3%A9p.%60%2C%7Btsv%3Am%2Ccopied%3Ah%7D)%7Dcatch(t)%7Bconsole.error(%22%5BCopy%5D%22%2Ct)%2Cc(t.message)%7D%7D(d).finally(()%3D%3E%7Bo%3D!1%7D))%2Cl%7D%2Cwindow.__gcTrigger%3D()%3D%3E%7Bif(o)return%3Bconst%20t%3D%5B...document.querySelectorAll(%22button%22)%5D.find(t%3D%3E%22Xem%22%3D%3D%3Dt.textContent.replace(%2F%5B%5E%5Cp%7BL%7D%5D%2Fgu%2C%22%22))%3Bt%3Ft.click()%3Ac('%C4%90%C3%A3%20s%E1%BA%B5n%20s%C3%A0ng.%20B%E1%BA%A5m%20%22Xem%22%20tr%C3%AAn%20trang%20%C4%91%E1%BB%83%20b%E1%BA%AFt%20%C4%91%E1%BA%A7u.')%7D%2Cwindow.__gcTrigger()%7D)()%3B" title="Kéo nút này lên thanh dấu trang">📋 Copy giờ công</a>
+    <p class="hint" id="hint">Giữ chuột vào nút vàng và kéo lên thanh dấu trang của trình duyệt.</p>
+  </div>
+
+  <h2>Cài một lần</h2>
+  <ol>
+    <li>Bật thanh dấu trang nếu chưa thấy: bấm <kbd class="k-bar">⌘⇧B</kbd>.</li>
+    <li>Kéo nút vàng ở trên thả vào thanh dấu trang. Nút mới hiện ra là xong.</li>
+  </ol>
+
+  <h2>Mỗi lần dùng</h2>
+  <ol>
+    <li>Mở trang Giờ Công Làm Việc, chọn ngày và khu vực hoặc siêu thị.</li>
+    <li>Bấm nút <strong>📋 Copy giờ công</strong> trên thanh dấu trang. Đợi khung báo "Đã copy" ở góc phải dưới.</li>
+    <li>Sang trang cần dán, bấm <kbd class="k-paste">⌘V</kbd>.</li>
+  </ol>
+
+  <div class="trouble">
+    <p><strong>Khung báo "Bấm Copy để chép"</strong>: bấm nút Copy trong khung, rồi dán như bình thường.</p>
+    <p><strong>Báo phiên đăng nhập hết hạn</strong>: tải lại trang báo cáo, đăng nhập rồi bấm nút lần nữa.</p>
+    <p><strong>Bấm nút mà không có gì xảy ra</strong>: kiểm tra bạn đang ở đúng trang Giờ Công Làm Việc.</p>
+    <p>Nút chỉ đọc dữ liệu mà tài khoản của bạn vốn đã xem được trên trang, không gửi dữ liệu đi đâu.</p>
+  </div>
+</main>
+
+<script>
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  if (!isMac) {
+    document.querySelectorAll('.k-bar').forEach(k => k.textContent = 'Ctrl Shift B');
+    document.querySelectorAll('.k-paste').forEach(k => k.textContent = 'Ctrl V');
+  }
+  const chip = document.getElementById('chip');
+  const hint = document.getElementById('hint');
+  const slot = document.getElementById('slot');
+  chip.addEventListener('click', e => {
+    e.preventDefault();
+    hint.textContent = 'Nút này cần được kéo lên thanh dấu trang, bấm ở đây sẽ không có tác dụng.';
+    hint.classList.add('warn');
+  });
+  chip.addEventListener('dragstart', () => slot.classList.add('hot'));
+  chip.addEventListener('dragend', () => {
+    slot.classList.remove('hot');
+    hint.classList.remove('warn');
+    hint.textContent = 'Nếu nút đã hiện trên thanh dấu trang là xong. Giờ mở trang Giờ Công và bấm thử.';
+  });
+</script>
+</body>
+</html>

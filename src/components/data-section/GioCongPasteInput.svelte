@@ -108,6 +108,7 @@
     <div class="data-input-group__label">
         <i data-feather="clock" class="h-5 w-5 feather"></i>
         <span><a href="https://baocao.dienmayxanh.com/dashboard/timekeeping" target="_blank" rel="noopener noreferrer" class="hover:underline">Giờ công</a>: <span class="font-normal text-xs text-gray-500 ml-1">(Copy từ trang Giờ công)</span></span>
+        <a href="/copy-gio-cong-tudong.html" target="_blank" rel="noopener noreferrer" class="ml-auto text-xs font-bold text-blue-600 hover:underline whitespace-nowrap">Copy tự động</a>
     </div>
     <div class="data-input-group__content flex flex-col flex-grow">
         <textarea
