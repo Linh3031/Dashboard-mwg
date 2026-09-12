@@ -3,7 +3,7 @@
 // offline + baseKey Cloud 'saved_giocong' của luồng Excel cũ (fileHandler.js) để 2 luồng không
 // bao giờ lệch nhau, chỉ khác cách lấy dữ liệu đầu vào (text dán thay vì file .xlsx).
 import { get } from 'svelte/store';
-import { currentUser } from '../../stores.js';
+import { currentUser, danhSachNhanVien } from '../../stores.js';
 import { parseGioCongPasted } from '../processing/parsers/gioCongPaste.parser.js';
 import { storage, storageService } from '../storage.service.js';
 import { datasyncService } from '../datasync.service.js';
@@ -33,7 +33,15 @@ export async function processGioCongPaste(rawText) {
         const existingFull = (await storage.getItem(BASE_KEY)) || [];
         const mergedFull = [...existingFull.filter(item => !uploadedKhoSet.has(String(item.maKho || '').trim())), ...results];
         await storage.setItem(BASE_KEY, mergedFull);
-        mapping.store.set(mergedFull);
+
+        // Chỉ HIỂN THỊ đúng kho thuộc DSNV hiện tại — cache offline vẫn giữ nguyên mọi kho từng
+        // dán (không đổi ở trên), tránh trường hợp máy này từng đăng nhập tài khoản khác/kho khác
+        // để test còn sót lại tag kho không thuộc quyền tài khoản đang đăng nhập.
+        const dsnv = get(danhSachNhanVien) || [];
+        const allowedWarehouses = dsnv.length > 0
+            ? [...new Set(dsnv.map(e => String(e.maKho || '').trim()).filter(Boolean))]
+            : null;
+        mapping.store.set(allowedWarehouses ? mergedFull.filter(item => allowedWarehouses.includes(String(item.maKho || '').trim())) : mergedFull);
 
         // Lưu Cloud: 1 blob text dùng chung cho mọi kho vừa trích xuất, đánh dấu fileType để
         // syncHandler.js biết đường đọc lại bằng parser dán thay vì XLSX khi máy khác tải về.
